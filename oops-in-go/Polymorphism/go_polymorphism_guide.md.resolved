@@ -1,0 +1,477 @@
+# Golang OOP Guide: Polymorphism (Interfaces) — Complete Guide
+
+## What is Polymorphism?
+
+Polymorphism ("many forms") is the ability to treat different types of objects as if they were the same type, as long as they share a common behavior.
+
+For example, a `Circle` and a `Rectangle` are different shapes, but both can have their `Area()` calculated. We should be able to write one function `PrintArea()` that accepts *any* shape.
+
+In C++, this is achieved using **Base Class Pointers** and **Pure Virtual Functions**.
+In Go, this is achieved using **Interfaces**.
+
+---
+
+## Key Concept Comparison: C++ vs. Go
+
+| Concept | C++ Approach | Go (Golang) Approach |
+| :--- | :--- | :--- |
+| **Abstract Concept** | Abstract Base Class (`class Shape`) | Interface (`type Shape interface`) |
+| **Method Definition** | Pure Virtual (`virtual double Area() = 0;`) | Method Signature (`Area() float64`) |
+| **Implementation** | Explicit (`class Circle : public Shape`) | **Implicit (Duck Typing)** — no keyword needed |
+| **Pointers** | Base Pointer (`Shape* s = new Circle();`) | Interface Type (`var s Shape = &Circle{}`) |
+| **Accepting Any Type** | `void*` or templates | The Empty Interface `interface{}` or `any` |
+| **Casting Back** | `dynamic_cast<Circle*>(shape)` | Type Assertion `shape.(Circle)` |
+| **Switch on Type** | Chain of `dynamic_cast` checks | `switch v := x.(type)` |
+| **Multiple Inheritance** | `class A : public B, public C` | A struct can satisfy **multiple interfaces** at once |
+| **Combining Interfaces** | Not supported natively | Interface Embedding (`type ReadWriter interface { Reader; Writer }`) |
+| **`toString()`** | `operator<<` or `.toString()` | The `Stringer` interface (`String() string`) |
+| **Error Handling** | Exceptions (`try/catch/throw`) | The `error` interface (`Error() string`) |
+
+---
+
+## The Duck Typing Rule (Implicit Interfaces)
+
+In C++ or Java, a class **must** explicitly declare that it implements an interface:
+```cpp
+class Dog : public Animal { ... }  // C++: explicit
+```
+
+Go has **NO `implements` keyword**. If a struct happens to have all the methods an interface requires, Go automatically considers it as implementing that interface. The struct doesn't even need to know the interface exists!
+
+> *"If it walks like a duck, and quacks like a duck, then it IS a duck."*
+
+---
+
+## Example 1: The Shape Calculator (Classic Polymorphism)
+
+**File: `geometry/shapes.go`**
+```go
+package geometry
+
+import (
+    "fmt"
+    "math"
+)
+
+// 1. Define the Interface — the "contract"
+// Any type that has BOTH of these methods automatically becomes a "Shape"
+type Shape interface {
+    Area() float64
+    Perimeter() float64
+}
+
+// 2. Circle struct — implements Shape implicitly
+type Circle struct {
+    Radius float64
+}
+
+func (c *Circle) Area() float64 {
+    return math.Pi * c.Radius * c.Radius
+}
+
+func (c *Circle) Perimeter() float64 {
+    return 2 * math.Pi * c.Radius
+}
+
+// 3. Rectangle struct — also implements Shape implicitly
+type Rectangle struct {
+    Width  float64
+    Height float64
+}
+
+func (r *Rectangle) Area() float64 {
+    return r.Width * r.Height
+}
+
+func (r *Rectangle) Perimeter() float64 {
+    return 2 * (r.Width + r.Height)
+}
+
+// 4. The Polymorphic Function!
+// Accepts ANY type that satisfies the Shape interface.
+func PrintShapeDetails(s Shape) {
+    fmt.Printf("Area: %.2f | Perimeter: %.2f\n", s.Area(), s.Perimeter())
+}
+```
+
+**Usage in `main.go`:**
+```go
+circle := &geometry.Circle{Radius: 5}
+rect   := &geometry.Rectangle{Width: 4, Height: 6}
+
+// Same function, different types — Polymorphism!
+geometry.PrintShapeDetails(circle)
+geometry.PrintShapeDetails(rect)
+```
+
+**Key Takeaway:** Neither `Circle` nor `Rectangle` ever mentions `Shape`. They just happen to have the right methods, and Go automatically recognizes them.
+
+---
+
+## Example 2: Payment Processor (Backend Scenario)
+
+An e-commerce checkout that doesn't care *how* the payment is processed.
+
+**File: `payment/processor.go`**
+```go
+package payment
+
+import "fmt"
+
+// The Interface
+type PaymentProcessor interface {
+    ProcessPayment(amount float64) bool
+}
+
+// Concrete Type 1: Credit Card
+type CreditCard struct {
+    CardNumber string
+}
+
+func (cc *CreditCard) ProcessPayment(amount float64) bool {
+    fmt.Printf("Processing $%.2f via Credit Card (%s)...\n", amount, cc.CardNumber)
+    return true
+}
+
+// Concrete Type 2: PayPal
+type PayPal struct {
+    Email string
+}
+
+func (p *PayPal) ProcessPayment(amount float64) bool {
+    fmt.Printf("Processing $%.2f via PayPal (%s)...\n", amount, p.Email)
+    return true
+}
+
+// The Polymorphic Checkout Function
+func Checkout(cartTotal float64, method PaymentProcessor) {
+    fmt.Println("--- Starting Checkout ---")
+    if method.ProcessPayment(cartTotal) {
+        fmt.Println("Transaction Successful!")
+    } else {
+        fmt.Println("Transaction Failed.")
+    }
+}
+```
+
+**Key Takeaway:** If you add `Bitcoin` next week, you don't touch `Checkout` at all. Just create a `Bitcoin` struct with a `ProcessPayment` method and it works!
+
+---
+
+## Example 3: Logger System (Multiple Implementations)
+
+A logging system where logs can go to the console, a file, or a remote server.
+
+**File: `logging/logger.go`**
+```go
+package logging
+
+import "fmt"
+
+type Logger interface {
+    Log(message string)
+}
+
+// Implementation 1: Console Logger
+type ConsoleLogger struct{}
+
+func (c *ConsoleLogger) Log(message string) {
+    fmt.Println("[CONSOLE]", message)
+}
+
+// Implementation 2: File Logger
+type FileLogger struct {
+    FilePath string
+}
+
+func (f *FileLogger) Log(message string) {
+    fmt.Printf("[FILE: %s] %s\n", f.FilePath, message)
+}
+
+// Polymorphic function — doesn't care WHERE the log goes
+func LogAll(loggers []Logger, message string) {
+    for _, logger := range loggers {
+        logger.Log(message)
+    }
+}
+```
+
+**Usage:**
+```go
+loggers := []logging.Logger{
+    &logging.ConsoleLogger{},
+    &logging.FileLogger{FilePath: "/var/log/app.log"},
+}
+logging.LogAll(loggers, "Server started on port 8080")
+```
+
+**Key Takeaway:** We store different logger types in the **same slice** (`[]Logger`). This is exactly like storing different objects in a `vector<Logger*>` in C++!
+
+---
+
+## Advanced Topic 1: The Empty Interface (`any`)
+
+Sometimes you want a function to accept **absolutely anything** — an int, a string, a struct.
+
+In C++, you'd use `void*` or templates. In Go, you use `any` (alias for `interface{}`).
+
+Because `any` requires **zero methods**, every single type in Go automatically implements it!
+
+```go
+func PrintAnything(item any) {
+    fmt.Printf("Value: %v | Type: %T\n", item, item)
+}
+
+func main() {
+    PrintAnything(42)              // Value: 42 | Type: int
+    PrintAnything("Hello")         // Value: Hello | Type: string
+    PrintAnything(3.14)            // Value: 3.14 | Type: float64
+    PrintAnything([]int{1, 2, 3})  // Value: [1 2 3] | Type: []int
+}
+```
+
+---
+
+## Advanced Topic 2: Type Assertions (Casting)
+
+When you receive an `any`, Go no longer knows the original type. To use it as its real type, you need a **Type Assertion** (Go's version of `dynamic_cast`).
+
+```go
+func ProcessItem(item any) {
+    // Safe assertion with the "comma ok" pattern
+    str, ok := item.(string)
+
+    if ok {
+        fmt.Println("It's a string:", str)
+    } else {
+        fmt.Println("Not a string!")
+    }
+}
+```
+
+> [!WARNING]
+> If you assert **without** the `ok` check and the type is wrong, Go will **panic** (crash):
+> ```go
+> str := item.(string)  // PANICS if item is not a string!
+> ```
+> Always use the `value, ok := item.(Type)` pattern to be safe.
+
+---
+
+## Advanced Topic 3: Type Switch (Switch on Type)
+
+When you have an `any` and need to handle multiple possible types, use a **Type Switch**. This replaces a chain of `dynamic_cast` checks in C++.
+
+```go
+func Describe(item any) {
+    switch v := item.(type) {
+    case int:
+        fmt.Println("Integer:", v)
+    case string:
+        fmt.Println("String of length", len(v), ":", v)
+    case float64:
+        fmt.Println("Float:", v)
+    case bool:
+        fmt.Println("Boolean:", v)
+    default:
+        fmt.Printf("Unknown type: %T\n", v)
+    }
+}
+
+func main() {
+    Describe(42)        // Integer: 42
+    Describe("hello")   // String of length 5 : hello
+    Describe(true)      // Boolean: true
+}
+```
+
+---
+
+## Advanced Topic 4: Interface Composition (Embedding Interfaces)
+
+Just like you can embed structs inside structs, you can **embed interfaces inside interfaces** to build bigger contracts from smaller ones.
+
+**C++ has no equivalent for this.** This is unique to Go.
+
+```go
+// Small, focused interfaces
+type Reader interface {
+    Read(data []byte) (int, error)
+}
+
+type Writer interface {
+    Write(data []byte) (int, error)
+}
+
+// Composed interface — requires BOTH Read and Write
+type ReadWriter interface {
+    Reader
+    Writer
+}
+```
+
+Any struct that has both `Read()` and `Write()` methods automatically satisfies `ReadWriter`, `Reader`, AND `Writer` — all three at once!
+
+> [!TIP]
+> **Go Best Practice:** Keep interfaces small (1-2 methods). Then compose them when you need bigger contracts. Go's standard library follows this pattern everywhere (`io.Reader`, `io.Writer`, `io.ReadWriter`).
+
+---
+
+## Advanced Topic 5: Multiple Interface Implementation
+
+A single struct can satisfy **multiple interfaces** at once, without declaring any of them.
+
+```go
+type Saver interface {
+    Save() error
+}
+
+type Loader interface {
+    Load() error
+}
+
+// Database satisfies BOTH Saver and Loader
+type Database struct {
+    Name string
+}
+
+func (db *Database) Save() error {
+    fmt.Println("Saving to", db.Name)
+    return nil
+}
+
+func (db *Database) Load() error {
+    fmt.Println("Loading from", db.Name)
+    return nil
+}
+
+// Can be passed to functions expecting Saver OR Loader
+func BackupData(s Saver)  { s.Save() }
+func RestoreData(l Loader) { l.Load() }
+```
+
+---
+
+## Advanced Topic 6: The `Stringer` Interface (Go's `toString`)
+
+In C++, you override `operator<<` to print objects. In Java, you override `toString()`.
+
+In Go, the `fmt` package checks if your type implements the `Stringer` interface:
+
+```go
+// This interface is defined in the "fmt" package
+type Stringer interface {
+    String() string
+}
+```
+
+If your struct has a `String() string` method, `fmt.Println` will automatically use it!
+
+```go
+type Player struct {
+    Name  string
+    Score int
+}
+
+// Implement Stringer
+func (p *Player) String() string {
+    return fmt.Sprintf("Player{%s, Score: %d}", p.Name, p.Score)
+}
+
+func main() {
+    p := &Player{Name: "Divyansh", Score: 9500}
+    fmt.Println(p) // Output: Player{Divyansh, Score: 9500}
+    // Without String(), it would print: &{Divyansh 9500}
+}
+```
+
+---
+
+## Advanced Topic 7: The `error` Interface
+
+Go does NOT have `try/catch/throw`. Instead, errors are just values that implement the built-in `error` interface:
+
+```go
+// Built into Go — you don't define this yourself
+type error interface {
+    Error() string
+}
+```
+
+You can create custom errors by simply making a struct with an `Error() string` method:
+
+```go
+type InsufficientFundsError struct {
+    Balance float64
+    Amount  float64
+}
+
+func (e *InsufficientFundsError) Error() string {
+    return fmt.Sprintf("cannot withdraw $%.2f: only $%.2f available", e.Amount, e.Balance)
+}
+
+func Withdraw(balance, amount float64) error {
+    if amount > balance {
+        return &InsufficientFundsError{Balance: balance, Amount: amount}
+    }
+    return nil // nil means "no error"
+}
+
+func main() {
+    err := Withdraw(100, 500)
+    if err != nil {
+        fmt.Println("Error:", err) // Error: cannot withdraw $500.00: only $100.00 available
+    }
+}
+```
+
+---
+
+## ⚠️ Common Gotcha: Pointer vs Value Receivers with Interfaces
+
+This is the **#1 mistake** beginners make with Go interfaces:
+
+```go
+type Shape interface {
+    Area() float64
+}
+
+type Circle struct{ Radius float64 }
+
+// Method defined with POINTER receiver
+func (c *Circle) Area() float64 {
+    return 3.14 * c.Radius * c.Radius
+}
+
+func main() {
+    var s Shape
+
+    s = &Circle{Radius: 5}  // ✅ Works — pointer satisfies pointer receiver
+    s = Circle{Radius: 5}   // ❌ COMPILE ERROR — value does NOT satisfy pointer receiver
+}
+```
+
+**The Rule:**
+| Method Receiver | Can pass `Value`? | Can pass `&Pointer`? |
+| :--- | :--- | :--- |
+| Value `(c Circle)` | ✅ Yes | ✅ Yes |
+| Pointer `(c *Circle)` | ❌ No | ✅ Yes |
+
+If your methods use pointer receivers, you **must** pass a pointer (`&Circle{}`) to the interface.
+
+---
+
+## Summary: Polymorphism Checklist
+
+| Rule | How to Apply in Go |
+| :--- | :--- |
+| Define a contract | `type Name interface { ... }` |
+| Implement the interface | Just write the methods. No `implements` keyword! |
+| Polymorphic function | Use the interface type as the parameter: `func Do(s Shape)` |
+| Accept everything | Use `any` (alias for `interface{}`) |
+| Cast back to original type | Type Assertion: `value, ok := x.(ConcreteType)` |
+| Handle multiple types | Type Switch: `switch v := x.(type) { ... }` |
+| Combine small interfaces | Interface Embedding: `type RW interface { Reader; Writer }` |
+| Custom printing | Implement `String() string` (the `Stringer` interface) |
+| Custom errors | Implement `Error() string` (the `error` interface) |
+| Pointer receivers? | You **must** pass `&Struct{}`, not `Struct{}` |
