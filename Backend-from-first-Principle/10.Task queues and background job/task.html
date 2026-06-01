@@ -1,0 +1,2314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Background Jobs & Task Queues · Field Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0ebe0;
+    --sidebar-bg: #e8e2d5;
+    --text: #1a1410;
+    --text-muted: #6b5f52;
+    --accent: #c0392b;
+    --accent-dark: #96281b;
+    --border: #c8bfb0;
+    --code-bg: #e2ddd4;
+    --sidebar-w: 240px;
+    --content-max: 780px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Source Serif 4', Georgia, serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    width: var(--sidebar-w);
+    min-height: 100vh;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    padding: 40px 24px 60px;
+    position: fixed;
+    top: 0; left: 0;
+    overflow-y: auto;
+    z-index: 100;
+  }
+
+  .sidebar-brand {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .sidebar-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 36px;
+  }
+
+  .sidebar-nav { list-style: none; }
+
+  .sidebar-nav li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .sidebar-nav li .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    min-width: 20px;
+    margin-top: 3px;
+  }
+
+  .sidebar-nav li a {
+    font-size: 13px;
+    color: var(--text-muted);
+    text-decoration: none;
+    line-height: 1.4;
+    transition: color 0.15s;
+  }
+
+  .sidebar-nav li a:hover { color: var(--accent); }
+  .sidebar-nav li.active a { color: var(--text); font-weight: 600; }
+
+  /* ── MAIN CONTENT ── */
+  #main {
+    margin-left: var(--sidebar-w);
+    padding: 60px 80px 120px;
+    flex: 1;
+    max-width: calc(var(--sidebar-w) + var(--content-max) + 160px);
+  }
+
+  .chapter-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+
+  h1.page-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 54px;
+    font-weight: 900;
+    line-height: 1.08;
+    color: var(--text);
+    margin-bottom: 24px;
+  }
+
+  .intro-para {
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--text-muted);
+    max-width: 640px;
+    margin-bottom: 48px;
+    font-style: italic;
+    font-weight: 300;
+  }
+
+  hr.divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 48px 0;
+  }
+
+  /* ── SECTION HEADINGS ── */
+  .section {
+    margin-bottom: 60px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .section-badge {
+    background: var(--accent);
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  h2.section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  h3.sub-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 32px 0 10px;
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 6px;
+    display: inline-block;
+  }
+
+  h4.mini-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 24px 0 8px;
+  }
+
+  p {
+    font-size: 15.5px;
+    line-height: 1.85;
+    color: var(--text);
+    margin-bottom: 16px;
+  }
+
+  strong { font-weight: 600; }
+  em { font-style: italic; color: var(--text-muted); }
+
+  /* ── CODE ── */
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: var(--accent-dark);
+  }
+
+  pre {
+    background: #1e1a16;
+    color: #e8dfd0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    padding: 28px 32px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 20px 0 28px;
+    position: relative;
+    border-left: 3px solid var(--accent);
+  }
+
+  pre .lang-tag {
+    position: absolute;
+    top: 10px; right: 16px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: #6b5f52;
+    text-transform: uppercase;
+  }
+
+  .kw { color: #e06c75; }
+  .fn { color: #61afef; }
+  .str { color: #98c379; }
+  .cm { color: #5c6370; font-style: italic; }
+  .tp { color: #e5c07b; }
+  .num { color: #d19a66; }
+  .pkg { color: #c678dd; }
+
+  /* ── DIAGRAMS ── */
+  .diagram-wrap {
+    background: #1e1a16;
+    border-radius: 8px;
+    padding: 36px 24px;
+    margin: 24px 0 32px;
+    overflow-x: auto;
+  }
+
+  .diagram-wrap svg {
+    display: block;
+    margin: 0 auto;
+  }
+
+  /* ── CALLOUT BOXES ── */
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: rgba(192,57,43,0.06);
+    padding: 16px 20px;
+    border-radius: 0 6px 6px 0;
+    margin: 20px 0;
+  }
+
+  .callout .callout-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+
+  .callout p { margin: 0; font-size: 14.5px; }
+
+  .callout-note {
+    border-left-color: #2980b9;
+    background: rgba(41,128,185,0.06);
+  }
+  .callout-note .callout-label { color: #2980b9; }
+
+  /* ── DEFINITION LIST ── */
+  .def-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 20px 0 28px;
+    font-size: 14.5px;
+  }
+
+  .def-grid .cell {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    line-height: 1.6;
+  }
+
+  .def-grid .cell:last-child,
+  .def-grid .cell:nth-last-child(2) { border-bottom: none; }
+
+  .def-grid .key {
+    background: var(--sidebar-bg);
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent-dark);
+    border-right: 1px solid var(--border);
+  }
+
+  /* ── TASK TYPE CARDS ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 20px 0 32px;
+  }
+
+  .card {
+    background: var(--sidebar-bg);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--accent);
+    padding: 20px 18px;
+    border-radius: 0 0 6px 6px;
+  }
+
+  .card .card-icon { font-size: 22px; margin-bottom: 10px; }
+  .card .card-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .card p { font-size: 13.5px; margin: 0; color: var(--text-muted); line-height: 1.6; }
+
+  /* ── ORDERED LIST ── */
+  ol.lecture-list, ul.lecture-list {
+    padding-left: 22px;
+    margin: 12px 0 20px;
+  }
+
+  ol.lecture-list li, ul.lecture-list li {
+    font-size: 15px;
+    line-height: 1.8;
+    margin-bottom: 6px;
+  }
+
+  /* ── COMPARISON TABLE ── */
+  table.compare {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0 32px;
+    font-size: 14px;
+  }
+
+  table.compare th {
+    background: var(--text);
+    color: var(--bg);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 12px 16px;
+    text-align: left;
+  }
+
+  table.compare td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    line-height: 1.6;
+  }
+
+  table.compare tr:last-child td { border-bottom: none; }
+  table.compare tr:nth-child(even) td { background: var(--sidebar-bg); }
+
+  /* ── FLOW STEPS ── */
+  .flow-steps {
+    counter-reset: step;
+    list-style: none;
+    padding: 0;
+    margin: 20px 0 32px;
+    position: relative;
+  }
+
+  .flow-steps::before {
+    content: '';
+    position: absolute;
+    left: 18px; top: 24px; bottom: 24px;
+    width: 2px;
+    background: var(--border);
+  }
+
+  .flow-steps li {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+    position: relative;
+  }
+
+  .flow-steps li .step-num {
+    counter-increment: step;
+    content: counter(step);
+    min-width: 36px; height: 36px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+  }
+
+  .flow-steps li .step-body { padding-top: 6px; }
+  .flow-steps li .step-body strong { display: block; margin-bottom: 4px; }
+  .flow-steps li .step-body p { margin: 0; font-size: 14.5px; color: var(--text-muted); }
+
+  /* ── BACKOFF TABLE ── */
+  .backoff-vis {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    margin: 20px 0 28px;
+    height: 100px;
+  }
+
+  .backoff-vis .bar-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+  }
+
+  .backoff-vis .bar {
+    background: var(--accent);
+    width: 100%;
+    border-radius: 3px 3px 0 0;
+    opacity: 0.85;
+    transition: opacity 0.2s;
+  }
+
+  .backoff-vis .bar-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  /* ── TOC HIGHLIGHT ON SCROLL ── */
+  .sidebar-nav li.active > a { color: var(--accent); }
+
+  @media (max-width: 900px) {
+    #sidebar { display: none; }
+    #main { margin-left: 0; padding: 40px 24px 80px; }
+    h1.page-title { font-size: 36px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav id="sidebar">
+  <div class="sidebar-brand">Background Jobs &<br>Task Queues</div>
+  <div class="sidebar-sub">Field Manual · Backend Series</div>
+  <ul class="sidebar-nav">
+    <li><span class="num">01</span><a href="#s1">What is a Background Task?</a></li>
+    <li><span class="num">02</span><a href="#s2">Why We Need Them</a></li>
+    <li><span class="num">03</span><a href="#s3">Sync vs Async Workflow</a></li>
+    <li><span class="num">04</span><a href="#s4">How Task Queues Work</a></li>
+    <li><span class="num">05</span><a href="#s5">Producer & Consumer Deep Dive</a></li>
+    <li><span class="num">06</span><a href="#s6">Brokers & Technologies</a></li>
+    <li><span class="num">07</span><a href="#s7">Retries & Exponential Backoff</a></li>
+    <li><span class="num">08</span><a href="#s8">Visibility Timeout</a></li>
+    <li><span class="num">09</span><a href="#s9">Types of Background Tasks</a></li>
+    <li><span class="num">10</span><a href="#s10">Real-World Use Cases</a></li>
+    <li><span class="num">11</span><a href="#s11">Code: Go & Python</a></li>
+    <li><span class="num">12</span><a href="#s12">Design Considerations</a></li>
+    <li><span class="num">13</span><a href="#s13">Best Practices</a></li>
+    <li><span class="num">14</span><a href="#s14">Framework Comparison</a></li>
+    <li><span class="num">15</span><a href="#s15">Redis Internals Deep Dive</a></li>
+    <li><span class="num">16</span><a href="#s16">SQS: FIFO vs Standard</a></li>
+    <li><span class="num">17</span><a href="#s17">Idempotency Patterns</a></li>
+    <li><span class="num">18</span><a href="#s18">Rate Limiting in Workers</a></li>
+    <li><span class="num">19</span><a href="#s19">Full Monitoring Setup</a></li>
+    <li><span class="num">20</span><a href="#s20">Temporal &amp; Workflow Orchestration</a></li>
+  </ul>
+</nav>
+
+<!-- MAIN -->
+<main id="main">
+
+  <div class="chapter-label">Backend Engineering · Task Processing</div>
+  <h1 class="page-title">Background Jobs<br>&amp; Task Queues</h1>
+  <p class="intro-para">
+    Any code that runs outside the request–response cycle — deferred, retryable, non-blocking — is a background job. Understanding how to design and operate them is what separates a toy backend from a production-grade one.
+  </p>
+  <hr class="divider">
+
+  <!-- ── SECTION 1 ── -->
+  <section class="section" id="s1">
+    <div class="section-header">
+      <span class="section-badge">01</span>
+      <h2 class="section-title">What is a Background Task?</h2>
+    </div>
+
+    <p>
+      A <strong>background task</strong> (also called a background job) is any piece of code, logic, or workflow that runs <em>outside</em> of the request–response lifecycle. Think of your typical HTTP interaction: a client sends a request, your server processes it and sends a response. Anything that doesn't need to happen <em>within</em> that tight window is a candidate for a background task.
+    </p>
+
+    <p>
+      The key characteristic: <strong>it does not need to be synchronous</strong>. It is not mission-critical in the sense that the client is waiting for it right now. Because of this, we can safely offload it to a separate process that finishes in its own time, according to how it has been programmed.
+    </p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg" width="640">
+        <!-- Client -->
+        <rect x="20" y="70" width="110" height="60" rx="6" fill="#2a231c" stroke="#c0392b" stroke-width="1.5"/>
+        <text x="75" y="104" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="12">CLIENT</text>
+
+        <!-- Arrow request -->
+        <line x1="132" y1="90" x2="238" y2="90" stroke="#c0392b" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="185" y="82" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="10">REQUEST</text>
+
+        <!-- Arrow response -->
+        <line x1="238" y1="110" x2="132" y2="110" stroke="#61afef" stroke-width="1.5" marker-end="url(#arr2)"/>
+        <text x="185" y="130" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="10">RESPONSE</text>
+
+        <!-- Server -->
+        <rect x="240" y="60" width="160" height="80" rx="6" fill="#2a231c" stroke="#e5c07b" stroke-width="1.5"/>
+        <text x="320" y="95" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="12">SERVER</text>
+        <text x="320" y="113" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="10">(main process)</text>
+
+        <!-- Dashed line to background -->
+        <line x1="400" y1="100" x2="460" y2="100" stroke="#5c6370" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#arr3)"/>
+        <text x="430" y="88" text-anchor="middle" fill="#5c6370" font-family="JetBrains Mono" font-size="9">offload</text>
+
+        <!-- Background process box -->
+        <rect x="462" y="60" width="200" height="80" rx="6" fill="#1a1410" stroke="#5c6370" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <text x="562" y="90" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="12">BACKGROUND</text>
+        <text x="562" y="108" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="12">TASK</text>
+        <text x="562" y="124" text-anchor="middle" fill="#3a3028" font-family="JetBrains Mono" font-size="9">(separate process)</text>
+
+        <!-- Label below -->
+        <text x="185" y="168" text-anchor="middle" fill="#c0392b" font-family="JetBrains Mono" font-size="10">← request–response lifecycle →</text>
+        <text x="562" y="168" text-anchor="middle" fill="#5c6370" font-family="JetBrains Mono" font-size="10">outside lifecycle</text>
+
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#c0392b"/>
+          </marker>
+          <marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#61afef"/>
+          </marker>
+          <marker id="arr3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#5c6370"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+
+    <div class="callout-note callout">
+      <div class="callout-label">MDN Reference</div>
+      <p>The concept maps directly to the browser's <a href="https://developer.mozilla.org/en-US/docs/Web/API/queueMicrotask" style="color:inherit">event loop and task queue model</a> — macrotasks vs microtasks. On the server, the same principle applies: some work doesn't belong in the synchronous call stack.</p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 2 ── -->
+  <section class="section" id="s2">
+    <div class="section-header">
+      <span class="section-badge">02</span>
+      <h2 class="section-title">Why We Need Background Tasks</h2>
+    </div>
+
+    <p>
+      The classic motivating example is <strong>user signup + email verification</strong>. Here's the full picture of what happens:
+    </p>
+
+    <ul class="flow-steps">
+      <li>
+        <span class="step-num">1</span>
+        <div class="step-body">
+          <strong>User fills signup form</strong>
+          <p>They provide email, username, password. The frontend validates basic constraints and makes an API call to your backend.</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">2</span>
+        <div class="step-body">
+          <strong>Backend validates & stores data</strong>
+          <p>Password strength, uniqueness of email, hashing, writing user record to the database, generating a one-time verification token (6-digit OTP or a signed URL).</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">3</span>
+        <div class="step-body">
+          <strong>Send a verification email</strong>
+          <p>This requires calling a <em>third-party email provider</em> (Resend, Mailgun, Brevo). Your backend is now making an outbound HTTP request to an external service.</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">4</span>
+        <div class="step-body">
+          <strong>Email provider processes and delivers</strong>
+          <p>The provider checks your API key, validates the email, routes via SMTP, and delivers. Success/failure is returned.</p>
+        </div>
+      </li>
+    </ul>
+
+    <h3 class="sub-title">The Problem: Synchronous Email Sending</h3>
+    <p>
+      If steps 3–4 happen synchronously in your request handler, you've introduced a <strong>hard dependency</strong> on an external service inside your critical path. Two failure scenarios:
+    </p>
+
+    <div class="def-grid">
+      <div class="cell key">No error handling</div>
+      <div class="cell">The external API call fails → your entire signup API returns a 500. The user sees an error trying to sign up. Terrible UX.</div>
+
+      <div class="cell key">With error handling</div>
+      <div class="cell">You swallow the email error and return 200 "Check your email!" — but the email was never sent. The user waits forever for a verification link that never comes. Also terrible UX.</div>
+    </div>
+
+    <p>
+      In both cases, the fundamental problem is the same: <strong>you're coupling your API's reliability to a third-party service's uptime</strong>. Offloading the email to a background task decouples them completely.
+    </p>
+  </section>
+
+  <!-- ── SECTION 3 ── -->
+  <section class="section" id="s3">
+    <div class="section-header">
+      <span class="section-badge">03</span>
+      <h2 class="section-title">Synchronous vs Asynchronous Workflow</h2>
+    </div>
+
+    <h3 class="sub-title">Synchronous (Blocking) Flow</h3>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 680 160" xmlns="http://www.w3.org/2000/svg" width="640">
+        <defs>
+          <marker id="a1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#c0392b"/></marker>
+          <marker id="a2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e5c07b"/></marker>
+          <marker id="a3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e06c75"/></marker>
+        </defs>
+
+        <!-- boxes -->
+        <rect x="10" y="50" width="90" height="50" rx="5" fill="#2a231c" stroke="#c0392b" stroke-width="1.2"/>
+        <text x="55" y="80" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="11">CLIENT</text>
+
+        <rect x="170" y="50" width="100" height="50" rx="5" fill="#2a231c" stroke="#e5c07b" stroke-width="1.2"/>
+        <text x="220" y="75" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="11">YOUR</text>
+        <text x="220" y="91" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="11">SERVER</text>
+
+        <rect x="400" y="50" width="120" height="50" rx="5" fill="#2a231c" stroke="#e06c75" stroke-width="1.2"/>
+        <text x="460" y="75" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="11">EMAIL</text>
+        <text x="460" y="91" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="11">PROVIDER</text>
+
+        <!-- arrows -->
+        <line x1="102" y1="68" x2="168" y2="68" stroke="#c0392b" stroke-width="1.2" marker-end="url(#a1)"/>
+        <text x="135" y="62" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">POST /signup</text>
+
+        <line x1="272" y1="68" x2="398" y2="68" stroke="#e5c07b" stroke-width="1.2" marker-end="url(#a2)"/>
+        <text x="335" y="62" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">send email (BLOCKS)</text>
+
+        <line x1="398" y1="84" x2="272" y2="84" stroke="#e06c75" stroke-width="1.2" marker-end="url(#a3)"/>
+        <text x="335" y="100" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="9">❌ fails / slow</text>
+
+        <line x1="168" y1="84" x2="102" y2="84" stroke="#e06c75" stroke-width="1.2" marker-end="url(#a3)"/>
+        <text x="135" y="100" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="9">500 error</text>
+
+        <text x="340" y="140" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="10">↑ external failure kills your API response</text>
+      </svg>
+    </div>
+
+    <h3 class="sub-title">Asynchronous (Background) Flow</h3>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" width="680">
+        <defs>
+          <marker id="b1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#c0392b"/></marker>
+          <marker id="b2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#98c379"/></marker>
+          <marker id="b3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#61afef"/></marker>
+          <marker id="b4" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e5c07b"/></marker>
+        </defs>
+
+        <!-- Row 1: Client → Server → Queue -->
+        <rect x="10" y="20" width="90" height="50" rx="5" fill="#2a231c" stroke="#c0392b" stroke-width="1.2"/>
+        <text x="55" y="50" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="11">CLIENT</text>
+
+        <rect x="170" y="20" width="100" height="50" rx="5" fill="#2a231c" stroke="#e5c07b" stroke-width="1.2"/>
+        <text x="220" y="45" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="11">SERVER</text>
+        <text x="220" y="61" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">(producer)</text>
+
+        <rect x="350" y="20" width="100" height="50" rx="5" fill="#2a231c" stroke="#61afef" stroke-width="1.2"/>
+        <text x="400" y="45" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="11">QUEUE</text>
+        <text x="400" y="61" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">(broker)</text>
+
+        <!-- Row 2: Worker → Email Provider -->
+        <rect x="350" y="145" width="100" height="50" rx="5" fill="#2a231c" stroke="#c678dd" stroke-width="1.2"/>
+        <text x="400" y="170" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="11">WORKER</text>
+        <text x="400" y="186" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">(consumer)</text>
+
+        <rect x="530" y="145" width="120" height="50" rx="5" fill="#2a231c" stroke="#98c379" stroke-width="1.2"/>
+        <text x="590" y="170" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="11">EMAIL</text>
+        <text x="590" y="186" text-anchor="middle" fill="#e8dfd0" font-family="JetBrains Mono" font-size="11">PROVIDER</text>
+
+        <!-- Arrows row 1 -->
+        <line x1="102" y1="40" x2="168" y2="40" stroke="#c0392b" stroke-width="1.2" marker-end="url(#b1)"/>
+        <text x="135" y="34" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">POST /signup</text>
+
+        <line x1="272" y1="40" x2="348" y2="40" stroke="#61afef" stroke-width="1.2" marker-end="url(#b3)"/>
+        <text x="310" y="34" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">enqueue task</text>
+
+        <line x1="168" y1="56" x2="102" y2="56" stroke="#98c379" stroke-width="1.2" marker-end="url(#b2)"/>
+        <text x="135" y="72" text-anchor="middle" fill="#98c379" font-family="JetBrains Mono" font-size="9">✓ 201 Created</text>
+
+        <!-- Queue → Worker vertical arrow -->
+        <line x1="400" y1="72" x2="400" y2="143" stroke="#c678dd" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#b4)"/>
+        <text x="418" y="112" fill="#c678dd" font-family="JetBrains Mono" font-size="9">dequeue</text>
+
+        <!-- Worker → Provider -->
+        <line x1="452" y1="170" x2="528" y2="170" stroke="#98c379" stroke-width="1.2" marker-end="url(#b2)"/>
+        <text x="490" y="164" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">send email</text>
+
+        <text x="230" y="120" text-anchor="middle" fill="#98c379" font-family="JetBrains Mono" font-size="10">API unblocked instantly ✓</text>
+        <text x="490" y="218" text-anchor="middle" fill="#c678dd" font-family="JetBrains Mono" font-size="10">background: retries handled automatically</text>
+      </svg>
+    </div>
+
+    <div class="callout">
+      <div class="callout-label">Key Insight</div>
+      <p>The server <strong>enqueues the task and returns immediately</strong>. The client gets a response without waiting for the email to be sent. If the email provider goes down, the retry mechanism handles it — the API response is never affected.</p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 4 ── -->
+  <section class="section" id="s4">
+    <div class="section-header">
+      <span class="section-badge">04</span>
+      <h2 class="section-title">How Task Queues Work</h2>
+    </div>
+
+    <p>
+      A <strong>task queue</strong> is a system for managing and distributing background jobs. It is the engine behind the scenes that enables reliable, decoupled background processing. Think of it as a <em>to-do list for your backend</em> — your application adds items to the list, and workers pick them off one by one.
+    </p>
+
+    <div class="def-grid">
+      <div class="cell key">Producer</div>
+      <div class="cell">Your application code (any language/framework). Creates a task, serializes it (usually JSON), and pushes it into the queue. This is called <strong>enqueuing</strong> (ENQ).</div>
+
+      <div class="cell key">Queue / Broker</div>
+      <div class="cell">The middleware that stores tasks until a worker is ready. Examples: Redis, RabbitMQ, Amazon SQS. Provides durability, ordering, and delivery guarantees.</div>
+
+      <div class="cell key">Consumer / Worker</div>
+      <div class="cell">A separate process (or thread) that constantly polls the queue, picks up tasks (this is <strong>dequeuing</strong> — DEQ), deserializes them, and executes the registered handler function.</div>
+
+      <div class="cell key">Handler</div>
+      <div class="cell">The actual function/method registered for a task type. Contains the real business logic (e.g., calling the email API). Same code you'd run synchronously, but now living inside a worker.</div>
+    </div>
+
+    <h3 class="sub-title">Serialization & Deserialization</h3>
+    <p>
+      Because tasks cross process boundaries, all data must be serialized. JSON is the most common format. The worker deserializes back to native types:
+    </p>
+
+    <pre><code><span class="cm">// Task payload (JSON in the queue)</span>
+{
+  <span class="str">"type"</span>: <span class="str">"send_verification_email"</span>,
+  <span class="str">"user_id"</span>: <span class="str">"usr_01J2K..."</span>,
+  <span class="str">"email"</span>: <span class="str">"alice@example.com"</span>,
+  <span class="str">"token"</span>: <span class="str">"eyJhbGci..."</span>,
+  <span class="str">"created_at"</span>: <span class="str">"2024-01-15T10:30:00Z"</span>
+}
+<span class="lang-tag">JSON</span></code></pre>
+
+    <div class="def-grid">
+      <div class="cell key">Python</div>
+      <div class="cell">Deserializes to a <code>dict</code></div>
+      <div class="cell key">JavaScript</div>
+      <div class="cell">Deserializes to an <code>object</code></div>
+      <div class="cell key">Go</div>
+      <div class="cell">Deserializes to a <code>struct</code> (via <code>json.Unmarshal</code>)</div>
+    </div>
+  </section>
+
+  <!-- ── SECTION 5 ── -->
+  <section class="section" id="s5">
+    <div class="section-header">
+      <span class="section-badge">05</span>
+      <h2 class="section-title">Producer &amp; Consumer Deep Dive</h2>
+    </div>
+
+    <h3 class="sub-title">The Producer Side</h3>
+    <p>
+      The producer's responsibility is minimal and fast — it should never do heavy work. Its only job:
+    </p>
+    <ol class="lecture-list">
+      <li>Gather all data the consumer will need to perform the task.</li>
+      <li>Serialize that data into a portable format (JSON).</li>
+      <li>Push the serialized payload into the queue.</li>
+      <li>Return — immediately. Do not wait.</li>
+    </ol>
+
+    <h3 class="sub-title">The Consumer / Worker Side</h3>
+    <p>
+      The consumer runs as a <strong>separate process</strong> — either in the same codebase (a different entry-point / binary) or an entirely separate service. It:
+    </p>
+    <ol class="lecture-list">
+      <li><strong>Configures which queue to listen on</strong> — different queues for different task types (email queue, notification queue, image processing queue, etc.).</li>
+      <li><strong>Registers handlers</strong> — for each task type, a function is registered. When that task is dequeued, that function is called.</li>
+      <li><strong>Polls or is pushed tasks</strong> — depending on the broker (Redis/RabbitMQ use long-polling; SQS uses polling intervals).</li>
+      <li><strong>Deserializes the payload</strong> — JSON → native struct/dict/object.</li>
+      <li><strong>Executes the handler</strong> — the actual work: calling the email API, resizing the image, etc.</li>
+      <li><strong>Acknowledges (ACK) success</strong> — tells the queue the task is done and can be removed.</li>
+      <li><strong>Reports failure (NACK)</strong> — on error, the queue knows to retry.</li>
+    </ol>
+
+    <div class="callout">
+      <div class="callout-label">Multiple Consumer Instances</div>
+      <p>You can run <em>N</em> consumer processes in parallel. Each picks up tasks independently. This is how you scale horizontally — more users → more workers, not bigger servers.</p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 6 ── -->
+  <section class="section" id="s6">
+    <div class="section-header">
+      <span class="section-badge">06</span>
+      <h2 class="section-title">Brokers &amp; Technologies</h2>
+    </div>
+
+    <p>The "queue" is backed by a real piece of infrastructure — a <strong>message broker</strong>. Here are the main options:</p>
+
+    <table class="compare">
+      <thead>
+        <tr>
+          <th>Broker</th>
+          <th>Type</th>
+          <th>Best For</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Redis</strong> (Pub/Sub + Lists)</td>
+          <td>In-memory store</td>
+          <td>Fast, low-latency tasks. Celery + BullMQ default.</td>
+          <td>Data can be lost on crash unless persistence is enabled (AOF/RDB).</td>
+        </tr>
+        <tr>
+          <td><strong>RabbitMQ</strong></td>
+          <td>AMQP message broker</td>
+          <td>Complex routing, fanout, topic exchanges.</td>
+          <td>Very reliable, rich routing rules, requires ops overhead.</td>
+        </tr>
+        <tr>
+          <td><strong>Amazon SQS</strong></td>
+          <td>Managed cloud queue</td>
+          <td>Scalable, multi-region, serverless-friendly.</td>
+          <td>AWS-native, no server management. Standard + FIFO queues.</td>
+        </tr>
+        <tr>
+          <td><strong>Redis Streams</strong></td>
+          <td>Persistent log</td>
+          <td>Consumer groups, replay, auditing.</td>
+          <td>More durable than basic Redis lists. Good for Asynq (Go).</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout-note callout">
+      <div class="callout-label">Framework ↔ Broker Pairings</div>
+      <p><strong>Celery (Python)</strong> → Redis or RabbitMQ &nbsp;|&nbsp; <strong>BullMQ (Node.js)</strong> → Redis &nbsp;|&nbsp; <strong>Asynq (Go)</strong> → Redis Streams &nbsp;|&nbsp; <strong>Sidekiq (Ruby)</strong> → Redis</p>
+    </div>
+
+    <h3 class="sub-title" id="s15">Redis Internals: How It Stores Tasks</h3>
+    <p>
+      Redis offers <strong>two different data structures</strong> used by task queue libraries under the hood. Understanding which one your framework uses — and why — helps you operate it correctly in production.
+    </p>
+
+    <h4 class="mini-title">Redis Lists (used by: Celery, BullMQ, Sidekiq)</h4>
+    <p>
+      A Redis List is a doubly-linked list of strings. Task queues use two commands: <code>LPUSH</code> (producer pushes to left/head) and <code>BRPOP</code> (worker blocks waiting to pop from right/tail). This gives you classic FIFO behaviour.
+    </p>
+
+    <pre><code><span class="cm"># What Celery does under the hood in Redis:</span>
+
+<span class="cm"># Producer (your API) — pushes serialized task to left of list</span>
+LPUSH celery <span class="str">'{"task":"send_email","args":["alice@example.com","token123"]}'</span>
+
+<span class="cm"># Worker — blocks waiting for item, pops from right (FIFO)</span>
+<span class="cm"># BRPOP blocks for up to 5 seconds, then re-polls</span>
+BRPOP celery <span class="num">5</span>
+
+<span class="cm"># To see queue depth at any time:</span>
+LLEN celery   <span class="cm"># → 42 (42 pending tasks)</span>
+<span class="lang-tag">Redis CLI</span></code></pre>
+
+    <div class="def-grid">
+      <div class="cell key">Problem with Lists</div>
+      <div class="cell">Once a worker pops the task (<code>BRPOP</code>), it's <strong>gone from the list</strong>. If the worker crashes before ACKing, the task is permanently lost. BullMQ solves this by moving tasks to a separate "active" sorted set and only deleting on ACK.</div>
+      <div class="cell key">No replay</div>
+      <div class="cell">Lists are destructive. You cannot re-read old tasks for debugging or auditing.</div>
+      <div class="cell key">No consumer groups</div>
+      <div class="cell">A single message can only go to one consumer. You cannot have multiple independent consumer groups reading the same queue (like Kafka).</div>
+    </div>
+
+    <h4 class="mini-title">Redis Streams (used by: Asynq, newer architectures)</h4>
+    <p>
+      Redis Streams (added in Redis 5.0) is an append-only log — conceptually similar to Apache Kafka but in Redis. It was designed specifically to solve the problems of Redis Lists for message queuing.
+    </p>
+
+    <pre><code><span class="cm"># Producer adds entry to stream</span>
+<span class="cm"># * means auto-generate ID (timestamp-sequence: 1705312200000-0)</span>
+XADD myapp:email_queue * user_id usr_01J2K email alice@example.com token eyJ...
+
+<span class="cm"># Create a consumer group (workers belong to a group)</span>
+XGROUP CREATE myapp:email_queue email_workers $ MKSTREAM
+
+<span class="cm"># Worker reads next undelivered message (> means "new")</span>
+XREADGROUP GROUP email_workers worker-1 COUNT 1 BLOCK 5000 STREAMS myapp:email_queue >
+
+<span class="cm"># After successful processing, ACK the message by ID</span>
+XACK myapp:email_queue email_workers 1705312200000-0
+
+<span class="cm"># Check pending (delivered but not ACKed) — these are in-flight tasks</span>
+XPENDING myapp:email_queue email_workers - + 10
+<span class="lang-tag">Redis CLI</span></code></pre>
+
+    <table class="compare">
+      <thead>
+        <tr><th>Feature</th><th>Redis Lists</th><th>Redis Streams</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Storage model</strong></td><td>Destructive pop — task gone after dequeue</td><td>Append-only log — tasks persist after delivery</td></tr>
+        <tr><td><strong>Crash safety</strong></td><td>Task lost if worker crashes after pop but before ACK (unless library adds workaround)</td><td>Built-in PEL (Pending Entry List) — unACKed tasks are tracked, auto-redelivered</td></tr>
+        <tr><td><strong>Consumer groups</strong></td><td>Not supported natively</td><td>Native consumer groups — multiple independent groups can read same stream</td></tr>
+        <tr><td><strong>Message replay</strong></td><td>No — once popped, gone</td><td>Yes — read any historical ID range</td></tr>
+        <tr><td><strong>Message ordering</strong></td><td>FIFO within the list</td><td>Strict chronological order by auto-generated ID</td></tr>
+        <tr><td><strong>Observability</strong></td><td>Only queue length (<code>LLEN</code>)</td><td>Full introspection: pending, delivered, acknowledged counts</td></tr>
+        <tr><td><strong>Memory</strong></td><td>Lower (entries deleted on pop)</td><td>Higher (entries persist until trimmed with <code>MAXLEN</code>)</td></tr>
+        <tr><td><strong>Used by</strong></td><td>Celery, BullMQ, Sidekiq</td><td>Asynq (Go), custom implementations</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <div class="callout-label">Which to use?</div>
+      <p>For most SaaS workloads, <strong>Redis Lists</strong> (via Celery/BullMQ) are perfectly fine — the libraries handle crash safety in their own layer. Choose <strong>Redis Streams</strong> when you need audit trails, message replay, or multiple independent consumer groups consuming the same events.</p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 6b: SQS ── (inline continuation, no new section tag needed, added as new section) -->
+  <section class="section" id="s16">
+    <div class="section-header">
+      <span class="section-badge">16</span>
+      <h2 class="section-title">Amazon SQS: Standard vs FIFO Queues</h2>
+    </div>
+
+    <p>
+      Amazon SQS is AWS's fully managed message queuing service. No servers to manage, scales automatically, and replicates across multiple availability zones. It has two modes with fundamentally different guarantees.
+    </p>
+
+    <table class="compare">
+      <thead>
+        <tr><th>Property</th><th>Standard Queue</th><th>FIFO Queue</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Throughput</strong></td><td>Nearly unlimited (thousands of TPS)</td><td>300 TPS (3,000 with batching)</td></tr>
+        <tr><td><strong>Ordering</strong></td><td>Best-effort — NOT guaranteed</td><td>Strict FIFO — guaranteed within a Message Group</td></tr>
+        <tr><td><strong>Delivery</strong></td><td>At-least-once — a message can be delivered <em>more than once</em></td><td>Exactly-once — deduplication ID prevents duplicates</td></tr>
+        <tr><td><strong>Deduplication</strong></td><td>None built-in</td><td>Built-in 5-minute deduplication window using content hash or explicit ID</td></tr>
+        <tr><td><strong>Use case</strong></td><td>High-volume, order-doesn't-matter tasks (emails, notifications)</td><td>Financial transactions, inventory updates, anything requiring strict order</td></tr>
+        <tr><td><strong>Naming</strong></td><td><code>my-queue</code></td><td>Must end in <code>.fifo</code> → <code>my-queue.fifo</code></td></tr>
+        <tr><td><strong>Cost</strong></td><td>$0.40 per million requests</td><td>$0.50 per million requests</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-title">How SQS Visibility Timeout Works (AWS-Specific)</h3>
+    <p>
+      SQS implements visibility timeout natively. When a worker calls <code>ReceiveMessage</code>, the message becomes invisible to all other consumers for the configured timeout (default 30s, max 12 hours). The worker must call <code>DeleteMessage</code> on success, or do nothing to let it become visible again for retry.
+    </p>
+
+    <pre><code><span class="cm">// Go — SQS producer + consumer using AWS SDK v2</span>
+<span class="kw">package</span> <span class="pkg">main</span>
+
+<span class="kw">import</span> (
+    <span class="str">"context"</span>
+    <span class="str">"encoding/json"</span>
+    <span class="str">"github.com/aws/aws-sdk-go-v2/aws"</span>
+    <span class="str">"github.com/aws/aws-sdk-go-v2/service/sqs"</span>
+)
+
+<span class="cm">// ── PRODUCER ──────────────────────────────────────────</span>
+<span class="kw">func</span> <span class="fn">EnqueueEmailTask</span>(ctx <span class="tp">context.Context</span>, client *sqs.<span class="tp">Client</span>, queueURL string, payload <span class="tp">EmailPayload</span>) error {
+    body, _ := json.<span class="fn">Marshal</span>(payload)
+    _, err := client.<span class="fn">SendMessage</span>(ctx, &sqs.<span class="tp">SendMessageInput</span>{
+        QueueUrl:    aws.<span class="fn">String</span>(queueURL),
+        MessageBody: aws.<span class="fn">String</span>(string(body)),
+        <span class="cm">// For FIFO queue: add MessageGroupId + MessageDeduplicationId</span>
+        <span class="cm">// MessageGroupId:         aws.String("email-group"),</span>
+        <span class="cm">// MessageDeduplicationId: aws.String(payload.UserID),</span>
+    })
+    <span class="kw">return</span> err
+}
+
+<span class="cm">// ── CONSUMER ──────────────────────────────────────────</span>
+<span class="kw">func</span> <span class="fn">PollQueue</span>(ctx <span class="tp">context.Context</span>, client *sqs.<span class="tp">Client</span>, queueURL string) {
+    <span class="kw">for</span> {
+        result, _ := client.<span class="fn">ReceiveMessage</span>(ctx, &sqs.<span class="tp">ReceiveMessageInput</span>{
+            QueueUrl:            aws.<span class="fn">String</span>(queueURL),
+            MaxNumberOfMessages: <span class="num">10</span>,          <span class="cm">// batch up to 10</span>
+            WaitTimeSeconds:     <span class="num">20</span>,          <span class="cm">// long-polling reduces empty receives</span>
+            VisibilityTimeout:   <span class="num">60</span>,          <span class="cm">// 60s to process before redelivery</span>
+        })
+
+        <span class="kw">for</span> _, msg := <span class="kw">range</span> result.Messages {
+            <span class="kw">if</span> err := <span class="fn">processMessage</span>(ctx, msg); err == nil {
+                <span class="cm">// ACK: delete from queue on success</span>
+                client.<span class="fn">DeleteMessage</span>(ctx, &sqs.<span class="tp">DeleteMessageInput</span>{
+                    QueueUrl:      aws.<span class="fn">String</span>(queueURL),
+                    ReceiptHandle: msg.ReceiptHandle, <span class="cm">// unique handle per receive</span>
+                })
+            }
+            <span class="cm">// On error: do nothing — visibility timeout expires, SQS redelivers</span>
+        }
+    }
+}
+<span class="lang-tag">Go / AWS SDK v2</span></code></pre>
+
+    <div class="callout-note callout">
+      <div class="callout-label">Standard Queue + Idempotency</div>
+      <p>Because Standard SQS delivers at-least-once, your handlers <strong>must be idempotent</strong>. A message can be delivered twice in rare cases (network hiccup, AZ failover). Always design handlers to be safe to re-run. See Section 17 for idempotency patterns.</p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 7 ── -->
+  <section class="section" id="s7">
+    <div class="section-header">
+      <span class="section-badge">07</span>
+      <h2 class="section-title">Retries &amp; Exponential Backoff</h2>
+    </div>
+
+    <p>
+      When a task fails (handler throws an exception, external API returns 5xx, network timeout), the framework <strong>re-enqueues the task</strong> for retry. Naively retrying immediately would hammer an already-struggling service. The solution: <strong>exponential backoff</strong>.
+    </p>
+
+    <h3 class="sub-title">Exponential Backoff Algorithm</h3>
+    <p>
+      After each failure, the wait time before the next retry doubles. A common formula:
+    </p>
+
+    <pre><code><span class="cm">// Retry delay formula</span>
+delay = base_delay * (2 ^ attempt_number) + jitter
+
+<span class="cm">// Example with base_delay=1min, max_retries=5:</span>
+Attempt 1 → wait 1 min   → retry
+Attempt 2 → wait 2 min   → retry
+Attempt 3 → wait 4 min   → retry
+Attempt 4 → wait 8 min   → retry
+Attempt 5 → wait 16 min  → DEAD LETTER QUEUE
+<span class="lang-tag">PSEUDOCODE</span></code></pre>
+
+    <!-- Visual backoff bars -->
+    <div style="margin: 24px 0 32px;">
+      <p style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-muted); margin-bottom:12px; letter-spacing:0.08em; text-transform:uppercase;">Retry delay visualised</p>
+      <div class="backoff-vis">
+        <div class="bar-wrap"><div class="bar" style="height:12px"></div><div class="bar-label">1 min</div></div>
+        <div class="bar-wrap"><div class="bar" style="height:24px"></div><div class="bar-label">2 min</div></div>
+        <div class="bar-wrap"><div class="bar" style="height:48px"></div><div class="bar-label">4 min</div></div>
+        <div class="bar-wrap"><div class="bar" style="height:80px"></div><div class="bar-label">8 min</div></div>
+        <div class="bar-wrap"><div class="bar" style="height:96px; opacity:0.4;"></div><div class="bar-label">16 min</div></div>
+      </div>
+    </div>
+
+    <h4 class="mini-title">Why Jitter Matters</h4>
+    <p>
+      Without jitter (random noise added to the delay), all consumers retry at the exact same time after a failure — creating a <strong>thundering herd</strong> that hits the external service with a spike. Adding a small random offset spreads the load.
+    </p>
+
+    <h4 class="mini-title">Dead Letter Queue (DLQ)</h4>
+    <p>
+      After exhausting all retries, the task is moved to a <strong>Dead Letter Queue</strong>. This is a separate queue for persistently-failed tasks. Engineers can inspect DLQ messages, diagnose the root cause, and manually replay them after the issue is fixed.
+    </p>
+
+    <div class="callout">
+      <div class="callout-label">Real-World Note</div>
+      <p>Major email providers (Resend, Mailgun) have SLAs of 99.9%+ uptime. In practice, downtime is measured in seconds. With exponential backoff, a task that fails once will typically succeed on attempt 2 or 3 — well within the verification email's 15–20 minute expiry window.</p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 8 ── -->
+  <section class="section" id="s8">
+    <div class="section-header">
+      <span class="section-badge">08</span>
+      <h2 class="section-title">Visibility Timeout &amp; Acknowledgements</h2>
+    </div>
+
+    <p>
+      When a consumer picks up a task (dequeues it), the task doesn't get deleted immediately. Instead, it becomes <strong>invisible</strong> to other consumers for a configurable duration — the <strong>visibility timeout</strong>. This is the period the task is considered "in progress."
+    </p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 680 180" xmlns="http://www.w3.org/2000/svg" width="640">
+        <defs>
+          <marker id="c1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#98c379"/></marker>
+          <marker id="c2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e06c75"/></marker>
+          <marker id="c3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e5c07b"/></marker>
+        </defs>
+
+        <!-- Timeline bar -->
+        <rect x="80" y="80" width="520" height="20" rx="3" fill="#2a231c" stroke="#3a3028" stroke-width="1"/>
+
+        <!-- Phases -->
+        <rect x="80" y="80" width="120" height="20" rx="3" fill="#61afef" opacity="0.3"/>
+        <text x="140" y="73" text-anchor="middle" fill="#61afef" font-family="JetBrains Mono" font-size="9">WAITING IN QUEUE</text>
+
+        <rect x="200" y="80" width="200" height="20" fill="#e5c07b" opacity="0.3"/>
+        <text x="300" y="73" text-anchor="middle" fill="#e5c07b" font-family="JetBrains Mono" font-size="9">VISIBILITY TIMEOUT (in progress)</text>
+
+        <rect x="400" y="80" width="80" height="20" fill="#98c379" opacity="0.4" rx="0"/>
+        <text x="440" y="73" text-anchor="middle" fill="#98c379" font-family="JetBrains Mono" font-size="9">ACK → done</text>
+
+        <!-- Failure scenario -->
+        <rect x="400" y="110" width="80" height="20" fill="#e06c75" opacity="0.4" rx="0"/>
+        <text x="440" y="145" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="9">no ACK → re-visible</text>
+
+        <!-- Dequeue arrow -->
+        <line x1="200" y1="60" x2="200" y2="78" stroke="#e5c07b" stroke-width="1.2" marker-end="url(#c3)"/>
+        <text x="200" y="52" text-anchor="middle" fill="#e5c07b" font-family="JetBrains Mono" font-size="9">consumer dequeues</text>
+
+        <!-- success / fail -->
+        <line x1="400" y1="60" x2="400" y2="78" stroke="#98c379" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#c1)"/>
+
+        <line x1="600" y1="60" x2="600" y2="78" stroke="#e06c75" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#c2)"/>
+        <text x="600" y="52" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="9">timeout expires</text>
+        <rect x="540" y="80" width="120" height="20" fill="#e06c75" opacity="0.2" rx="0"/>
+        <text x="600" y="110" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="9">→ available to other workers</text>
+      </svg>
+    </div>
+
+    <h4 class="mini-title">Why Does This Exist?</h4>
+    <p>
+      Without visibility timeout, if a consumer crashes mid-task, the task would be permanently lost — it was already removed from the queue when the consumer picked it up. Visibility timeout ensures that if the worker <em>doesn't acknowledge</em> within the window (it crashed, hung, or the external service timed out), the task becomes visible again and another worker can pick it up. <strong>Tasks are never lost.</strong>
+    </p>
+
+    <div class="def-grid">
+      <div class="cell key">ACK (success)</div>
+      <div class="cell">Consumer sends acknowledgement → queue permanently deletes the task.</div>
+      <div class="cell key">NACK (failure)</div>
+      <div class="cell">Consumer reports failure → queue schedules retry (with backoff).</div>
+      <div class="cell key">No signal</div>
+      <div class="cell">Consumer crashed or hung → visibility timeout expires → task re-enqueued for another worker.</div>
+    </div>
+  </section>
+
+  <!-- ── SECTION 9 ── -->
+  <section class="section" id="s9">
+    <div class="section-header">
+      <span class="section-badge">09</span>
+      <h2 class="section-title">Types of Background Tasks</h2>
+    </div>
+
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <div class="card-title">One-Off Tasks</div>
+        <p>Triggered once by a specific event. Send verification email, welcome email, password-reset link, in-app notification. Most common type.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔁</div>
+        <div class="card-title">Recurring Tasks</div>
+        <p>Scheduled at fixed intervals. Weekly reports, daily digest emails, DB cleanup jobs, orphan session purging. Implemented via cron-like schedulers.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔗</div>
+        <div class="card-title">Chain Tasks</div>
+        <p>Parent–child dependencies. Task B can only run after Task A succeeds. Tasks at the same level can run in parallel. Classic: video upload pipeline.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📦</div>
+        <div class="card-title">Batch Tasks</div>
+        <p>One trigger fans out into many parallel tasks. Delete account spawns sub-tasks per resource type. Send 10k reports at midnight.</p>
+      </div>
+    </div>
+
+    <h3 class="sub-title">Chain Tasks — Video Upload Example</h3>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 660 260" xmlns="http://www.w3.org/2000/svg" width="640">
+        <defs>
+          <marker id="d1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e5c07b"/></marker>
+          <marker id="d2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#61afef"/></marker>
+          <marker id="d3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#c678dd"/></marker>
+        </defs>
+
+        <!-- Root task -->
+        <rect x="240" y="10" width="160" height="44" rx="5" fill="#2a231c" stroke="#e5c07b" stroke-width="1.5"/>
+        <text x="320" y="30" text-anchor="middle" fill="#e5c07b" font-family="JetBrains Mono" font-size="11">VIDEO UPLOAD</text>
+        <text x="320" y="46" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">stored to S3</text>
+
+        <!-- Level 2 -->
+        <rect x="240" y="90" width="160" height="44" rx="5" fill="#2a231c" stroke="#e5c07b" stroke-width="1.5"/>
+        <text x="320" y="110" text-anchor="middle" fill="#e5c07b" font-family="JetBrains Mono" font-size="11">VIDEO ENCODE</text>
+        <text x="320" y="126" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">360p/720p/1080p</text>
+
+        <line x1="320" y1="54" x2="320" y2="88" stroke="#e5c07b" stroke-width="1.5" marker-end="url(#d1)"/>
+        <text x="340" y="74" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">depends on</text>
+
+        <!-- Level 3a and 3b in parallel -->
+        <rect x="80" y="180" width="160" height="44" rx="5" fill="#2a231c" stroke="#61afef" stroke-width="1.5"/>
+        <text x="160" y="200" text-anchor="middle" fill="#61afef" font-family="JetBrains Mono" font-size="11">THUMBNAIL GEN</text>
+        <text x="160" y="216" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">from encoded video</text>
+
+        <rect x="390" y="180" width="175" height="44" rx="5" fill="#2a231c" stroke="#c678dd" stroke-width="1.5"/>
+        <text x="477" y="200" text-anchor="middle" fill="#c678dd" font-family="JetBrains Mono" font-size="11">TRANSCRIPTION</text>
+        <text x="477" y="216" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">audio → subtitles</text>
+
+        <!-- arrows from encode -->
+        <line x1="280" y1="134" x2="190" y2="178" stroke="#61afef" stroke-width="1.2" marker-end="url(#d2)"/>
+        <line x1="360" y1="134" x2="450" y2="178" stroke="#c678dd" stroke-width="1.2" marker-end="url(#d3)"/>
+
+        <text x="200" y="165" fill="#61afef" font-family="JetBrains Mono" font-size="8">parallel</text>
+        <text x="380" y="165" fill="#c678dd" font-family="JetBrains Mono" font-size="8">parallel</text>
+
+        <text x="320" y="250" text-anchor="middle" fill="#5c6370" font-family="JetBrains Mono" font-size="9">thumbnail-gen and transcription both depend on encode, but not on each other</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ── SECTION 10 ── -->
+  <section class="section" id="s10">
+    <div class="section-header">
+      <span class="section-badge">10</span>
+      <h2 class="section-title">Real-World Use Cases</h2>
+    </div>
+
+    <table class="compare">
+      <thead>
+        <tr><th>Use Case</th><th>Task Type</th><th>Why Background?</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Email verification / welcome</strong></td>
+          <td>One-off</td>
+          <td>Depends on external email provider. Failure must not break signup.</td>
+        </tr>
+        <tr>
+          <td><strong>Image/video resizing</strong></td>
+          <td>Chain</td>
+          <td>CPU-intensive. Would block the request thread for seconds.</td>
+        </tr>
+        <tr>
+          <td><strong>Weekly/monthly reports</strong></td>
+          <td>Recurring (cron)</td>
+          <td>Must run at a specific time, not triggered by a user request.</td>
+        </tr>
+        <tr>
+          <td><strong>Push notifications</strong></td>
+          <td>Batch / One-off</td>
+          <td>Calls Apple APNs / Google FCM — external services. Can fail, need retries.</td>
+        </tr>
+        <tr>
+          <td><strong>Account deletion</strong></td>
+          <td>Batch + Chain</td>
+          <td>Traverses entire user graph (projects, assets, sessions) — too slow for a request.</td>
+        </tr>
+        <tr>
+          <td><strong>Orphan session cleanup</strong></td>
+          <td>Recurring</td>
+          <td>Maintenance job — run monthly to free DB storage.</td>
+        </tr>
+        <tr>
+          <td><strong>PDF report generation</strong></td>
+          <td>One-off / Batch</td>
+          <td>Constructing large HTML→PDF is CPU/memory-intensive.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-title">Push Notifications — How It Actually Works</h3>
+    <p>
+      Your backend <strong>cannot</strong> send a push notification directly to a phone. Here's the full flow:
+    </p>
+    <ol class="lecture-list">
+      <li>User installs the app → the OS generates a unique device token (Apple APNs token / Google FCM token).</li>
+      <li>App sends that token to your backend on first launch — you store it per-user in your DB.</li>
+      <li>When you want to notify the user: enqueue a "send push notification" task with the user's device token + message payload.</li>
+      <li>Worker dequeues → calls Apple APNs or Google FCM API with the token and payload.</li>
+      <li>Apple/Google deliver the notification to the device via the OS-level push channel.</li>
+    </ol>
+
+    <div class="callout">
+      <div class="callout-label">Why background?</div>
+      <p>Same reason as email — depends on Apple/Google external services. Rate-limited. Needs retries. Potentially millions of tokens per event (sports app: goal scored → notify all fans).</p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 11 ── -->
+  <section class="section" id="s11">
+    <div class="section-header">
+      <span class="section-badge">11</span>
+      <h2 class="section-title">Code Examples: Go &amp; Python</h2>
+    </div>
+
+    <h3 class="sub-title">Python — Celery + Redis</h3>
+    <p>
+      <a href="https://docs.celeryq.dev/" style="color:var(--accent)">Celery</a> is the most popular Python task queue. Uses Redis (or RabbitMQ) as the broker.
+    </p>
+
+    <pre><code><span class="cm"># tasks.py — Define the task (consumer side)</span>
+<span class="kw">from</span> <span class="pkg">celery</span> <span class="kw">import</span> <span class="tp">Celery</span>
+<span class="kw">import</span> <span class="pkg">resend</span>
+
+<span class="cm"># Connect Celery to Redis broker</span>
+app = <span class="tp">Celery</span>(<span class="str">'tasks'</span>, broker=<span class="str">'redis://localhost:6379/0'</span>)
+
+<span class="cm"># Decorate the function as a Celery task</span>
+<span class="fn">@app.task</span>(bind=<span class="tp">True</span>, max_retries=<span class="num">5</span>, default_retry_delay=<span class="num">60</span>)
+<span class="kw">def</span> <span class="fn">send_verification_email</span>(self, user_id: str, email: str, token: str):
+    <span class="cm">"""
+    Called by the worker process.
+    self.retry() implements exponential backoff automatically.
+    """</span>
+    <span class="kw">try</span>:
+        params = {
+            <span class="str">"from"</span>: <span class="str">"noreply@myapp.com"</span>,
+            <span class="str">"to"</span>: [email],
+            <span class="str">"subject"</span>: <span class="str">"Verify your email"</span>,
+            <span class="str">"html"</span>: <span class="fn">build_email_template</span>(token),
+        }
+        resend.Emails.<span class="fn">send</span>(params)
+    <span class="kw">except</span> <span class="tp">Exception</span> <span class="kw">as</span> exc:
+        <span class="cm"># Exponential backoff: 60s, 120s, 240s, 480s, 960s</span>
+        countdown = <span class="num">60</span> * (<span class="num">2</span> ** self.request.retries)
+        <span class="kw">raise</span> self.<span class="fn">retry</span>(exc=exc, countdown=countdown)
+<span class="lang-tag">Python</span></code></pre>
+
+    <pre><code><span class="cm"># signup.py — Producer side (inside your API handler)</span>
+<span class="kw">from</span> <span class="pkg">fastapi</span> <span class="kw">import</span> <span class="tp">FastAPI</span>
+<span class="kw">from</span> <span class="pkg">tasks</span> <span class="kw">import</span> send_verification_email
+
+app = <span class="tp">FastAPI</span>()
+
+<span class="fn">@app.post</span>(<span class="str">"/signup"</span>)
+<span class="kw">async def</span> <span class="fn">signup</span>(body: <span class="tp">SignupRequest</span>):
+    <span class="cm"># 1. Validate, hash password, save user to DB</span>
+    user = <span class="kw">await</span> <span class="fn">create_user</span>(body)
+    token = <span class="fn">generate_verification_token</span>(user.id)
+
+    <span class="cm"># 2. Enqueue — returns instantly, does NOT wait for email</span>
+    send_verification_email.<span class="fn">delay</span>(
+        user_id=user.id,
+        email=user.email,
+        token=token
+    )
+
+    <span class="cm"># 3. Return 201 immediately</span>
+    <span class="kw">return</span> {<span class="str">"message"</span>: <span class="str">"Account created. Check your email."</span>}, <span class="num">201</span>
+<span class="lang-tag">Python / FastAPI</span></code></pre>
+
+    <h3 class="sub-title">Go — Asynq + Redis</h3>
+    <p>
+      <a href="https://github.com/hibiken/asynq" style="color:var(--accent)">Asynq</a> is a simple, reliable distributed task queue library for Go, backed by Redis Streams.
+    </p>
+
+    <pre><code><span class="cm">// tasks/email.go — Task definitions (producer + payload)</span>
+<span class="kw">package</span> <span class="pkg">tasks</span>
+
+<span class="kw">import</span> (
+    <span class="str">"context"</span>
+    <span class="str">"encoding/json"</span>
+    <span class="str">"fmt"</span>
+    <span class="str">"github.com/hibiken/asynq"</span>
+)
+
+<span class="kw">const</span> TypeSendVerificationEmail = <span class="str">"email:send_verification"</span>
+
+<span class="cm">// Payload struct — serialized to JSON in queue</span>
+<span class="kw">type</span> <span class="tp">EmailPayload</span> <span class="kw">struct</span> {
+    UserID string <span class="str">`json:"user_id"`</span>
+    Email  string <span class="str">`json:"email"`</span>
+    Token  string <span class="str">`json:"token"`</span>
+}
+
+<span class="cm">// NewSendVerificationEmailTask creates the Asynq task</span>
+<span class="kw">func</span> <span class="fn">NewSendVerificationEmailTask</span>(userID, email, token string) (*asynq.<span class="tp">Task</span>, error) {
+    payload, err := json.<span class="fn">Marshal</span>(<span class="tp">EmailPayload</span>{UserID: userID, Email: email, Token: token})
+    <span class="kw">if</span> err != nil {
+        <span class="kw">return</span> nil, fmt.<span class="fn">Errorf</span>(<span class="str">"json.Marshal: %w"</span>, err)
+    }
+    <span class="cm">// asynq.MaxRetry — after 5 failures, moves to dead letter</span>
+    <span class="kw">return</span> asynq.<span class="fn">NewTask</span>(TypeSendVerificationEmail, payload, asynq.<span class="fn">MaxRetry</span>(<span class="num">5</span>)), nil
+}
+<span class="lang-tag">Go</span></code></pre>
+
+    <pre><code><span class="cm">// handlers/email_handler.go — Consumer handler</span>
+<span class="kw">package</span> <span class="pkg">handlers</span>
+
+<span class="kw">import</span> (
+    <span class="str">"context"</span>
+    <span class="str">"encoding/json"</span>
+    <span class="str">"fmt"</span>
+    <span class="str">"log/slog"</span>
+    tasks <span class="str">"myapp/tasks"</span>
+    <span class="str">"github.com/hibiken/asynq"</span>
+)
+
+<span class="kw">type</span> <span class="tp">EmailHandler</span> <span class="kw">struct</span> {
+    emailSvc EmailService <span class="cm">// injected dependency</span>
+}
+
+<span class="cm">// HandleSendVerificationEmail — registered with the Asynq server</span>
+<span class="kw">func</span> (h *<span class="tp">EmailHandler</span>) <span class="fn">HandleSendVerificationEmail</span>(
+    ctx <span class="tp">context.Context</span>,
+    t *asynq.<span class="tp">Task</span>,
+) error {
+    <span class="cm">// 1. Deserialize JSON → Go struct</span>
+    <span class="kw">var</span> p tasks.<span class="tp">EmailPayload</span>
+    <span class="kw">if</span> err := json.<span class="fn">Unmarshal</span>(t.<span class="fn">Payload</span>(), &p); err != nil {
+        <span class="cm">// Non-retryable error: mark as failed immediately</span>
+        <span class="kw">return</span> fmt.<span class="fn">Errorf</span>(<span class="str">"json.Unmarshal: %w: %w"</span>, err, asynq.<span class="tp">SkipRetry</span>)
+    }
+
+    <span class="cm">// 2. Execute: call email provider API</span>
+    slog.<span class="fn">Info</span>(<span class="str">"sending verification email"</span>, <span class="str">"user_id"</span>, p.UserID, <span class="str">"email"</span>, p.Email)
+    <span class="kw">if</span> err := h.emailSvc.<span class="fn">SendVerification</span>(ctx, p.Email, p.Token); err != nil {
+        <span class="cm">// Returning error triggers retry with exponential backoff</span>
+        <span class="kw">return</span> fmt.<span class="fn">Errorf</span>(<span class="str">"emailSvc.SendVerification: %w"</span>, err)
+    }
+
+    <span class="cm">// 3. Returning nil → ACK to queue (task done)</span>
+    <span class="kw">return</span> nil
+}
+<span class="lang-tag">Go</span></code></pre>
+
+    <pre><code><span class="cm">// main.go — Wire producer and start worker server</span>
+<span class="kw">package</span> <span class="pkg">main</span>
+
+<span class="kw">import</span> (
+    <span class="str">"github.com/hibiken/asynq"</span>
+    <span class="str">"myapp/handlers"</span>
+    <span class="str">"myapp/tasks"</span>
+)
+
+<span class="kw">func</span> <span class="fn">main</span>() {
+    redisOpt := asynq.<span class="tp">RedisClientOpt</span>{Addr: <span class="str">"localhost:6379"</span>}
+
+    <span class="cm">// ── PRODUCER ─────────────────────────────────────</span>
+    client := asynq.<span class="fn">NewClient</span>(redisOpt)
+    <span class="kw">defer</span> client.<span class="fn">Close</span>()
+
+    task, _ := tasks.<span class="fn">NewSendVerificationEmailTask</span>(
+        <span class="str">"usr_01J2K"</span>, <span class="str">"alice@example.com"</span>, <span class="str">"eyJhbGci..."</span>,
+    )
+    <span class="cm">// Enqueue — returns immediately</span>
+    info, _ := client.<span class="fn">Enqueue</span>(task)
+    <span class="cm">// info.ID, info.Queue, info.State can be used for monitoring</span>
+
+    <span class="cm">// ── CONSUMER (worker server) ─────────────────────</span>
+    srv := asynq.<span class="fn">NewServer</span>(redisOpt, asynq.<span class="tp">Config</span>{
+        Concurrency: <span class="num">10</span>, <span class="cm">// 10 concurrent workers</span>
+        Queues: <span class="kw">map</span>[string]int{
+            <span class="str">"email"</span>:    <span class="num">6</span>, <span class="cm">// higher priority</span>
+            <span class="str">"default"</span>:  <span class="num">3</span>,
+            <span class="str">"low"</span>:      <span class="num">1</span>,
+        },
+    })
+
+    mux := asynq.<span class="fn">NewServeMux</span>()
+    mux.<span class="fn">HandleFunc</span>(tasks.TypeSendVerificationEmail,
+        handlers.<span class="tp">EmailHandler</span>{}.<span class="fn">HandleSendVerificationEmail</span>)
+
+    srv.<span class="fn">Run</span>(mux)
+}
+<span class="lang-tag">Go</span></code></pre>
+
+    <h3 class="sub-title">Go — Recurring Task with Asynq Scheduler</h3>
+    <pre><code><span class="cm">// scheduler/main.go — Cron-style recurring tasks</span>
+<span class="kw">package</span> <span class="pkg">main</span>
+
+<span class="kw">import</span> (
+    <span class="str">"log"</span>
+    <span class="str">"github.com/hibiken/asynq"</span>
+)
+
+<span class="kw">func</span> <span class="fn">main</span>() {
+    scheduler := asynq.<span class="fn">NewScheduler</span>(
+        asynq.<span class="tp">RedisClientOpt</span>{Addr: <span class="str">"localhost:6379"</span>},
+        nil,
+    )
+
+    <span class="cm">// Send weekly report every Sunday at midnight</span>
+    scheduler.<span class="fn">Register</span>(<span class="str">"0 0 * * 0"</span>,
+        asynq.<span class="fn">NewTask</span>(<span class="str">"report:weekly"</span>, nil))
+
+    <span class="cm">// Cleanup orphan sessions every 1st of the month</span>
+    scheduler.<span class="fn">Register</span>(<span class="str">"0 3 1 * *"</span>,
+        asynq.<span class="fn">NewTask</span>(<span class="str">"sessions:cleanup"</span>, nil))
+
+    <span class="kw">if</span> err := scheduler.<span class="fn">Run</span>(); err != nil {
+        log.<span class="fn">Fatal</span>(err)
+    }
+}
+<span class="lang-tag">Go</span></code></pre>
+
+    <h3 class="sub-title">Python — Celery Beat (Recurring Tasks)</h3>
+    <pre><code><span class="cm"># celery_config.py — Celery Beat schedule</span>
+<span class="kw">from</span> <span class="pkg">celery.schedules</span> <span class="kw">import</span> crontab
+
+<span class="fn">CELERYBEAT_SCHEDULE</span> = {
+    <span class="cm"># Send weekly report every Sunday midnight</span>
+    <span class="str">'weekly-report'</span>: {
+        <span class="str">'task'</span>: <span class="str">'tasks.send_weekly_report'</span>,
+        <span class="str">'schedule'</span>: crontab(hour=<span class="num">0</span>, minute=<span class="num">0</span>, day_of_week=<span class="str">'sunday'</span>),
+    },
+    <span class="cm"># Cleanup orphan sessions on the 1st of each month</span>
+    <span class="str">'session-cleanup'</span>: {
+        <span class="str">'task'</span>: <span class="str">'tasks.cleanup_orphan_sessions'</span>,
+        <span class="str">'schedule'</span>: crontab(hour=<span class="num">3</span>, minute=<span class="num">0</span>, day_of_month=<span class="str">'1'</span>),
+    },
+}
+<span class="lang-tag">Python / Celery Beat</span></code></pre>
+  </section>
+
+  <!-- ── SECTION 12 ── -->
+  <section class="section" id="s12">
+    <div class="section-header">
+      <span class="section-badge">12</span>
+      <h2 class="section-title">Design Considerations at Scale</h2>
+    </div>
+
+    <p>
+      When your platform grows to thousands of concurrent users, the naive task-queue setup that worked in development starts to crack. These are the areas you must engineer carefully before you hit production scale.
+    </p>
+
+    <div class="def-grid">
+      <div class="cell key">Horizontal scaling</div>
+      <div class="cell">Design consumers to be <strong>stateless</strong> — all shared state lives in the database or cache, not in the process. This lets you spin up N replicas with zero config changes. More traffic → add workers, not bigger servers.</div>
+
+      <div class="cell key">Ordered delivery</div>
+      <div class="cell">Parallel consumers break FIFO ordering. If strict order matters (e.g. charge → refund must happen in sequence), use SQS FIFO with a <code>MessageGroupId</code> or a single-consumer queue for that task type.</div>
+
+      <div class="cell key">Error categories</div>
+      <div class="cell">Distinguish <em>transient</em> errors (network timeout, 503 → retry) from <em>permanent</em> errors (invalid payload, 400 → skip retry immediately, send to DLQ). Retrying permanent errors wastes resources and fills your queue.</div>
+
+      <div class="cell key">Backpressure</div>
+      <div class="cell">If the queue grows faster than workers consume, you have backpressure. Solutions: scale consumers horizontally, implement priority queues, or shed load with circuit breakers on the producer side.</div>
+    </div>
+  </section>
+
+  <!-- ── SECTION 17: IDEMPOTENCY ── -->
+  <section class="section" id="s17">
+    <div class="section-header">
+      <span class="section-badge">17</span>
+      <h2 class="section-title">Idempotency Patterns in Depth</h2>
+    </div>
+
+    <p>
+      <strong>Idempotency</strong> means that running a task once or 100 times produces identical side-effects. This is non-negotiable in any system that retries tasks — and all production task queues do. There are several concrete patterns to achieve it.
+    </p>
+
+    <h3 class="sub-title">Pattern 1 — Idempotency Keys</h3>
+    <p>
+      Assign a unique key to each task when it is created (usually a UUID or a hash of the input). Before doing any work, the handler checks if that key has already been successfully processed. If yes, it returns early without re-doing the work.
+    </p>
+
+    <pre><code><span class="cm"># Python — Idempotency key pattern with Redis</span>
+<span class="kw">import</span> <span class="pkg">redis</span>
+<span class="kw">import</span> <span class="pkg">hashlib</span>
+
+r = redis.<span class="fn">Redis</span>(host=<span class="str">'localhost'</span>, port=<span class="num">6379</span>)
+
+<span class="fn">@app.task</span>(bind=<span class="tp">True</span>, max_retries=<span class="num">5</span>)
+<span class="kw">def</span> <span class="fn">send_verification_email</span>(self, user_id: str, email: str, token: str):
+    <span class="cm"># Build idempotency key from task inputs</span>
+    key = <span class="str">f"idem:verify_email:{user_id}:{token}"</span>
+
+    <span class="cm"># SET NX = set only if Not eXists; EX = expire after 1 hour</span>
+    <span class="cm"># Returns True if we are the FIRST execution, False if already done</span>
+    acquired = r.<span class="fn">set</span>(key, <span class="str">"done"</span>, nx=<span class="tp">True</span>, ex=<span class="num">3600</span>)
+    <span class="kw">if</span> <span class="kw">not</span> acquired:
+        <span class="cm"># Already processed — skip silently (idempotent return)</span>
+        <span class="kw">return</span> {<span class="str">"status"</span>: <span class="str">"already_sent"</span>}
+
+    <span class="cm"># First time — actually send the email</span>
+    <span class="kw">try</span>:
+        <span class="fn">_send_email_via_provider</span>(email, token)
+    <span class="kw">except</span> <span class="tp">Exception</span> <span class="kw">as</span> exc:
+        <span class="cm"># Delete the key so next retry can attempt again</span>
+        r.<span class="fn">delete</span>(key)
+        <span class="kw">raise</span> self.<span class="fn">retry</span>(exc=exc, countdown=<span class="num">60</span> * <span class="num">2</span> ** self.request.retries)
+<span class="lang-tag">Python</span></code></pre>
+
+    <h3 class="sub-title">Pattern 2 — Database Transaction + Upsert</h3>
+    <p>
+      For tasks that write to a database, use <strong>upserts</strong> (INSERT … ON CONFLICT DO NOTHING / DO UPDATE) instead of plain INSERTs. This way, retrying the task simply tries to insert again and silently skips the duplicate.
+    </p>
+
+    <pre><code><span class="cm">-- PostgreSQL — Idempotent email log via upsert</span>
+<span class="cm">-- If the verification_emails row already exists for this token, do nothing</span>
+INSERT INTO verification_emails (token, user_id, sent_at, provider_msg_id)
+VALUES ($1, $2, NOW(), $3)
+ON CONFLICT (token) DO NOTHING;
+
+<span class="cm">-- For updates: ON CONFLICT DO UPDATE</span>
+INSERT INTO user_status (user_id, email_verified, updated_at)
+VALUES ($1, true, NOW())
+ON CONFLICT (user_id) DO UPDATE
+  SET email_verified = EXCLUDED.email_verified,
+      updated_at = EXCLUDED.updated_at;
+<span class="lang-tag">SQL</span></code></pre>
+
+    <h3 class="sub-title">Pattern 3 — Full Transaction Rollback (for complex tasks)</h3>
+    <p>
+      For multi-step tasks (like account deletion) that touch many tables, wrap the entire task in a database transaction. If any step fails, the transaction rolls back completely — leaving the database in a clean state for the next retry attempt.
+    </p>
+
+    <pre><code><span class="cm">// Go — Idempotent multi-step task with full transaction rollback</span>
+<span class="kw">func</span> (h *<span class="tp">AccountHandler</span>) <span class="fn">HandleDeleteAccount</span>(ctx <span class="tp">context.Context</span>, t *asynq.<span class="tp">Task</span>) error {
+    <span class="kw">var</span> p <span class="tp">DeleteAccountPayload</span>
+    json.<span class="fn">Unmarshal</span>(t.<span class="fn">Payload</span>(), &p)
+
+    <span class="cm">// Check if already deleted (idempotency guard)</span>
+    exists, _ := h.db.<span class="fn">UserExists</span>(ctx, p.UserID)
+    <span class="kw">if</span> !exists {
+        <span class="kw">return</span> nil <span class="cm">// already deleted on a previous attempt — ACK cleanly</span>
+    }
+
+    <span class="cm">// Wrap all DB writes in a single transaction</span>
+    <span class="kw">return</span> h.db.<span class="fn">WithTransaction</span>(ctx, <span class="kw">func</span>(tx <span class="tp">DB</span>) error {
+        steps := []<span class="kw">func</span>() error{
+            <span class="kw">func</span>() error { <span class="kw">return</span> tx.<span class="fn">DeleteUserProjects</span>(ctx, p.UserID) },
+            <span class="kw">func</span>() error { <span class="kw">return</span> tx.<span class="fn">DeleteUserSessions</span>(ctx, p.UserID) },
+            <span class="kw">func</span>() error { <span class="kw">return</span> tx.<span class="fn">DeleteUserAssets</span>(ctx, p.UserID) },
+            <span class="kw">func</span>() error { <span class="kw">return</span> tx.<span class="fn">DeleteUserAccount</span>(ctx, p.UserID) },
+        }
+        <span class="kw">for</span> _, step := <span class="kw">range</span> steps {
+            <span class="kw">if</span> err := <span class="fn">step</span>(); err != nil {
+                <span class="kw">return</span> err <span class="cm">// triggers full rollback; task retried from scratch</span>
+            }
+        }
+        <span class="kw">return</span> nil <span class="cm">// all steps succeeded → commit → ACK</span>
+    })
+}
+<span class="lang-tag">Go</span></code></pre>
+
+    <h3 class="sub-title">Pattern 4 — Exactly-Once via SQS FIFO Deduplication</h3>
+    <p>
+      SQS FIFO queues accept a <code>MessageDeduplicationId</code>. Any message with the same ID sent within a 5-minute window is silently dropped. This is broker-level idempotency — the handler never even sees the duplicate.
+    </p>
+
+    <pre><code><span class="cm">// Go — SQS FIFO with content-based deduplication</span>
+client.<span class="fn">SendMessage</span>(ctx, &sqs.<span class="tp">SendMessageInput</span>{
+    QueueUrl:               aws.<span class="fn">String</span>(<span class="str">"https://sqs.us-east-1.amazonaws.com/123/orders.fifo"</span>),
+    MessageBody:            aws.<span class="fn">String</span>(payload),
+    MessageGroupId:         aws.<span class="fn">String</span>(<span class="str">"order-processing"</span>), <span class="cm">// ordering group</span>
+    MessageDeduplicationId: aws.<span class="fn">String</span>(orderID),           <span class="cm">// unique per business event</span>
+})
+<span class="cm">// Sending the same orderID twice within 5 min → second is silently dropped by SQS</span>
+<span class="lang-tag">Go / AWS SQS FIFO</span></code></pre>
+
+    <div class="def-grid">
+      <div class="cell key">Rule of thumb</div>
+      <div class="cell">Always apply <em>at least one</em> of these patterns. For most tasks: idempotency key in Redis (Pattern 1) is the simplest and cheapest. For DB-heavy tasks: upserts (Pattern 2) + transaction (Pattern 3). For SQS workloads: FIFO dedup ID (Pattern 4).</div>
+    </div>
+  </section>
+
+  <!-- ── SECTION 18: RATE LIMITING ── -->
+  <section class="section" id="s18">
+    <div class="section-header">
+      <span class="section-badge">18</span>
+      <h2 class="section-title">Rate Limiting in Workers</h2>
+    </div>
+
+    <p>
+      External APIs impose rate limits. If your workers send 500 emails per second and Resend's limit is 100/second, you'll get flooded with 429 errors, wasted retries, and degraded deliverability. You need to <strong>throttle your workers</strong> to stay within limits.
+    </p>
+
+    <h3 class="sub-title">Two Core Algorithms</h3>
+
+    <div class="def-grid">
+      <div class="cell key">Token Bucket</div>
+      <div class="cell">A "bucket" fills with tokens at a fixed rate (e.g. 100 tokens/second). Each API call consumes one token. If the bucket is empty, the call waits. Allows bursts up to bucket capacity. Redis implementation: <code>INCR</code> + <code>EXPIRE</code>.</div>
+      <div class="cell key">Sliding Window</div>
+      <div class="cell">Count requests in the last N seconds using a sliding time window. More accurate than token bucket for strict rate compliance. Redis implementation: sorted sets with timestamps as scores.</div>
+    </div>
+
+    <h3 class="sub-title">Token Bucket in Python (Redis-backed)</h3>
+    <pre><code><span class="cm"># rate_limiter.py — Redis token bucket implementation</span>
+<span class="kw">import</span> <span class="pkg">time</span>
+<span class="kw">import</span> <span class="pkg">redis</span>
+
+<span class="kw">class</span> <span class="tp">TokenBucketRateLimiter</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, redis_client, key: str, capacity: int, refill_rate: float):
+        self.r = redis_client
+        self.key = key               <span class="cm"># e.g. "ratelimit:resend_emails"</span>
+        self.capacity = capacity     <span class="cm"># max burst (e.g. 100)</span>
+        self.refill_rate = refill_rate  <span class="cm"># tokens per second (e.g. 10)</span>
+
+    <span class="kw">def</span> <span class="fn">acquire</span>(self) -> bool:
+        <span class="cm">"""Returns True if a token was acquired, False if rate limited."""</span>
+        now = time.<span class="fn">time</span>()
+        pipe = self.r.<span class="fn">pipeline</span>()
+
+        <span class="cm"># Lua script ensures atomic read-modify-write (no race conditions)</span>
+        lua_script = <span class="str">"""
+        local key = KEYS[1]
+        local capacity = tonumber(ARGV[1])
+        local refill_rate = tonumber(ARGV[2])
+        local now = tonumber(ARGV[3])
+
+        local bucket = redis.call('HMGET', key, 'tokens', 'last_refill')
+        local tokens = tonumber(bucket[1]) or capacity
+        local last_refill = tonumber(bucket[2]) or now
+
+        -- Refill tokens based on time elapsed
+        local elapsed = now - last_refill
+        tokens = math.min(capacity, tokens + elapsed * refill_rate)
+
+        if tokens >= 1 then
+            tokens = tokens - 1
+            redis.call('HMSET', key, 'tokens', tokens, 'last_refill', now)
+            redis.call('EXPIRE', key, 3600)
+            return 1
+        end
+        return 0
+        """</span>
+        result = self.r.<span class="fn">eval</span>(lua_script, <span class="num">1</span>, self.key, self.capacity, self.refill_rate, now)
+        <span class="kw">return</span> bool(result)
+
+<span class="cm"># Usage inside a Celery task</span>
+limiter = <span class="tp">TokenBucketRateLimiter</span>(r, <span class="str">"ratelimit:resend"</span>, capacity=<span class="num">100</span>, refill_rate=<span class="num">10</span>)
+
+<span class="fn">@app.task</span>(bind=<span class="tp">True</span>, max_retries=<span class="num">10</span>)
+<span class="kw">def</span> <span class="fn">send_email_task</span>(self, email, token):
+    <span class="kw">if</span> <span class="kw">not</span> limiter.<span class="fn">acquire</span>():
+        <span class="cm"># Rate limited — retry after a short delay (not counted as failure)</span>
+        <span class="kw">raise</span> self.<span class="fn">retry</span>(countdown=<span class="num">1</span>, max_retries=<span class="num">60</span>)  <span class="cm"># retry every 1s up to 60 times</span>
+    <span class="fn">_do_send_email</span>(email, token)
+<span class="lang-tag">Python</span></code></pre>
+
+    <h3 class="sub-title">Sliding Window Rate Limiter in Go</h3>
+    <pre><code><span class="cm">// rate/sliding_window.go — Redis sorted-set sliding window</span>
+<span class="kw">package</span> <span class="pkg">rate</span>
+
+<span class="kw">import</span> (
+    <span class="str">"context"</span>
+    <span class="str">"fmt"</span>
+    <span class="str">"time"</span>
+    <span class="str">"github.com/redis/go-redis/v9"</span>
+)
+
+<span class="kw">type</span> <span class="tp">SlidingWindowLimiter</span> <span class="kw">struct</span> {
+    client  *redis.<span class="tp">Client</span>
+    key     string
+    limit   int           <span class="cm">// max requests</span>
+    window  time.<span class="tp">Duration</span> <span class="cm">// time window</span>
+}
+
+<span class="kw">func</span> (l *<span class="tp">SlidingWindowLimiter</span>) <span class="fn">Allow</span>(ctx <span class="tp">context.Context</span>) (bool, error) {
+    now := time.<span class="fn">Now</span>()
+    windowStart := now.<span class="fn">Add</span>(-l.window).<span class="fn">UnixMicro</span>()
+    nowMicro := now.<span class="fn">UnixMicro</span>()
+
+    pipe := l.client.<span class="fn">Pipeline</span>()
+    <span class="cm">// Remove entries older than the window</span>
+    pipe.<span class="fn">ZRemRangeByScore</span>(ctx, l.key, <span class="str">"0"</span>, fmt.<span class="fn">Sprintf</span>(<span class="str">"%d"</span>, windowStart))
+    <span class="cm">// Count entries in current window</span>
+    countCmd := pipe.<span class="fn">ZCard</span>(ctx, l.key)
+    <span class="cm">// Add current request timestamp as a member</span>
+    pipe.<span class="fn">ZAdd</span>(ctx, l.key, redis.<span class="tp">Z</span>{Score: float64(nowMicro), Member: nowMicro})
+    pipe.<span class="fn">Expire</span>(ctx, l.key, l.window*<span class="num">2</span>)
+    pipe.<span class="fn">Exec</span>(ctx)
+
+    count := countCmd.<span class="fn">Val</span>()
+    <span class="kw">return</span> count < int64(l.limit), nil
+}
+
+<span class="cm">// Usage in Asynq handler</span>
+<span class="kw">func</span> (h *<span class="tp">EmailHandler</span>) <span class="fn">HandleSendEmail</span>(ctx <span class="tp">context.Context</span>, t *asynq.<span class="tp">Task</span>) error {
+    allowed, _ := h.limiter.<span class="fn">Allow</span>(ctx)
+    <span class="kw">if</span> !allowed {
+        <span class="cm">// Return a retryable error — asynq will retry with backoff</span>
+        <span class="kw">return</span> fmt.<span class="fn">Errorf</span>(<span class="str">"rate limit exceeded: %w"</span>, asynq.<span class="tp">ErrRetry</span>)
+    }
+    <span class="kw">return</span> h.<span class="fn">doSendEmail</span>(ctx, t)
+}
+<span class="lang-tag">Go</span></code></pre>
+
+    <div class="callout-note callout">
+      <div class="callout-label">Asynq Built-In Rate Limiting</div>
+      <p>Asynq has a native rate limiter interface. Implement <code>asynq.RateLimiter</code> and pass it to <code>asynq.NewServer</code> — the server will automatically pause worker polling when the limit is hit, without needing manual retry logic in your handler.</p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 19: MONITORING ── -->
+  <section class="section" id="s19">
+    <div class="section-header">
+      <span class="section-badge">19</span>
+      <h2 class="section-title">Full Monitoring Setup: Prometheus + Grafana</h2>
+    </div>
+
+    <p>
+      Background tasks fail silently unless you've built observability into the system. The standard production stack is: <strong>Prometheus</strong> (metrics collection &amp; storage) + <strong>Grafana</strong> (dashboard &amp; alerting). Here's the complete setup.
+    </p>
+
+    <h3 class="sub-title">Architecture Overview</h3>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" width="640">
+        <defs>
+          <marker id="m1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e5c07b"/></marker>
+          <marker id="m2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#61afef"/></marker>
+          <marker id="m3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#98c379"/></marker>
+        </defs>
+
+        <rect x="10" y="70" width="130" height="55" rx="5" fill="#2a231c" stroke="#e5c07b" stroke-width="1.2"/>
+        <text x="75" y="93" text-anchor="middle" fill="#e5c07b" font-family="JetBrains Mono" font-size="11">WORKERS</text>
+        <text x="75" y="111" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">/metrics endpoint</text>
+
+        <rect x="10" y="145" width="130" height="40" rx="5" fill="#2a231c" stroke="#e5c07b" stroke-width="1.2"/>
+        <text x="75" y="162" text-anchor="middle" fill="#e5c07b" font-family="JetBrains Mono" font-size="11">API SERVER</text>
+        <text x="75" y="177" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">/metrics endpoint</text>
+
+        <rect x="230" y="80" width="130" height="55" rx="5" fill="#2a231c" stroke="#61afef" stroke-width="1.2"/>
+        <text x="295" y="103" text-anchor="middle" fill="#61afef" font-family="JetBrains Mono" font-size="11">PROMETHEUS</text>
+        <text x="295" y="121" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">scrapes every 15s</text>
+
+        <rect x="450" y="60" width="100" height="40" rx="5" fill="#2a231c" stroke="#98c379" stroke-width="1.2"/>
+        <text x="500" y="85" text-anchor="middle" fill="#98c379" font-family="JetBrains Mono" font-size="11">GRAFANA</text>
+
+        <rect x="450" y="120" width="100" height="40" rx="5" fill="#2a231c" stroke="#e06c75" stroke-width="1.2"/>
+        <text x="500" y="138" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="11">ALERTMANAGER</text>
+        <text x="500" y="153" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">Slack / PagerDuty</text>
+
+        <rect x="590" y="80" width="80" height="40" rx="5" fill="#2a231c" stroke="#c678dd" stroke-width="1.2"/>
+        <text x="630" y="98" text-anchor="middle" fill="#c678dd" font-family="JetBrains Mono" font-size="10">REDIS</text>
+        <text x="630" y="112" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">exporter</text>
+
+        <line x1="142" y1="92" x2="228" y2="100" stroke="#e5c07b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#m1)"/>
+        <line x1="142" y1="162" x2="228" y2="110" stroke="#e5c07b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#m1)"/>
+        <text x="185" y="88" fill="#6b5f52" font-family="JetBrains Mono" font-size="8">scrape</text>
+
+        <line x1="362" y1="96" x2="448" y2="76" stroke="#98c379" stroke-width="1" marker-end="url(#m3)"/>
+        <line x1="362" y1="110" x2="448" y2="132" stroke="#e06c75" stroke-width="1" marker-end="url(#m2)"/>
+
+        <line x1="590" y1="98" x2="362" y2="100" stroke="#c678dd" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#m1)"/>
+        <text x="475" y="92" fill="#6b5f52" font-family="JetBrains Mono" font-size="8">scrape</text>
+      </svg>
+    </div>
+
+    <h3 class="sub-title">Step 1 — Instrument Your Workers</h3>
+    <p>
+      Every worker exposes a <code>/metrics</code> HTTP endpoint in Prometheus text format. The <code>prometheus_client</code> library (Python) or <code>prometheus/client_golang</code> (Go) handles this automatically.
+    </p>
+
+    <pre><code><span class="cm"># Python — Full metrics instrumentation for a worker process</span>
+<span class="kw">from</span> <span class="pkg">prometheus_client</span> <span class="kw">import</span> (
+    Counter, Histogram, Gauge, start_http_server
+)
+<span class="kw">import</span> <span class="pkg">time</span>
+
+<span class="cm"># ── Define metrics ─────────────────────────────────────────────</span>
+TASK_TOTAL = <span class="fn">Counter</span>(
+    <span class="str">'worker_tasks_total'</span>,
+    <span class="str">'Total tasks processed'</span>,
+    [<span class="str">'task_name'</span>, <span class="str">'status'</span>]  <span class="cm"># labels: task_name, status=success|failure</span>
+)
+
+TASK_DURATION = <span class="fn">Histogram</span>(
+    <span class="str">'worker_task_duration_seconds'</span>,
+    <span class="str">'Task processing duration'</span>,
+    [<span class="str">'task_name'</span>],
+    buckets=[.01, .05, .1, .5, 1, 5, 10, 30]  <span class="cm"># histogram bucket boundaries</span>
+)
+
+QUEUE_DEPTH = <span class="fn">Gauge</span>(
+    <span class="str">'worker_queue_depth'</span>,
+    <span class="str">'Current tasks waiting in queue'</span>,
+    [<span class="str">'queue_name'</span>]
+)
+
+RETRY_COUNT = <span class="fn">Counter</span>(
+    <span class="str">'worker_task_retries_total'</span>,
+    <span class="str">'Number of task retries'</span>,
+    [<span class="str">'task_name'</span>]
+)
+
+<span class="cm"># ── Decorator to wrap any task with metrics ────────────────────</span>
+<span class="kw">def</span> <span class="fn">track_metrics</span>(task_name: str):
+    <span class="kw">def</span> <span class="fn">decorator</span>(func):
+        <span class="kw">def</span> <span class="fn">wrapper</span>(*args, **kwargs):
+            start = time.<span class="fn">time</span>()
+            <span class="kw">try</span>:
+                result = <span class="fn">func</span>(*args, **kwargs)
+                TASK_TOTAL.<span class="fn">labels</span>(task_name=task_name, status=<span class="str">"success"</span>).<span class="fn">inc</span>()
+                <span class="kw">return</span> result
+            <span class="kw">except</span> <span class="tp">Exception</span> <span class="kw">as</span> e:
+                TASK_TOTAL.<span class="fn">labels</span>(task_name=task_name, status=<span class="str">"failure"</span>).<span class="fn">inc</span>()
+                <span class="kw">raise</span>
+            <span class="kw">finally</span>:
+                TASK_DURATION.<span class="fn">labels</span>(task_name=task_name).<span class="fn">observe</span>(time.<span class="fn">time</span>() - start)
+        <span class="kw">return</span> wrapper
+    <span class="kw">return</span> decorator
+
+<span class="cm"># Start /metrics server on port 9090 (Prometheus scrapes this)</span>
+<span class="fn">start_http_server</span>(<span class="num">9090</span>)
+
+<span class="cm"># ── Apply to task ──────────────────────────────────────────────</span>
+<span class="fn">@app.task</span>(bind=<span class="tp">True</span>, max_retries=<span class="num">5</span>)
+<span class="fn">@track_metrics</span>(<span class="str">"send_verification_email"</span>)
+<span class="kw">def</span> <span class="fn">send_verification_email</span>(self, user_id, email, token):
+    <span class="kw">if</span> self.request.retries > <span class="num">0</span>:
+        RETRY_COUNT.<span class="fn">labels</span>(task_name=<span class="str">"send_verification_email"</span>).<span class="fn">inc</span>()
+    <span class="fn">_do_send_email</span>(email, token)
+<span class="lang-tag">Python</span></code></pre>
+
+    <h3 class="sub-title">Step 2 — Prometheus Configuration</h3>
+    <pre><code><span class="cm"># prometheus.yml — Scrape config</span>
+global:
+  scrape_interval: <span class="num">15</span>s
+  evaluation_interval: <span class="num">15</span>s
+
+rule_files:
+  - <span class="str">"alert_rules.yml"</span>
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [<span class="str">"alertmanager:9093"</span>]
+
+scrape_configs:
+  - job_name: <span class="str">"celery_workers"</span>
+    static_configs:
+      - targets:
+          - <span class="str">"worker-1:9090"</span>
+          - <span class="str">"worker-2:9090"</span>
+          - <span class="str">"worker-3:9090"</span>
+
+  - job_name: <span class="str">"redis"</span>
+    static_configs:
+      - targets: [<span class="str">"redis-exporter:9121"</span>]  <span class="cm"># oliver006/redis_exporter</span>
+
+  - job_name: <span class="str">"api_server"</span>
+    static_configs:
+      - targets: [<span class="str">"api:8080"</span>]
+<span class="lang-tag">YAML</span></code></pre>
+
+    <h3 class="sub-title">Step 3 — Alert Rules</h3>
+    <pre><code><span class="cm"># alert_rules.yml — Fire alerts when things go wrong</span>
+groups:
+  - name: task_queue_alerts
+    rules:
+
+      <span class="cm"># Alert if queue depth stays high for 5 minutes</span>
+      - alert: HighQueueDepth
+        expr: worker_queue_depth{queue_name="email"} > <span class="num">1000</span>
+        <span class="kw">for</span>: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: <span class="str">"Email queue backed up ({{ $value }} tasks)"</span>
+          description: <span class="str">"Queue depth has been above 1000 for 5+ minutes. Scale workers."</span>
+
+      <span class="cm"># Alert if failure rate > 10% over last 5 minutes</span>
+      - alert: HighTaskFailureRate
+        expr: |
+          rate(worker_tasks_total{status="failure"}[5m])
+          / rate(worker_tasks_total[5m]) > <span class="num">0.1</span>
+        <span class="kw">for</span>: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: <span class="str">"Task failure rate above 10%"</span>
+
+      <span class="cm"># Alert if a worker process goes down (no scrape for 1 min)</span>
+      - alert: WorkerDown
+        expr: up{job="celery_workers"} == <span class="num">0</span>
+        <span class="kw">for</span>: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: <span class="str">"Worker {{ $labels.instance }} is down"</span>
+<span class="lang-tag">YAML</span></code></pre>
+
+    <h3 class="sub-title">Step 4 — Key Grafana Panels to Build</h3>
+    <table class="compare">
+      <thead>
+        <tr><th>Panel</th><th>Query (PromQL)</th><th>Alert Threshold</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Queue Depth (gauge)</td>
+          <td><code>worker_queue_depth{queue_name="email"}</code></td>
+          <td>&gt; 1000 → warn; &gt; 5000 → critical</td>
+        </tr>
+        <tr>
+          <td>Task Success Rate (%)</td>
+          <td><code>rate(worker_tasks_total{status="success"}[5m]) / rate(worker_tasks_total[5m]) * 100</code></td>
+          <td>&lt; 95% → warn; &lt; 90% → critical</td>
+        </tr>
+        <tr>
+          <td>p95 Task Latency</td>
+          <td><code>histogram_quantile(0.95, rate(worker_task_duration_seconds_bucket[5m]))</code></td>
+          <td>&gt; 30s → warn</td>
+        </tr>
+        <tr>
+          <td>Retry Rate</td>
+          <td><code>rate(worker_task_retries_total[5m])</code></td>
+          <td>Sudden spike → external service issue</td>
+        </tr>
+        <tr>
+          <td>Worker Count (active)</td>
+          <td><code>count(up{job="celery_workers"} == 1)</code></td>
+          <td>&lt; min_workers → critical</td>
+        </tr>
+        <tr>
+          <td>Redis Memory Usage</td>
+          <td><code>redis_memory_used_bytes / redis_memory_max_bytes * 100</code></td>
+          <td>&gt; 80% → warn</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout-note callout">
+      <div class="callout-label">Redis Exporter</div>
+      <p>Run <a href="https://github.com/oliver006/redis_exporter" style="color:inherit">oliver006/redis_exporter</a> as a sidecar. It exposes 100+ Redis metrics to Prometheus — queue lengths, memory, connected clients, keyspace hits/misses — zero code required.</p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 13 ── -->
+  <section class="section" id="s13">
+    <div class="section-header">
+      <span class="section-badge">13</span>
+      <h2 class="section-title">Best Practices</h2>
+    </div>
+
+    <h3 class="sub-title">1 · Keep Tasks Small and Focused</h3>
+    <p>
+      A single task should do <strong>one thing</strong>. Don't bundle email sending + DB cleanup + analytics reporting into a single task. If one step fails, you retry the whole thing. Small tasks = precise retries, easier debugging, better scalability.
+    </p>
+    <p>
+      If multiple things depend on each other, use <strong>chain tasks</strong> (parent–child). If they're independent, run them in parallel.
+    </p>
+
+    <h3 class="sub-title">2 · Avoid Long-Running Tasks</h3>
+    <p>
+      If a task takes minutes to run, break it into smaller chunks. Long tasks consume worker threads, are harder to retry correctly, and are prone to visibility timeout expiry. A task that takes 10 minutes → 10 tasks that each take 1 minute.
+    </p>
+
+    <h3 class="sub-title">3 · Robust Error Handling &amp; Logging</h3>
+    <p>
+      Unlike a web request where you can return a 500 and the client sees it, <strong>background tasks fail silently</strong> unless you've built observability in. Every handler must:
+    </p>
+    <ul class="lecture-list">
+      <li>Catch all exceptions — don't let unhandled panics/exceptions kill the worker silently.</li>
+      <li>Log the task ID, user ID, error type, and full stack trace on failure.</li>
+      <li>Distinguish transient vs permanent errors — use <code>SkipRetry</code> (Asynq) or <code>raises=(SkipRetry,)</code> (Celery) for unrecoverable errors.</li>
+      <li>Send critical failures to an alerting channel (Slack, PagerDuty).</li>
+    </ul>
+
+    <h3 class="sub-title">4 · Monitor Queue Length &amp; Worker Health</h3>
+    <p>
+      Set up <strong>alerting thresholds</strong>: if queue depth > 10,000 → trigger auto-scaling or alert engineers. If a worker pod restarts more than 3 times in 5 minutes → alert. Use Grafana dashboards backed by Prometheus (or CloudWatch for SQS).
+    </p>
+
+    <h3 class="sub-title">5 · Use Dead Letter Queues</h3>
+    <p>
+      Never let tasks disappear silently. Configure a DLQ so that tasks exhausting all retries land somewhere inspectable. Regularly audit the DLQ — recurring failures there indicate a systemic bug.
+    </p>
+
+    <div class="callout">
+      <div class="callout-label">Summary Checklist</div>
+      <p>
+        ☑ Task is idempotent &nbsp; ☑ Handler has try/catch &nbsp; ☑ Errors are logged with context &nbsp; ☑ Prometheus metrics emitted &nbsp; ☑ DLQ configured &nbsp; ☑ Exponential backoff enabled &nbsp; ☑ Visibility timeout set appropriately &nbsp; ☑ Workers are stateless (horizontally scalable)
+      </p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 14 ── -->
+  <section class="section" id="s14">
+    <div class="section-header">
+      <span class="section-badge">14</span>
+      <h2 class="section-title">Framework Comparison</h2>
+    </div>
+
+    <table class="compare">
+      <thead>
+        <tr><th>Framework</th><th>Language</th><th>Broker</th><th>Retries</th><th>Scheduling</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Celery</strong></td>
+          <td>Python</td>
+          <td>Redis, RabbitMQ</td>
+          <td>✓ Exponential backoff</td>
+          <td>✓ Celery Beat</td>
+          <td>Most mature Python solution. Large ecosystem.</td>
+        </tr>
+        <tr>
+          <td><strong>BullMQ</strong></td>
+          <td>Node.js</td>
+          <td>Redis</td>
+          <td>✓ Built-in</td>
+          <td>✓ Repeatable jobs</td>
+          <td>TypeScript-first. Good UI dashboard (Bull Board).</td>
+        </tr>
+        <tr>
+          <td><strong>Asynq</strong></td>
+          <td>Go</td>
+          <td>Redis Streams</td>
+          <td>✓ Configurable</td>
+          <td>✓ Built-in Scheduler</td>
+          <td>Lightweight, idiomatic Go. Includes web UI (asynqmon).</td>
+        </tr>
+        <tr>
+          <td><strong>Sidekiq</strong></td>
+          <td>Ruby</td>
+          <td>Redis</td>
+          <td>✓ Built-in</td>
+          <td>✓ Sidekiq-Cron</td>
+          <td>De facto Ruby standard. Excellent web UI.</td>
+        </tr>
+        <tr>
+          <td><strong>Temporal</strong></td>
+          <td>Polyglot</td>
+          <td>Own server</td>
+          <td>✓ Durable workflows</td>
+          <td>✓ Built-in</td>
+          <td>Heavy but enterprise-grade. Full workflow orchestration, not just tasks.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <hr class="divider">
+
+    <div class="callout">
+      <div class="callout-label">Recap</div>
+      <p>
+        Background tasks are essential for any production backend. They decouple your API's reliability from external services, prevent timeout-induced failures, enable automatic retries, and allow you to horizontally scale processing independently of your API servers. The patterns here — producer/consumer, exponential backoff, visibility timeout, idempotency, monitoring — apply regardless of language or framework. Master these, and you're building production-grade backends.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 20: TEMPORAL ── -->
+  <section class="section" id="s20">
+    <div class="section-header">
+      <span class="section-badge">20</span>
+      <h2 class="section-title">Temporal &amp; Workflow Orchestration</h2>
+    </div>
+
+    <p>
+      Standard task queues (Celery, BullMQ, Asynq) are great for <em>independent tasks</em> — fire and forget, retry on failure. But when you have <strong>long-running, multi-step workflows</strong> with complex dependencies, conditional branching, human approval steps, or compensation logic (saga pattern), you need something more powerful: a <strong>workflow orchestration engine</strong>.
+    </p>
+
+    <div class="callout">
+      <div class="callout-label">The Core Problem Temporal Solves</div>
+      <p>
+        Imagine a payment workflow: charge card → reserve inventory → send confirmation email → notify warehouse → update loyalty points. Each step can fail independently. If step 4 fails, do you refund step 1? How do you resume from step 4 after a server crash? How do you wait for a human to approve step 3 before continuing? This is where task queues break down and workflow engines shine.
+      </p>
+    </div>
+
+    <h3 class="sub-title">Task Queue vs Workflow Engine</h3>
+    <table class="compare">
+      <thead>
+        <tr><th>Capability</th><th>Task Queue (Celery/Asynq)</th><th>Temporal</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Individual task retries</strong></td><td>✓ Built-in</td><td>✓ Built-in</td></tr>
+        <tr><td><strong>Multi-step workflows</strong></td><td>Manual — you chain tasks yourself</td><td>Native — workflows are first-class</td></tr>
+        <tr><td><strong>Workflow state persistence</strong></td><td>You manage it (DB records, flags)</td><td>Automatic — entire execution history persisted</td></tr>
+        <tr><td><strong>Crash recovery</strong></td><td>Retry from start of task</td><td>Resume from exact step where crash occurred</td></tr>
+        <tr><td><strong>Compensation / rollback</strong></td><td>Manual code</td><td>Native saga pattern support</td></tr>
+        <tr><td><strong>Long-running (days/months)</strong></td><td>Hard — visibility timeouts, connection limits</td><td>Native — timers can fire after months</td></tr>
+        <tr><td><strong>Human-in-the-loop</strong></td><td>Very difficult</td><td>Native signals &amp; queries</td></tr>
+        <tr><td><strong>Operational complexity</strong></td><td>Low</td><td>High — requires Temporal server cluster</td></tr>
+        <tr><td><strong>Languages</strong></td><td>Language-specific</td><td>Go, Python, Java, TypeScript, .NET</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-title">Core Temporal Concepts</h3>
+    <div class="def-grid">
+      <div class="cell key">Workflow</div>
+      <div class="cell">A durable function that orchestrates the entire business process. Written as regular code but Temporal serializes every step. If the server crashes, execution resumes exactly where it left off.</div>
+
+      <div class="cell key">Activity</div>
+      <div class="cell">An individual unit of work — equivalent to a Celery task. Has its own retry policy, timeout, and heartbeat. Activities interact with the outside world (DB, external APIs).</div>
+
+      <div class="cell key">Worker</div>
+      <div class="cell">A process that polls the Temporal server for workflow/activity tasks and executes them. Same concept as Celery workers.</div>
+
+      <div class="cell key">Signal</div>
+      <div class="cell">An external event sent into a running workflow. E.g. "human approved payment" → workflow resumes. Enables human-in-the-loop patterns.</div>
+
+      <div class="cell key">Query</div>
+      <div class="cell">Read the current state of a running workflow without affecting it. E.g. "what step is this order on?"</div>
+
+      <div class="cell key">Event History</div>
+      <div class="cell">Temporal persists every single event in a workflow's lifetime. This is how it achieves crash recovery — on restart it replays the history to restore state.</div>
+    </div>
+
+    <h3 class="sub-title">Example: Video Processing Workflow in Go</h3>
+    <p>
+      The same video upload chain task we saw in Section 9, now implemented with Temporal:
+    </p>
+
+    <pre><code><span class="cm">// workflows/video_processing.go</span>
+<span class="kw">package</span> <span class="pkg">workflows</span>
+
+<span class="kw">import</span> (
+    <span class="str">"time"</span>
+    <span class="str">"go.temporal.io/sdk/workflow"</span>
+    <span class="str">"go.temporal.io/sdk/activity"</span>
+    <span class="str">"myapp/activities"</span>
+)
+
+<span class="cm">// VideoProcessingWorkflow — orchestrates the entire pipeline</span>
+<span class="cm">// Temporal persists every step — crash at any point = resume here</span>
+<span class="kw">func</span> <span class="fn">VideoProcessingWorkflow</span>(ctx workflow.<span class="tp">Context</span>, videoID string) error {
+    <span class="cm">// Activity options — each step has its own retry policy</span>
+    actOpts := workflow.<span class="tp">ActivityOptions</span>{
+        StartToCloseTimeout: <span class="num">10</span> * time.<span class="tp">Minute</span>,
+        RetryPolicy: &temporal.<span class="tp">RetryPolicy</span>{
+            MaxAttempts:        <span class="num">3</span>,
+            InitialInterval:    time.<span class="tp">Minute</span>,
+            BackoffCoefficient: <span class="num">2.0</span>,
+        },
+    }
+    ctx = workflow.<span class="fn">WithActivityOptions</span>(ctx, actOpts)
+
+    <span class="cm">// Step 1: Encode video to multiple resolutions</span>
+    <span class="cm">// If server crashes here, workflow resumes from step 1 on restart</span>
+    <span class="kw">var</span> encodedPath string
+    <span class="kw">if</span> err := workflow.<span class="fn">ExecuteActivity</span>(ctx, activities.<span class="fn">EncodeVideo</span>, videoID).<span class="fn">Get</span>(ctx, &encodedPath); err != nil {
+        <span class="kw">return</span> err <span class="cm">// step 1 failed all retries — workflow fails</span>
+    }
+
+    <span class="cm">// Step 2 + 3: Thumbnail generation AND transcription in parallel</span>
+    thumbFuture := workflow.<span class="fn">ExecuteActivity</span>(ctx, activities.<span class="fn">GenerateThumbnails</span>, encodedPath)
+    transcriptFuture := workflow.<span class="fn">ExecuteActivity</span>(ctx, activities.<span class="fn">GenerateTranscription</span>, encodedPath)
+
+    <span class="cm">// Wait for both — if either fails, the workflow fails (with its own retries first)</span>
+    <span class="kw">if</span> err := thumbFuture.<span class="fn">Get</span>(ctx, nil); err != nil { <span class="kw">return</span> err }
+    <span class="kw">if</span> err := transcriptFuture.<span class="fn">Get</span>(ctx, nil); err != nil { <span class="kw">return</span> err }
+
+    <span class="cm">// Step 4: Process thumbnails (depends on step 2 completing)</span>
+    <span class="kw">if</span> err := workflow.<span class="fn">ExecuteActivity</span>(ctx, activities.<span class="fn">ProcessThumbnailImages</span>, videoID).<span class="fn">Get</span>(ctx, nil); err != nil {
+        <span class="kw">return</span> err
+    }
+
+    <span class="cm">// Step 5: Notify user their video is ready</span>
+    <span class="kw">return</span> workflow.<span class="fn">ExecuteActivity</span>(ctx, activities.<span class="fn">NotifyUserVideoReady</span>, videoID).<span class="fn">Get</span>(ctx, nil)
+}
+<span class="lang-tag">Go / Temporal</span></code></pre>
+
+    <h3 class="sub-title">Example: Human-in-the-Loop with Signals (Go)</h3>
+    <pre><code><span class="cm">// workflows/payment_approval.go — Wait for human signal</span>
+<span class="kw">func</span> <span class="fn">PaymentApprovalWorkflow</span>(ctx workflow.<span class="tp">Context</span>, orderID string) error {
+    <span class="cm">// Register a signal channel — external events can wake this workflow</span>
+    approvalCh := workflow.<span class="fn">GetSignalChannel</span>(ctx, <span class="str">"approval-signal"</span>)
+
+    <span class="cm">// Step 1: Process payment details</span>
+    workflow.<span class="fn">ExecuteActivity</span>(ctx, activities.<span class="fn">PreparePayment</span>, orderID).<span class="fn">Get</span>(ctx, nil)
+
+    <span class="cm">// Step 2: Wait up to 24 hours for human approval</span>
+    <span class="cm">// Temporal pauses here — no CPU/memory consumed while waiting</span>
+    <span class="kw">var</span> approved bool
+    selector := workflow.<span class="fn">NewSelector</span>(ctx)
+    selector.<span class="fn">AddReceive</span>(approvalCh, <span class="kw">func</span>(ch workflow.<span class="tp">ReceiveChannel</span>, more bool) {
+        ch.<span class="fn">Receive</span>(ctx, &approved)
+    })
+    selector.<span class="fn">AddFuture</span>(workflow.<span class="fn">NewTimer</span>(ctx, <span class="num">24</span>*time.<span class="tp">Hour</span>), <span class="kw">func</span>(f workflow.<span class="tp">Future</span>) {
+        approved = <span class="kw">false</span> <span class="cm">// timeout — auto-reject</span>
+    })
+    selector.<span class="fn">Select</span>(ctx)
+
+    <span class="kw">if</span> !approved {
+        <span class="cm">// Saga: compensate previous steps</span>
+        workflow.<span class="fn">ExecuteActivity</span>(ctx, activities.<span class="fn">RefundPayment</span>, orderID).<span class="fn">Get</span>(ctx, nil)
+        <span class="kw">return</span> nil
+    }
+    <span class="kw">return</span> workflow.<span class="fn">ExecuteActivity</span>(ctx, activities.<span class="fn">FinalizePayment</span>, orderID).<span class="fn">Get</span>(ctx, nil)
+}
+
+<span class="cm">// To send approval signal from your API handler:</span>
+<span class="kw">func</span> <span class="fn">ApprovePaymentHandler</span>(c *gin.<span class="tp">Context</span>) {
+    orderID := c.<span class="fn">Param</span>(<span class="str">"id"</span>)
+    temporalClient.<span class="fn">SignalWorkflow</span>(c, orderID, <span class="str">""</span>, <span class="str">"approval-signal"</span>, <span class="kw">true</span>)
+    c.<span class="fn">JSON</span>(<span class="num">200</span>, gin.<span class="tp">H</span>{<span class="str">"status"</span>: <span class="str">"approved"</span>})
+}
+<span class="lang-tag">Go / Temporal</span></code></pre>
+
+    <div class="callout-note callout">
+      <div class="callout-label">When to use Temporal vs a regular task queue</div>
+      <p>
+        Use a regular task queue (Celery/Asynq/BullMQ) for <strong>simple, independent tasks</strong> — emails, notifications, image processing. Reach for Temporal when you have <strong>multi-step business workflows</strong> with compensation logic, long waiting periods, human approvals, or when you need full execution history for compliance/debugging. Temporal has higher operational overhead (you run a Temporal server cluster), so don't use it unless you need it.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // Highlight active sidebar item on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('.sidebar-nav li');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navLinks.forEach(li => li.classList.remove('active'));
+        const idx = [...sections].indexOf(entry.target);
+        if (navLinks[idx]) navLinks[idx].classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+
+  sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>

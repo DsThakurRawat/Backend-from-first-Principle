@@ -1,0 +1,1835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backend Concurrency &amp; Parallelism — Field Manual</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&family=Source+Sans+3:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ede4d3;
+    --bg-sidebar: #e6dbc8;
+    --text: #3a2a1a;
+    --text-light: #6b5b4b;
+    --text-lighter: #8a7a6a;
+    --accent: #b5281e;
+    --accent-dark: #8f1f17;
+    --code-bg: #3a2a1a;
+    --code-text: #ede4d3;
+    --border: #c9b99a;
+    --border-light: #d6c8ad;
+    --highlight: #f5e6c8;
+    --link: #b5281e;
+    --badge-bg: #b5281e;
+    --badge-text: #fff;
+    --diagram-bg: #f7f0e3;
+    --diagram-stroke: #3a2a1a;
+    --diagram-fill-cpu: #b5281e;
+    --diagram-fill-io: #d6c8ad;
+    --diagram-fill-wait: #e6dbc8;
+    --green: #2d6a4f;
+    --blue: #1d4e89;
+    --orange: #d4740e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    font-size: 17px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Serif 4', 'Georgia', serif;
+    line-height: 1.8;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    height: 100vh;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    padding: 2.5rem 1.5rem;
+    overflow-y: auto;
+    z-index: 100;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .sidebar-title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 900;
+    font-size: 1.3rem;
+    line-height: 1.3;
+    color: var(--text);
+    margin-bottom: 0.2rem;
+  }
+
+  .sidebar-title span {
+    color: var(--accent);
+  }
+
+  .sidebar-subtitle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-lighter);
+    margin-bottom: 2rem;
+  }
+
+  .toc-list {
+    list-style: none;
+  }
+
+  .toc-item {
+    margin-bottom: 0.15rem;
+  }
+
+  .toc-link {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.4rem 0.5rem;
+    text-decoration: none;
+    color: var(--text);
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 400;
+    border-radius: 4px;
+    transition: background 0.2s, color 0.2s;
+    line-height: 1.4;
+  }
+
+  .toc-link:hover {
+    background: rgba(181, 40, 30, 0.08);
+    color: var(--accent);
+  }
+
+  .toc-link .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--accent);
+    min-width: 1.3rem;
+  }
+
+  .toc-arrow {
+    color: var(--text-lighter);
+    font-size: 0.6rem;
+    margin-right: -0.2rem;
+    transition: transform 0.2s;
+  }
+
+  .toc-link:hover .toc-arrow {
+    transform: translateX(2px);
+  }
+
+  /* ── Main Content ── */
+  .main {
+    margin-left: 280px;
+    flex: 1;
+    max-width: 820px;
+    padding: 3rem 4rem 6rem 4rem;
+  }
+
+  .chapter-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.8rem;
+    font-weight: 500;
+  }
+
+  h1 {
+    font-family: 'Playfair Display', serif;
+    font-weight: 900;
+    font-size: 3rem;
+    line-height: 1.15;
+    color: var(--text);
+    margin-bottom: 1.5rem;
+  }
+
+  .intro {
+    font-size: 1.05rem;
+    color: var(--text-light);
+    line-height: 1.9;
+    margin-bottom: 2.5rem;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 3rem 0;
+  }
+
+  /* ── Section Headers ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-bottom: 1.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .section-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    background: var(--badge-bg);
+    color: var(--badge-text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .section-header h2 {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 1.7rem;
+    line-height: 1.3;
+    color: var(--text);
+  }
+
+  h3 {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 1.25rem;
+    color: var(--text);
+    margin-top: 2.2rem;
+    margin-bottom: 0.8rem;
+  }
+
+  h4 {
+    font-family: 'Source Sans 3', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text);
+    margin-top: 1.8rem;
+    margin-bottom: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  p {
+    margin-bottom: 1.1rem;
+  }
+
+  strong {
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  em {
+    font-style: italic;
+  }
+
+  a {
+    color: var(--link);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+
+  a:hover {
+    color: var(--accent-dark);
+  }
+
+  /* ── Code Blocks ── */
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    background: rgba(58, 42, 26, 0.08);
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    color: var(--text);
+  }
+
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 1.5rem 1.8rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2rem 0 1.8rem 0;
+    line-height: 1.7;
+    position: relative;
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+    color: var(--code-text);
+    font-size: 0.8rem;
+  }
+
+  .code-label {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.8rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #8a7a6a;
+    background: rgba(255,255,255,0.06);
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+  }
+
+  /* syntax colors inside pre */
+  .kw { color: #e07a5f; }     /* keywords */
+  .fn { color: #81b29a; }     /* functions */
+  .str { color: #f2cc8f; }    /* strings */
+  .cm { color: #7a6a5a; font-style: italic; }  /* comments */
+  .num { color: #e8a87c; }    /* numbers */
+  .type { color: #8ecae6; }   /* types */
+  .op { color: #ccc; }        /* operators */
+
+  /* ── Callout / Key Concept Boxes ── */
+  .callout {
+    background: var(--highlight);
+    border-left: 4px solid var(--accent);
+    padding: 1.2rem 1.5rem;
+    margin: 1.5rem 0;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .callout-title {
+    font-family: 'Source Sans 3', sans-serif;
+    font-weight: 700;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+  }
+
+  .callout p {
+    margin-bottom: 0.4rem;
+    font-size: 0.95rem;
+  }
+
+  .callout p:last-child {
+    margin-bottom: 0;
+  }
+
+  /* ── Diagram Containers ── */
+  .diagram-container {
+    background: var(--diagram-bg);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1.8rem 0;
+    overflow-x: auto;
+  }
+
+  .diagram-caption {
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 0.78rem;
+    color: var(--text-lighter);
+    text-align: center;
+    margin-top: 0.8rem;
+    font-style: italic;
+  }
+
+  .diagram-container svg {
+    display: block;
+    margin: 0 auto;
+  }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+    font-size: 0.92rem;
+  }
+
+  th {
+    font-family: 'Source Sans 3', sans-serif;
+    font-weight: 700;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    text-align: left;
+    padding: 0.8rem 1rem;
+    border-bottom: 2px solid var(--text);
+    color: var(--text);
+  }
+
+  td {
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: top;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* ── Reference Links ── */
+  .ref-box {
+    background: rgba(58, 42, 26, 0.04);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.3rem;
+    margin: 1.5rem 0;
+    font-size: 0.88rem;
+  }
+
+  .ref-box-title {
+    font-family: 'Source Sans 3', sans-serif;
+    font-weight: 700;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-lighter);
+    margin-bottom: 0.4rem;
+  }
+
+  .ref-box a {
+    display: block;
+    margin-bottom: 0.2rem;
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 0.85rem;
+  }
+
+  /* ── Lists ── */
+  ul, ol {
+    padding-left: 1.5rem;
+    margin-bottom: 1.2rem;
+  }
+
+  li {
+    margin-bottom: 0.4rem;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 1100px) {
+    .main {
+      padding: 2.5rem 2.5rem 5rem 2.5rem;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .sidebar {
+      position: relative;
+      width: 100%;
+      height: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      padding: 1.5rem;
+    }
+    .main {
+      margin-left: 0;
+      padding: 2rem 1.5rem 4rem 1.5rem;
+    }
+    body {
+      flex-direction: column;
+    }
+    h1 { font-size: 2.2rem; }
+    pre { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-title">Concurrency <span>/</span> the<br>backend lens</div>
+  <div class="sidebar-subtitle">Field Manual · V1</div>
+
+  <ul class="toc-list">
+    <li class="toc-item"><a class="toc-link" href="#s01"><span class="toc-arrow">›</span> <span class="num">01</span> Why Concurrency Matters</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s02"><span class="toc-arrow">›</span> <span class="num">02</span> The Cost of Sitting Idle</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s03"><span class="toc-arrow">›</span> <span class="num">03</span> IO-Bound vs CPU-Bound</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s04"><span class="toc-arrow">›</span> <span class="num">04</span> Concurrency vs Parallelism</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s05"><span class="toc-arrow">›</span> <span class="num">05</span> OS Threads</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s06"><span class="toc-arrow">›</span> <span class="num">06</span> Thread Overhead &amp; Context Switching</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s07"><span class="toc-arrow">›</span> <span class="num">07</span> The Event Loop Model</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s08"><span class="toc-arrow">›</span> <span class="num">08</span> Async/Await as a State Machine</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s09"><span class="toc-arrow">›</span> <span class="num">09</span> Go Routines &amp; Virtual Threads</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s10"><span class="toc-arrow">›</span> <span class="num">10</span> The M:N Scheduler</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s11"><span class="toc-arrow">›</span> <span class="num">11</span> Race Conditions &amp; Shared State</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s12"><span class="toc-arrow">›</span> <span class="num">12</span> Locks, Mutexes &amp; Channels</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s13"><span class="toc-arrow">›</span> <span class="num">13</span> Choosing the Right Model</a></li>
+    <li class="toc-item"><a class="toc-link" href="#s14"><span class="toc-arrow">›</span> <span class="num">14</span> Further Reading</a></li>
+  </ul>
+</nav>
+
+<!-- ═══════════════════ MAIN ═══════════════════ -->
+<main class="main">
+
+  <div class="chapter-label">Chapter · Backend Systems</div>
+
+  <h1>Mastering Concurrency &amp; Parallelism</h1>
+
+  <p class="intro">
+    Every backend system you will ever build shares one non-negotiable requirement: it must handle multiple things at once. A web server that can only process one request at a time forces every other user to wait — and that simply doesn't work in production. This guide builds the complete mental model from the ground up — from raw CPU cycles and IO operations, through OS threads and event loops, to modern concurrency primitives like goroutines and <code>async/await</code>. Everything is grounded in practical backend code using <strong>Go</strong> and <strong>Python</strong>.
+  </p>
+
+  <hr>
+
+  <!-- ═══════════════ 01 ═══════════════ -->
+  <section id="s01">
+    <div class="section-header">
+      <span class="section-badge">01</span>
+      <h2>Why Concurrency Matters</h2>
+    </div>
+
+    <p>
+      When we talk about a "backend application" in this context, we mean an HTTP-based web server — a process running on a machine, listening on a port, receiving requests from browsers and other clients, and sending responses back.
+    </p>
+
+    <p>
+      If your server can only process <strong>one request at a time</strong>, then every other user — potentially thousands of them — must either wait in line or receive an error. That is an impossible situation for any real production application.
+    </p>
+
+    <div class="callout">
+      <div class="callout-title">Key Insight</div>
+      <p>Understanding how your server does multiple things at once is not just "nice to know" — it shapes how you debug issues, structure your application, and make architectural decisions.</p>
+    </div>
+
+    <p>
+      Most of us learn keywords like <code>async</code>, <code>await</code>, and <code>threading</code> from our programming language's documentation. We know they "make things concurrent." But we rarely understand what these keywords <em>actually do</em> behind the scenes — at a mechanical level, what happens in the CPU and the operating system.
+    </p>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 02 ═══════════════ -->
+  <section id="s02">
+    <div class="section-header">
+      <span class="section-badge">02</span>
+      <h2>The Cost of Sitting Idle</h2>
+    </div>
+
+    <p>
+      Let's start with a concrete scenario. You have a browser making a request to your backend. The backend needs to query a database, wait for the response, and return data to the client. That's the typical lifecycle of an API call.
+    </p>
+
+    <h3>How long does a database query take?</h3>
+
+    <p>
+      The waiting time depends on where your database lives relative to your server:
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Scenario</th>
+          <th>Latency</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Localhost</strong></td>
+          <td>1–2 ms</td>
+          <td>Server and database on the same machine</td>
+        </tr>
+        <tr>
+          <td><strong>Same region, different AZ</strong></td>
+          <td>20–30 ms</td>
+          <td>Typical production setup (e.g. AWS us-east-1a → us-east-1b)</td>
+        </tr>
+        <tr>
+          <td><strong>Cross-region</strong></td>
+          <td>90–100 ms</td>
+          <td>Database in a geographically distant region</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      During that waiting time — whether 2 ms or 100 ms — if your server is processing synchronously (one request at a time, line by line), your CPU is doing <strong>absolutely nothing</strong>. It is completely idle.
+    </p>
+
+    <h3>Quantifying the waste</h3>
+
+    <p>
+      A modern CPU executes roughly <strong>3 billion instructions per second</strong>, which is about <strong>3 million instructions per millisecond</strong>. If your server sits idle for 100 ms waiting on a database response, it could have executed <strong>300 million instructions</strong> — but instead it executed zero.
+    </p>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg">
+        <!-- Background -->
+        <rect x="40" y="30" width="620" height="45" rx="4" fill="#e6dbc8" stroke="#c9b99a"/>
+        <text x="50" y="18" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a" letter-spacing="0.1em" text-transform="uppercase">SYNCHRONOUS SERVER — SINGLE REQUEST</text>
+        <!-- CPU work -->
+        <rect x="40" y="30" width="60" height="45" rx="4" fill="#b5281e" opacity="0.85"/>
+        <text x="70" y="57" font-family="Source Sans 3, sans-serif" font-size="11" fill="#fff" text-anchor="middle">CPU</text>
+        <!-- Idle wait -->
+        <rect x="100" y="30" width="460" height="45" rx="0" fill="#d6c8ad" stroke="#c9b99a" stroke-dasharray="4 2"/>
+        <text x="330" y="57" font-family="Source Sans 3, sans-serif" font-size="11" fill="#6b5b4b" text-anchor="middle">⏳  IDLE — waiting for DB response (100 ms)</text>
+        <!-- CPU work again -->
+        <rect x="560" y="30" width="100" height="45" rx="4" fill="#b5281e" opacity="0.85"/>
+        <text x="610" y="57" font-family="Source Sans 3, sans-serif" font-size="11" fill="#fff" text-anchor="middle">CPU</text>
+
+        <!-- Stats -->
+        <text x="40" y="110" font-family="JetBrains Mono, monospace" font-size="11" fill="#3a2a1a">CPU utilization:</text>
+        <text x="200" y="110" font-family="JetBrains Mono, monospace" font-size="11" fill="#b5281e" font-weight="700">~5%</text>
+        <text x="40" y="130" font-family="JetBrains Mono, monospace" font-size="11" fill="#3a2a1a">Wasted potential:</text>
+        <text x="200" y="130" font-family="JetBrains Mono, monospace" font-size="11" fill="#b5281e" font-weight="700">300 million instructions</text>
+        <text x="40" y="150" font-family="JetBrains Mono, monospace" font-size="11" fill="#3a2a1a">Resources idle:</text>
+        <text x="200" y="150" font-family="JetBrains Mono, monospace" font-size="11" fill="#b5281e" font-weight="700">95% of the time</text>
+      </svg>
+      <div class="diagram-caption">Fig 1 — A synchronous server wastes the vast majority of its CPU cycles waiting for IO</div>
+    </div>
+
+    <h3>A realistic API call breakdown</h3>
+
+    <p>
+      A typical mid-to-complex API call involves 3–5 database queries plus 1–2 external service calls (email, cache like Redis, etc.). If each of those five network operations takes an average of 50 ms, the total time spent waiting for IO is around <strong>250 ms</strong>. But the actual CPU computation — validation, JSON parsing, serialization — is only about <strong>10 ms</strong>. That means your server's hardware is idle <strong>95% of the time</strong>. This is exactly the problem concurrency solves.
+    </p>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 03 ═══════════════ -->
+  <section id="s03">
+    <div class="section-header">
+      <span class="section-badge">03</span>
+      <h2>IO-Bound vs CPU-Bound</h2>
+    </div>
+
+    <p>
+      Every operation your backend performs falls into one of two categories. This distinction is <em>the most important concept</em> in this entire guide — it drives every decision about which concurrency model to use.
+    </p>
+
+    <h3>IO-Bound operations</h3>
+
+    <p>
+      IO stands for <strong>Input/Output</strong> — any operation where the CPU cannot do anything useful because it is waiting for something external. The "I" refers to data coming <em>into</em> your process; the "O" refers to data going <em>out</em>. Per the <a href="https://man7.org/linux/man-pages/man2/read.2.html" target="_blank">Linux <code>read(2)</code> man page</a>, a read on a file descriptor (socket, file, pipe) will block the calling thread until data arrives.
+    </p>
+
+    <p>Common IO-bound operations in backend systems:</p>
+    <ul>
+      <li><strong>Database queries</strong> — sending a SQL query over TCP, waiting for rows to come back</li>
+      <li><strong>External API calls</strong> — HTTP requests to third-party services (payment gateways, email providers)</li>
+      <li><strong>File system operations</strong> — reading config files, writing uploads, temporary file handling</li>
+      <li><strong>Cache interactions</strong> — Redis <code>GET</code>/<code>SET</code> operations over the network</li>
+      <li><strong>Standard I/O</strong> — logging to <code>stdout</code>, reading from <code>stdin</code></li>
+      <li><strong>Message queues</strong> — publishing to or consuming from Kafka, RabbitMQ, etc.</li>
+    </ul>
+
+    <h3>CPU-Bound operations</h3>
+
+    <p>
+      CPU-bound work is when the processor is actively crunching data — it's executing instructions as fast as it can, and the bottleneck is the CPU itself, not any external resource. Most CPU-bound work in a typical backend is lightweight (1–2 ms for JSON parsing or validation), but some operations are heavily CPU-bound:
+    </p>
+
+    <ul>
+      <li><strong>Image/video processing</strong> — matrix multiplications, convolutions, color space transforms</li>
+      <li><strong>Encryption / hashing</strong> — JWT verification, bcrypt password hashing, TLS handshakes</li>
+      <li><strong>Compression</strong> — gzip, zstd, Brotli encoding of response bodies</li>
+      <li><strong>Serialization</strong> — large-scale JSON/Protobuf marshal/unmarshal</li>
+      <li><strong>ML inference</strong> — running a model forward pass without GPU offloading</li>
+    </ul>
+
+    <div class="callout">
+      <div class="callout-title">The Rule of Thumb</div>
+      <p>More than <strong>70%</strong> of the time in a typical backend application is spent on IO. For IO-bound work, <strong>concurrency</strong> is mandatory. For CPU-bound work, <strong>parallelism</strong> (multiple cores) gives the speedup.</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 700 240" xmlns="http://www.w3.org/2000/svg">
+        <text x="350" y="18" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a" text-anchor="middle" letter-spacing="0.1em">TYPICAL API CALL — TIME BREAKDOWN</text>
+
+        <!-- Full bar background -->
+        <rect x="40" y="35" width="620" height="50" rx="6" fill="#e6dbc8" stroke="#c9b99a"/>
+
+        <!-- CPU segments -->
+        <rect x="40" y="35" width="24" height="50" rx="6" fill="#b5281e" opacity="0.9"/>
+        <rect x="160" y="35" width="12" height="50" fill="#b5281e" opacity="0.9"/>
+        <rect x="330" y="35" width="18" height="50" fill="#b5281e" opacity="0.9"/>
+        <rect x="510" y="35" width="10" height="50" fill="#b5281e" opacity="0.9"/>
+        <rect x="636" y="35" width="24" height="50" rx="6" fill="#b5281e" opacity="0.9"/>
+
+        <!-- IO segments -->
+        <rect x="64" y="35" width="96" height="50" fill="#d4740e" opacity="0.3"/>
+        <rect x="172" y="35" width="158" height="50" fill="#d4740e" opacity="0.3"/>
+        <rect x="348" y="35" width="162" height="50" fill="#d4740e" opacity="0.3"/>
+        <rect x="520" y="35" width="116" height="50" fill="#d4740e" opacity="0.3"/>
+
+        <!-- Labels -->
+        <text x="110" y="63" font-family="Source Sans 3, sans-serif" font-size="9" fill="#6b5b4b" text-anchor="middle">DB query 1</text>
+        <text x="250" y="63" font-family="Source Sans 3, sans-serif" font-size="9" fill="#6b5b4b" text-anchor="middle">DB query 2</text>
+        <text x="430" y="63" font-family="Source Sans 3, sans-serif" font-size="9" fill="#6b5b4b" text-anchor="middle">Redis cache</text>
+        <text x="578" y="63" font-family="Source Sans 3, sans-serif" font-size="9" fill="#6b5b4b" text-anchor="middle">Email API</text>
+
+        <!-- Legend -->
+        <rect x="200" y="110" width="14" height="14" rx="2" fill="#b5281e" opacity="0.9"/>
+        <text x="220" y="122" font-family="Source Sans 3, sans-serif" font-size="11" fill="#3a2a1a">CPU work (~10 ms, ~5%)</text>
+        <rect x="400" y="110" width="14" height="14" rx="2" fill="#d4740e" opacity="0.3"/>
+        <text x="420" y="122" font-family="Source Sans 3, sans-serif" font-size="11" fill="#3a2a1a">IO wait (~250 ms, ~95%)</text>
+
+        <!-- Bottom stats -->
+        <line x1="40" y1="150" x2="660" y2="150" stroke="#c9b99a" stroke-dasharray="3 3"/>
+        <text x="40" y="175" font-family="Source Serif 4, serif" font-size="13" fill="#3a2a1a">Total wall-clock time: <tspan font-weight="700">~260 ms</tspan></text>
+        <text x="40" y="198" font-family="Source Serif 4, serif" font-size="13" fill="#3a2a1a">Actual CPU usage: <tspan font-weight="700" fill="#b5281e">~10 ms</tspan> — the rest is just waiting</text>
+      </svg>
+      <div class="diagram-caption">Fig 2 — CPU work (red) is dwarfed by IO waiting (orange) in a typical API call</div>
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 04 ═══════════════ -->
+  <section id="s04">
+    <div class="section-header">
+      <span class="section-badge">04</span>
+      <h2>Concurrency vs Parallelism</h2>
+    </div>
+
+    <p>
+      These two terms are often confused — and for good reason, since they both involve "doing multiple things." But the distinction is critical.
+    </p>
+
+    <h3>Parallelism: doing multiple things at the same time</h3>
+
+    <p>
+      A program is <strong>parallel</strong> when it executes multiple instructions <em>at the same moment</em>. This requires hardware support: at minimum two CPU cores, because a single core can only execute one instruction at one instant. If you have 4 cores, you can run 4 instructions truly simultaneously.
+    </p>
+
+    <h3>Concurrency: dealing with multiple things at once</h3>
+
+    <p>
+      <strong>Concurrency</strong> is about <em>structuring</em> your program so that multiple tasks can be started, paused, and resumed, even on a single core. From the outside, it looks like everything is happening at once. But zoom into any single moment, and only one thing is actually executing on a given core. The key is that when one task is blocked (waiting for IO), another task gets the CPU.
+    </p>
+
+    <div class="callout">
+      <div class="callout-title">The Classic One-Liner</div>
+      <p><strong>Parallelism</strong> is about <em>doing</em> multiple things at once.<br>
+      <strong>Concurrency</strong> is about <em>dealing with</em> multiple things at once.</p>
+      <p style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-lighter);">— Attributed to Rob Pike, co-creator of Go</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg">
+        <!-- Title -->
+        <text x="350" y="18" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a" text-anchor="middle" letter-spacing="0.1em">CONCURRENCY (1 CORE) vs PARALLELISM (2 CORES)</text>
+
+        <!-- Timeline axis -->
+        <text x="98" y="45" font-family="JetBrains Mono, monospace" font-size="8" fill="#8a7a6a">0ms</text>
+        <text x="188" y="45" font-family="JetBrains Mono, monospace" font-size="8" fill="#8a7a6a">10</text>
+        <text x="278" y="45" font-family="JetBrains Mono, monospace" font-size="8" fill="#8a7a6a">20</text>
+        <text x="368" y="45" font-family="JetBrains Mono, monospace" font-size="8" fill="#8a7a6a">30</text>
+        <text x="458" y="45" font-family="JetBrains Mono, monospace" font-size="8" fill="#8a7a6a">40</text>
+        <text x="548" y="45" font-family="JetBrains Mono, monospace" font-size="8" fill="#8a7a6a">50</text>
+        <text x="638" y="45" font-family="JetBrains Mono, monospace" font-size="8" fill="#8a7a6a">60</text>
+
+        <!-- ── CONCURRENCY SECTION ── -->
+        <text x="35" y="75" font-family="Source Sans 3, sans-serif" font-size="10" fill="#3a2a1a" font-weight="700">CONCURRENT</text>
+        <text x="35" y="87" font-family="Source Sans 3, sans-serif" font-size="9" fill="#8a7a6a">(1 core)</text>
+
+        <!-- Request A timeline -->
+        <text x="75" y="110" font-family="JetBrains Mono, monospace" font-size="9" fill="#3a2a1a">Req A</text>
+        <rect x="110" y="97" width="45" height="22" rx="3" fill="#b5281e" opacity="0.85"/>
+        <text x="132" y="112" font-family="Source Sans 3, sans-serif" font-size="8" fill="#fff" text-anchor="middle">CPU</text>
+        <rect x="155" y="97" width="180" height="22" rx="0" fill="#d6c8ad" stroke="#c9b99a" stroke-dasharray="3 2"/>
+        <text x="245" y="112" font-family="Source Sans 3, sans-serif" font-size="8" fill="#8a7a6a" text-anchor="middle">IO wait</text>
+        <rect x="470" y="97" width="60" height="22" rx="3" fill="#b5281e" opacity="0.85"/>
+        <text x="500" y="112" font-family="Source Sans 3, sans-serif" font-size="8" fill="#fff" text-anchor="middle">CPU</text>
+
+        <!-- Request B timeline -->
+        <text x="75" y="145" font-family="JetBrains Mono, monospace" font-size="9" fill="#3a2a1a">Req B</text>
+        <rect x="155" y="130" width="135" height="22" rx="3" fill="#1d4e89" opacity="0.75"/>
+        <text x="222" y="145" font-family="Source Sans 3, sans-serif" font-size="8" fill="#fff" text-anchor="middle">CPU</text>
+        <rect x="290" y="130" width="180" height="22" rx="0" fill="#c5d5e8" stroke="#a0b5cc" stroke-dasharray="3 2"/>
+        <text x="380" y="145" font-family="Source Sans 3, sans-serif" font-size="8" fill="#5a7a9a" text-anchor="middle">IO wait</text>
+        <rect x="530" y="130" width="50" height="22" rx="3" fill="#1d4e89" opacity="0.75"/>
+        <text x="555" y="145" font-family="Source Sans 3, sans-serif" font-size="8" fill="#fff" text-anchor="middle">CPU</text>
+
+        <!-- Annotation: at any moment, only one uses CPU -->
+        <line x1="155" y1="92" x2="155" y2="157" stroke="#3a2a1a" stroke-dasharray="2 2" opacity="0.4"/>
+        <text x="157" y="170" font-family="Source Sans 3, sans-serif" font-size="7.5" fill="#8a7a6a" font-style="italic">A pauses → B gets CPU</text>
+
+        <!-- ── PARALLELISM SECTION ── -->
+        <line x1="40" y1="195" x2="660" y2="195" stroke="#c9b99a"/>
+        <text x="35" y="220" font-family="Source Sans 3, sans-serif" font-size="10" fill="#3a2a1a" font-weight="700">PARALLEL</text>
+        <text x="35" y="232" font-family="Source Sans 3, sans-serif" font-size="9" fill="#8a7a6a">(2 cores)</text>
+
+        <!-- Request A on Core 1 -->
+        <text x="75" y="255" font-family="JetBrains Mono, monospace" font-size="9" fill="#3a2a1a">Req A</text>
+        <rect x="110" y="242" width="45" height="22" rx="3" fill="#b5281e" opacity="0.85"/>
+        <text x="132" y="257" font-family="Source Sans 3, sans-serif" font-size="8" fill="#fff" text-anchor="middle">CPU</text>
+        <rect x="155" y="242" width="180" height="22" rx="0" fill="#d6c8ad" stroke="#c9b99a" stroke-dasharray="3 2"/>
+        <rect x="335" y="242" width="50" height="22" rx="3" fill="#b5281e" opacity="0.85"/>
+        <text x="360" y="257" font-family="Source Sans 3, sans-serif" font-size="8" fill="#fff" text-anchor="middle">CPU</text>
+
+        <!-- Request B on Core 2 (SAME TIME) -->
+        <text x="75" y="287" font-family="JetBrains Mono, monospace" font-size="9" fill="#3a2a1a">Req B</text>
+        <rect x="110" y="275" width="90" height="22" rx="3" fill="#1d4e89" opacity="0.75"/>
+        <text x="155" y="290" font-family="Source Sans 3, sans-serif" font-size="8" fill="#fff" text-anchor="middle">CPU</text>
+        <rect x="200" y="275" width="130" height="22" rx="0" fill="#c5d5e8" stroke="#a0b5cc" stroke-dasharray="3 2"/>
+        <rect x="330" y="275" width="55" height="22" rx="3" fill="#1d4e89" opacity="0.75"/>
+        <text x="357" y="290" font-family="Source Sans 3, sans-serif" font-size="8" fill="#fff" text-anchor="middle">CPU</text>
+
+        <!-- Annotation: both run at same time -->
+        <line x1="110" y1="237" x2="110" y2="302" stroke="#2d6a4f" stroke-dasharray="2 2" opacity="0.5"/>
+        <text x="112" y="315" font-family="Source Sans 3, sans-serif" font-size="7.5" fill="#2d6a4f" font-style="italic">Both start on separate cores simultaneously</text>
+      </svg>
+      <div class="diagram-caption">Fig 3 — Concurrency interleaves tasks on one core; Parallelism runs them on separate cores simultaneously</div>
+    </div>
+
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 05 ═══════════════ -->
+  <section id="s05">
+    <div class="section-header">
+      <span class="section-badge">05</span>
+      <h2>OS Threads</h2>
+    </div>
+
+    <p>
+      The first fundamental mechanism for doing multiple things at once is the <strong>thread</strong>. A thread is an independent unit of execution managed by the operating system. It is not a feature of your programming language — it's a feature of the OS kernel. When you "create a thread," you're making a <strong>system call</strong> (like <code>clone()</code> on Linux or <code>pthread_create()</code> via POSIX) to ask the kernel to set up a new execution context.
+    </p>
+
+    <h3>What the OS creates for each thread</h3>
+
+    <p>
+      When a new thread is created, the kernel allocates several things for it:
+    </p>
+
+    <ul>
+      <li><strong>A stack</strong> — used for tracking function calls (call frames), local variables, and return addresses. On Linux, the default stack size is <strong>8 MB</strong> of virtual memory (though physical pages are only allocated on demand via page faults).</li>
+      <li><strong>An instruction pointer (IP)</strong> — tracks where exactly the thread is in its code, so the kernel can resume it after a context switch.</li>
+      <li><strong>Kernel data structures</strong> — metadata for the scheduler: thread state (running / sleeping / blocked), priority, CPU affinity, signal masks, etc.</li>
+    </ul>
+
+    <div class="ref-box">
+      <div class="ref-box-title">Reference</div>
+      <a href="https://man7.org/linux/man-pages/man7/pthreads.7.html" target="_blank">pthreads(7) — Linux man page</a>
+      <a href="https://man7.org/linux/man-pages/man2/clone.2.html" target="_blank">clone(2) — the system call behind thread creation</a>
+      <a href="https://docs.python.org/3/library/threading.html" target="_blank">Python threading module documentation</a>
+    </div>
+
+    <h3>Preemptive scheduling</h3>
+
+    <p>
+      The OS <strong>scheduler</strong> decides which thread gets CPU time and for how long. It assigns each thread a <strong>time slice</strong> (typically a few milliseconds). After that slice expires, the scheduler <em>forcibly</em> pauses the thread — whether it's finished or not — saves its state, and switches to another thread. This is called <strong>preemptive scheduling</strong> because threads are preempted (interrupted) without their cooperation.
+    </p>
+
+    <h3>Shared memory between threads</h3>
+
+    <p>
+      An important property: threads within the <em>same process</em> share the same memory space (heap, global variables, file descriptors). If thread 1 allocates an object on the heap, thread 2 can access it via a pointer. This makes inter-thread communication fast (no copying, no serialization) — but also <em>dangerous</em>, as we'll see in the race conditions section.
+    </p>
+
+    <p>
+      Threads across different <em>processes</em>, however, are fully isolated — they cannot see each other's memory. This isolation is enforced by the kernel's virtual memory system for security and stability.
+    </p>
+
+    <h3>Thread-per-request in Python</h3>
+
+    <pre><code><span class="cm"># Python — threading model (simplified)</span>
+<span class="kw">import</span> threading
+
+<span class="kw">def</span> <span class="fn">handle_request</span>(conn):
+    <span class="cm"># 1. Parse the HTTP request (CPU work)</span>
+    request = parse_http(conn)
+
+    <span class="cm"># 2. Database query — this BLOCKS the thread</span>
+    <span class="cm">#    The OS scheduler will switch to another thread</span>
+    user = db.execute(
+        <span class="str">"SELECT * FROM users WHERE id = %s"</span>,
+        (request.user_id,)
+    )
+
+    <span class="cm"># 3. Thread resumes here after DB responds</span>
+    response = json.dumps(user)
+    conn.send(response)
+
+<span class="cm"># Create a new OS thread for each incoming connection</span>
+<span class="kw">while</span> <span class="kw">True</span>:
+    conn = server_socket.accept()
+    t = threading.Thread(target=handle_request, args=(conn,))
+    t.start()</code><span class="code-label">Python</span></pre>
+
+    <p>
+      Notice there's no <code>async</code> or <code>await</code> anywhere. The blocking happens transparently — at the OS level — when <code>db.execute()</code> makes a network call. The thread is marked as "blocked," the OS switches to another thread, and later wakes this thread up when the database response arrives on the socket.
+    </p>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 06 ═══════════════ -->
+  <section id="s06">
+    <div class="section-header">
+      <span class="section-badge">06</span>
+      <h2>Thread Overhead &amp; Context Switching</h2>
+    </div>
+
+    <p>
+      Threads are powerful, but they come with three categories of overhead that limit how many you can practically run.
+    </p>
+
+    <h3>1. Memory overhead</h3>
+
+    <p>
+      Each thread gets its own stack. On Linux the default is 8 MB of virtual address space (though only the touched pages consume physical RAM). Even at a conservative 500 KB–1 MB of actual physical memory per thread, 10,000 simultaneous connections would consume <strong>5–10 GB</strong> of RAM just for thread stacks — before your application even allocates a single data structure.
+    </p>
+
+    <h3>2. Creation overhead</h3>
+
+    <p>
+      Creating a thread requires a system call to the kernel. The kernel must allocate the stack, set up internal data structures (thread descriptor, signal state, scheduler metadata), and register the thread with the scheduler. This takes anywhere from a few <strong>microseconds to a few milliseconds</strong> — fast by human standards, but significant at scale when you're creating and destroying thousands of threads.
+    </p>
+
+    <h3>3. Context switch overhead</h3>
+
+    <p>
+      This is the big one. Every time the scheduler switches from one thread to another, it must:
+    </p>
+
+    <ol>
+      <li>Save the current thread's CPU registers (general-purpose, floating-point, SIMD)</li>
+      <li>Update bookkeeping structures (thread state, time accounting)</li>
+      <li>Select the next thread to run (involves scheduler algorithm)</li>
+      <li>Restore the saved registers of the new thread</li>
+      <li>Potentially flush CPU caches (L1/L2 cache lines become "cold")</li>
+    </ol>
+
+    <p>
+      Each context switch costs <strong>1–10 microseconds</strong> on modern hardware. With 4 cores and 1,000 threads, the scheduler must constantly juggle between them, and this overhead can become a measurable source of latency. The context switch time is purely unproductive — it's maintenance work, not real computation.
+    </p>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 700 220" xmlns="http://www.w3.org/2000/svg">
+        <text x="350" y="18" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a" text-anchor="middle" letter-spacing="0.1em">CONTEXT SWITCH BETWEEN THREADS</text>
+
+        <!-- Thread 1 -->
+        <rect x="40" y="50" width="180" height="35" rx="4" fill="#b5281e" opacity="0.8"/>
+        <text x="130" y="72" font-family="Source Sans 3, sans-serif" font-size="11" fill="#fff" text-anchor="middle">Thread 1 executing</text>
+
+        <!-- Switch zone -->
+        <rect x="220" y="40" width="80" height="55" rx="4" fill="#f5e6c8" stroke="#d4740e" stroke-width="1.5" stroke-dasharray="4 2"/>
+        <text x="260" y="58" font-family="Source Sans 3, sans-serif" font-size="9" fill="#d4740e" text-anchor="middle" font-weight="700">CONTEXT</text>
+        <text x="260" y="72" font-family="Source Sans 3, sans-serif" font-size="9" fill="#d4740e" text-anchor="middle" font-weight="700">SWITCH</text>
+        <text x="260" y="86" font-family="JetBrains Mono, monospace" font-size="8" fill="#8a7a6a" text-anchor="middle">1–10 μs</text>
+
+        <!-- Thread 2 -->
+        <rect x="300" y="50" width="200" height="35" rx="4" fill="#1d4e89" opacity="0.75"/>
+        <text x="400" y="72" font-family="Source Sans 3, sans-serif" font-size="11" fill="#fff" text-anchor="middle">Thread 2 executing</text>
+
+        <!-- Switch zone 2 -->
+        <rect x="500" y="40" width="80" height="55" rx="4" fill="#f5e6c8" stroke="#d4740e" stroke-width="1.5" stroke-dasharray="4 2"/>
+        <text x="540" y="65" font-family="Source Sans 3, sans-serif" font-size="9" fill="#d4740e" text-anchor="middle" font-weight="700">SWITCH</text>
+
+        <!-- Thread 3 -->
+        <rect x="580" y="50" width="80" height="35" rx="4" fill="#2d6a4f" opacity="0.75"/>
+        <text x="620" y="72" font-family="Source Sans 3, sans-serif" font-size="10" fill="#fff" text-anchor="middle">Thread 3</text>
+
+        <!-- What happens during switch -->
+        <text x="40" y="130" font-family="Source Sans 3, sans-serif" font-size="10" fill="#3a2a1a" font-weight="700">During a context switch the OS must:</text>
+        <text x="40" y="150" font-family="Source Serif 4, serif" font-size="12" fill="#3a2a1a">① Save CPU registers &amp; instruction pointer</text>
+        <text x="40" y="170" font-family="Source Serif 4, serif" font-size="12" fill="#3a2a1a">② Update scheduler bookkeeping</text>
+        <text x="40" y="190" font-family="Source Serif 4, serif" font-size="12" fill="#3a2a1a">③ Restore next thread's registers &amp; state</text>
+        <text x="40" y="210" font-family="Source Serif 4, serif" font-size="12" fill="#3a2a1a">④ Potentially invalidate CPU cache lines</text>
+      </svg>
+      <div class="diagram-caption">Fig 4 — Context switching is pure overhead: no useful work happens during the switch</div>
+    </div>
+
+    <div class="callout">
+      <div class="callout-title">Why thread-per-request struggles</div>
+      <p>This is exactly why the "one thread per request" model breaks down under high concurrency. 10,000 concurrent connections = 10,000 threads = gigabytes of stack memory + constant context switching overhead. The <a href="https://en.wikipedia.org/wiki/C10k_problem" target="_blank">C10k problem</a> was the industry's realization that this model simply doesn't scale.</p>
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 07 ═══════════════ -->
+  <section id="s07">
+    <div class="section-header">
+      <span class="section-badge">07</span>
+      <h2>The Event Loop Model</h2>
+    </div>
+
+    <p>
+      The event loop takes a radically different approach to concurrency: instead of many threads, it uses <strong>one thread</strong> and a loop that continuously checks for completed IO operations, then runs the appropriate callback. This is the model that powers <strong>Node.js</strong>, <strong>Python's asyncio</strong>, <strong>Nginx</strong>, and many other high-performance systems.
+    </p>
+
+    <h3>The core mechanism</h3>
+
+    <p>
+      When a task (like serving Request A) needs to make a database query, instead of blocking and waiting, it:
+    </p>
+
+    <ol>
+      <li><strong>Initiates the IO</strong> — sends the query bytes over the TCP socket to the database.</li>
+      <li><strong>Registers a callback</strong> — tells the event loop: "When the database responds on this socket, run this function."</li>
+      <li><strong>Yields control</strong> — returns immediately, freeing the single thread to pick up the next task.</li>
+    </ol>
+
+    <p>
+      The event loop itself is essentially an infinite loop. On each iteration, it uses an OS-level mechanism to check which sockets have data ready — then it runs the callbacks for those completed operations and goes back to checking.
+    </p>
+
+    <h3>OS-level IO multiplexing</h3>
+
+    <p>
+      The event loop doesn't implement IO monitoring itself — it relies on the operating system. The OS provides special system calls that can efficiently monitor <em>thousands</em> of file descriptors (sockets, files, pipes) simultaneously:
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>OS</th>
+          <th>Mechanism</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Linux</strong></td>
+          <td><code>epoll</code></td>
+          <td>O(1) per ready event. Scales to millions of connections. See <a href="https://man7.org/linux/man-pages/man7/epoll.7.html" target="_blank">epoll(7)</a></td>
+        </tr>
+        <tr>
+          <td><strong>macOS / BSD</strong></td>
+          <td><code>kqueue</code></td>
+          <td>Similar to epoll but with a different API. See <a href="https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/kqueue.2.html" target="_blank">kqueue(2)</a></td>
+        </tr>
+        <tr>
+          <td><strong>Windows</strong></td>
+          <td><code>IOCP</code></td>
+          <td>IO Completion Ports — Windows' equivalent</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      Under the hood, Node.js uses <strong>libuv</strong> which abstracts these platform-specific mechanisms. Python's <code>asyncio</code> uses <code>selectors</code> module which wraps <code>epoll</code>/<code>kqueue</code>.
+    </p>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg">
+        <text x="350" y="18" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a" text-anchor="middle" letter-spacing="0.1em">EVENT LOOP — SINGLE-THREADED CONCURRENCY</text>
+
+        <!-- The Loop circle -->
+        <circle cx="350" cy="140" r="75" fill="none" stroke="#b5281e" stroke-width="2" stroke-dasharray="8 4"/>
+        <text x="350" y="125" font-family="Playfair Display, serif" font-size="14" fill="#b5281e" text-anchor="middle" font-weight="700">Event</text>
+        <text x="350" y="145" font-family="Playfair Display, serif" font-size="14" fill="#b5281e" text-anchor="middle" font-weight="700">Loop</text>
+        <text x="350" y="163" font-family="JetBrains Mono, monospace" font-size="8" fill="#8a7a6a" text-anchor="middle">(single thread)</text>
+
+        <!-- Incoming requests -->
+        <rect x="40" y="75" width="100" height="28" rx="4" fill="#b5281e" opacity="0.15" stroke="#b5281e" stroke-width="1"/>
+        <text x="90" y="93" font-family="Source Sans 3, sans-serif" font-size="10" fill="#b5281e" text-anchor="middle" font-weight="600">Request A</text>
+        <rect x="40" y="115" width="100" height="28" rx="4" fill="#1d4e89" opacity="0.15" stroke="#1d4e89" stroke-width="1"/>
+        <text x="90" y="133" font-family="Source Sans 3, sans-serif" font-size="10" fill="#1d4e89" text-anchor="middle" font-weight="600">Request B</text>
+        <rect x="40" y="155" width="100" height="28" rx="4" fill="#2d6a4f" opacity="0.15" stroke="#2d6a4f" stroke-width="1"/>
+        <text x="90" y="173" font-family="Source Sans 3, sans-serif" font-size="10" fill="#2d6a4f" text-anchor="middle" font-weight="600">Request C</text>
+
+        <!-- Arrows into loop -->
+        <line x1="140" y1="89" x2="272" y2="120" stroke="#b5281e" stroke-width="1" marker-end="url(#arr)"/>
+        <line x1="140" y1="129" x2="272" y2="137" stroke="#1d4e89" stroke-width="1" marker-end="url(#arr2)"/>
+        <line x1="140" y1="169" x2="272" y2="155" stroke="#2d6a4f" stroke-width="1" marker-end="url(#arr3)"/>
+
+        <!-- IO operations (right side) -->
+        <rect x="490" y="60" width="170" height="28" rx="4" fill="#d6c8ad" stroke="#c9b99a"/>
+        <text x="575" y="78" font-family="Source Sans 3, sans-serif" font-size="9" fill="#6b5b4b" text-anchor="middle">DB query (waiting...)</text>
+        <rect x="490" y="100" width="170" height="28" rx="4" fill="#d6c8ad" stroke="#c9b99a"/>
+        <text x="575" y="118" font-family="Source Sans 3, sans-serif" font-size="9" fill="#6b5b4b" text-anchor="middle">Redis GET (waiting...)</text>
+        <rect x="490" y="140" width="170" height="28" rx="4" fill="#d6c8ad" stroke="#c9b99a"/>
+        <text x="575" y="158" font-family="Source Sans 3, sans-serif" font-size="9" fill="#6b5b4b" text-anchor="middle">Email API (waiting...)</text>
+        <rect x="490" y="180" width="170" height="28" rx="4" fill="#2d6a4f" opacity="0.2" stroke="#2d6a4f"/>
+        <text x="575" y="198" font-family="Source Sans 3, sans-serif" font-size="9" fill="#2d6a4f" text-anchor="middle" font-weight="600">DB response ✓ READY</text>
+
+        <!-- Arrow from loop to IO -->
+        <line x1="428" y1="120" x2="488" y2="110" stroke="#3a2a1a" stroke-width="1" marker-end="url(#arr4)"/>
+
+        <!-- Arrow from ready IO back -->
+        <path d="M490,194 Q460,210 428,170" fill="none" stroke="#2d6a4f" stroke-width="1.5" marker-end="url(#arr3)"/>
+        <text x="440" y="215" font-family="Source Sans 3, sans-serif" font-size="8" fill="#2d6a4f" font-style="italic">run callback</text>
+
+        <!-- epoll label -->
+        <text x="575" y="235" font-family="JetBrains Mono, monospace" font-size="9" fill="#8a7a6a" text-anchor="middle">Monitored by epoll / kqueue</text>
+
+        <!-- Bottom summary -->
+        <text x="350" y="280" font-family="Source Serif 4, serif" font-size="11" fill="#3a2a1a" text-anchor="middle">Each iteration: check IO completions → run callbacks → repeat</text>
+
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#b5281e"/></marker>
+          <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1d4e89"/></marker>
+          <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2d6a4f"/></marker>
+          <marker id="arr4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#3a2a1a"/></marker>
+        </defs>
+      </svg>
+      <div class="diagram-caption">Fig 5 — The event loop checks IO status on each iteration and runs callbacks for completed operations</div>
+    </div>
+
+    <h3>Why event loops are efficient for IO</h3>
+
+    <p>
+      Since there's only one thread, there is <strong>no context switching overhead</strong>, <strong>no multi-megabyte stack allocations</strong>, and no scheduler juggling. The CPU spends its time either running your actual code (callbacks) or waiting efficiently inside <code>epoll_wait()</code>. This is why Node.js can handle tens of thousands of concurrent connections on modest hardware.
+    </p>
+
+    <h3>The critical trade-off: never block the loop</h3>
+
+    <p>
+      If you run a CPU-intensive operation — say, a 100 ms image processing task — directly on the event loop thread, <strong>everything stops</strong>. No other requests can be served, no callbacks can fire, no IO completions can be processed. The entire server freezes until that CPU work finishes. This is why event-loop-based languages like JavaScript insist on non-blocking code and offload heavy computation to worker threads or separate processes.
+    </p>
+
+    <h3>Callbacks → Promises → async/await: the evolution</h3>
+
+    <p>
+      The event loop works on callbacks — but raw callbacks lead to deeply nested code (the infamous "callback hell"). The evolution in JavaScript went:
+    </p>
+
+    <pre><code><span class="cm">// Stage 1: Raw callbacks (pre-ES6)</span>
+db.query(<span class="str">"SELECT * FROM users WHERE id = ?"</span>, [userId],
+  <span class="kw">function</span>(err, result) {
+    <span class="kw">if</span> (err) <span class="kw">return</span> sendError(res, err);
+    <span class="cm">// Nested callback for second query</span>
+    db.query(<span class="str">"SELECT * FROM orders WHERE user_id = ?"</span>, [userId],
+      <span class="kw">function</span>(err, orders) {
+        <span class="kw">if</span> (err) <span class="kw">return</span> sendError(res, err);
+        <span class="cm">// Another level of nesting...</span>
+        sendResponse(res, { user: result, orders: orders });
+      }
+    );
+  }
+);</code><span class="code-label">JavaScript — callback hell</span></pre>
+
+    <pre><code><span class="cm">// Stage 2: async/await (modern — syntactic sugar over callbacks)</span>
+<span class="kw">async function</span> <span class="fn">handleRequest</span>(req, res) {
+  <span class="kw">const</span> user  = <span class="kw">await</span> db.query(<span class="str">"SELECT * FROM users WHERE id = ?"</span>, [req.userId]);
+  <span class="kw">const</span> orders = <span class="kw">await</span> db.query(<span class="str">"SELECT * FROM orders WHERE user_id = ?"</span>, [req.userId]);
+  sendResponse(res, { user, orders });
+}</code><span class="code-label">JavaScript — async/await</span></pre>
+
+    <p>
+      The <code>await</code> keyword is syntactic sugar. When the runtime encounters <code>await</code>, it says: "I'm giving up control of the CPU to the event loop. Everything after this line is effectively a callback that will run when this IO operation completes."
+    </p>
+
+    <h3>Python's asyncio: the same idea</h3>
+
+    <pre><code><span class="kw">import</span> asyncio
+<span class="kw">import</span> aiohttp
+
+<span class="kw">async def</span> <span class="fn">handle_request</span>(user_id: <span class="type">int</span>) -> <span class="type">dict</span>:
+    <span class="cm"># await = "yield control to the event loop until this IO completes"</span>
+    user = <span class="kw">await</span> db.fetchone(
+        <span class="str">"SELECT * FROM users WHERE id = $1"</span>, user_id
+    )
+    orders = <span class="kw">await</span> db.fetch(
+        <span class="str">"SELECT * FROM orders WHERE user_id = $1"</span>, user_id
+    )
+    <span class="kw">return</span> {<span class="str">"user"</span>: user, <span class="str">"orders"</span>: orders}
+
+<span class="cm"># Run with an event loop (uvloop for performance)</span>
+asyncio.run(handle_request(<span class="num">123</span>))</code><span class="code-label">Python</span></pre>
+
+    <div class="ref-box">
+      <div class="ref-box-title">Reference</div>
+      <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function" target="_blank">MDN — async function</a>
+      <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await" target="_blank">MDN — await operator</a>
+      <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Event_loop" target="_blank">MDN — The event loop</a>
+      <a href="https://docs.python.org/3/library/asyncio.html" target="_blank">Python — asyncio documentation</a>
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 08 ═══════════════ -->
+  <section id="s08">
+    <div class="section-header">
+      <span class="section-badge">08</span>
+      <h2>Async/Await as a State Machine</h2>
+    </div>
+
+    <p>
+      To truly understand <code>async/await</code>, it helps to see what the compiler or runtime actually transforms your code into. An <code>async</code> function is essentially converted into a <strong>state machine</strong> that interacts with the event loop. Each <code>await</code> is a transition point between states.
+    </p>
+
+    <h3>The original async function</h3>
+
+    <pre><code><span class="kw">async def</span> <span class="fn">fetch_user_data</span>(user_id):
+    user   = <span class="kw">await</span> db.get_user(user_id)      <span class="cm"># State 0 → 1</span>
+    orders = <span class="kw">await</span> db.get_orders(user_id)    <span class="cm"># State 1 → 2</span>
+    <span class="kw">return</span> {<span class="str">"user"</span>: user, <span class="str">"orders"</span>: orders}  <span class="cm"># State 2 → done</span></code><span class="code-label">Python</span></pre>
+
+    <h3>What the runtime sees (conceptual)</h3>
+
+    <pre><code><span class="cm"># Conceptual state machine representation</span>
+<span class="kw">def</span> <span class="fn">fetch_user_data_machine</span>(user_id):
+    state = <span class="num">0</span>
+    user = <span class="kw">None</span>
+    orders = <span class="kw">None</span>
+
+    <span class="kw">def</span> <span class="fn">step</span>():
+        <span class="kw">nonlocal</span> state, user, orders
+
+        <span class="kw">if</span> state == <span class="num">0</span>:
+            state = <span class="num">1</span>
+            <span class="cm"># Start the IO, register callback for when it completes</span>
+            <span class="kw">return</span> db.get_user(user_id).then(
+                <span class="kw">lambda</span> result: (user := result, step())
+            )
+
+        <span class="kw">elif</span> state == <span class="num">1</span>:
+            state = <span class="num">2</span>
+            <span class="kw">return</span> db.get_orders(user_id).then(
+                <span class="kw">lambda</span> result: (orders := result, step())
+            )
+
+        <span class="kw">elif</span> state == <span class="num">2</span>:
+            <span class="kw">return</span> {<span class="str">"user"</span>: user, <span class="str">"orders"</span>: orders}
+
+    <span class="kw">return</span> step</code><span class="code-label">Python — conceptual</span></pre>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 700 180" xmlns="http://www.w3.org/2000/svg">
+        <text x="350" y="18" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a" text-anchor="middle" letter-spacing="0.1em">ASYNC FUNCTION AS STATE MACHINE</text>
+
+        <!-- State 0 -->
+        <circle cx="100" cy="90" r="35" fill="#b5281e" opacity="0.15" stroke="#b5281e" stroke-width="2"/>
+        <text x="100" y="85" font-family="JetBrains Mono, monospace" font-size="10" fill="#b5281e" text-anchor="middle" font-weight="600">State 0</text>
+        <text x="100" y="100" font-family="Source Sans 3, sans-serif" font-size="8" fill="#6b5b4b" text-anchor="middle">get_user()</text>
+
+        <!-- Arrow 0 → 1 -->
+        <line x1="138" y1="90" x2="212" y2="90" stroke="#3a2a1a" stroke-width="1.5" marker-end="url(#arr4)"/>
+        <text x="175" y="80" font-family="JetBrains Mono, monospace" font-size="7.5" fill="#8a7a6a" text-anchor="middle">await</text>
+        <text x="175" y="112" font-family="Source Sans 3, sans-serif" font-size="7.5" fill="#d4740e" text-anchor="middle" font-style="italic">event loop is</text>
+        <text x="175" y="122" font-family="Source Sans 3, sans-serif" font-size="7.5" fill="#d4740e" text-anchor="middle" font-style="italic">free here</text>
+
+        <!-- State 1 -->
+        <circle cx="250" cy="90" r="35" fill="#1d4e89" opacity="0.15" stroke="#1d4e89" stroke-width="2"/>
+        <text x="250" y="85" font-family="JetBrains Mono, monospace" font-size="10" fill="#1d4e89" text-anchor="middle" font-weight="600">State 1</text>
+        <text x="250" y="100" font-family="Source Sans 3, sans-serif" font-size="8" fill="#6b5b4b" text-anchor="middle">get_orders()</text>
+
+        <!-- Arrow 1 → 2 -->
+        <line x1="288" y1="90" x2="362" y2="90" stroke="#3a2a1a" stroke-width="1.5" marker-end="url(#arr4)"/>
+        <text x="325" y="80" font-family="JetBrains Mono, monospace" font-size="7.5" fill="#8a7a6a" text-anchor="middle">await</text>
+        <text x="325" y="112" font-family="Source Sans 3, sans-serif" font-size="7.5" fill="#d4740e" text-anchor="middle" font-style="italic">event loop is</text>
+        <text x="325" y="122" font-family="Source Sans 3, sans-serif" font-size="7.5" fill="#d4740e" text-anchor="middle" font-style="italic">free here</text>
+
+        <!-- State 2 -->
+        <circle cx="400" cy="90" r="35" fill="#2d6a4f" opacity="0.15" stroke="#2d6a4f" stroke-width="2"/>
+        <text x="400" y="85" font-family="JetBrains Mono, monospace" font-size="10" fill="#2d6a4f" text-anchor="middle" font-weight="600">State 2</text>
+        <text x="400" y="100" font-family="Source Sans 3, sans-serif" font-size="8" fill="#6b5b4b" text-anchor="middle">return result</text>
+
+        <!-- Arrow to done -->
+        <line x1="438" y1="90" x2="500" y2="90" stroke="#3a2a1a" stroke-width="1.5" marker-end="url(#arr4)"/>
+
+        <!-- Done -->
+        <rect x="503" y="75" width="55" height="30" rx="15" fill="#2d6a4f" opacity="0.8"/>
+        <text x="530" y="95" font-family="Source Sans 3, sans-serif" font-size="10" fill="#fff" text-anchor="middle" font-weight="600">Done</text>
+
+        <!-- Bottom note -->
+        <text x="350" y="165" font-family="Source Serif 4, serif" font-size="11" fill="#3a2a1a" text-anchor="middle">Between each state, the event loop is free to execute other tasks</text>
+      </svg>
+      <div class="diagram-caption">Fig 6 — Each <code>await</code> is a state transition; the event loop runs other work in between</div>
+    </div>
+
+    <h3>Two things this explains</h3>
+
+    <p>
+      <strong>1. Why <code>await</code> can only appear inside <code>async</code> functions.</strong> The function must be marked <code>async</code> because it needs to be transformed into a state machine. A regular function has no state machine infrastructure to support pausing and resuming.
+    </p>
+
+    <p>
+      <strong>2. Why blocking the event loop is catastrophic.</strong> If you perform a CPU-intensive operation inside a state (e.g. a 500 ms computation), the state machine can never transition. No other state machines (other requests) can advance. The entire server hangs.
+    </p>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 09 ═══════════════ -->
+  <section id="s09">
+    <div class="section-header">
+      <span class="section-badge">09</span>
+      <h2>Go Routines &amp; Virtual Threads</h2>
+    </div>
+
+    <p>
+      Go takes a third approach that is neither raw OS threads nor a single-threaded event loop. It uses <strong>goroutines</strong> — lightweight, user-space threads managed by Go's own runtime scheduler. The term "virtual thread" captures the idea: they behave like threads (blocking code, sequential logic), but they're far cheaper because they're not OS-level constructs.
+    </p>
+
+    <h3>Why goroutines are cheap</h3>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>OS Thread</th>
+          <th>Goroutine</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Stack size</strong></td>
+          <td>~8 MB (virtual), ~KB physical</td>
+          <td>~2–8 KB initial (grows dynamically)</td>
+        </tr>
+        <tr>
+          <td><strong>Creation time</strong></td>
+          <td>~μs to ms (system call)</td>
+          <td>~ns to μs (user-space allocation)</td>
+        </tr>
+        <tr>
+          <td><strong>Context switch</strong></td>
+          <td>1–10 μs (kernel mode)</td>
+          <td>~200 ns (user-space pointer swap)</td>
+        </tr>
+        <tr>
+          <td><strong>Practical limit</strong></td>
+          <td>~10,000 (memory bottleneck)</td>
+          <td>~1,000,000+ (depending on RAM)</td>
+        </tr>
+        <tr>
+          <td><strong>Scheduled by</strong></td>
+          <td>OS kernel</td>
+          <td>Go runtime scheduler</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Go's HTTP server: one goroutine per request</h3>
+
+    <p>
+      Go's standard library <code>net/http</code> creates a <strong>new goroutine for every incoming request</strong>. This sounds like the thread-per-request model that we just said doesn't scale — but goroutines are so lightweight that it works beautifully. Here's the actual source code pattern from Go's <code>net/http</code> package:
+    </p>
+
+    <pre><code><span class="cm">// From Go's standard library net/http/server.go (simplified)</span>
+<span class="kw">func</span> (srv *Server) <span class="fn">Serve</span>(l net.Listener) <span class="type">error</span> {
+    <span class="kw">for</span> {
+        conn, err := l.Accept()   <span class="cm">// Accept new TCP connection</span>
+        <span class="kw">if</span> err != <span class="kw">nil</span> {
+            <span class="kw">return</span> err
+        }
+        <span class="cm">// Create a NEW goroutine for each connection</span>
+        <span class="kw">go</span> srv.<span class="fn">handleConn</span>(conn)
+    }
+}</code><span class="code-label">Go</span></pre>
+
+    <p>
+      The <code>go</code> keyword spawns a new goroutine. This is the equivalent of creating a thread — but at a fraction of the cost (nanoseconds vs. microseconds, kilobytes vs. megabytes).
+    </p>
+
+    <h3>A typical Go handler</h3>
+
+    <pre><code><span class="kw">func</span> <span class="fn">handleGetUser</span>(w http.ResponseWriter, r *http.Request) {
+    userID := r.URL.Query().Get(<span class="str">"id"</span>)
+
+    <span class="cm">// This BLOCKS the goroutine — but not the OS thread.</span>
+    <span class="cm">// The Go scheduler parks this goroutine and runs another.</span>
+    user, err := db.QueryRow(
+        <span class="str">"SELECT name, email FROM users WHERE id = $1"</span>,
+        userID,
+    )
+    <span class="kw">if</span> err != <span class="kw">nil</span> {
+        http.Error(w, <span class="str">"not found"</span>, http.StatusNotFound)
+        <span class="kw">return</span>
+    }
+
+    <span class="cm">// Goroutine resumes here after DB responds</span>
+    json.NewEncoder(w).Encode(user)
+}</code><span class="code-label">Go</span></pre>
+
+    <p>
+      Notice: <strong>no <code>async</code>, no <code>await</code>, no callbacks</strong>. The code reads like synchronous, blocking code — because the goroutine <em>does</em> block. But the Go runtime scheduler transparently parks it and picks up another goroutine. You get the ergonomics of blocking code with the efficiency of non-blocking IO.
+    </p>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 10 ═══════════════ -->
+  <section id="s10">
+    <div class="section-header">
+      <span class="section-badge">10</span>
+      <h2>The M:N Scheduler</h2>
+    </div>
+
+    <p>
+      Go's scheduler uses an <strong>M:N model</strong> — it multiplexes M goroutines onto N OS threads. The number of OS threads is controlled by the <code>GOMAXPROCS</code> environment variable (defaults to the number of CPU cores). Each OS thread runs a local queue of goroutines.
+    </p>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 700 330" xmlns="http://www.w3.org/2000/svg">
+        <text x="350" y="18" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a" text-anchor="middle" letter-spacing="0.1em">GO'S M:N SCHEDULER — GOROUTINES MAPPED TO OS THREADS</text>
+
+        <!-- OS Threads (bottom layer) -->
+        <text x="350" y="290" font-family="Source Sans 3, sans-serif" font-size="10" fill="#8a7a6a" text-anchor="middle" letter-spacing="0.05em">OS THREADS (GOMAXPROCS = 4)</text>
+
+        <rect x="60" y="240" width="120" height="35" rx="5" fill="#3a2a1a" opacity="0.85"/>
+        <text x="120" y="262" font-family="JetBrains Mono, monospace" font-size="10" fill="#ede4d3" text-anchor="middle">M1 (Core 1)</text>
+
+        <rect x="210" y="240" width="120" height="35" rx="5" fill="#3a2a1a" opacity="0.85"/>
+        <text x="270" y="262" font-family="JetBrains Mono, monospace" font-size="10" fill="#ede4d3" text-anchor="middle">M2 (Core 2)</text>
+
+        <rect x="360" y="240" width="120" height="35" rx="5" fill="#3a2a1a" opacity="0.85"/>
+        <text x="420" y="262" font-family="JetBrains Mono, monospace" font-size="10" fill="#ede4d3" text-anchor="middle">M3 (Core 3)</text>
+
+        <rect x="510" y="240" width="120" height="35" rx="5" fill="#3a2a1a" opacity="0.85"/>
+        <text x="570" y="262" font-family="JetBrains Mono, monospace" font-size="10" fill="#ede4d3" text-anchor="middle">M4 (Core 4)</text>
+
+        <!-- Goroutine queues (top layer) -->
+        <text x="350" y="50" font-family="Source Sans 3, sans-serif" font-size="10" fill="#8a7a6a" text-anchor="middle" letter-spacing="0.05em">GOROUTINES (thousands possible)</text>
+
+        <!-- Queue for M1 -->
+        <rect x="55" y="65" width="35" height="24" rx="3" fill="#b5281e" opacity="0.8"/>
+        <text x="72" y="81" font-family="JetBrains Mono, monospace" font-size="7" fill="#fff" text-anchor="middle">G1</text>
+        <rect x="93" y="65" width="35" height="24" rx="3" fill="#b5281e" opacity="0.5"/>
+        <text x="110" y="81" font-family="JetBrains Mono, monospace" font-size="7" fill="#fff" text-anchor="middle">G5</text>
+        <rect x="131" y="65" width="35" height="24" rx="3" fill="#b5281e" opacity="0.3"/>
+        <text x="148" y="81" font-family="JetBrains Mono, monospace" font-size="7" fill="#fff" text-anchor="middle">G9</text>
+
+        <!-- Queue for M2 -->
+        <rect x="205" y="65" width="35" height="24" rx="3" fill="#1d4e89" opacity="0.8"/>
+        <text x="222" y="81" font-family="JetBrains Mono, monospace" font-size="7" fill="#fff" text-anchor="middle">G2</text>
+        <rect x="243" y="65" width="35" height="24" rx="3" fill="#1d4e89" opacity="0.5"/>
+        <text x="260" y="81" font-family="JetBrains Mono, monospace" font-size="7" fill="#fff" text-anchor="middle">G6</text>
+        <rect x="281" y="65" width="35" height="24" rx="3" fill="#1d4e89" opacity="0.3"/>
+        <text x="298" y="81" font-family="JetBrains Mono, monospace" font-size="7" fill="#fff" text-anchor="middle">G10</text>
+
+        <!-- Queue for M3 -->
+        <rect x="355" y="65" width="35" height="24" rx="3" fill="#2d6a4f" opacity="0.8"/>
+        <text x="372" y="81" font-family="JetBrains Mono, monospace" font-size="7" fill="#fff" text-anchor="middle">G3</text>
+        <rect x="393" y="65" width="35" height="24" rx="3" fill="#2d6a4f" opacity="0.5"/>
+        <text x="410" y="81" font-family="JetBrains Mono, monospace" font-size="7" fill="#fff" text-anchor="middle">G7</text>
+
+        <!-- Queue for M4 -->
+        <rect x="505" y="65" width="35" height="24" rx="3" fill="#d4740e" opacity="0.8"/>
+        <text x="522" y="81" font-family="JetBrains Mono, monospace" font-size="7" fill="#fff" text-anchor="middle">G4</text>
+        <rect x="543" y="65" width="35" height="24" rx="3" fill="#d4740e" opacity="0.5"/>
+        <text x="560" y="81" font-family="JetBrains Mono, monospace" font-size="7" fill="#fff" text-anchor="middle">G8</text>
+        <rect x="581" y="65" width="35" height="24" rx="3" fill="#d4740e" opacity="0.3"/>
+        <text x="598" y="81" font-family="JetBrains Mono, monospace" font-size="7" fill="#fff" text-anchor="middle">G11</text>
+
+        <!-- Connecting lines -->
+        <line x1="120" y1="92" x2="120" y2="238" stroke="#b5281e" stroke-width="1" stroke-dasharray="4 3" opacity="0.5"/>
+        <line x1="270" y1="92" x2="270" y2="238" stroke="#1d4e89" stroke-width="1" stroke-dasharray="4 3" opacity="0.5"/>
+        <line x1="420" y1="92" x2="420" y2="238" stroke="#2d6a4f" stroke-width="1" stroke-dasharray="4 3" opacity="0.5"/>
+        <line x1="570" y1="92" x2="570" y2="238" stroke="#d4740e" stroke-width="1" stroke-dasharray="4 3" opacity="0.5"/>
+
+        <!-- Scheduler label in middle -->
+        <rect x="250" y="145" width="200" height="40" rx="20" fill="#f5e6c8" stroke="#b5281e" stroke-width="1.5"/>
+        <text x="350" y="170" font-family="Playfair Display, serif" font-size="13" fill="#b5281e" text-anchor="middle" font-weight="700">Go Runtime Scheduler</text>
+
+        <!-- Annotation -->
+        <text x="350" y="210" font-family="Source Serif 4, serif" font-size="10" fill="#6b5b4b" text-anchor="middle">When G1 blocks on IO → scheduler parks G1, runs G5 on same M1 thread</text>
+        <text x="350" y="225" font-family="Source Serif 4, serif" font-size="10" fill="#6b5b4b" text-anchor="middle">Context switch cost: ~200ns (pointer swap), not ~10μs (kernel mode)</text>
+      </svg>
+      <div class="diagram-caption">Fig 7 — Go multiplexes many goroutines across a fixed pool of OS threads</div>
+    </div>
+
+    <p>
+      When a goroutine blocks on IO (e.g., a database read), the Go runtime's internal <strong>network poller</strong> (built on <code>epoll</code>/<code>kqueue</code> under the hood) detects the IO completion and puts the goroutine back on a run queue. This is the best of both worlds: <strong>blocking-style code</strong> with <strong>event-loop-level efficiency</strong>.
+    </p>
+
+    <div class="ref-box">
+      <div class="ref-box-title">Reference</div>
+      <a href="https://go.dev/doc/effective_go#goroutines" target="_blank">Go — Effective Go: Goroutines</a>
+      <a href="https://go.dev/doc/effective_go#concurrency" target="_blank">Go — Effective Go: Concurrency</a>
+      <a href="https://go.dev/blog/pipelines" target="_blank">Go Blog — Go Concurrency Patterns: Pipelines</a>
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 11 ═══════════════ -->
+  <section id="s11">
+    <div class="section-header">
+      <span class="section-badge">11</span>
+      <h2>Race Conditions &amp; Shared State</h2>
+    </div>
+
+    <p>
+      Concurrency introduces an entire category of bugs that don't exist in sequential code. Almost all of them trace back to one root cause: <strong>shared mutable state</strong>. When two concurrent tasks read and write the same variable, and their operations interleave in unexpected ways, you get a <strong>race condition</strong>.
+    </p>
+
+    <h3>The classic counter example</h3>
+
+    <p>
+      Two threads both try to increment a shared counter from 0 to 1. Incrementing requires three CPU steps: <strong>read</strong> the current value, <strong>add</strong> one, <strong>write</strong> it back. If the threads interleave:
+    </p>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 700 280" xmlns="http://www.w3.org/2000/svg">
+        <text x="350" y="18" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a" text-anchor="middle" letter-spacing="0.1em">RACE CONDITION — LOST UPDATE PROBLEM</text>
+
+        <!-- Timeline header -->
+        <text x="40" y="50" font-family="Source Sans 3, sans-serif" font-size="9" fill="#8a7a6a" font-weight="700">TIME</text>
+        <text x="180" y="50" font-family="Source Sans 3, sans-serif" font-size="9" fill="#b5281e" font-weight="700">THREAD A</text>
+        <text x="400" y="50" font-family="Source Sans 3, sans-serif" font-size="9" fill="#1d4e89" font-weight="700">THREAD B</text>
+        <text x="600" y="50" font-family="Source Sans 3, sans-serif" font-size="9" fill="#3a2a1a" font-weight="700">counter</text>
+
+        <line x1="40" y1="58" x2="660" y2="58" stroke="#c9b99a"/>
+
+        <!-- t1 -->
+        <text x="50" y="80" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a">t1</text>
+        <text x="120" y="80" font-family="Source Serif 4, serif" font-size="11" fill="#3a2a1a">Read counter → <tspan font-family="JetBrains Mono, monospace" font-size="10" fill="#b5281e">0</tspan></text>
+        <text x="600" y="80" font-family="JetBrains Mono, monospace" font-size="11" fill="#3a2a1a">0</text>
+
+        <!-- t2 -->
+        <text x="50" y="110" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a">t2</text>
+        <text x="350" y="110" font-family="Source Serif 4, serif" font-size="11" fill="#3a2a1a">Read counter → <tspan font-family="JetBrains Mono, monospace" font-size="10" fill="#1d4e89">0</tspan></text>
+        <text x="600" y="110" font-family="JetBrains Mono, monospace" font-size="11" fill="#3a2a1a">0</text>
+
+        <!-- t3 -->
+        <text x="50" y="140" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a">t3</text>
+        <text x="120" y="140" font-family="Source Serif 4, serif" font-size="11" fill="#3a2a1a">Add 1 → register = <tspan font-family="JetBrains Mono, monospace" font-size="10" fill="#b5281e">1</tspan></text>
+        <text x="600" y="140" font-family="JetBrains Mono, monospace" font-size="11" fill="#3a2a1a">0</text>
+
+        <!-- t4 -->
+        <text x="50" y="170" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a">t4</text>
+        <text x="350" y="170" font-family="Source Serif 4, serif" font-size="11" fill="#3a2a1a">Add 1 → register = <tspan font-family="JetBrains Mono, monospace" font-size="10" fill="#1d4e89">1</tspan></text>
+        <text x="600" y="170" font-family="JetBrains Mono, monospace" font-size="11" fill="#3a2a1a">0</text>
+
+        <!-- t5 -->
+        <text x="50" y="200" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a">t5</text>
+        <text x="120" y="200" font-family="Source Serif 4, serif" font-size="11" fill="#3a2a1a">Write <tspan font-family="JetBrains Mono, monospace" font-size="10" fill="#b5281e">1</tspan> → counter</text>
+        <text x="600" y="200" font-family="JetBrains Mono, monospace" font-size="11" fill="#2d6a4f" font-weight="700">1</text>
+
+        <!-- t6 -->
+        <text x="50" y="230" font-family="JetBrains Mono, monospace" font-size="10" fill="#8a7a6a">t6</text>
+        <text x="350" y="230" font-family="Source Serif 4, serif" font-size="11" fill="#3a2a1a">Write <tspan font-family="JetBrains Mono, monospace" font-size="10" fill="#1d4e89">1</tspan> → counter</text>
+        <text x="600" y="230" font-family="JetBrains Mono, monospace" font-size="11" fill="#b5281e" font-weight="700">1 ✗</text>
+
+        <line x1="40" y1="245" x2="660" y2="245" stroke="#c9b99a"/>
+
+        <!-- Result -->
+        <text x="120" y="268" font-family="Source Serif 4, serif" font-size="12" fill="#3a2a1a">Expected: <tspan font-weight="700" fill="#2d6a4f">2</tspan></text>
+        <text x="350" y="268" font-family="Source Serif 4, serif" font-size="12" fill="#3a2a1a">Actual: <tspan font-weight="700" fill="#b5281e">1</tspan> — Thread B's increment was lost!</text>
+      </svg>
+      <div class="diagram-caption">Fig 8 — Two threads read the same stale value, and one update overwrites the other</div>
+    </div>
+
+    <h3>Race conditions in async/await too</h3>
+
+    <p>
+      You might think: "I use JavaScript / Python with async/await — there's only one thread, so no race conditions." <strong>Wrong.</strong> Race conditions can still occur between <code>await</code> points. Consider this Python example:
+    </p>
+
+    <pre><code>balance = <span class="num">100</span>
+
+<span class="kw">async def</span> <span class="fn">withdraw</span>(amount: <span class="type">int</span>):
+    <span class="kw">global</span> balance
+    <span class="kw">if</span> balance >= amount:               <span class="cm"># Check at time T1</span>
+        <span class="kw">await</span> process_withdrawal(amount)  <span class="cm"># ← yields control here!</span>
+        balance -= amount                 <span class="cm"># Deduct at time T2</span>
+
+<span class="cm"># Both coroutines see balance=100, both pass the check,</span>
+<span class="cm"># both deduct 100 → balance = -100 (invalid!)</span>
+<span class="kw">await</span> asyncio.gather(
+    withdraw(<span class="num">100</span>),
+    withdraw(<span class="num">100</span>),
+)</code><span class="code-label">Python</span></pre>
+
+    <p>
+      The issue: the <code>if</code> check and the deduction are separated by an <code>await</code>. Between those two points, the event loop runs the second <code>withdraw</code> call, which also sees <code>balance == 100</code> and passes the check. Both deduct, and the balance goes to <strong>-100</strong>.
+    </p>
+
+    <div class="callout">
+      <div class="callout-title">Key Takeaway</div>
+      <p>Race conditions happen any time there is a <strong>check-then-act</strong> pattern separated by a yield point (<code>await</code>) or a context switch. Single-threaded async code is <em>not</em> immune to race conditions.</p>
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 12 ═══════════════ -->
+  <section id="s12">
+    <div class="section-header">
+      <span class="section-badge">12</span>
+      <h2>Locks, Mutexes &amp; Channels</h2>
+    </div>
+
+    <p>
+      The solutions to race conditions have been studied for decades. Here are the major approaches.
+    </p>
+
+    <h3>Mutex (Mutual Exclusion)</h3>
+
+    <p>
+      A mutex ensures that only <strong>one thread/goroutine</strong> can execute a critical section at a time. All others must wait until the lock is released. This is the most common synchronization primitive across all languages.
+    </p>
+
+    <h4>Python — threading.Lock</h4>
+
+    <pre><code><span class="kw">import</span> threading
+
+counter = <span class="num">0</span>
+lock = threading.Lock()
+
+<span class="kw">def</span> <span class="fn">increment</span>():
+    <span class="kw">global</span> counter
+    <span class="kw">with</span> lock:          <span class="cm"># Acquire lock — blocks other threads</span>
+        counter += <span class="num">1</span>   <span class="cm"># Only one thread executes this at a time</span>
+                        <span class="cm"># Lock is released automatically at end of `with`</span>
+
+<span class="cm"># Create 1000 threads all incrementing the same counter</span>
+threads = [threading.Thread(target=increment) <span class="kw">for</span> _ <span class="kw">in</span> range(<span class="num">1000</span>)]
+<span class="kw">for</span> t <span class="kw">in</span> threads: t.start()
+<span class="kw">for</span> t <span class="kw">in</span> threads: t.join()
+<span class="kw">print</span>(counter)  <span class="cm"># Always 1000 — no lost updates</span></code><span class="code-label">Python</span></pre>
+
+    <h4>Go — sync.Mutex</h4>
+
+    <pre><code><span class="kw">package</span> main
+
+<span class="kw">import</span> (
+    <span class="str">"fmt"</span>
+    <span class="str">"sync"</span>
+)
+
+<span class="kw">func</span> <span class="fn">main</span>() {
+    <span class="kw">var</span> counter <span class="type">int</span>
+    <span class="kw">var</span> mu sync.Mutex
+    <span class="kw">var</span> wg sync.WaitGroup
+
+    <span class="kw">for</span> i := <span class="num">0</span>; i < <span class="num">1000</span>; i++ {
+        wg.Add(<span class="num">1</span>)
+        <span class="kw">go func</span>() {
+            <span class="kw">defer</span> wg.Done()
+            mu.Lock()         <span class="cm">// Acquire — other goroutines wait here</span>
+            counter++
+            mu.Unlock()       <span class="cm">// Release — next goroutine can proceed</span>
+        }()
+    }
+
+    wg.Wait()
+    fmt.Println(counter) <span class="cm">// Always 1000</span>
+}</code><span class="code-label">Go</span></pre>
+
+    <h3>Channels: Go's preferred approach</h3>
+
+    <p>
+      Go has a famous proverb: <em>"Don't communicate by sharing memory; share memory by communicating."</em> Instead of multiple goroutines writing to a shared variable (which needs a mutex), you can use <strong>channels</strong> — typed pipes through which goroutines send and receive values. Only the goroutine that <em>owns</em> the data modifies it; others send messages to request changes.
+    </p>
+
+    <pre><code><span class="kw">package</span> main
+
+<span class="kw">import</span> <span class="str">"fmt"</span>
+
+<span class="kw">func</span> <span class="fn">counterService</span>(ch <span class="kw">chan</span> <span class="type">int</span>, done <span class="kw">chan</span> <span class="type">bool</span>) {
+    counter := <span class="num">0</span>
+    <span class="kw">for</span> {
+        <span class="kw">select</span> {
+        <span class="kw">case</span> delta := <-ch:
+            counter += delta   <span class="cm">// Only this goroutine modifies counter</span>
+        <span class="kw">case</span> done <- counter:
+            <span class="kw">return</span>
+        }
+    }
+}
+
+<span class="kw">func</span> <span class="fn">main</span>() {
+    ch := <span class="kw">make</span>(<span class="kw">chan</span> <span class="type">int</span>, <span class="num">100</span>)     <span class="cm">// Buffered channel</span>
+    done := <span class="kw">make</span>(<span class="kw">chan</span> <span class="type">bool</span>)
+
+    <span class="kw">go</span> counterService(ch, done)
+
+    <span class="cm">// 1000 goroutines send +1 through the channel</span>
+    <span class="kw">for</span> i := <span class="num">0</span>; i < <span class="num">1000</span>; i++ {
+        ch <- <span class="num">1</span>
+    }
+
+    result := <-done
+    fmt.Println(result) <span class="cm">// 1000 — no race condition, no mutex needed</span>
+}</code><span class="code-label">Go</span></pre>
+
+    <h3>Python asyncio.Lock for async code</h3>
+
+    <pre><code><span class="kw">import</span> asyncio
+
+balance = <span class="num">100</span>
+lock = asyncio.Lock()
+
+<span class="kw">async def</span> <span class="fn">withdraw</span>(amount: <span class="type">int</span>):
+    <span class="kw">global</span> balance
+    <span class="kw">async with</span> lock:                     <span class="cm"># Only one coroutine at a time</span>
+        <span class="kw">if</span> balance >= amount:
+            <span class="kw">await</span> process_withdrawal(amount)
+            balance -= amount
+
+<span class="cm"># Now safe — second withdraw waits for the lock</span>
+<span class="kw">await</span> asyncio.gather(
+    withdraw(<span class="num">100</span>),
+    withdraw(<span class="num">100</span>),
+)
+<span class="kw">print</span>(balance)  <span class="cm"># 0, not -100</span></code><span class="code-label">Python</span></pre>
+
+    <div class="ref-box">
+      <div class="ref-box-title">Reference</div>
+      <a href="https://docs.python.org/3/library/threading.html#lock-objects" target="_blank">Python — threading.Lock</a>
+      <a href="https://docs.python.org/3/library/asyncio-sync.html#asyncio.Lock" target="_blank">Python — asyncio.Lock</a>
+      <a href="https://go.dev/ref/mem" target="_blank">Go — The Go Memory Model</a>
+      <a href="https://go.dev/doc/effective_go#channels" target="_blank">Go — Effective Go: Channels</a>
+      <a href="https://go.dev/blog/codelab-share" target="_blank">Go Blog — Share Memory by Communicating</a>
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 13 ═══════════════ -->
+  <section id="s13">
+    <div class="section-header">
+      <span class="section-badge">13</span>
+      <h2>Choosing the Right Model</h2>
+    </div>
+
+    <p>
+      Here's the practical summary — when to use what, and why.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Workload</th>
+          <th>Best Model</th>
+          <th>Why</th>
+          <th>Examples</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>IO-Bound, high concurrency</strong></td>
+          <td>Event loop / async-await / goroutines</td>
+          <td>Minimal overhead, no context switching, handles 100K+ connections</td>
+          <td>Web servers, API gateways, microservice proxies, chat servers</td>
+        </tr>
+        <tr>
+          <td><strong>CPU-Bound, parallelizable</strong></td>
+          <td>OS threads with parallelism (multiple cores)</td>
+          <td>True simultaneous execution; more cores = proportionally faster</td>
+          <td>Image processing, video encoding, ML inference, encryption</td>
+        </tr>
+        <tr>
+          <td><strong>Mixed IO + CPU</strong></td>
+          <td>Goroutines (Go) or worker pools + async (Python/JS)</td>
+          <td>IO handled concurrently; CPU work offloaded to thread/process pools</td>
+          <td>Most real-world backends — API calls + some computation</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <div class="callout-title">The Bottom Line</div>
+      <p><strong>Concurrency</strong> keeps your program productive — it stops the CPU from idling while waiting for IO. Use <code>async/await</code>, goroutines, or virtual threads for this.</p>
+      <p><strong>Parallelism</strong> lets you use multiple CPU cores to do multiple computations <em>at the same instant</em>. Use OS threads or process pools for this.</p>
+      <p>Most backend applications are <strong>overwhelmingly IO-bound</strong> — the bottleneck is almost always the network, not the CPU. But when you do hit CPU-bound work, parallelism is the tool that unlocks more throughput.</p>
+    </div>
+
+    <h3>Language-specific concurrency primitives</h3>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Language</th>
+          <th>IO Concurrency</th>
+          <th>CPU Parallelism</th>
+          <th>Underlying Mechanism</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Go</strong></td>
+          <td><code>go func()</code> (goroutines)</td>
+          <td>Goroutines across cores (automatic)</td>
+          <td>M:N scheduler + <code>epoll</code>/<code>kqueue</code></td>
+        </tr>
+        <tr>
+          <td><strong>Python</strong></td>
+          <td><code>asyncio</code> + <code>async/await</code></td>
+          <td><code>multiprocessing</code> / <code>concurrent.futures</code></td>
+          <td>Event loop + process pool (GIL limits threads)</td>
+        </tr>
+        <tr>
+          <td><strong>JavaScript</strong></td>
+          <td><code>async/await</code> / Promises</td>
+          <td><code>worker_threads</code> / <code>cluster</code></td>
+          <td>libuv event loop</td>
+        </tr>
+        <tr>
+          <td><strong>Java (21+)</strong></td>
+          <td>Virtual Threads (<code>Thread.ofVirtual()</code>)</td>
+          <td>Platform Threads + ForkJoinPool</td>
+          <td>Continuation-based M:N scheduling</td>
+        </tr>
+        <tr>
+          <td><strong>Rust</strong></td>
+          <td><code>async/await</code> + Tokio runtime</td>
+          <td><code>std::thread</code> / Rayon</td>
+          <td>Multi-threaded work-stealing async runtime</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <!-- ═══════════════ 14 ═══════════════ -->
+  <section id="s14">
+    <div class="section-header">
+      <span class="section-badge">14</span>
+      <h2>Further Reading</h2>
+    </div>
+
+    <h3>Books</h3>
+    <ul>
+      <li><strong>Operating Systems: Three Easy Pieces</strong> by Remzi &amp; Andrea Arpaci-Dusseau — the gold standard for understanding threads, scheduling, and concurrency at the OS level. <a href="https://pages.cs.wisc.edu/~remzi/OSTEP/" target="_blank">Free online</a>.</li>
+      <li><strong>Concurrency in Go</strong> by Katherine Cox-Buday — deep dive into goroutines, channels, patterns, and pitfalls.</li>
+      <li><strong>Fluent Python, Ch. 19–21</strong> by Luciano Ramalho — concurrency with threads, processes, and asyncio.</li>
+    </ul>
+
+    <h3>Documentation &amp; articles</h3>
+
+    <div class="ref-box">
+      <div class="ref-box-title">MDN Web Docs</div>
+      <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Event_loop" target="_blank">MDN — The Event Loop</a>
+      <a href="https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Async_JS" target="_blank">MDN — Asynchronous JavaScript</a>
+      <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function" target="_blank">MDN — async function</a>
+    </div>
+
+    <div class="ref-box">
+      <div class="ref-box-title">Go Documentation</div>
+      <a href="https://go.dev/doc/effective_go#concurrency" target="_blank">Effective Go — Concurrency</a>
+      <a href="https://go.dev/tour/concurrency/1" target="_blank">A Tour of Go — Goroutines</a>
+      <a href="https://go.dev/blog/pipelines" target="_blank">Go Blog — Concurrency Patterns</a>
+    </div>
+
+    <div class="ref-box">
+      <div class="ref-box-title">Python Documentation</div>
+      <a href="https://docs.python.org/3/library/asyncio.html" target="_blank">Python — asyncio library</a>
+      <a href="https://docs.python.org/3/library/threading.html" target="_blank">Python — threading module</a>
+      <a href="https://docs.python.org/3/library/multiprocessing.html" target="_blank">Python — multiprocessing module</a>
+    </div>
+
+    <div class="ref-box">
+      <div class="ref-box-title">Linux / Systems</div>
+      <a href="https://man7.org/linux/man-pages/man7/epoll.7.html" target="_blank">epoll(7) — Linux IO multiplexing</a>
+      <a href="https://man7.org/linux/man-pages/man7/pthreads.7.html" target="_blank">pthreads(7) — POSIX threads</a>
+      <a href="https://en.wikipedia.org/wiki/C10k_problem" target="_blank">Wikipedia — The C10k Problem</a>
+    </div>
+  </section>
+
+  <hr>
+
+  <footer style="text-align: center; padding: 2rem 0; color: var(--text-lighter); font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; letter-spacing: 0.1em;">
+    CONCURRENCY / THE BACKEND LENS · FIELD MANUAL V1 · 2026
+  </footer>
+
+</main>
+
+</body>
+</html>
