@@ -1,0 +1,1492 @@
+
+0:00
+backend is huge and if we start discussing every single component that could be part of it we will be stuck
+0:05
+here for years so what we will do is we will only discuss those topics which are
+0:10
+used in majority of the code bases let's say 90% of them with that in mind let's talk about HTTP protocol the medium
+HTTP intro
+0:18
+through which our browsers talk to our servers either to send data or to receive data from it and as I said there
+0:24
+are a lot of other ways and protocols which clients and servers use to communicate with each other and HTTP
+0:32
+being one of the most used ones we will focus on that now there are two ideas which are at the heart of HTTP protocol
+0:39
+the first one being tessness what does it mean tessness basically means it has
+0:46
+no memory of past interactions so each HTTP request carries all the necessary
+0:52
+information for the server to process it such as headers or URLs and methods
+0:57
+which we will see in a bit and after the server responds it forgets about the request if a client makes another
+1:02
+request the server treats it as a new and unrelated event and it also means
+1:08
+self-contained requests since the server does not remember pass requests each request must include all the necessary
+1:15
+data such as authentication tokens or session information to handle that
+1:20
+specific interaction for example in the case of accessing a user profile the client has to provide credentials like
+1:27
+cookies or tokens on every request for for the server to know which user is requesting the data so what are the
+1:34
+benefits of that what are the benefits of this stateless model the obvious one being Simplicity stateless design
+1:41
+simplifies server architecture because the server does not need to store session information which would
+1:46
+otherwise require additional resources and complexity and it also means scalability stateless protocol makes it
+1:54
+easy to distribute request across multiple servers because no single server need needs to keep track of a
+2:01
+session and if the server crashes it does not affect the state of a client interaction as there is no session or
+2:08
+memory of a request that needs to be restored and having said that because HTTP is stateless developers often
+2:15
+Implement State management techniques like cookies or sessions or tokens to
+2:20
+maintain continuity in interactions where needed like user logins or
+2:26
+shopping cards and we'll explore those soon in this series and the second idea
+2:31
+is client server model in a typical HTTP request flow there is a client and there
+2:36
+is a server always the client typically is a web browser or an application which
+2:42
+initiates the communication by sending a request to the server the client is responsible for for providing all
+2:49
+information needed by the server such as the URL of the resource or the headers and
+2:55
+everything and then there is a server which hosts resources like websites or
+3:01
+apis or other content and waits for incoming requests from the clients when
+3:07
+the server receives a request it processes it and sends back the appropriate response such as a web page
+3:13
+or data or error message or a Json file or a text file or any other kind of
+3:19
+content now the thing to remember here is HTTP protocol states that
+3:24
+communication is always initiated by the client to get some kind of resp response
+3:30
+by the server and throughout our discussion we can go ahead and safely assume that HTTP and https are
+3:38
+interchangeable because https to oversimplify it just a more secure
+3:44
+version of HTTP but the underlying principles are the same with more security features like encryption and
+3:51
+security certificates or TLS stuff like that which boarders too much into the
+3:56
+network engineering domain also to send some kind of request or receive some
+4:01
+kind of response first the client and the server need to establish some kind
+4:07
+of connection mechanism right otherwise how are they going to communicate what is the medium of the communication and
+4:13
+for that sgtp uses TCP TCP which is a protocol which is a
+4:20
+transmission protocol essentially HTTP does not require the underlying transport protocol to be connection
+4:26
+based it only requires it to be reliable and not lose message messages at minimum
+4:31
+presenting an error in such cases and among the two most common transport protocols on the internet which are TCP
+4:37
+and UDP TCP is considered to be more reliable HTTP therefore relies on the
+4:42
+TCP standard which is connection based now this is called an OSI model which is
+4:48
+often referred when we are talking about sending and receiving data over a network right and we as backend
+4:55
+Engineers often deal with this layer the top layer the layer 7even application
+5:01
+layer and so a lot of discussions for example the recent one which we talked
+5:07
+about the TCP handshake and establishing connections and TLS encryptions they
+5:13
+often border into these layers so they are mostly network
+5:19
+engineering concepts of course it's it's good to know about those but if we start
+5:24
+exploring those it'll be a rabbit hole and we'll have to cover a lot of Concepts right so what we'll do is we'll
+5:31
+focus on the application layer with a brief about you know what happens in the netor layer like as I said HTTP uses TCP
+5:39
+and TCP uses something like a 3-way handshake which if you're curious about
+5:44
+you can just look up and study more on that now throughout the years we had different versions of HTTP which kept
+Evolution of HTTP
+5:52
+redefining how clients and servers send and receive data right in sttp 1.0 each
+5:58
+request opened a new connection this led to inefficiencies since a connection had to be established and closed for every
+6:05
+request and response which slowed performance in HTTP 1.1 they introduced
+6:11
+something called as persistent connections allowing multiple request and responses over the same connection
+6:17
+over the same TCP connection that was established before sending the request which significantly improved performance
+6:23
+it also added stuff like chunk transfer encoding and better caching mechanisms
+6:29
+in SCP 2.0 they introduced multiplexing allowing multiple requests or responses
+6:34
+over a single collection it uses something called binary framing instead of text and supports header compression
+6:40
+with Edge pack or and server push allowing servers to send resources before the client requests them now in
+6:47
+sttp 3.0 built on quick protocol a transport layer protocol over UDP right
+6:54
+instead of TCP it is designed over UDP which improved performance with faster connection establishment reduce latency
+7:01
+and better handling of packet loss it also continues to support multiplexing without head ofline blocking which is
+7:08
+still an issue in HTTP 2.0 now again that's a rabbit hole if you get too much into the network stuff all we need to
+7:16
+remember is that from all these discussions that client and servers
+7:21
+established some kind of network connection and messages are sent and received that's all you need to remember
+HTTP messages
+7:29
+for now now that we mentioned message let's look at what HTTP messages look
+7:34
+like request messages or response messages a request message is basically the one that is sent by the client and a
+7:41
+response message is the one that is received by the client from the server so this is what a request message looks
+7:47
+like in HTTP and this is what a response message looks like I intentionally took
+7:53
+more complex messages which had more parameters and so that we can cover
+7:58
+different different components one by one so on a high level I'll just explain what is what in this right this part
+8:05
+this is called a request method this is the resource URL the one we are requesting from the server this is the
+8:11
+HTTP version which says we are using HTTP version 1.1 which is the currently the most used one this is the host right
+8:21
+which is our domain the front ends domain and these
+8:26
+are this all of these things these are called headers right we will talk about
+8:32
+headers soon there will be a blank line here after all the headers to signify that the headers are over and body
+8:39
+starts this is called a request body some information the client wants to
+8:45
+send to a server right and in the response message again we have the HTTP
+8:51
+version have the status code and the value of the status code which basically
+8:56
+means the status code 200 means okay right and we have again some response
+9:02
+headers after that there is a blank line and we have the response body so let's talk about HTTP headers
+Why do we need HTTP headers
+9:11
+first this is very important since it's the major part of the request here and the responses on a high level what we
+9:18
+can see is headers are basically key value pairs key value pairs of different different parameters that is sent over
+9:25
+request or received over a response that is the first definition and the next
+9:30
+question is why do we need headers why not send the all these values in the you
+9:36
+know the URL or we have this request body here why send why create a
+9:41
+different section just for sending more information or more met data about the request or the response why create
+9:49
+another level of abstraction and in order to understand that let's take a real life example we send Parcels right
+9:56
+ciers and we receive them the address of about the phone number of the recipient
+10:02
+and different details right the the state the the PIN code and all of these
+10:07
+things do we keep it inside the package or do we write it on top and we write it
+10:14
+on top why because the one who is taking the parcel from the sender and to the
+10:22
+receiver they need to know different informations in order to successfully transmit the package
+10:29
+through different modes of transmission and if we kept all those information
+10:35
+inside the parcel they have to open that right and which does not make any sense
+10:42
+but just for the sake of the example they have to open that and they have to see who is the recipient again and again
+10:47
+so let's say another person wants to see the address so again they have to open that so keeping the metadata the address
+10:56
+and the information of the recipient on top of the parel uh gives a quick way of
+11:02
+checking different metadata about the package sdtp headers can be thought of something like that but they have more
+11:08
+uses before we go into the use cases let's see what are some different kinds
+11:13
+of headers that we see so as you can see there are a lot of different types of headers so can we categorize them can we
+11:20
+categorize them and different types of headers so let's see the first category can be request headers which are sent by
+Types of HTTP headers
+11:26
+the client to the server to provide some kind of information about the request itself it could be user agent which
+11:32
+identifies what kind of client is that it is a browser or it is a it is Postman
+11:39
+or it is some kind of server or it's a mobile app we have authorization which
+11:44
+sends different credentials like bar token to the server to identify the user
+11:49
+you have accept headers which provides informations like what kind of content we are expecting whether it is a Json
+11:56
+whether it is a text whether it is an HTML file so request headers help server
+12:02
+understand the client's environment its preferences and its capabilities then we
+12:07
+have General headers which are used in both request and responses which have some metadata about the message itself
+12:15
+for example the date of the message and different caching mechanisms like no
+12:20
+cache or max age and the connection information whether to keep it alive or
+12:26
+to close it so General header have some kind of information about the request
+12:32
+message or the response message then we have representation headers which primarily deal with the representation
+12:37
+of the resource being transmitted whether it could be a request body or a response message the content type
+12:44
+describes the media type of the request or the response it could be Json or it could be HTML the content length describ
+12:52
+the size of the resource in bites the content encoding specifies any encoding like G or D flare then we have eag a
+13:00
+unique identifier which is mostly used for caching so representation headers
+13:06
+provides information about the body of the message or the response ensuring the clients and servers know how to
+13:12
+interpret and process request or the response then we have security headers which are used to enhance the security
+13:18
+of the request and response by controlling behaviors like content loading cookies and encryption hsts
+13:25
+ensures that the client only communicates with the server over https preventing protocol downgrade attack
+13:31
+content security policy restricts the sources from which content like JavaScript or css and images can be
+13:37
+loaded helping prevent cross site scripting attacks x-frame options prevents the web page from being
+13:43
+embedded in iframe mitigating clickjacking attack X content type options ensures that the browser does
+13:49
+not try to guess the mime type of the content preventing MIM type sniffing attack that cookie with HTTP only or
+13:55
+secure Flags secures cookies by making them inaccessible with JavaScript and ensuring they are sent over https so
+14:02
+security headers helps protect the client and server from a variety of attacks by controlling how the browser
+14:09
+behaves with resources and enforcing security policies now there are two
+14:14
+ideas that we see here while talking about HTTP headers one is extensibility HTTP is highly extensible
+14:23
+because headers can be easily added or customized without altering the underlying protocol
+14:29
+right we only have to add some kind of metadata and the whole flow of the interaction changes depending on that
+14:37
+now headers can be defined and used for various purposes making HTTP adaptable to new technologies and use cases for
+14:44
+instance security enhancements as we just talked about headers like strict Transport Security and Force Security
+14:49
+connections custom headers developers can create custom headers like X custom header for specific application for
+14:57
+their own use cases content negotiation the accept and the accept language and accept encoding headers allows servers
+15:04
+to serve different versions of the content depending on the client's preference so the next part is the idea
+15:09
+of remote control sgtp headers act as kind of a remote control on the server
+15:14
+side they allow the client to send instructions or preferences to the server influencing how the server
+15:22
+responds or processes requests for example content Ty negotiations clients
+15:28
+can request specific formats using accept header and the server can respond with the appropriate format if the
+15:33
+client says I want the HTML format the server sends the HTML and if the client says they want Json then the server
+15:40
+sends the Json format then caching and expiration control the server can use
+15:46
+headers like cach control or expires to control how long a resource should be
+15:51
+cached by the client then authentication the client can authenticate itself to
+15:56
+the server through authorization header influencing Access Control decisions right so these provide more capabilities
+16:04
+on top of our messages which are very useful in a lot of instances now we have
+16:10
+some kind of idea about the headers in HTTP and we will explore them in more
+16:16
+depth when we are going through the demos let's move on to the next component of a HTTP message right the
+16:22
+HTTP method HTTP methods exist to represent different kinds of actions
+HTTP methods
+16:28
+that a CL client like a browser or an API consumer can request on a server instead of every request doing the same
+16:35
+thing methods Define the intent the keyword note here is the
+16:42
+intent the intent of the interaction this gives clear semantic
+16:49
+meaning to each type of action and it is pretty intuitive in that sense we use
+16:55
+get request to fetch some kind of data from the server and it should not modify anything on the server use post to
+17:02
+create some data in the server and post request have a body which makes sense because how else would you send the user
+17:08
+data to the server then we have patch which is used to update some data
+17:15
+for example you have a users profile page where they can update their name and this also has a request body to send
+17:22
+the data to the server we also have put which is also used to update data but
+17:29
+what sets it apart from patch is whatever data that comes in request body should completely replace the previous
+17:36
+instance basically patch can be thought of as an append action or a selective replacement while put is a complete
+17:43
+replacement even though a lot of times developers use put when they should be using patch and go against the semantics
+17:51
+so the thumb rule is always use patch unless you have a specific use case for
+17:56
+put then we have delete method and as the name suggests we use this to delete
+18:01
+some kind of resource from the server and one prevalent idea that we have in
+Idempotent vs non-idempotent
+18:07
+the context of HTTP methods is the idea of EMP poent and nonm poent and what the
+18:14
+idea of important means is these HTTP methods can be called multiple times and
+18:21
+we can expect the same kind of result for example we generally consider the
+18:26
+methods get or put or
+18:31
+delete in the category of it poent methods because just think about it
+18:37
+you're trying to fetch some data from the server right it does not matter how many times you fetch it the data should
+18:43
+be same you should not be able to modify any kind of data in the server so get is
+18:49
+obviously impotent and then we have put because put completely replaces the resource in the server so it does not
+18:56
+matter how many times you replace an old with the new data it will the result
+19:02
+will be the same right so that is also considered as important then we have delete you can only delete a resource
+19:09
+from the server once because after that it is already deleted you cannot perform the action multiple times and expect
+19:15
+different results right the result will always be the same the resource can only be deleted once and then we have the
+19:22
+idea of nonmutant usually we consider post request to be non important because
+19:30
+once you submit a request to create some data let's say uh a user can create a note using
+19:37
+your app right they submitted a post request to create a new note and the
+19:43
+first time they submit the request the request goes through the response is successful and a new note is created and
+19:50
+when they do it a second time we create a new note right there are two different
+19:55
+results for the same kind of request so that's why we consider post to be a
+20:00
+non-idempotent method because it produces different results for the same kind of request after all the sgtp
+OPTIONS method and CORS workflow
+20:08
+methods we have one other method which is called the options method and this has a very interesting use case which is
+20:15
+used in the course flow right we discussed this before in brief the
+20:22
+course flow which is part of the same origin policy which browsers have now
+20:28
+options method this method you probably won't use directly as a developer but
+20:34
+you will see them once in a while in your browser network tab in pre-flight requests so the options method is used
+20:40
+to fetch the capabilities of the server for a cross origin request also known as
+20:47
+course which is used because browsers have same origin policy which means by
+20:52
+default browsers follow the same origin policy which restricts web pages from
+20:58
+making requests to a domain different from theirs different from the one
+21:03
+serving the web page and course is a security mechanism enforced by browsers
+21:09
+to control how web applications interact with resources hosted on different
+21:14
+domains which are cross origin and without course browsers block
+21:21
+the request made from a web application running on one origin like example.com to a different origin like API another
+21:29
+example.com for security reasons course allows servers to specify who can access
+21:35
+their resources and how in a cross origin request there are primarily two types of flows one is a simple request
+21:42
+flow and another one is a pre-f flighter request flow first let's look at the simple request imagine our client our
+21:48
+frontend is at the Domain example.com and our server is at the Domain api.
+21:54
+example.com and we make a get request which looks something like like this this is how the flow looks like the
+22:00
+client sends a request the browser automatically adds the origin header to indicate the origin of the request the
+22:07
+request uses a simple method which are usually get post or head and then it
+22:13
+reaches the server the server checks for the origin header against it C policy if
+22:19
+the origin is allowed the server includes the access control allow origin header in the
+22:26
+response and it sends the response response the server responds with the resource and includes the necessary
+22:32
+course headers for example Access Control allow origin header and this is what the response looks like it has the
+22:38
+appropriate course header which the browser looks for while it passes the response it sees that our domain which
+22:45
+is the example.com is different from the host domain which is the api. another
+22:50
+domain.com and since these two are different the browser checks whether the
+22:55
+server's response has this header or not whether it responds with this particular
+23:00
+header Access Control allow origin if the server responds with the domain of
+23:06
+the client example.com or it could also respond with star which means allow all
+23:12
+Origins right if either of those two conditions are true then the browser
+23:17
+lets the response go through to the client to whatever the JavaScript client requesting the resource and imagine
+23:25
+imagine if the response looked like this the client sent the request the server got the request and assuming the server
+23:32
+did not add the corresponding course headers or assuming the server did not
+23:37
+allow this particular domain as the client then what the server does it
+23:43
+excludes this particular header from the response so the response looks something like this and when the browser finally
+23:50
+parses it it sees that it sees the absence of this header and what it does it blocks the this particular response
+23:58
+from being passed you will get an error in our console and we will see the error in the network tab as a course error and
+24:06
+this is how a simple request flow looks like next we have a pre-lighted request
+24:11
+flow for a cross origin request and how does a browser distinguish between a
+24:17
+simple request flow and a pre-lighted request flow so these are the three conditions the browser checks before it
+24:25
+decides it has to do a PF flight request which basically means it has to do a
+24:30
+request before the original request to inquire some stuff to inquire some capabilities and to let the server know
+24:37
+about some capabilities right and when does a request qualify as a pre-lighted
+24:42
+request one is the method is not get post or head example it is a put request
+24:48
+or a delete request and it is a either or situation right it either of these
+24:54
+conditions have to be true then it will be considered as a pre-lighted request so the first condition is obviously it
+25:00
+has to be cross Surin request which means our domain and the server domain has to be different and the second
+25:06
+condition is one of these three and after that it will be a c request and inside that it will be a pre-lighted
+25:13
+request so the first condition is it has to be either a put request or a delete request or the request includes some
+25:20
+nons simple headers nons simple headers are basically anything apart from our
+25:26
+general headers or request headers so one example could be an authorization header or some custom headers right and
+25:33
+the third one is or the request has a content type other than application form
+25:41
+URL encoded or multiart or text plan these are called General content types
+25:48
+or simple content types so if assuming our application our client request the
+25:55
+data to be in Json in that case it will be considered as a pre-lighted request and if you are a
+26:02
+frontend engineer or a backend engineer you know that mostly we deal with Json data right so most of our requests are
+26:08
+considered as a pre-lighted requests these are the three conditions either of them have to be satisfied before we move
+26:16
+on before the browser moves on to make a pre-flight request what does a pre-flight request looks like this is
+26:23
+when we finally see the use of options method right a pre-flight request is
+26:28
+made with an options method and pre- flight request looks something like this it has the method as options it has the
+26:36
+appropriate resource URL and the HTTP version it has the host header which is
+26:42
+the header of our API the origin the domain of the front end and this header
+26:48
+Access Control request method so it is basically asking the server whether this
+26:54
+method is supported for this URL or not so it is saying I am making a cross
+26:59
+origin request and do you support this put method for this route right and it
+27:06
+also asks whether you support this particular header or not if it is needed and the browser sends the options
+27:12
+request to the server the request does not include actual data right this does
+27:17
+not include any request body or anything it is just a general inquiry to the server about its capabilities and after
+27:26
+that if the server is is properly handling course flow if the server supports cross origin requests it
+27:34
+responds something like this and if the server does not handle cost request then
+27:39
+it won't respond with this and the request will be automatically blocked by the browser and if it does handle it it
+27:47
+requests with something like this what it says is this is the status code of the response which means there is no
+27:52
+content this is just a general information we use 204 when there is no content then these are the four
+27:59
+important headers it responds with the first one is the access control allow origin it says yes I allow the client's
+28:08
+domain which is example.com as a cross origin as a valid cross origin request
+28:13
+right it can either respond with this or it can respond with a star which
+28:19
+basically means I allow all types of clients to make request to me this is the one valid condition it is browser
+28:26
+checks it the next is we asked whether you allow put request for this resource or not so the server says yes I allow
+28:33
+these two different kinds of methods it is the put method and delete method for
+28:38
+this resource for this particular route right and the browser checks it off the
+28:43
+next one is we asked whether you allow authorization header and the server says yes I allow authorization header and
+28:49
+then it is also checked off and the last one is Access Control maxage what this
+28:54
+means is the server says don't make make any more pre-flight request to me right
+29:01
+it says these these configs whatever I responded with these will be the same
+29:06
+for at least the next 24 hours so you don't have to keep making more pre-flight requests for every route
+29:12
+before you send the original request so this saves some bandwidth for both our
+29:18
+servers and clients so this is the pre-flight request that the browser makes and the server responds with the
+29:24
+appropriate headers the browser checks off all these conditions and then the browser sends the final request which is
+29:30
+the original request that the client wanted to make and the server responds according to the original request with
+29:36
+whatever the operations are required this is how the typical course flow looks like and now that we understood
+29:43
+the theory let let's look at a real demo okay now before we start let me make
+CORS demo with burp suite
+29:49
+this clear that we won't be looking at any code because as I said we are learning from first principles and the
+29:57
+rule for that is we try to understand the concepts first how the underlying mechanism Works
+30:03
+before we dive into code before we understand the how but first we have to
+30:09
+understand what for all these demos that we are going to do in this video and and
+30:14
+all the other videos in this series we won't be looking at any code it does not
+30:19
+matter what language the server is written in what framework it is written in I'll explain what I am changing in
+30:27
+the server what I have done in the server for all it matters it can be implemented in any language that's that
+30:33
+and this is a tool it's called burp suit
+30:38
+and it is used by ethical hackers if you may it has a lot of features as you can
+30:44
+see but primarily what we are going to use it for is HTTP intercepting or
+30:50
+visualizing HTTP traffic and it offers a quite a nice set of features for that
+30:56
+with that what I have here is I have a simple front end app again it could be
+31:02
+in any language and what I want to show is one for our course flow one is the
+31:08
+simple request and one is the pre-light request and how they look like in actual
+31:14
+browser environment so let's fire the first simple
+31:20
+request okay so we got this response that we are rendering here and let's inspect the request and response for now
+31:28
+right if you go here this is what the request and response looks like right we
+31:35
+already took a look at all these components right the method and the URL and all these headers and the response
+31:42
+the status code and the response headers the response body so let's focus on the
+31:47
+course here what is the first parameter for a request to be considered as a cross origin request by the browser the
+31:54
+first thing is the origin so this is our local host file 173 and the host right this is our apis
+32:04
+which is running on the port 3,000 of Local Host since the host and the origin
+32:10
+are running on different ports in Local Host by the browser this is considered
+32:17
+as a cross origin request and according to the same origin policy we can only make request from Local Host 5173 to
+32:24
+Local Host 5173 right since we not it is considered as a cross origin request the
+32:31
+headers to focus here is origin header let me minimize
+32:37
+this so the the headers to focus here is the origin header which is our origin
+32:43
+the front end origin and the host the domain or the port that you want to
+32:49
+connect to which is the apis right for the request these are the two important headers now let's go to the response now
+32:57
+the thing to f Focus here is this header right as I had explained the browser
+33:02
+makes a cross origin request and when it gets the response it checks whether it
+33:07
+has the access control allow origin header or not or whether it has the
+33:13
+appropriate port or the domain so it has the front ends Port right the
+33:19
+5173 or it could also have star so in that case the browser lets the response
+33:25
+through and and it does not block it since according to the core sets this
+33:31
+response is now expected right this response is now allowed and now that's
+33:36
+why we are able to get the response and now we are able to render it in our front end right let's see what happens
+33:43
+if you remove this header like this Access Control allow origin header from the server for a simple request let me
+33:51
+just go and make this change okay I have went ahead and made the change in the server now it won't return the appri
+33:57
+corer Access Control allow origin Let me refresh this and let's clear this history so
+34:04
+that we can focus on the particular request now let's fire the same request again and before we do let's disable
+34:10
+caching so that we can see what a new request looks like right so let me fire
+34:16
+this the browser blocked this response right it says course error and why let's
+34:22
+inspect this request and response so here if you see we have a cross origin
+34:29
+request because our origin is 5173 and the host is 3001 and the server does not
+34:37
+return an access control allow origin header right because we removed it and for that reason the browser has blocked
+34:44
+the request because of course error so this is how the simple request flow looks like and now let's move on to our
+34:51
+pre-lighted request right okay I have gone ahead and enabled the course again so that we can test the pre-flight
+34:57
+request flow okay let me fire
+35:02
+this all right as you can see here the first request that went through was the
+35:08
+options request right the pre-flight request and then the original request
+35:13
+went through let's look at them one by one how the whole flow looked like okay for the pre-flight request as we have
+35:20
+already discussed the method was options and it is a cross origin request because
+35:26
+the referrer and the origin are different ports right and for
+35:32
+that what the server responded with it responded with status code 204 no
+35:38
+content because it is just a general inquiry right pre-flight requests are General inquiries they don't have
+35:44
+request bodies or response bodies and the server responded with Access Control
+35:49
+allow origin with the front ends domain or Port right this makes the browser
+35:56
+allow the response wants to go through that is the first condition and before that let's see why a pre-flight request
+36:03
+was fired right why why this was not considered a simple request he investigate the original request what
+36:09
+was the conditions it is not a simple method which is get post or head right
+36:14
+that is that was one of the conditions so it is already satisfied but let's look at others it also has a
+36:20
+authorization header that also counts it out of a simple request right that is the second one and the third one is the
+36:29
+content type is application Json and it is sending a Json request body right all
+36:34
+the three conditions are satisfied but even if one of them was satisfied it would have still fired a pre-flight
+36:40
+request for this let's go back to our options pre-light request analysis the
+36:46
+first one was it allowed the client's domain so that the browser lets the
+36:51
+response to go through the second one Access Control allowed methods so
+36:57
+the server says all these methods get post put delete these methods are allowed for the server it lets the
+37:04
+client know the capabilities of the server the third thing is Access Control allowed headers it says these are the
+37:11
+two headers which are not simple headers that are supported by the server which is the content type and authorization
+37:19
+since the client asked for them if you look at this Access Control request
+37:25
+method put the client is asking with the pre-flight request whether the put method is allowed or not and whether the
+37:32
+these two headers authorization and content type these two headers are allowed or not so for that the server is
+37:39
+responding with these headers it says get post put delete is allowed it also says content type and authorization is
+37:46
+also allowed we have also set the max age for the access control to zero for testing purposes right because if you
+37:53
+cach this for let's say 5 minutes then pre-flight request be fired that's why
+37:59
+this is used for and the content length is zero because there is no content since the pre-flight request was
+38:05
+successful it returned 204 it is a success status code the browser let the
+38:10
+response go through and it fired the original request it is the put method
+38:15
+and this is the original request it has put method the resource URL the origin
+38:22
+and the authorization header the host the request body and it responded with a
+38:29
+response body right and that's how the pre-flight request flow looks like so the simple request and the pre-flight
+38:36
+request flow combined they make the whole course flow and this is all you
+38:42
+have to understand how course Works behind the scenes and why these headers are important and how browsers react to
+38:50
+them okay moving on the next component that I want to cover is response codes
+Response status codes
+38:55
+this part this 200 okay what are these and why are they needed HTTP response
+39:03
+codes exist to communicate the result of a request in a standardized way know you
+39:08
+can just look at the response code and see whether the request was successful or not or what is the state of the
+39:15
+server without looking into the body or without judging from the response message that okay so if the request was
+39:22
+successful then I would have expected this structure if the request was unsuccessful then I would have expected this structure if the server crashed
+39:29
+then I would have expected a null object right we don't have to make those decisions we can judge by these status
+39:37
+Cotes so they quickly inform the client whether the request was successful resulted in an error or requires further
+39:45
+action they also help clients handle errors by providing specific codes to identify the problem for example
+39:51
+unauthorized access will return 401 so now the clients can check whether it is
+39:56
+40 one and it can log the user out saying you have to log in again right those kinds of actions they can be
+40:03
+judged with response codes or imagine let's say it was a bad request error
+40:08
+because of some invalid value through a form submission then the client can ask
+40:13
+their user to make changes to their form submission and resubmit right depending
+40:18
+on those status code which was like 400 also standardization HTTP response codes
+40:24
+are standardized across all web services enabling consistency in how servers
+40:29
+communicate with different clients regardless of the platform or language used it does not matter whether you are
+40:36
+making a server in python or golang or rust or JavaScript or Ruby you have to
+40:42
+follow this standard if the request was successful you have to return to 200 if the if you created something you have to
+40:48
+return to1 these are the standards and you have to follow them now before HTTP status course clients would have to
+40:54
+guess the outcome of a request based on the content of the response as I said leading to inconsistencies and
+41:01
+inefficiencies HTTP status code solve this by providing a universal language that all clients and servers understand
+41:08
+streamlining interactions and error handling on a high level response codes are three-digit numbers they could
+41:14
+either start with 1 2 3 4 or five and depending on the starting digit we
+41:21
+categorize them as different level of errors or different types of errors on a high level
+41:27
+the digits starting with one are informational responses two are success
+41:33
+responses three are redirection five are server errors four are client errors response codes starting with one this
+41:40
+code is sent by the server to indicate that it has received the headers and the client can proceed to send the request
+41:46
+body and when is it used commonly used in large uploads the client sends the
+41:51
+headers first and if the server is okay with the request it sends a 100 Contin so the client can send and the rest of
+41:58
+the body also there is which is which is used for switching protocols right we
+42:03
+have a use case for that this indicates that the server is switching protocols as requested by the client such as
+42:09
+upgrading from HTTP to websocket this is not the mostly used response codes that
+42:15
+you will encounter on your day-to-day life so let's focus on these four which you'll see a lot of times especially 2 4
+42:22
+and 5 200 series as you know are used for success responses and under that we
+42:29
+have three mostly used ones one is 200 and
+42:34
+2011 and 204 200 is the most common code it indicates that the request was
+42:40
+successful and the server is returning the requested resource or performing the requested action for example successful
+42:47
+get request where a resource is retrieved 2011 it indicates that the request has
+42:52
+been fulfilled and resulted in a creation of a new resource for example post request or new form submissions
+42:59
+that's where servers use this response to indicate that the a new resource has been
+43:06
+created then we have 204 that we just saw in a course flow when we send
+43:11
+options request a pre-flight request and the server responds with 204 saying that
+43:17
+there is no content but these are the information in the form of headers this also indicates that the request was
+43:22
+successful but there is no content we also sometimes use it for delete delete request right the client makes a delete
+43:29
+request you delete the particular resource but the server says okay I've deleted it but there is no content to
+43:35
+return right you can just assume that the request was successful then we have 300 and in 300 the mostly used ones are
+43:43
+31 302 and 304 301 means moved
+43:51
+permanently which means the requested resource has been permanently moved to a new UR URL and the future request should
+43:59
+use this new URL for example let's say initially you had a route called
+44:05
+user and eventually you decided to move that route to slash person so in order
+44:12
+to maintain backwards compatibility so that old users or old applications that
+44:18
+are still using this route don't break what you do is you add a 301 response
+44:24
+for this routes and read direct then to the/ person route so it is a permanent
+44:31
+redirect the next one is 302 which means temporary redirect the requested
+44:36
+resource is temporarily located at a different URL but the client should continue to use the original URL for
+44:42
+future request so when do we use this let's imagine you are running a campaign or something and for those couple of
+44:49
+hours you want to redir redirect a particular route to a new route for
+44:55
+catching new traffic or showing a different UI or something like that but you don't want to stick to that right
+45:02
+you want to revert the changes so you want to say to the client that for for now I'm making a redirect but later on
+45:09
+you should use the original route only and then we have 34 which says not modified it indicates
+45:16
+that the resource has not been modified since the last time the client requested it and this we will see soon in a bit in
+45:24
+a uh when we explore our caching demo and when do we use it this is mostly used in conjunction with conditional get
+45:31
+request to allow efficient caching right when we are using e tax to let the client know that the uh response is not
+45:38
+modified it should use the cached one only instead of downloading the new response so it just says that it is not
+45:44
+modified so you should keep using your old response the cach response then we
+45:50
+have the 400 series errors and as a backend engineer I think you will mostly
+45:55
+deal with these errors because these are the client errors or errors that are triggered because of something some
+46:03
+behavior from client so let's see what are the common ones the first one is
+46:10
+400 and what this means is it says bad request and when does it Trigger or when
+46:17
+should we fire it for example when the client sends invalid data or illogical
+46:22
+data or something related to data right for example you are expecting a number
+46:27
+and the client sends an array or a string right you are expecting an email but the client sends a phone number
+46:34
+something like that it's a bad request that's what it says and you're letting the client know that there is something
+46:40
+wrong with your request format so fix it and make a new request the next one is
+46:46
+401 which is which means unauthorized when should you fire this when a request
+46:51
+requires authentication but the client has either failed to provide valid credentials or is not authenticated at
+46:58
+all so let's say you are expecting a JWT token and either if the JWT token has
+47:05
+expired or if the client has not send the token in the first place so in those scenarios you want to say that you are
+47:11
+unauthorized that's when you respond with this status code 401 next up we have
+47:17
+403 and it says forbidden which means the server understood the request but it
+47:24
+refuses to authorize and this can happen even if the client is authenticated for
+47:29
+example when a user tries to access a resource they don't have permission to access so let's say you are user a and
+47:35
+you are trying to delete a resource of user B so that's when the server says you don't have the necessary permissions
+47:42
+to perform this action so you are forbidden 403 next up we have 404 and it
+47:48
+means not found I think this is the most famous status code 404 this is fired when the client requests a resource that
+47:55
+is unavailable either because the URL is incorrect or the resource has been deleted so in
+48:02
+those cases the service is 404 it is not found then we have 405 which means
+48:07
+method not allowed when does it get fired when an invalid HTTP method is use
+48:13
+such as trying to put to a resource that only accepts get or post this often
+48:18
+happens because of typos right we are working on front end and instead of doing a put request we do a patch
+48:25
+request or instead of doing a post request we do a put request so in those scenarios server says 405 which means
+48:31
+method not allowed then we have 409 which means conflict this has a
+48:38
+number of use cases one of which we can imagine is let's say in your app you are allowing users to create folders right
+48:47
+and the condition is the folder names has to be unique they cannot create two
+48:52
+folders with the same name when they try to create a new folder when they submit a post request you check whether the
+48:58
+folder is already existing or not if it is you can respond with this error 409
+49:04
+conflict so the client will understand that a folder with that name already exists and it should try with a new
+49:11
+folder name right it means conflict and at last we have 4 to9 which means too
+49:18
+many requests and this is mostly used when we are trying to rate limit uh the
+49:23
+client's request rate limit basically means if client tries to make too many requests in a particular interval let's
+49:31
+say in your server you have configured it to allow at most 60 requests for a
+49:38
+client in 1 second and if the client tries to exceed that you can respond with this response code which ISS 429
+49:46
+too many requests okay let's move on to the 500 series and we have the most
+49:51
+famous one which is the 500 which means internal server error this is often used
+49:58
+for unexpected conditions in server something some process broke or some
+50:03
+exceptions were raised which were not handled in the server so something unexpected happened at the server so
+50:11
+instead of you know just returning a empty response or just breaking or
+50:16
+hanging the request we respond with 500 internal server errors the client knows that something went wrong with the
+50:22
+server then we have 501 which means not implemented for example example when the
+50:27
+server does not support the requested HTTP method or functionality but it
+50:32
+plans to edit soon so that's when we add a 501 which means currently it is not
+50:37
+supported it might be in the future right so we are trying to get that
+50:42
+intention through to the client so that it is not implemented yet then we have
+50:48
+502 right it means bad gateway we usually see this in Proxes like NX it
+50:55
+means when a server acts as a proxy like in a load balance system or reverse proxy and Upstream server returns an
+51:01
+invalid response so that's when 52 is returned this is not something we uh
+51:08
+return intentionally this is handled mostly by Proxes and load balancers then we have
+51:13
+503s which means service unavailable when the service is down when the service is temporarily unable to handle
+51:21
+the request such as during high traffic or when it is going maintenance so
+51:26
+that's when you return 503 to let the client know that the service is unavailable right now and it should try
+51:33
+again later at last we have 504 which means gway time out it is
+51:40
+similar to 502 but this specifically means that the Upstream server failed to
+51:46
+respond within timeout period let's say you have you're using enginex and enginex could not get a response from
+51:53
+our original server which is running behind it so that's when ninx responds with 504 Gateway timeout that it did not
+52:00
+receive any response from our original server that's why it says timeout okay that's all that's pretty much all the
+52:07
+response codes you need to know to work with 95% of use cases now in order to
+52:13
+solidify our understanding let's look at a quick demo where we look at some of these responses okay now again we have a
+Response status codes demo
+52:21
+friend end app for this demo where we are trying to emulate some of the response resp CES and there is a server
+52:28
+running which will respond with different status codes right okay so
+52:33
+what we'll do is let's just fire all of these requests then we will examine what the responses look
+52:39
+like so let me go ahead and
+52:45
+okay created this one one
+53:01
+all right we have fired all these requests let's go through one by one so as you can see we have all these options
+53:08
+request before each original request because because these are cross original requests the browser need to do
+53:14
+pre-flight request to support those let's go through all the original requests one by one to see what are the
+53:19
+responses looks like okay the first one was 200 okay as I said this is a
+53:25
+successful respon which means request was successful right the status code is 200 and the next one
+53:33
+is a post request which says 2011 which means created and This Server response
+53:40
+even though it is a mock request and a mock response this is what usually it looks like the resource was created
+53:45
+successfully and and the status code is 2011 then we have 401 bad request says
+53:53
+bad request missing required data then we have have then we have 401
+53:58
+which means unauthorized which which typically means either you have not included the token the JWT token or the
+54:06
+cookie or whatever authentication mechanism you're using whether you are not you have not included that or even
+54:13
+if you have it has expired or it is not valid anymore next we have forbidden
+54:19
+which means you're trying to perform some action which are not authorized to do right that's why it says 40 through
+54:26
+forbidden you do not have access next up we have 404 which means not found and
+54:32
+the server says something like not found the requested resource could not be found next we have 409 conflict which is
+54:41
+resource already exists so this could happen when as our previous example maybe you already have a folder and
+54:47
+you're trying to create a folder with with the same name again so that's why the server says resource already exists
+54:53
+right then we have internal server error which is 500 and the server just
+55:01
+says internal server error without letting the client know too much of the information for security reasons then we
+55:08
+have 503 service unavailable please try again later right that's pretty much
+55:13
+covers most of the status Cotes that we have discussed and that we saw in this
+55:19
+demo okay moving on let's explore another interesting concept HTTP caching
+HTTP caching
+55:24
+what does http caching mean HTTP caching is a technique to store copies of responses for reuse reducing the need to
+55:32
+repeated request to the server this improves load time reduces uh bandwidth
+55:37
+and decreases server load right because the client does not need to download a lot of data and the server does not need
+55:42
+to send a lot of data if the data is not changed this client can just reuse the old data right that's what caching means
+55:49
+reusing the old data if the data is not changed in order to understand this let's just go through a demo instead of
+55:56
+of going it theoretically how it looks like practically in a browser environment okay let's go to the request
+56:03
+cycle and understand how caching works by following the trail let let me just
+56:09
+do a refresh so when we first render the page we are doing a fetch operation so
+56:14
+let's start from there okay we fired all these requests and what you want is the
+56:19
+last one right because these are just uh JavaScript files and CSS and stuff okay
+56:26
+okay what happened in the last request Let's see we did a get request to this
+56:33
+endpoint API resource and there is nothing else in the request headers that we should focus on right now right let
+56:41
+come let's come to the response what did the server respond with the first important thing is this one cache
+56:48
+control what it says is you should maintain the cash for this resource for
+56:55
+maximum 10 seconds right this is the first important header the next is e tag
+57:01
+e tag is basically a hash so for the sake of this example we are using a
+57:07
+random number but eags are usually hashes which are computed from a
+57:12
+response for example the server might have taken this response hashed it and
+57:17
+sent us that hash in the form of E tag right and we will see what is the use of that in the next request the next
+57:24
+important header is last modified with this what the server is trying to say is this is the last time this request was
+57:31
+modified and judging from this time and date we can decide whether we should use the old resource the cash resource or
+57:39
+request for a new one these are the three important headers that we are going to use for caching okay so that is
+57:47
+the initial request and in this request the server responded with a 200 along
+57:52
+with the requested resource whatever that is we won't focus on that we are just seeing there is a response body all
+57:59
+right what happens when we do a fetch operation for the same resource right
+58:04
+let's do a fetch okay what happened here let's look
+58:12
+at the response let's focus on the request first we are again doing a get
+58:18
+request to this end point and now the headers to focus in the request is this
+58:24
+these two headers if none match and if modified since what we are trying to say
+58:31
+to the server is if the E tag the hashed version of the response object the E tag
+58:37
+of the requested resource is not the same as this one which we have with us in the browser or if the request has
+58:44
+been modified after this which means we have the outdated version right we are saying if the eag does not match or if
+58:53
+the request has been modified after this then send us a new resource then send us
+58:58
+the updated resource otherwise I will just use my cach version which I have with me in the browser cache and to that
+59:05
+what server says is it responds with 304 not modified and we just talked about
+59:12
+different response codes right and 304 meant the requested resource has not
+59:17
+been modified ever since what the server did was it checked the if none match header which is which is the eag and it
+59:24
+also checked the last modified and since the resource matched either the eag or
+59:30
+the last modified it send the client a 304 response which means the requested
+59:37
+resource has not been modified ever since from the last time you fetched it so you can use you can go ahead and use
+59:45
+your cast version let's update the resource for now let's clear this and let's fire an update
+59:54
+resource okay what what happened here let's explore the first request okay
+1:00:00
+ideally we should have done a patch request or put request but for the sake
+1:00:05
+of this example again we just fired a request a post request okay we updated
+1:00:10
+the resource and the server responded with 200 okay and it also sent us a new e tag right 2943 and after that the
+1:00:19
+client did a new get request in this as you can see the client sent the old dag
+1:00:25
+which which was 3141 our cast version so client did a get request with the old
+1:00:32
+eag and the last modified sense to the server and the server responded with 200
+1:00:37
+instead of 304 because the resource has been modified after that right because we did a update resource request and the
+1:00:46
+server responded with 2943 which is the updated e tag the last modified Etc and
+1:00:54
+let's go ahead again do a fet
+1:00:59
+request okay and what do we have here we are again using the eag that was just
+1:01:05
+provided by the server in this request right this was 200 and the server
+1:01:12
+provided as with a new e tag we are using that e tag and the last modified
+1:01:17
+value and we are doing another get request so the server checked it again and since it is the latest version of
+1:01:23
+the resource it again responded with 304 for not modified so this is how you
+1:01:29
+handle caching using the HTTP protocol using different headers in server and
+1:01:34
+client even though in a production setting it gets a lot complicated because the server has to manually
+1:01:40
+Implement and manage all these e tags and if by mistake forgot to update an e
+1:01:45
+tag right then the client will continue to use the cast version with the outdated resource which is not a good
+1:01:52
+idea nowadays we have better Solutions for caching right for example react
+1:01:58
+query which is a complete client side caching so the client has the complete power over when it wants to use a cach
+1:02:06
+resource and when it wants to refetch right at what interval and all these
+1:02:12
+powerful capabilities which is in my opinion a much better solution compared
+1:02:17
+to the traditional HTTP based caching but it is good to know that we have this
+1:02:23
+option if our use cases simple enough then we can go ahead and use HTTP based
+HTTP content negotiation
+1:02:29
+caching moving on another important topic that usually comes up in client
+1:02:35
+server model in HTTP is content negotiation we already looked at some of
+1:02:40
+these headers for example accept the content type application gson Etc so
+1:02:47
+this is an important topic to understand how clients and servers exchange information about different types and
+1:02:55
+and coding and representation of the content this is basically a mechanism
+1:03:00
+using which client and server agree on the best format to exchange data the
+1:03:06
+client can indicate its preferred format like Json or XML or HTML and the server
+1:03:13
+will try to respond with a compatible format or if not available a fallback
+1:03:18
+format that is the whole idea to look at a high level we have generally three types of content negotiation one is a
+1:03:25
+med type which means the client specifies the desired format through the accept header which is application Json
+1:03:32
+or XML then we have the language negotiation the client requests content
+1:03:37
+in a specific language using the accept language header uh it could be English
+1:03:43
+or Spanish then we have encoding negotiation right the client specifies
+1:03:49
+which encoding it supports using the accept encoding header like gz or
+1:03:54
+deflate and the server responds with that compression format we have a topic
+1:04:00
+which is HTTP compression which is also part of this topic only so we will quickly see that also in the demo that's
+1:04:07
+the whole idea and let's just jump into the demo to understand how it works and again there is a server running which
+1:04:13
+will help us understand different types of content negotiation and this is a frontend client through which we will
+1:04:19
+communicate with our server so let's just try out different types of requests and we'll see how the headers differ and
+1:04:26
+how the responses differ depending on the types of headers the client is sending okay let's first just try the
+1:04:32
+default one which is which is a language is English the format is Json and the
+1:04:38
+preferred encoding is jip so let's do F FD source and this is what the request
+1:04:43
+and response looks like okay so it was a get request to this
+1:04:50
+endpoint and what we said is the language we are saying is English we are
+1:04:56
+sending that information using the accept language header that we prefer the English language then what we are
+1:05:03
+saying is the format is Json right we send that with accept application Json
+1:05:09
+and there is the encoding header right that we are saying accept encoding the
+1:05:15
+browser supports these kinds of encodings right JZ defl VR and zsd so we
+1:05:21
+said we are expecting English and in Json format so this how this is how the
+1:05:27
+server responded it it is sending us a Json and it is in English so let's trve one
+1:05:34
+thing let's make it to Spanish and see how the response differs I made it Spanish and add did
+1:05:42
+another fetch okay so let's see how this differs in this the only thing that changed was
+1:05:49
+instead of accept language English in the header the client said accepted language is Spanish so depending on on
+1:05:55
+that the server was able to update the response so instead of sending it in English since the client prefers Spanish
+1:06:02
+the server responded with Spanish and what if we change the format from Json
+1:06:08
+to XML and we do a Fetch and we look at this what change
+1:06:14
+here we are saying we accepted format is XML and the accepted language is Spanish
+1:06:21
+this is the XML format and the language is Spanish and on a high level this
+1:06:27
+these are the benefits of using content negotiation based headers right the client can let the server know what are
+1:06:33
+its preferences whether it is the data format or the language of the data and
+1:06:39
+depending on that the server can decide to send according to that format it can
+1:06:45
+make the life of the client Easier by sticking to the preferences those are the primarily two type of content
+1:06:51
+negotiations while we are discussing content negotiation there is one interesting topic which falls under the
+HTTP compression
+1:06:57
+same umbrella which is HTTP based compression it could be either gzip deflate or other formats right so let's
+1:07:05
+look at why do we need compression and how does it work so now what I've done is I've gone ahead and replace the Json
+1:07:13
+response with a very large file file of 11,000 entries now let's file the
+1:07:22
+request okay this is the response response and the size is 3.8 M since
+1:07:28
+it's a very large file and let's look how the response looks
+1:07:35
+like this is what it looks like because we are compressing the file on the server side with gzip encoding right
+1:07:43
+here it says content encoding is gzip because the client says it accepts
+1:07:49
+encoding of gzip one of the encoding formats now why do we use it to show
+1:07:55
+that let me just go and disable compression in the server side okay and
+1:08:01
+now that I have disabled the compression let's fire the same request
+1:08:09
+again and as you can see the significant increase in the size it's the same file
+1:08:15
+right it's the same file with 11,000 entries and because we are using compression the file size was 3.8 MB and
+1:08:22
+now that we have disabled it the file size becomes 26 M that's a huge increase
+1:08:29
+in size and imagine every client having to download that file it it it caes a
+1:08:35
+lot of based of bandwidth and that is why we need compression so that if the
+1:08:40
+response size is very large we can compress it to a format and on the
+1:08:46
+client side the browser can decompress it and it will get the same response and
+Persistend connections and keep-alive
+1:08:51
+this is another important topic which we won't really work with it's good to know
+1:08:58
+that it exists behind the scenes in the early days of HTTP specifically HTTP 1.0
+1:09:04
+each request response cycle required a separate connection to the server now this created inefficiencies since
+1:09:11
+establishing and closing TCP connections is resource intensive and slow to
+1:09:16
+address this persistent connections were introduced in HTTP 1.1 now with persistent connections a single TCP
+1:09:24
+connection can be reused for for multiple requests and responses avoiding the overhead of opening and closing a
+1:09:30
+collection for every interaction and for achieving that they introduced this
+1:09:36
+header called keep alive keep alive is the mechanism that enables persistent
+1:09:42
+connections it allows the client and server to reuse the same connection for multiple request responses until one of
+1:09:50
+them decides to close it so what are some key points to remember here in sttp 1.1 connections are persistent by
+1:09:57
+default we won't have to do anything explicitly about them meaning they remain open for further requests unless
+1:10:04
+explicitly closed and multiple SB request and responses can be sent over a
+1:10:09
+single connection this reduces latency and saves resources as fewer connection need to be established now the second
+1:10:16
+thing is the keep alive header while persistent connections are default in
+1:10:21
+HTTP 1.1 the connection keep alive header is it's still sometimes used to explicitly ask the server to keep the
+1:10:29
+connection open this header can also include option like how long the connection should remain open with a
+1:10:36
+timeout or how many requests can be sent before the connection is closed with the max value now the third thing is when
+1:10:43
+connection is set to close and when that is specified the connection is closed
+1:10:48
+after the response is sent this is the behavior in HTTP 1.0 by default and it can still explicitly enforced in HTTP
+1:10:56
+1.1 that is some amount of information you just have to understand but you usually won't be working with them the
+1:11:03
+default values work fine one last topic that I want to cover is handling large
+Multipart data and chunked transfer
+1:11:08
+request and responses how server takes in large request like Files video files
+1:11:15
+image files audio files any kind of file which are very large compared to our typical Json and how client can receive
+1:11:23
+large responses in the same way so let's just jump into the demo and see how it
+1:11:29
+usually works now here we have two examples in one we will see how clients
+1:11:35
+can send large request to the server and in the second one we'll see how servers
+1:11:40
+can send large responses to the client first one is multiart request multiart
+1:11:46
+is usually used for sending large files or any kind of files to the server from
+1:11:51
+the client and the difference between our typical Json request body is in multiart request the file the data of
+1:11:59
+the file the binary data is transferred to the server in Parts in different
+1:12:04
+parts that's why it is called multiart request so let's see how it looks like I have selected a picture and let's click
+1:12:13
+on upload file now let's look at the response of
+1:12:18
+this here is what the request looks like it is a post request and we are
+1:12:23
+specifying a Content length and our content type is multiart form data and
+1:12:30
+this is the important part the boundary and why we need this is since our binary
+1:12:37
+data the binary data of the file is transferred in parts we want to specify
+1:12:43
+what is going to be the delimit what will separate the parts right we need
+1:12:48
+some kind of code that will separate the parts so we are saying this will be our
+1:12:53
+delimiter and if we do a search
+1:12:59
+here we have the delimeter at the start of the binary data and the next
+1:13:04
+occurrence is at the end of it when the all the binary data ends in the request body
+1:13:12
+right that is the use of the boundary parameter and that is how we transfer a large file to the server and the server
+1:13:19
+can read the file responds with the some details of the file in order to say that
+1:13:24
+the upload was successful the idea is whenever we want to transfer large files to the server we should use multiart
+1:13:32
+requests okay now the second thing is receiving large responses from the
+1:13:37
+server for this demo I have used a large text file in the server side and we want
+1:13:44
+to stream the data to the client side in chunks that's what we want to do so
+1:13:50
+let's start the so let's start the request and see how it looks like
+1:13:55
+click on stream data so as you can see this is the first
+1:14:03
+chunk okay so if you go
+1:14:09
+here you can see that we are receiving chunks continuously from the server in different different requests so the
+1:14:15
+request is pretty much a normal request it is a get request let's look at the response what the response looks like
+1:14:22
+these are the three important things that we have to to consider one is content type it is saying that it is not
+1:14:29
+a text content right it is a text event stream which says it will stream the data to the client through different
+1:14:36
+events and the second one is the connection keep alive it says keep the connection alive until all the data is
+1:14:42
+sent and if is here we are still receiving the chunks and we can keep scrolling and scrolling and until the
+1:14:49
+file is completely transferred the server will keep sending the data in chunks and how does it work because of
+1:14:56
+these headers the content type text event stream and the connection keep live right and the client keeps
+1:15:03
+appending all the data that it is receiving from the server and constructing this whole text file and
+1:15:10
+that is how we transfer a large file from a server to the client using chunk
+1:15:16
+transfer or text event stream and the last thing before we end this lesson I just want to give a brief idea about
+SSL, TLS and HTTPS
+1:15:23
+what these terms mean SSL or TLS or https even though we don't explicitly
+1:15:28
+work with them it's good to know what are these SSL was the original protocol
+1:15:34
+for securing Communications between client like a web browser and server it
+1:15:39
+encrypts data so that the sensitive information like passwords or credit card numbers cannot be intercepted by
+1:15:46
+attackers right it was the original encryption mechanism between clients and server now currently SSL is outdated due
+1:15:54
+to some some security vulnerabilities and has been replaced by TLS so this is
+1:16:00
+the modern version of the encryption that client and servers use for data transmission TLS is a modern and more
+1:16:07
+secure version of SSL it encrypts data in transit ensuring that any data sent
+1:16:12
+between the client and server is protected from interception and tampering how it works is TLS uses
+1:16:19
+certificates to authenticate the server and establish an encrypted connection preventing Eve dropping and data bries
+1:16:26
+TLS is continuously updated with newer versions offering better security the current recommended version is TLS 1.
+1:16:34
+and what is https then https is basically HTTP but more secutive
+1:16:41
+features which is which are provided by SSL or TLS initially it was SSL and now
+1:16:48
+it is TLS the underlying mechanism is TLS and https is the one which uses TLS
+1:16:56
+how it works is when you visit a website using https TLS encrypts the communication
+1:17:02
+between your browser and the server this protects sensitive data like login credentials from being intercepted by
+1:17:09
+the attackers and that much information is more than enough on this topic that's all you need to know about TLS and sdps
+1:17:16
+to work on application Level great we talked about a lot of stuff I hope
+1:17:22
+you're able to digest that and I hope you rewatch some of the sections so that
+1:17:28
+you are able to internalize all of them and overally this is all you need to
+1:17:33
+know about HTTP at least of course there are more stuff to read if you want on
+1:17:39
+HTTP or TLS or PCP protocol different different components of HTTP but in
+1:17:45
+order to work on backend systems if you understand this much if you internalize
+1:17:51
+this much and you can visualize the whole flow of all the the components that we talked about today then you're
+1:17:57
+good to go you'll be able to understand all you need to understand and you'll be able to debug most of the stuff now that
+1:18:03
+you understand how the system works behind the scenes and what are the components that come into play in
+1:18:09
+different different flows that's all about http

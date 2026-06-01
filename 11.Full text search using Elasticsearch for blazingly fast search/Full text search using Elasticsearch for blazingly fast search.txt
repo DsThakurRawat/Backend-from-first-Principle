@@ -1,0 +1,304 @@
+00:00 Now imagine this it is 2005 the year 2005 and you are a software engineer and
+00:08 you work basically at a e-commerce based company and the company is rapidly growing because it's 2005 because of the
+00:16 com bubble etc right the company is rapidly growing and you have a task you
+00:22 are a software engineer and you have a task to search through thousands of products your company has around let's
+00:29 say 5,000 products And you have to write a database query to create an API which searches given a
+00:37 user input searches through your database and returns some relevant
+00:42 results. Right? And this is how you write the query for that in a typical relational database based setup. You say
+00:49 select star from products where name is like laptop. So these percentage symbols
+00:55 are for matching any characters that comes before and comes after that.
+01:02 Either it can match name or it can match description. If the keyword laptop is
+01:08 either in name or in description, you return those results. Right? This is how you do a basic search and the customers
+01:15 search for laptop. They get a few results and life is very simple. Now something happens since it is 2005 and
+01:24 because of a lot of companies growth your company also grew and it grew
+01:30 rapidly. Suddenly you had millions of products, right? The the very
+01:36 straightforward I like and the person symbol based search in your relational database query that once returned
+01:43 results in let's say 50 milliseconds. Now it is taking 30 seconds and because
+01:50 of that the your customers are frustrated, your manager is frustrated
+01:56 and everyone is asking you to optimize it and you are clueless. They don't just
+02:01 want to make it faster. They also have more requirements. Requirements like can
+02:07 we make the search smarter. For example, when someone searches for laptop, you
+02:12 want to show the most relevant results faster. For example, let's say someone searches laptop, instead of showing a
+02:18 laptop bag, we want to show a MacBook Pro first, right? So that kind of smart
+02:24 searching, relevancebased searching. And we also have a requirement that customers are there in a hurry during
+02:32 the sale time, right? So instead of writing laptop, they are writing laptop
+02:39 pretty frequently. And we also want to take that into account even though they make typos, customers make typos in
+02:45 their user queries, we still want to return relevant results for laptop
+02:51 instead of laptop, right? We want to make it faster. We want to make it relevant. And we also want to be robust
+02:59 enough that typos cannot break us. And with all these requirements, this is the
+03:06 story of why search engines like elastic search came into place because of all
+03:12 these requirements. And this is what we are going to talk about to get the intuition of it. Your posgress database
+03:19 or whatever relational database that you are using. Now that database is like a librarian. You go to a librarian and you
+03:26 ask a librarian the locations of different different books or different different categories. Right? So your
+03:32 Postgress database is like a librarian who knows exactly where every book is
+03:38 located but it has one fatal flaw. So we have our librarian here. If you ask the
+03:46 location of a random book, then to find that book, the librarian has to look
+03:51 through every single book in every single shelf in the whole library one by
+03:56 one. That is its fatal flaw. So for example, let's say you ask for a book
+04:03 called machine learning. You go to the library and you ask the librarian that I
+04:09 am looking for books about machine learning. Right? So the librarian starts
+04:14 its search. It finds the first book. The first book's name is Harry Potter and the Philosopher Store. And it checks
+04:21 that no, there is no machine learning in this. Moving on. Then it finds that Game
+04:26 of Thrones. Again, there is no machine learning in that title. Moving on. Then
+04:31 it finds a book which is called Introduction to Machine Learning. Finally has a match and it returns that.
+04:37 Now that librarian will continue this process of going through every book one
+04:43 by one in the whole library. Depending on the size of the library, it might take a few minutes to a few hours in in
+04:50 fact a few days if it's a huge library, right? Let's say a library with 10
+04:56 million or 1 billion books. That is one thing. The time it takes to find all our
+05:02 books. The second thing is the librarian has no concept of relevance. And what do
+05:07 we mean by relevance? In the sense that if the librarian finds two books, in one
+05:13 book, the the title name, the name of the book is an introduction to machine
+05:19 learning. And in another book, the word the phrase machine learning is just
+05:25 mentioned in the last page and the topic is something else. But machine learning is just mentioned there. And it returns
+05:32 both of these books in any order it wants, right? It can return the second
+05:37 book which only has machine learning in the last page which is not very relevant and it can return that book first and
+05:43 return the book named an introduction to machine learning second. Even though if
+05:48 you're asking for books about machine learning, we want the first book is titled as an introduction to machine
+05:54 learning first and we might not even want the second book because it is pretty irrelevant in our use case.
+06:01 Coming back to our databases, if you think about the librarian, the example that I talked about just before as our
+06:09 database itself, then a query like this where we use I like which is basically a
+06:15 case insensitive search and using percentage symbol. This
+06:20 is exactly how the librarian looks for books in a huge library. The database
+06:27 has to scan every single row, examine every single text field and perform
+06:32 pattern matching character by character. Now it is thorough. It is going to return results results that are
+06:39 matching. But it is painfully slow and second thing the relevance thing. It
+06:45 does not really know which books which results are more important than others.
+06:51 It returns them in a random order. We might want some results. Some results might be completely irrelevant and some
+06:58 results might be very relevant but they might be in the position of let's say
+07:03 a,000 or 10,000 right the database has no sense of what is the most relevant result okay now coming back to our
+07:11 history since we are talking about 2005 around the same time the information explosion happened right there are so
+07:17 many websites being built there are so many servers databases and all these big
+07:22 companies like Google was processing ing billions of web pages it was indexing crawling through them and Amazon as a
+07:30 e-commerce company it was cataloging millions of products and LinkedIn was indexing millions of profiles and these
+07:38 companies they cannot afford to wait 30 seconds for search results obviously
+07:44 customers are going to leave the site 30 seconds is way too much in our current
+07:50 standard even 2 seconds of delay is considered considered a crazy amount of
+07:56 delay especially when we are talking about latency. Search results have to be very fast. We are talking about
+08:02 milliseconds here, right? So obviously these big companies where they are
+08:07 making millions and millions of dollars every single second. They cannot afford this kind of latency. This will affect
+08:15 their conversion, their user base. So to solve the problem of search the answer
+08:22 came from decades of research. It was not a new problem. There has been countless research in in this field when
+08:29 it comes to textbased search and information retrieval since decades. And
+08:35 computer scientists have been studying how to get the results fast and keep
+08:40 them relevant. and researchers, scientists, computer scientists, they have been investing a lot of time and a
+08:46 lot of effort into it since the 1960s. So the revolution in the idea came from
+08:52 this particular uh key thought or key idea that so instead of searching
+08:58 through the documents in case of the librarian instead of searching through the books the title the content all the
+09:05 books to find the relevant terms what if we flipped the problem. What if we
+09:11 inverse the problem? What if we look at it in a different way? And that was the
+09:16 birth of this key invention, the key
+09:21 idea that changed textbased search forever which is called inverted index.
+09:27 Now this is a very simple concept even though the implementation might have more complicated stuff more mathematics
+09:34 but for a highle understanding it is a very simple concept that we are going to talk about. Coming back to our earlier
+09:40 example where we think about the database as a librarian and we ask the
+09:46 librarian we ask the librarian that we want books related to machine learning
+09:51 right and the librarian goes to every book to search through the title to the content to the description etc etc now
+09:58 coming back to the same problem but this time we look at it using this technique called inverted index and the
+10:05 revolutionary idea here is instead of going through every book and checking
+10:11 the existence of machine learning in those books. What if while storing the
+10:17 books in the shelf when the first time the books arrive, we take all the words
+10:23 in that book and we create an index of those words in a way that for a
+10:28 particular word we can find out that what are all the books where this word
+10:35 is used and also where exactly it is used. For example, let's say we are
+10:40 talking about machine. So machine is used in this book called introduction to
+10:46 machine learning in page 1, 15 and 23. Same way another book called the machine
+10:53 age here it is used on page five on page 89 and another book where coffee where
+11:02 coffee machine manual it is used in page one. Same way for learning introduction to machine learning it has been used
+11:09 three times 1 16 24 even though in a practical scenario for a book called
+11:16 introduction to machine learning the words machine and learning will be most likely used hundreds of times throughout
+11:22 the books. For the sake of this example we are just saying three pages but they are most likely used in hundreds of
+11:28 pages. Same way learning to cook it's used in two places and deep learning
+11:34 fundamentals it's used in three places. Now we have this index which we call
+11:40 inverted index. So instead of going through the content and finding the terms we have the terms and through the
+11:46 terms we find the content. We just inverted the search. That's why it's called inverted index. And this
+11:53 technique, this technique of inverted index, this is the thing that powers
+11:60 elastic search, a very famous tool. When we are talking about full text search,
+12:06 elastic search, elastic search also has an history. It is not a completely new invention. It makes use of this
+12:13 technology which is called Apache lucine. This is the key technology, the
+12:18 key uh inverted index based technology. which elastic search and a lot of other
+12:24 tools. Elastic search is not the only cool text search tool. In fact, these days even relational databases like
+12:31 posgress also have support for full text search. So, elastic search is not the only tool. We have also have a lot of
+12:37 other tools full text search based tool which most of them make use of this underlying technology called Apache
+12:43 Lucion which is primarily the inverted index based text search technology. Now
+12:49 that is one key concept. Now that we have this inverted index, the librarian can just refer to this. We say machine
+12:56 learning, they can see that machine is used in all these books and learning is used in all these books. This is the
+13:02 first thing the librarian and the database. We are talking about both of these things here just to make it more
+13:08 intuitive. We are talking about librarian but you can think about database when we say librarian. Now the
+13:14 librarian is faster but there is another advantage and a huge advantage which is
+13:19 relevance. So from these results we can see that for the term machine it is used
+13:25 in three places. Now as I said in a book called introduction to machine learning this term machine is most probably used
+13:32 in hundreds of places but for this sake of this example it's used in three places and for the book the machine age
+13:41 it is used in two places. Now the elastic search technologies and tools like elastic search they also have this
+13:48 feature called relevance scoring we don't have to understand how actually it works understanding is good uh it is
+13:56 definitely good to understand the underlying architecture but again if you
+14:02 just want to make use of the tool and build a service then you can easily refer to docs take the example and just
+14:08 use it just have to know that if you have a use case like this go with elastic search or full text search from
+14:13 posgress whatever your typical tech stack is but you don't have to completely understand all the
+14:19 technologies what is happening behind the scenes how the index works how the scoring works etc it's it's pretty
+14:25 complicated and unless you are writing another library about elastic search or creating alternative to elast elastic
+14:32 search all that knowledge is not going to help you a lot as long as you know the best practices how to do certain
+14:38 stuff that's pretty much enough now coming back elastic search also has this concept called relevant scoring which
+14:44 means that it can check the term machine is present in page one in the title of
+14:52 the book that fact itself that the term is present in title it gives a
+14:59 significant boost to its relevant score now this is the most relevant book for
+15:05 our query since the term is present in the title again after that we also see
+15:11 that it is present present three times throughout the book. Now that is again another significant relevance booster.
+15:19 It is present in the title and it is present in more frequent places. Those two things because of those two things
+15:25 this result is came on top. Same way for this book the machine age it is present
+15:32 in the title. So that is one relevant scoring but it is not as frequently
+15:38 used. So that's why it is coming in the second place. Same for the third thing. It is present in the title but it is
+15:45 very less frequently used. So that's why we got it in the third place. And same logic for this term also. So as you can
+15:52 see using a tool like elastic search can make the experience of search fast and
+15:59 also give you this additional advantage of relevance based results. We just don't want any result that matches your
+16:06 query. You want the most meaningful result and elastic search tools like elastic search give you that feature.
+16:12 Now it has an algorithm called the BM25
+16:18 algorithm. As I said there is a lot of theory behind this. If you are
+16:23 interested you can learn more about it. But I would suggest just treat it as a tool. Whenever you want to use it just
+16:30 know that if I have a use case like this I have to go with elastic search. then just refer to the docs, implement the
+16:36 feature and move on instead of spending too much time understanding the theory.
+16:41 But again, if you are curious then it's great if you want to learn more then
+16:46 elastic search docs is a very good place to learn more about these things. So this algorithm that it uses the BM25
+16:54 algorithm it has different different parameters to sort the results. So one
+16:59 thing that we already talked about is the term frequency. How often the term
+17:04 machine appears in the document. How often if we consider this book as a
+17:10 document in elastic search all the a single entity is called a document. It's a JSON document kind of like MongoDB. So
+17:18 the first category if we see it is term frequency which checks that how often a
+17:25 particular term is present in a document. And the second category is
+17:30 document frequency which checks that how common is the term machine across all
+17:35 documents. Right? This is in a single document and this is across all documents. Third one document length
+17:42 which checks basically how long a particular document is. If it is a short document or a long book like document
+17:49 then another thing is field boosting. Now if you have worked with elastic search before then field boosting
+17:56 feature is something that we use a lot. Field boosting basically means that this term machine if it appears in the title
+18:04 then that is more relevant as compared to it appearing in the description and
+18:09 it appearing in the description is more relevant as compared to it appearing in the content. Let's say for a particular
+18:16 book we have a title then that is more relevant than the description and that
+18:22 is more relevant than the content. So if a term appears in the title that is more
+18:29 relevant than it appearing in the description and that is more relevant than it appear in the content. That is
+18:35 what we call as field boosting. And while making a search query we can say
+18:40 we can define our own field boosting criterias. We can say that if it appears
+18:46 in the content then that should be more relevant. So we can alter these things. It's not fixed. It's upon us. The
+18:53 elastic search DSL the the language that we use. It's a JSON based query language
+18:58 and it offers a lot of features a lot of parameters to do different kinds of
+19:04 search and using that we can extract different different kinds of results. So there are different use cases when we
+19:10 are using elastic search. Apart from a just basic text matching the first one
+19:16 is of course the typo tolerance let's say. So I will show you an example. So
+19:23 we want to make Google search. Now this is a very good example. We are not sure what exactly the technology that Google
+19:30 uses whether it is elastic search or whether it is something proprietary that Google has built on top of Apache Lucen
+19:36 but it is a technology similar to elastic search and you can build an interface like this which is called a
+19:42 type ahead interface uh using elastic search right we have this in websites
+19:48 like Amazon where you type something and you get results I want to search what is trending today so I start to write what
+19:56 is So I already got a lot of results. Now these results are scored in
+20:01 different different parameters that depends on Google. But I want to show something else. I want to search what is
+20:08 trending today. So instead of writing trending, what if I write treading? Trending today. So as you can see, we
+20:16 wrote what is treading today. We intentionally made a typo. But because
+20:24 of this pull text search based capabilities of tools like elastic search they can derive from the context
+20:30 that there is a typo and what is trending today is the most likely
+20:36 intended query of the user right and this is a major advantage of using a
+20:42 technology like elastic search full text search based technology for these kinds of experiences like typos and all right
+20:49 so if you are building a search like feature in your backend application then
+20:56 you have two options you can go with posgress now posgress as a modern database it also offers a full text
+21:02 search feature so you can go with posgress or if your company already uses
+21:08 elastic search now elastic search is a tool is not just used for these kinds of
+21:14 features like type ahead and full deck search elastic search is a very famous tool which is also used in the domain of
+21:21 log management So there is this very famous stack called ELK stack. So if we look for Elk
+21:29 stack, Elastic Search, Kibana and Lock stacks. All these three technologies combined a very famous stack for
+21:36 managing logs etc. Right? Since elastic search is very fast in searching things,
+21:42 searching through logs and deriving statistics and visualizing data etc etc.
+21:48 There is a very famous use case of elastic search. So if your company already has elastic search as a part of
+21:54 elk stack for log management then going with elastic search for your full text
+21:59 search based requirements also makes a lot of sense instead of going with posgress. Let's go through an example of
+22:06 the difference between a traditional database search and an elastic search based search. I have a project here. It
+22:12 is a nextjs based project. There is no reason for creating it in nextJS just that LLMs are very good at generating
+22:19 these prototype based applications using nextJS. That's why I went ahead with it instead of writing my own in any other
+22:25 language. In this project basically we have a UI like this where we are comparing we are executing query and
+22:33 running that query in a traditional posgress based database and also a
+22:38 elastic search instance. To keep it fair, I have created a project in neon serverless cloud-based posgress instance
+22:45 and a project in elastic cloud right and both the instances are situated in the
+22:53 region of US- west. So latency because of distance should not be a big factor
+22:58 in our test which or kind of benchmark that we are going to do just now. But before that I just want to explain what
+23:05 I have done in this project for the purpose of the demo. I created a table called reviews in a posgress database in
+23:12 the neon posgress database where the table has three fields one ID one review
+23:17 is a text field and one sentiment is positive or negative that is the
+23:23 database table then going to this script which populates our database and our
+23:29 elastic search index I have this very big CSV file it is around 50,000 entries
+23:37 of review and sentiment. I have collected it from somewhere. I'm not sure. So, it has two fields. It has a
+23:44 review and it has a sentiment that whether it is a positive review or negative review, right? And it has
+23:51 50,000 entries. And we want to insert it first into our database and our elastic search index. So, what am I doing? What
+23:58 I'm doing here in the populate script is it's a NodeJS script and I'm taking the
+24:04 database URL from environment and elastic search address and the elastic
+24:09 search API key right if any of them are not present I'm throwing an error then
+24:15 we initialize the clients for the database we start in neon client and for
+24:22 the elastic search we start in elastic search client is where we are building the clients
+24:28 Then we read the data from CSV. We are just doing a read file sync and we are
+24:33 reading the data and storing it in this variable. Then first we populate the
+24:39 Postgress instance. This is our script to run which basically says that if this
+24:45 table is not already existing then create a table. But since I have already run this migration once the table
+24:52 already exists this part does not really run. Then we are just resetting the ID field so that we start fresh. Then we
+24:59 are doing some kind of filteration so that we have both the review and the sentiment field. If it does not have it,
+25:05 we're just filtering it out. Right? Then we have valid records then we start
+25:11 inserting them in batches. Since inserting them all at once has a limitation in the neon instance. We are
+25:18 inserting them in batches. So we are creating a batches of thousand and we're
+25:23 looping through those batches and we are just doing a normal insert statement insert into reviews review and sentiment
+25:29 and just in the values we are just inserting the review and the corresponding sentiment and we are
+25:35 executing the query here. That's the database part. Then we are populating the elastic search if the index exists
+25:44 or not. We are checking first whether this elastic search index which is called reviews exist or not. If it
+25:49 already exists, we are deleting it since we want to start fresh. If if it does not exist, then here we are creating an
+25:56 index. And in the inside that index, here is how we map the fields. We're
+26:01 saying that we have two fields. Review, which is of type text, and sentiment, which is of type keyword. Text basically
+26:09 means that we don't want to do any kind of discrimination around the different
+26:14 words in the text. But keyword means that we want to exactly match that particular word. Now again we are
+26:20 checking the val records by the present of both the fields. Then we are doing a bulk insert of all the 50,000 records in
+26:26 the elastic search. So I have gone ahead and run this script. You can see here
+26:32 50,000 documents inserted to elastic search etc. And if we check in our cloud
+26:39 instance, you can see that in our elastic search cloud instance, we have 50,000 documents here all populated.
+26:46 Same for our neon uh database. So if we come here in the SQL editor, if we run
+26:52 this query, select count star from reviews, then we get this value that 50,000, which means that we have 50,000
+26:58 rows in our reviews table. So both the database and the elastic search have been populated successfully. Then what
+27:04 am I doing here? This is the key part, not the UI. UI is pretty generic. The route. This is basically the API
+27:11 endpoint which we call once the user types something and hits enter runs the
+27:17 query. This is the API we call. So what exactly were we doing here? We are taking the search term from the JSON and
+27:24 if there is something wrong with it, we just threw a bad request error and we are starting a stream because the result
+27:30 timing of the database and the elastic search can be different and we don't
+27:36 want to delay the result of one because of the other. That's why as the results
+27:42 are available to us, we are just streaming it to our front end so that we can immediately see which one is faster
+27:48 and how much time it is taking. Right? For that we are just starting a new stream here. And this is our posgress
+27:55 search. And what are we doing? We are just starting a timer to track how much time it took to run the query. And this
+28:02 is the query that we are running. Select these three fields from reviews table where review is like this search term as
+28:10 I have already shown in the just a while back. This is how we typically do a search in a relational database. We use
+28:17 I like because we want to do a case insensitive search to cover more uh breadth and we put the percentage sign
+28:25 before and after the term to say that we it does not matter what character comes before it and after it as long as the
+28:32 term is present itself we want to take that result. Then we have this query and
+28:38 we are just running it and taking all the information that comes with it and we are just sending the result. End
+28:44 result is the function which actually streams the data to our front end as the data is available. Right? Second,
+28:51 elastic search. Same thing we are doing. We are running a search through the elastic search index. We have the index
+28:58 name here which is reviews and we are searching a query string. In the queries the search term we are converting it to
+29:06 lower case to cover as much breadth as possible. And whatever characters that
+29:11 come before and after it, we are taking that and we are adding some default fields to enhance the search. Again, we
+29:18 are running it. We are executing the result and returning whatever that data comes with it. And as a response, we are
+29:25 saying that we are returning the stream of response as it becomes available. And
+29:30 in our front end, we are just reading that response as it comes through. Right? There is nothing to see in the
+29:36 front end side. Now, moving on. This is a demo. So let's say I want to run a
+29:42 query for the keyword laptop. Now laptop and let's say I hit search. This is our
+29:48 elastic search results, right? How much time it took? It took around 1 second.
+29:54 And our database search it took around 3 seconds. Almost 4 seconds, but 3
+29:60 seconds. Now run something else. Let's say let's say something only. and we hit
+30:07 search and elastic search results is already ready in 500 milliseconds and it
+30:13 found around 8,000 results. And our database also found the same number of
+30:18 results because to keep it fair, we are kind of keeping the search criteria the
+30:24 same by converting it to lower case and matching any characters that come before and after. Because in this demo, we just
+30:30 want to show the speed, right? Even if we run it one more time again our
+30:36 elastic search results is here in 500 milliseconds and our postcrist search results is still running and it took
+30:43 around 7.5 seconds for the database results to come even though the number
+30:48 of results same the time it takes is significantly larger in a relational
+30:54 database with the I like base syntax so this is what I wanted to show where you have a use case of any kind of search or
+31:01 type ahead things like that you go ahead with full text search you can go with posgress
+31:07 full case full text search or elastic search a tools like elastic search right there's something as a backend engineer
+31:14 you should have in your arsenal you don't have to master it or anything it is knowing the knowledge of elastic
+31:19 search is not as important as the knowledge of database knowledge of database is something you absolutely
+31:25 have to master you have to master how to work with databases how to optimize them
+31:30 how to understand indexes is every single part of it because that is something that involves almost 99% of
+31:38 your codebase as a backend engineer. But elastic search is something that you can get away with just by copy pasting some
+31:44 snippets from any LLM or any docs. Now, of course, if you want to optimize, you
+31:50 have to read a little more into it. But most of the use cases, most of the examples provided in these docs and in
+31:58 these snippets are pretty much more than enough to cover most of the search based use cases. That's pretty much all about
+32:04 full text search, full text search, and elastic

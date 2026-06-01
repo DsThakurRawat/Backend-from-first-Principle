@@ -1,0 +1,2623 @@
+00:00 Let's picture a very realistic scenario.
+00:03 
+
+00:03 You're in the middle of processing a
+00:06 
+
+00:06 critical payment transaction and
+00:08 
+
+00:08 suddenly your server needs to restart
+00:11 
+
+00:11 for a deployment. Someone pushed
+00:14 
+
+00:14 something to the production environment
+00:17 
+
+00:17 and your server needs to deploy itself.
+00:20 
+
+00:20 And of course, we have uh techniques
+00:24 
+
+00:24 like zero downtime deployment etc. which
+00:27 
+
+00:27 makes sure that our existing server does
+00:30 
+
+00:30 not go down before our new server, the
+00:33 
+
+00:33 server with our new code comes up and is
+00:36 
+
+00:36 ready to receive traffic. Those
+00:39 
+
+00:39 mechanisms are there. But at some point
+00:42 
+
+00:42 when our new server is ready to go
+00:45 
+
+00:45 online, is ready to receive traffic, our
+00:48 
+
+00:48 old server has to shut down. It has to
+00:50 
+
+00:50 stop receiving traffic and the
+00:53 
+
+00:53 transition will happen to the new
+00:54 
+
+00:54 server. During that moment we are
+00:57 
+
+00:57 talking about that part that critical
+00:60 
+
+00:60 moment and you are in the middle of a
+01:02 
+
+01:02 transaction. Let's say you are in the
+01:04 
+
+01:04 middle of a e-commerce transaction you
+01:06 
+
+01:06 are buying something from Amazon or
+01:08 
+
+01:08 Flipkart and Amazon server or Flipkart
+01:10 
+
+01:10 server needs to restart for some kind of
+01:13 
+
+01:13 deployment. Now the question is what
+01:15 
+
+01:15 exactly happens to that payment and does
+01:19 
+
+01:19 it get lost in the digital world or does
+01:23 
+
+01:23 the customer you do you get charged
+01:26 
+
+01:26 twice because of some kind of race
+01:29 
+
+01:29 condition. All these scenarios you have
+01:31 
+
+01:31 to think about as a backend engineer and
+01:35 
+
+01:35 this is not a new problem. This problem
+01:37 
+
+01:37 has been around since the start of
+01:39 
+
+01:39 servers and backends. And of course we
+01:42 
+
+01:42 already have a solution and that
+01:44 
+
+01:44 solution is called graceful shutdown and
+01:47 
+
+01:47 it is exactly as the name sounds. We
+01:51 
+
+01:51 want to stop our server gracefully. We
+01:54 
+
+01:54 don't want to stop abruptly suddenly.
+01:57 
+
+01:57 That is the whole idea and of course
+01:59 
+
+01:59 there are some surrounding concepts some
+02:02 
+
+02:02 surrounding concepts to understand so
+02:04 
+
+02:04 that you have your foundations clear why
+02:06 
+
+02:06 we are doing this etc. So if we want to
+02:09 
+
+02:09 oversimplify what graceful shutdown
+02:12 
+
+02:12 means for our server, it we can
+02:14 
+
+02:14 basically say that we want to teach our
+02:16 
+
+02:16 server, we want to teach our back end
+02:18 
+
+02:18 good manners in the sense cannot stop
+02:21 
+
+02:21 abruptly when it is between a transition
+02:23 
+
+02:23 into a new deployment. It has to perform
+02:26 
+
+02:26 some kind of steps, some kind of good
+02:28 
+
+02:28 manner in the sense it cannot just slam
+02:30 
+
+02:30 the door when it is time to leave, when
+02:33 
+
+02:33 it is time to shut down. Instead, your
+02:35 
+
+02:35 back end, your application, it politely
+02:38 
+
+02:38 finishes whatever it is doing. It
+02:40 
+
+02:40 finishes its ongoing conversations, says
+02:43 
+
+02:43 goodbye to all the guests and cleans up
+02:46 
+
+02:46 after itself, then finally closes the
+02:49 
+
+02:49 door. That's what we mean by good
+02:51 
+
+02:51 manners. When you have guests over, when
+02:53 
+
+02:53 you're talking to them, when it's 9:00,
+02:55 
+
+02:55 when it's time to go to sleep, you don't
+02:57 
+
+02:57 just push your guests out of the door
+02:59 
+
+02:59 and slam the door on their face. There
+03:01 
+
+03:01 are some steps you have to perform. So
+03:03 
+
+03:03 it's similar in that way. And in this
+03:06 
+
+03:06 video, we'll talk about the art and the
+03:10 
+
+03:10 science of making your backend
+03:12 
+
+03:12 applications as good manner, as
+03:15 
+
+03:15 efficient as possible. And worrying
+03:19 
+
+03:19 about graceful shutdown will give your
+03:21 
+
+03:21 application a very good user experience
+03:24 
+
+03:24 and also avoid issues like data
+03:27 
+
+03:27 corruption like we just talked about. If
+03:29 
+
+03:29 you are in between a transaction some
+03:31 
+
+03:31 kind of payment transaction then we can
+03:34 
+
+03:34 avoid issues like double charging the
+03:36 
+
+03:36 customer and the transaction getting
+03:38 
+
+03:38 lost and processing refunds etc. Let's
+03:41 
+
+03:41 start with the first concept which is
+03:44 
+
+03:44 process life cycle management. Now we
+03:46 
+
+03:46 are talking about this because your back
+03:49 
+
+03:49 end is an application which will run as
+03:52 
+
+03:52 a process in some kind of server in some
+03:54 
+
+03:54 kind of computer. So every application
+03:57 
+
+03:57 runs in a server within a process. This
+04:01 
+
+04:01 is an important thing. It runs within a
+04:03 
+
+04:03 process. If you are familiar with
+04:05 
+
+04:05 operating system concepts, then uh it
+04:06 
+
+04:06 will make sense to you. Otherwise, not a
+04:08 
+
+04:08 big deal. You can just learn the term
+04:11 
+
+04:11 which is called process. Whatever you
+04:13 
+
+04:13 run, everything that runs in an
+04:15 
+
+04:15 operating system runs as a process. And
+04:17 
+
+04:17 like all the living things, every
+04:20 
+
+04:20 process has a life cycle. when it
+04:23 
+
+04:23 starts, how it starts, when it ends, and
+04:25 
+
+04:25 how it ends. So in a way they're born
+04:28 
+
+04:28 when the process starts and they live
+04:31 
+
+04:31 while the process is executing and they
+04:34 
+
+04:34 die when the process is terminated. This
+04:37 
+
+04:37 whole thing is called the life cycle of
+04:39 
+
+04:39 a process. Now for implementing or
+04:42 
+
+04:42 understanding graceful shutdown, we have
+04:44 
+
+04:44 to understand this process life cycle
+04:46 
+
+04:46 because that is very closely connected
+04:47 
+
+04:47 to how graceful shutdown is implemented.
+04:50 
+
+04:50 So this is our OS, the operating system
+04:54 
+
+04:54 where our process is running, our
+04:55 
+
+04:55 application is running. When your
+04:58 
+
+04:58 operating system decides that it's time
+05:01 
+
+05:01 for your application to stop running, it
+05:03 
+
+05:03 does not just pull the plug, right? It
+05:05 
+
+05:05 does not just kill the process. It
+05:07 
+
+05:07 follows a established protocol, an
+05:10 
+
+05:10 established protocol of communication.
+05:12 
+
+05:12 how to communicate with the process to
+05:14 
+
+05:14 say that it's time for you to stop and
+05:16 
+
+05:16 we are going to follow these these these
+05:18 
+
+05:18 steps and then we are going to stop it.
+05:20 
+
+05:20 So you can imagine it like a
+05:22 
+
+05:22 conversation between your operating
+05:23 
+
+05:23 system and your application which is
+05:26 
+
+05:26 running inside a process in your
+05:28 
+
+05:28 operating system. To simplify it, your
+05:30 
+
+05:30 operating system sends a message in the
+05:32 
+
+05:32 conversation like hey it's time for you
+05:34 
+
+05:34 to stop and your application returns a
+05:38 
+
+05:38 message that okay give me a few minutes
+05:40 
+
+05:40 or give me a few seconds realistically
+05:43 
+
+05:43 speaking then I'll stop myself or you
+05:45 
+
+05:45 can stop me and of course this
+05:47 
+
+05:47 conversation does not happen through
+05:49 
+
+05:49 text we are talking about programs here
+05:52 
+
+05:52 so they don't understand text and this
+05:55 
+
+05:55 whole communication between your
+05:57 
+
+05:57 application and your operating system.
+06:00 
+
+06:00 This whole communication this happens
+06:03 
+
+06:03 through a concept called signals. Now
+06:06 
+
+06:06 signals are an important concept in Unix
+06:10 
+
+06:10 operating system. When I say Unix
+06:12 
+
+06:12 operating system, we mean all the Linux
+06:15 
+
+06:15 operating system whatever you're
+06:17 
+
+06:17 familiar with the Arch Linux, Ubuntu
+06:20 
+
+06:20 etc. and also Macs. Mac has also
+06:24 
+
+06:24 originated from a Unix core a Unix
+06:26 
+
+06:26 kernel and mostly when we are talking
+06:29 
+
+06:29 about servers we mean Linux only because
+06:32 
+
+06:32 99% of the time you'll see uh whenever
+06:35 
+
+06:35 we deploy our application in some kind
+06:37 
+
+06:37 of server some kind of cloud provider it
+06:40 
+
+06:40 usually selects a Linux operating system
+06:42 
+
+06:42 and deploys your application there
+06:44 
+
+06:44 you'll never see Windows except for some
+06:47 
+
+06:47 specialized use cases like Windows
+06:49 
+
+06:49 server etc mostly we use Linux based
+06:52 
+
+06:52 operating systems for deploying our
+06:54 
+
+06:54 servers. Now, Unix operating systems
+06:57 
+
+06:57 they have this concept called signals
+06:59 
+
+06:59 which is used for IPC. Again, if you are
+07:02 
+
+07:02 a computer science students, you'll know
+07:04 
+
+07:04 this term is called interprocess
+07:06 
+
+07:06 communication. Simply speaking, this is
+07:08 
+
+07:08 a technique using which two processes
+07:10 
+
+07:10 can communicate with each other with
+07:13 
+
+07:13 some established protocol which you
+07:15 
+
+07:15 don't have to worry about. Now, the way
+07:17 
+
+07:17 it works is you have your application
+07:19 
+
+07:19 here, right? It is running inside a
+07:22 
+
+07:22 process. This is a process. Your
+07:25 
+
+07:25 application is running inside a process
+07:27 
+
+07:27 and it registers some handlers. And what
+07:29 
+
+07:29 do we mean by handlers? Handlers are
+07:32 
+
+07:32 basically uh you can imagine some kind
+07:33 
+
+07:33 of code which waits and which is
+07:36 
+
+07:36 continuously running behind the scenes
+07:39 
+
+07:39 and it is waiting for a waiting for some
+07:43 
+
+07:43 kind of communication some kind of
+07:44 
+
+07:44 signal from your application for these
+07:47 
+
+07:47 signals right these operating system
+07:50 
+
+07:50 concepts of communicating between two
+07:53 
+
+07:53 processes these are called signals and
+07:55 
+
+07:55 your application registers creates some
+07:58 
+
+07:58 kind of handlers that detects
+08:01 
+
+08:01 Whenever these signals come and then it
+08:03 
+
+08:03 does something and we'll talk about what
+08:05 
+
+08:05 it does exactly and these handlers they
+08:08 
+
+08:08 basically say that they're basically
+08:11 
+
+08:11 telling to your operating system that
+08:13 
+
+08:13 when you want me to stop send me this
+08:16 
+
+08:16 specific message. Of course you cannot
+08:19 
+
+08:19 say that just stop. That does not work.
+08:21 
+
+08:21 It is text which is just human readable.
+08:24 
+
+08:24 So it has to be some kind of message.
+08:26 
+
+08:26 We'll talk about what kind of message it
+08:28 
+
+08:28 is. that your handlers your application
+08:30 
+
+08:30 using or through its handler saying that
+08:33 
+
+08:33 whenever you want me to stop you have to
+08:37 
+
+08:37 send me this specific message and I'll
+08:40 
+
+08:40 handle it appropriately. I'll handle
+08:42 
+
+08:42 I'll stop myself using predefined
+08:45 
+
+08:45 protocols using predefined steps. Let's
+08:48 
+
+08:48 talk about these signals. What do I
+08:50 
+
+08:50 mean? There are two major types of
+08:52 
+
+08:52 signals we'll talk about but one is sig
+08:55 
+
+08:55 term and the second one is sig kill this
+08:59 
+
+08:59 part this sig this basically means
+09:01 
+
+09:01 signal this also means signal and these
+09:04 
+
+09:04 are the commands you can say one is for
+09:06 
+
+09:06 termination one is for cl we'll soon
+09:09 
+
+09:09 talk about what is the difference
+09:10 
+
+09:10 between them now let's talk about the
+09:12 
+
+09:12 first one which is sig term now as I
+09:14 
+
+09:14 said sig the first part means obviously
+09:17 
+
+09:17 signal and the second part means
+09:19 
+
+09:19 terminate terminate Now sick term signal
+09:22 
+
+09:22 which means terminate. It is a polite
+09:24 
+
+09:24 way for your operating system to ask
+09:28 
+
+09:28 your application to shut down. It is not
+09:30 
+
+09:30 an extreme way. It is just a some kind
+09:33 
+
+09:33 of nudge. So imagine you are standing
+09:35 
+
+09:35 and someone just comes from behind and
+09:38 
+
+09:38 just pokes at your shoulder like hey you
+09:40 
+
+09:40 can imagine the sigtom signal something
+09:43 
+
+09:43 like that. It is a very gentle nudge and
+09:46 
+
+09:46 it means that whenever your operating
+09:48 
+
+09:48 system sends a s term signal to your
+09:51 
+
+09:51 application it means that hey excuse me
+09:54 
+
+09:54 could you please finish up and leave
+09:56 
+
+09:56 right it is a very gentle request and
+09:59 
+
+09:59 because of that your application your
+10:01 
+
+10:01 back end has an opportunity to complete
+10:04 
+
+10:04 whatever it is already doing right it it
+10:07 
+
+10:07 it does not have to leave that moment
+10:09 
+
+10:09 only it has some kind of window we'll
+10:11 
+
+10:11 talk about what kind of window it has
+10:13 
+
+10:13 some kind window a few seconds to
+10:15 
+
+10:15 complete whatever it is doing. Now what
+10:17 
+
+10:17 it might be doing? So since we are
+10:20 
+
+10:20 talking about back end an HTTP back end
+10:22 
+
+10:22 it might be processing some requests
+10:26 
+
+10:26 that is the primary thing your back end
+10:28 
+
+10:28 does your client your front end whatever
+10:31 
+
+10:31 your client have some kind of app some
+10:33 
+
+10:33 kind of web app some kind of chrome
+10:35 
+
+10:35 extension whatever your client is it
+10:37 
+
+10:37 sends HTTP requests to your back end and
+10:39 
+
+10:39 your back end processes those and
+10:41 
+
+10:41 returns some kind of response at a
+10:43 
+
+10:43 random point of time your back end is
+10:45 
+
+10:45 probably processing let's say 10 or 12
+10:48 
+
+10:48 requests And if your application is big
+10:50 
+
+10:50 enough, let's say it is processing
+10:52 
+
+10:52 around 500 or 600 requests concurrently
+10:55 
+
+10:55 at one point of time. So when it gets a
+10:59 
+
+10:59 sdum signal, it's time for it to finish
+11:03 
+
+11:03 processing those requests. Let's write
+11:05 
+
+11:05 it down whatever it does. First, finish
+11:08 
+
+11:08 existing requests. That's the first
+11:10 
+
+11:10 thing. Second, clean up resources. We'll
+11:14 
+
+11:14 talk about what does cleanup actually
+11:16 
+
+11:16 mean for your back end. And the third is
+11:19 
+
+11:19 exit. Now we'll talk about we'll go deep
+11:22 
+
+11:22 into one and two just a bit after we
+11:25 
+
+11:25 talk about both summ. But for now let's
+11:28 
+
+11:28 just keep it very high level. Now we
+11:31 
+
+11:31 already understood that sik term is a
+11:33 
+
+11:33 very gentle request from your operating
+11:35 
+
+11:35 system to your application to your back
+11:37 
+
+11:37 end to finish up whatever it is doing
+11:39 
+
+11:39 and clean up resources and leave
+11:41 
+
+11:41 gracefully. So who exactly uses this
+11:44 
+
+11:44 kind of signal? Now this signal is
+11:46 
+
+11:46 mostly used by deployment systems or
+11:49 
+
+11:49 process managers or orchestration
+11:52 
+
+11:52 platforms like Kubernetes etc. Basically
+11:54 
+
+11:54 any kind of system that you have
+11:56 
+
+11:56 established for managing your process.
+11:59 
+
+11:59 It can be a Kubernetes or something like
+12:01 
+
+12:01 systemd or or PM2 if you are familiar
+12:05 
+
+12:05 with PM2 process manager. So these
+12:07 
+
+12:07 things these systems these tools they
+12:11 
+
+12:11 use this signal which is sig term to
+12:13 
+
+12:13 properly let your application finish
+12:16 
+
+12:16 whatever it is doing and clean up and
+12:17 
+
+12:17 leave gracefully. Second I forgot about
+12:21 
+
+12:21 another important signal which is sig
+12:24 
+
+12:24 int. We have the kind of signal which is
+12:27 
+
+12:27 second as I said the first part this is
+12:30 
+
+12:30 called signal and this is for this case
+12:34 
+
+12:34 is an interrupt an interrupt. Now when
+12:37 
+
+12:37 does this happen? If you are a developer
+12:40 
+
+12:40 you probably already using this which is
+12:42 
+
+12:42 the most famous use case of this signal
+12:45 
+
+12:45 is control + c. If you have worked with
+12:48 
+
+12:48 any kind of command line applications,
+12:50 
+
+12:50 any kind of terminal based applications
+12:52 
+
+12:52 then you have most probably used this uh
+12:55 
+
+12:55 some kind of process is running some
+12:56 
+
+12:56 kind of task is running and if you want
+12:58 
+
+12:58 to abruptly close it at that moment you
+13:01 
+
+13:01 can press Ctrl C in your keyboard and
+13:03 
+
+13:03 that process is instantly stopped. Say
+13:06 
+
+13:06 for example here I am running a back end
+13:09 
+
+13:09 a backend process in my local of course
+13:11 
+
+13:11 it is a go based back end and this is
+13:14 
+
+13:14 currently running it is ready to accept
+13:16 
+
+13:16 request and it is serving any kind of
+13:18 
+
+13:18 client that is sending request to it now
+13:20 
+
+13:20 if I want to close it what do I do I
+13:23 
+
+13:23 just press control and c in my keyboard
+13:26 
+
+13:26 and here you can see that we have of
+13:29 
+
+13:29 course implemented graceful shutdown for
+13:30 
+
+13:30 this application that's why we are
+13:32 
+
+13:32 logging whatever is happening in our app
+13:35 
+
+13:35 but For now, let's focus on this part
+13:37 
+
+13:37 where it says that a signal has been
+13:40 
+
+13:40 received and the signal type is an
+13:43 
+
+13:43 interrupt signal. As we saw, this
+13:46 
+
+13:46 requires a user a developer to press
+13:50 
+
+13:50 some key in this case control C using a
+13:53 
+
+13:53 keyboard. This is mostly used during
+13:56 
+
+13:56 development environments. We as
+13:58 
+
+13:58 developers mostly use it process to
+13:60 
+
+13:60 process communication. when process to
+14:02 
+
+14:02 process communication is happening they
+14:04 
+
+14:04 normally don't use it since a sig
+14:07 
+
+14:07 interrupt based signal uh requires some
+14:09 
+
+14:09 kind of key press control C. So it is
+14:11 
+
+14:11 also called a user initiated shutdown
+14:15 
+
+14:15 and in pretty much all the cases you
+14:18 
+
+14:18 want to handle the signal sig int the
+14:22 
+
+14:22 same way you are handling sig turn. If
+14:24 
+
+14:24 you think about it, it makes sense. It
+14:26 
+
+14:26 does not matter whether your process,
+14:28 
+
+14:28 whether your back end is running in a
+14:30 
+
+14:30 development environment in your local
+14:32 
+
+14:32 and you want to stop it using Ctrl C
+14:35 
+
+14:35 versus if it is running in your cloud
+14:38 
+
+14:38 provider in let's say it is running
+14:40 
+
+14:40 inside an AWS EC2 instance and you are
+14:44 
+
+14:44 using a process manager called PM2 is a
+14:47 
+
+14:47 process manager and you have deployed
+14:49 
+
+14:49 your back end in a EC2 instance. So when
+14:53 
+
+14:53 there is time to stop your application,
+14:56 
+
+14:56 you'll be using PM2 in some kind of
+14:58 
+
+14:58 programmatic way or manually. And PM2
+15:01 
+
+15:01 will send a signal to your back end
+15:03 
+
+15:03 which will be SIG term signal. As I
+15:05 
+
+15:05 said, sig int signal will be used by
+15:07 
+
+15:07 developers because it requires a key
+15:09 
+
+15:09 press. Sig term signal will be used by
+15:12 
+
+15:12 programs. In both these cases, we will
+15:15 
+
+15:15 want to handle our shutdown process the
+15:18 
+
+15:18 same way. It does not really matter if a
+15:20 
+
+15:20 human is initiating it or a program is
+15:23 
+
+15:23 initiating it. The what matters is the
+15:25 
+
+15:25 intention we want to shut down. So we
+15:27 
+
+15:27 want to shut down in a clean way, a
+15:29 
+
+15:29 graceful way. Now let's talk about the
+15:32 
+
+15:32 final thing which is let's write it in
+15:35 
+
+15:35 red since it is a kill signal which is
+15:38 
+
+15:38 sig kill. As I said the first part means
+15:41 
+
+15:41 signal and the second part is the actual
+15:43 
+
+15:43 command which is a kill command and it
+15:46 
+
+15:46 is exactly as it sounds like we want to
+15:48 
+
+15:48 instantly kill the application. The
+15:50 
+
+15:50 interesting thing about this signal is
+15:52 
+
+15:52 this cannot be caught or it cannot also
+15:56 
+
+15:56 be ignored which means that in our
+15:58 
+
+15:58 application we cannot register some kind
+16:00 
+
+16:00 of handler and those handlers will be
+16:03 
+
+16:03 able to do some kind of tasks. they will
+16:05 
+
+16:05 be able to do some kind of cleanup etc
+16:08 
+
+16:08 etc when they receive s kill signal that
+16:11 
+
+16:11 will not happen because this particular
+16:13 
+
+16:13 kind of signal it cannot be detected by
+16:17 
+
+16:17 our application our application is not
+16:19 
+
+16:19 given that kind of permission right that
+16:22 
+
+16:22 kind of capability or also it cannot be
+16:25 
+
+16:25 ignored which means that you cannot say
+16:28 
+
+16:28 since I was not able to detect it which
+16:30 
+
+16:30 basically means that I'll just ignore it
+16:32 
+
+16:32 we don't have to really stop that also
+16:34 
+
+16:34 does not happen. So if your application
+16:36 
+
+16:36 is sent a kill signal, it will not be
+16:41 
+
+16:41 able to detect it and it has to stop at
+16:44 
+
+16:44 that particular moment. Nothing else
+16:46 
+
+16:46 happens. It just stops. That's why it is
+16:49 
+
+16:49 called a kill signal. You can imagine it
+16:50 
+
+16:50 as a nuclear option. This is the
+16:53 
+
+16:53 equivalent of instead of doing this,
+16:56 
+
+16:56 clicking on your system icon and
+16:59 
+
+16:59 clicking on shutdown, you what you do,
+17:01 
+
+17:01 you just go to your power plug and you
+17:04 
+
+17:04 just pull the plug. That's it. Your
+17:06 
+
+17:06 computer just dies. That is exactly how
+17:09 
+
+17:09 signal works. And this is why graceful
+17:12 
+
+17:12 shutdown is an important concept. If you
+17:15 
+
+17:15 don't respond, if you don't respect the
+17:18 
+
+17:18 polite signals and what do I mean by
+17:21 
+
+17:21 polite signals? Sit term and sing int.
+17:24 
+
+17:24 These are the polite signals which let
+17:26 
+
+17:26 you to finish whatever you are doing
+17:28 
+
+17:28 which let you to clean up and which let
+17:30 
+
+17:30 you to gracefully exit. If you don't
+17:32 
+
+17:32 respect those signals then eventually of
+17:34 
+
+17:34 course you will receive a kill signal.
+17:36 
+
+17:36 So you will have to stop and you don't
+17:38 
+
+17:38 even get the opportunity to clean up
+17:41 
+
+17:41 after yourself. Now that we have a very
+17:44 
+
+17:44 high level idea about uh three different
+17:46 
+
+17:46 kinds of signals the polite signals, the
+17:49 
+
+17:49 impolite signals and what exactly
+17:51 
+
+17:51 happens. Let's talk about two important
+17:54 
+
+17:54 things here that we briefly talked
+17:56 
+
+17:56 about. The first one is what does it
+17:59 
+
+17:59 mean by finishing existing requests and
+18:02 
+
+18:02 what does it mean by cleaning up
+18:04 
+
+18:04 resources. Right? These are the two
+18:05 
+
+18:05 important steps which happens during a
+18:07 
+
+18:07 graceful shutdown process. The first
+18:09 
+
+18:09 important part of a graceful shutdown
+18:11 
+
+18:11 which is stopping on the-fly request.
+18:14 
+
+18:14 What do we mean by on the-fly requests?
+18:16 
+
+18:16 Your HTTP server your back end it is
+18:19 
+
+18:19 able to cater to or it is able to
+18:22 
+
+18:22 process multiple requests at the same
+18:25 
+
+18:25 time or concurrently basically. So when
+18:29 
+
+18:29 it is time to stop your back end, when
+18:31 
+
+18:31 it is time to stop your server, at that
+18:34 
+
+18:34 point it is possible that your back end
+18:37 
+
+18:37 is already processing a couple of
+18:38 
+
+18:38 requests. Now it can be 10, 12 or it can
+18:42 
+
+18:42 be hundreds or it can be thousands
+18:43 
+
+18:43 depending on the scale of your server.
+18:45 
+
+18:45 And that's what you mean by on the-ly
+18:48 
+
+18:48 requests. The requests which are already
+18:50 
+
+18:50 getting processed by your server at a
+18:53 
+
+18:53 particular time. Now to understand this,
+18:54 
+
+18:54 you can imagine a restaurant. Let's say
+18:57 
+
+18:57 you have gone to a restaurant with your
+18:60 
+
+18:60 friends and for some reason the
+19:01 
+
+19:01 restaurant has to close whether it is
+19:03 
+
+19:03 time for it to close it is the closing
+19:06 
+
+19:06 time let's say something like 10:30 11
+19:08 
+
+19:08 in the night or some other reason but
+19:10 
+
+19:10 the point is the restaurant has to close
+19:12 
+
+19:12 what exactly happens the the restaurant
+19:15 
+
+19:15 owners they cannot just come up and turn
+19:18 
+
+19:18 all the lights off and they cannot just
+19:19 
+
+19:19 throw you out of the restaurant right
+19:21 
+
+19:21 not a good idea instead what happens the
+19:24 
+
+19:24 restaurant owners they will Ask someone
+19:27 
+
+19:27 at the reception or at the gate to stop
+19:30 
+
+19:30 allowing new customers, right? Stop
+19:33 
+
+19:33 allowing new people to get into the
+19:35 
+
+19:35 restaurant first. That's the first step
+19:37 
+
+19:37 that happens. You don't want new
+19:39 
+
+19:39 customers that you have to deal with
+19:40 
+
+19:40 that you have to say no to. First thing
+19:43 
+
+19:43 that you have to take care of. Second
+19:44 
+
+19:44 thing is they will announce to all the
+19:48 
+
+19:48 existing customers, all the existing uh
+19:51 
+
+19:51 people in the restaurant who are already
+19:52 
+
+19:52 having their meal. They'll announce to
+19:54 
+
+19:54 them that it is time for us to close up.
+19:57 
+
+19:57 You have let's say 15 minutes, 20
+19:59 
+
+19:59 minutes so that you can finish your
+20:01 
+
+20:01 meal. Take your time. 15 20 minutes
+20:04 
+
+20:04 should be more than enough to finish
+20:06 
+
+20:06 whatever you're having and then please
+20:09 
+
+20:09 leave the restaurant, pay your bills, of
+20:11 
+
+20:11 course, pay your bills and pay your tips
+20:14 
+
+20:14 and leave the restaurant. That's exactly
+20:17 
+
+20:17 how it plays out in this situation. Now
+20:19 
+
+20:19 imagine the same situation for our back
+20:22 
+
+20:22 end for our application and we call that
+20:25 
+
+20:25 process as connection draining which
+20:28 
+
+20:28 means that when your application
+20:30 
+
+20:30 receives a shutdown signal. Now it can
+20:33 
+
+20:33 be sig term sent from some kind of
+20:36 
+
+20:36 process or it can be a sig int sent from
+20:40 
+
+20:40 a control c based process from some kind
+20:43 
+
+20:43 of developer. Right? The first thing
+20:45 
+
+20:45 that it has to do is stop accepting new
+20:49 
+
+20:49 connections. As I said, the first thing
+20:52 
+
+20:52 that you have to do is stop letting new
+20:54 
+
+20:54 customers get into the restaurant. Same
+20:56 
+
+20:56 way, the first thing your application
+20:58 
+
+20:58 has to do is stop accepting new
+20:60 
+
+21:00 connections, which makes the whole
+21:02 
+
+21:02 situations more messy, more difficult to
+21:04 
+
+21:04 deal with. That's the first thing. stop
+21:07 
+
+21:07 accepting new connections, new requests
+21:09 
+
+21:09 from any kind of client so that we can
+21:12 
+
+21:12 deal with the existing connections, the
+21:13 
+
+21:13 existing requests that are already being
+21:16 
+
+21:16 processed by our server and we let them
+21:18 
+
+21:18 finish as soon as possible. Now the
+21:20 
+
+21:20 implementation of connection draining
+21:23 
+
+21:23 this will obviously be different
+21:26 
+
+21:26 depending on the architecture of the
+21:28 
+
+21:28 application that we're dealing with. So
+21:30 
+
+21:30 for example for HTTP servers for our
+21:33 
+
+21:33 back end the core back end the HTTP back
+21:36 
+
+21:36 end this will mean that it has to stop
+21:38 
+
+21:38 accepting new HTTP requests from any
+21:41 
+
+21:41 kind of client and allow inflight
+21:44 
+
+21:44 requests on the fly requests the
+21:46 
+
+21:46 existing requests to finish to complete.
+21:49 
+
+21:49 The same way if we are talking about a
+21:51 
+
+21:51 database application now as we have
+21:53 
+
+21:53 already discussed in the previous videos
+21:55 
+
+21:55 database is also a backend it can be
+21:58 
+
+21:58 imagined as a back end. It is a back end
+22:01 
+
+22:01 just not in the sense that we talk about
+22:03 
+
+22:03 when we are talking about an HTTP back
+22:05 
+
+22:05 end but it is still a back end. It is it
+22:08 
+
+22:08 is still an application. Now for a
+22:10 
+
+22:10 database based application what it has
+22:13 
+
+22:13 to do it has to finish all the existing
+22:16 
+
+22:16 queries or all the existing transactions
+22:18 
+
+22:18 and it has to stop taking new
+22:20 
+
+22:20 transaction or taking uh new queries
+22:22 
+
+22:22 into execution before it closes the
+22:25 
+
+22:25 connection. Same way for a websocket
+22:28 
+
+22:28 based connections it has to first notify
+22:32 
+
+22:32 the clients that it is closing then
+22:35 
+
+22:35 close the socket. It cannot just close
+22:37 
+
+22:37 the socket abruptly. So depending on the
+22:40 
+
+22:40 application architecture HTTP back end
+22:42 
+
+22:42 database websocket the the technical
+22:45 
+
+22:45 steps of implementing graceful shutdown
+22:47 
+
+22:47 will be different but the highle idea is
+22:50 
+
+22:50 the same. Stop accepting new
+22:52 
+
+22:52 connections. Stop accepting new
+22:54 
+
+22:54 requests. finish the existing ones and
+22:56 
+
+22:56 then close the connection. Three-step
+22:58 
+
+22:58 process. Now, the problem here is the
+23:01 
+
+23:01 challenge with connection draining is
+23:03 
+
+23:03 the timing of it because you want to
+23:05 
+
+23:05 give the existing connections enough
+23:08 
+
+23:08 time to complete their work but you
+23:11 
+
+23:11 cannot really wait as long as they need.
+23:14 
+
+23:14 There should be some kind of limit. So
+23:16 
+
+23:16 most production systems, most backend
+23:19 
+
+23:19 systems, they will implement some kind
+23:21 
+
+23:21 of timeout mechanism will have some kind
+23:24 
+
+23:24 of timeout. For example, 30 seconds or
+23:27 
+
+23:27 let's say 60 seconds. It depends on you.
+23:29 
+
+23:29 Mostly the common thing is 30 seconds.
+23:31 
+
+23:31 And this will be the maximum duration
+23:34 
+
+23:34 your system will wait for you. After
+23:36 
+
+23:36 that, we'll just stop, right? We'll give
+23:38 
+
+23:38 you 30 seconds to finish whatever
+23:40 
+
+23:40 requests that you are processing. And
+23:42 
+
+23:42 most of the time, it is fine if you're
+23:44 
+
+23:44 not accepting new requests. If you're
+23:45 
+
+23:45 not accepting new connections, then 30
+23:47 
+
+23:47 seconds should be more than enough to
+23:49 
+
+23:49 finish up all the existing requests. But
+23:52 
+
+23:52 if for some reason for some kind of
+23:54 
+
+23:54 blocking operation, you cannot finish
+23:56 
+
+23:56 within this window, then we'll be
+23:58 
+
+23:58 forcefully stopped. We do have a backup
+24:01 
+
+24:01 plan. We cannot just wait for our system
+24:04 
+
+24:04 for our back end to process all the
+24:06 
+
+24:06 requests and by taking as long as it
+24:07 
+
+24:07 needs, right? We cannot let that happen.
+24:09 
+
+24:09 There has to be some kind of limit and
+24:11 
+
+24:11 the timeout is that hard limit. you have
+24:14 
+
+24:14 exactly this amount of time to finish
+24:17 
+
+24:17 whatever you are doing. Now choosing
+24:18 
+
+24:18 this timeout also creates a very
+24:21 
+
+24:21 interesting design consideration because
+24:25 
+
+24:25 the question is how long exactly should
+24:27 
+
+24:27 you wait. If it is too short then you
+24:30 
+
+24:30 risk interrupting actual legitimate
+24:33 
+
+24:33 operations. But if it is too long your
+24:36 
+
+24:36 whole shutdown process it becomes very
+24:39 
+
+24:39 sluggish and it it eventually impacts
+24:43 
+
+24:43 your deployment speed your system
+24:45 
+
+24:45 responsiveness. So the time the amount
+24:48 
+
+24:48 of timeout it depends on your
+24:52 
+
+24:52 application's typical request duration
+24:54 
+
+24:54 and your operational requirements. So
+24:57 
+
+24:57 this is not a hard and fast rule 30
+24:59 
+
+24:59 seconds 60 seconds you have to
+25:01 
+
+25:01 understand your systems the kind of
+25:03 
+
+25:03 requests that you are processing if it
+25:05 
+
+25:05 is normal if you are talking about
+25:07 
+
+25:07 traditional normal back end then 30
+25:09 
+
+25:09 seconds should be more than enough but
+25:11 
+
+25:11 we are talking about websockets or if we
+25:14 
+
+25:14 are talking about other more complicated
+25:16 
+
+25:16 architectures then you have to
+25:18 
+
+25:18 understand your system and decide a
+25:20 
+
+25:20 timeout which suits you and your system
+25:24 
+
+25:24 accordingly. This whole connection
+25:25 
+
+25:25 training also requires some kind of
+25:27 
+
+25:27 coordination between your load balancers
+25:29 
+
+25:29 and your service discovery systems which
+25:32 
+
+25:32 means that it also has to work with your
+25:34 
+
+25:34 health check systems and registering and
+25:37 
+
+25:37 dregistering with your service
+25:38 
+
+25:38 discovery. Now these are a little
+25:40 
+
+25:40 advanced stuff. Service discovery
+25:42 
+
+25:42 basically means that if you have
+25:43 
+
+25:43 deployed a set of applications let's say
+25:46 
+
+25:46 your backend your database your elastic
+25:49 
+
+25:49 search instance after deployment how
+25:51 
+
+25:51 they connect with each other how they
+25:53 
+
+25:53 communicate with each other this part of
+25:56 
+
+25:56 the workflow is the responsibility of
+25:58 
+
+25:58 your service discovery tool service
+26:01 
+
+26:01 discovery mechanism anyway moving on the
+26:04 
+
+26:04 second thing that we talked about is
+26:05 
+
+26:05 cleanup or resource cleanup if you are
+26:09 
+
+26:09 working on your desk You have a working
+26:11 
+
+26:11 area and it is time for you to leave the
+26:14 
+
+26:14 house or it is time for you to go to
+26:15 
+
+26:15 sleep. Before you leave your desk, you
+26:18 
+
+26:18 do some kind of clean up, right? If you
+26:20 
+
+26:20 have been having your coffee, you take
+26:21 
+
+26:21 out the cup and put it in the sink or if
+26:24 
+
+26:24 you manage some of our cables, etc.,
+26:27 
+
+26:27 etc., like we all have some kind of tiny
+26:29 
+
+26:29 cleanup stuff before we leave our desks.
+26:31 
+
+26:31 Same in the context of our backend
+26:34 
+
+26:34 application. When we say resources, it
+26:36 
+
+26:36 means that things like file handles or
+26:40 
+
+26:40 network connections or database
+26:42 
+
+26:42 connections or temporary files or caches
+26:44 
+
+26:44 or any other system resources that the
+26:48 
+
+26:48 application had acquired during its
+26:51 
+
+26:51 execution, it has to let go of those.
+26:54 
+
+26:54 For example, uh when your application
+26:56 
+
+26:56 was running, when your back end was
+26:57 
+
+26:57 running, you tried to access a
+26:59 
+
+26:59 particular location in your file system.
+27:02 
+
+27:02 And the way file system access works
+27:04 
+
+27:04 with back end with programs is you have
+27:07 
+
+27:07 to send a signal to your operating
+27:09 
+
+27:09 system. It provides you a handle to that
+27:12 
+
+27:12 file. There is a protocol the way a
+27:14 
+
+27:14 process a backend application can access
+27:17 
+
+27:17 the underlying file system. But speaking
+27:19 
+
+27:19 at a very high level, you get a kind of
+27:21 
+
+27:21 handle to your file system which you
+27:24 
+
+27:24 have to let go which you have to clean
+27:26 
+
+27:26 up at some point otherwise that handle
+27:29 
+
+27:29 will keep running and you will acquire
+27:31 
+
+27:31 more and more and more memory which
+27:33 
+
+27:33 basically means that you'll keep eating
+27:35 
+
+27:35 your RAM random access memory and at
+27:38 
+
+27:38 some point you will run out of it.
+27:40 
+
+27:40 Right? So cleaning up after your file
+27:43 
+
+27:43 handles is important. But the most
+27:46 
+
+27:46 common kind of resource cleanup that
+27:48 
+
+27:48 we'll see is cleaning up after a network
+27:51 
+
+27:51 connections. The our operating system or
+27:54 
+
+27:54 OS which is the mediator. Let's say you
+27:57 
+
+27:57 have your application here or your back
+28:01 
+
+28:01 end here and this is the internet. You
+28:04 
+
+28:04 receive all kind of requests but all the
+28:06 
+
+28:06 requests they go through your operating
+28:08 
+
+28:08 system before it reaches your
+28:10 
+
+28:10 application. Your operating system which
+28:12 
+
+28:12 is the actual driver which receives all
+28:15 
+
+28:15 the requests from your network card and
+28:17 
+
+28:17 provides you right. So obviously it it
+28:20 
+
+28:20 will have all the knowledge about all
+28:22 
+
+28:22 the network connections that you have
+28:24 
+
+28:24 and typically operating systems they
+28:26 
+
+28:26 limit the number of file handles as I
+28:29 
+
+28:29 already said and also network
+28:31 
+
+28:31 connections a particular process can
+28:34 
+
+28:34 have open simultaneously. The same way
+28:36 
+
+28:36 if you don't clean up your file handles
+28:38 
+
+28:38 you will run out of memory. The same way
+28:41 
+
+28:41 network connections also if you don't
+28:43 
+
+28:43 give up a network connection after
+28:45 
+
+28:45 dealing with it then eventually you will
+28:48 
+
+28:48 run out of memory or you will face some
+28:50 
+
+28:50 kind of performance issues. If we are
+28:52 
+
+28:52 talking about database connections
+28:54 
+
+28:54 before your application shuts down or
+28:56 
+
+28:56 before your backend process is shut down
+28:59 
+
+28:59 the database transactions that your
+29:01 
+
+29:01 backend was dealing with they either
+29:03 
+
+29:03 have to be committed or rolled back
+29:06 
+
+29:06 explicitly by your application. If you
+29:08 
+
+29:08 don't then those transactions might get
+29:11 
+
+29:11 into an inconsistent state which might
+29:14 
+
+29:14 lead to things like deadlocks or data
+29:16 
+
+29:16 corruption and all different kinds of
+29:18 
+
+29:18 issues. Right? These these are things
+29:21 
+
+29:21 that we mean when we say resource
+29:22 
+
+29:22 cleanup file handles, database
+29:24 
+
+29:24 connections, network connections etc.
+29:26 
+
+29:26 And one thing to keep in mind is when we
+29:29 
+
+29:29 are cleaning up after our resources in
+29:32 
+
+29:32 our whole graceful shutdown workflow, we
+29:35 
+
+29:35 want to clean up resources in the
+29:38 
+
+29:38 reverse order of the way we acquired
+29:41 
+
+29:41 them. So let's say here you established
+29:44 
+
+29:44 a radius connection, then you
+29:45 
+
+29:45 established your DB connection and
+29:47 
+
+29:47 whatever. So when you are giving up your
+29:50 
+
+29:50 resources, you should go the reverse
+29:52 
+
+29:52 order. And why do we need to do this? So
+29:55 
+
+29:55 that we can prevent situations where we
+29:57 
+
+29:57 are not cleaning up a resource. We are
+29:60 
+
+29:60 not cleaning up an operation which
+30:02 
+
+30:02 depends on the previous operation.
+30:03 
+
+30:03 Right? That's the reason we clean up the
+30:06 
+
+30:06 resources in the reverse order of the
+30:08 
+
+30:08 way we acquired. Right? That is another
+30:10 
+
+30:10 thing that you have to keep in mind when
+30:12 
+
+30:12 you are implementing your graceful
+30:14 
+
+30:14 shutdown. I know that we typically avoid
+30:16 
+
+30:16 looking at code in this particular
+30:19 
+
+30:19 series. But just to give you some kind
+30:20 
+
+30:20 of context, you don't have to understand
+30:22 
+
+30:22 this code. I just want to show a pretty
+30:25 
+
+30:25 practical and realistic example so that
+30:27 
+
+30:27 we don't have just a very hollow
+30:29 
+
+30:29 understanding of the graceful shutdown
+30:31 
+
+30:31 procedure. Now we'll quickly just go
+30:33 
+
+30:33 through the whole thing that we just
+30:35 
+
+30:35 discussed. But this time we'll just look
+30:37 
+
+30:37 at the code. Now as I said the first
+30:39 
+
+30:39 thing that you do is we want to register
+30:41 
+
+30:41 some kind of handler which will wait for
+30:43 
+
+30:43 some kind of signals. So this is what we
+30:45 
+
+30:45 are doing. Again this is a golang code.
+30:48 
+
+30:48 You don't have to understand it. You
+30:49 
+
+30:49 just follow the narrative and that's
+30:52 
+
+30:52 more than enough. Now here at this step
+30:53 
+
+30:53 we are registering a handler during
+30:55 
+
+30:55 using some kind of context which is a
+30:57 
+
+30:57 golang concept but we are waiting for
+30:59 
+
+30:59 interrupts from our operating system.
+31:02 
+
+31:02 And if we receive an interrupt we call
+31:04 
+
+31:04 this function which is a shutdown
+31:06 
+
+31:06 function which is a graceful shutdown
+31:08 
+
+31:08 function. And what do we mean by
+31:09 
+
+31:09 gracefully shutdown? Let's go inside
+31:11 
+
+31:11 this. What do we see first? What we are
+31:14 
+
+31:14 doing? We are shutting down our HTTP
+31:16 
+
+31:16 server. Since this is a back end
+31:17 
+
+31:17 application, the core part of this is
+31:19 
+
+31:19 the HTTP engine. The first thing that
+31:21 
+
+31:21 we're doing is we are calling a method
+31:24 
+
+31:24 which is provided by our frameworks.
+31:26 
+
+31:26 Typically, whatever framework, whatever
+31:27 
+
+31:27 library that you are using for your HTTP
+31:30 
+
+31:30 server, they provide you with some kind
+31:31 
+
+31:31 of function so that when you call it,
+31:34 
+
+31:34 they internally the library internally
+31:36 
+
+31:36 stops receiving additional connections
+31:38 
+
+31:38 and cleans up and finishes whatever the
+31:41 
+
+31:41 existing connection it has. Then this
+31:43 
+
+31:43 function finishes. Then what we doing?
+31:45 
+
+31:45 we are closing our database. Same way
+31:47 
+
+31:47 the database also it stops receiving
+31:49 
+
+31:49 additional queries, additional
+31:50 
+
+31:50 transactions and it finishes the
+31:52 
+
+31:52 existing ones and it gives up whatever
+31:55 
+
+31:55 handle it has, whatever database
+31:57 
+
+31:57 connections it has. As you already know
+31:59 
+
+31:59 the way our backend and our database
+32:02 
+
+32:02 connect is through TCP through TCP
+32:04 
+
+32:04 connections. You can imagine this is our
+32:07 
+
+32:07 app, this is our back end and this is
+32:11 
+
+32:11 our database right kind of database. The
+32:14 
+
+32:14 way these can connect is through TCP.
+32:17 
+
+32:17 This is the TCP protocol. So for our
+32:19 
+
+32:19 back end to connect to our database, it
+32:22 
+
+32:22 has to have a TCP connection which is an
+32:26 
+
+32:26 active connection running. That's the
+32:28 
+
+32:28 only way our back end can connect to our
+32:30 
+
+32:30 database. It can communicate with our
+32:32 
+
+32:32 database. Of course when we are talking
+32:34 
+
+32:34 about pooling database pooling we have a
+32:37 
+
+32:37 number of these connections active with
+32:39 
+
+32:39 our database and we use a particular
+32:42 
+
+32:42 connection from this pool of connections
+32:44 
+
+32:44 to communicate with our database. When
+32:47 
+
+32:47 we want to close the database
+32:49 
+
+32:49 connections the database first has to
+32:51 
+
+32:51 stop accepting new queries using these
+32:53 
+
+32:53 connections using these paths. It will
+32:55 
+
+32:55 finish whatever existing queries
+32:57 
+
+32:57 existing transaction that is already
+32:59 
+
+32:59 processing. Then we'll start closing all
+33:03 
+
+33:03 these paths one by one. That is exactly
+33:05 
+
+33:05 what we mean by cleaning up our database
+33:08 
+
+33:08 resources and in the end we are also
+33:10 
+
+33:10 cleaning up our background job
+33:12 
+
+33:12 processing server which is using radius.
+33:15 
+
+33:15 So internally this function also closes
+33:17 
+
+33:17 our radius connection and after all this
+33:20 
+
+33:20 we have successfully gracefully shut
+33:22 
+
+33:22 down. So if you want to take a look at
+33:24 
+
+33:24 this, let's say, let me just clear this
+33:27 
+
+33:27 and let's start our server first task
+33:30 
+
+33:30 run and let me press Ctrl C which will
+33:33 
+
+33:33 send an interrupt signal to our back
+33:36 
+
+33:36 end. Then it can initiate the graceful
+33:39 
+
+33:39 shutdown procedure. So I pressed Ctrl C.
+33:43 
+
+33:43 It took some time since there are no
+33:45 
+
+33:45 in-flight requests. This is a pretty
+33:48 
+
+33:48 locally run back end. It was able to
+33:51 
+
+33:51 shut down instantly but it still we saw
+33:54 
+
+33:54 that it still took around 1 second of
+33:56 
+
+33:56 time before it could properly shut down.
+33:58 
+
+33:58 So if you look at the logs we can see
+34:01 
+
+34:01 that for starting our server we the logs
+34:03 
+
+34:03 were connected to the database starting
+34:05 
+
+34:05 our background job server and finally we
+34:07 
+
+34:07 started our server. This was our start
+34:10 
+
+34:10 log up to this point. All of this were
+34:12 
+
+34:12 our start logs. Then at this point as
+34:16 
+
+34:16 you can see the control C here when we
+34:18 
+
+34:18 pressed our control C the first thing
+34:19 
+
+34:19 that we did is we closed our database
+34:22 
+
+34:22 connection closed our database
+34:23 
+
+34:23 connection we stop our background job
+34:25 
+
+34:25 processing server all these logs are
+34:27 
+
+34:27 coming from async Q which is the
+34:29 
+
+34:29 background job processing library that
+34:31 
+
+34:31 we we are using so when it received the
+34:34 
+
+34:34 shutdown signal when we called the
+34:37 
+
+34:37 method which shuts down all the radius
+34:39 
+
+34:39 connections whatever that it internally
+34:41 
+
+34:41 does it also logged some messages like
+34:45 
+
+34:45 starting gracefully shutdown waiting for
+34:47 
+
+34:47 all workers to finish all workers have
+34:48 
+
+34:48 finished and exiting and finally we log
+34:51 
+
+34:51 a message that the server has exited
+34:53 
+
+34:53 properly and that's how we stop our
+34:55 
+
+34:55 server so this whole workflow is called
+34:58 
+
+34:58 the process life cycle starting and the
+35:01 
+
+35:01 running phase and the stopping phase and
+35:03 
+
+35:03 this part is called the graceful
+35:06 
+
+35:06 shutdown procedure this is very
+35:08 
+
+35:08 important especially when we are
+35:10 
+
+35:10 deploying our applications when we don't
+35:12 
+
+35:12 want to risk corrupting our inflight
+35:14 
+
+35:14 requests and corrupting our workflows,
+35:16 
+
+35:16 any kind of workflows and providing a
+35:18 
+
+35:18 very good a very delightful user
+35:20 
+
+35:20 experience to our customers to our
+35:22 
+
+35:22 users. So that's pretty much all you
+35:24 
+
+35:24 need to understand about graceful
+35:27 
+
+35:27 shutdown. You don't really have to
+35:28 
+
+35:28 understand the code because most
+35:30 
+
+35:30 probably you'll be using some kind of
+35:31 
+
+35:31 library some kind of framework can be
+35:33 
+
+35:33 nodej can be go it can be rust and
+35:36 
+
+35:36 python and most of the frameworks they
+35:38 
+
+35:38 have these code available which you can
+35:40 
+
+35:40 just copy and paste for implementing the
+35:42 
+
+35:42 graceful shutdown workflow. But it is
+35:45 
+
+35:45 important that you understand what
+35:46 
+
+35:46 exactly happens when you do gracefully
+35:50 
+
+35:50 shutdown and why it is important. That's
+35:53 
+
+35:53 why we talked so much about it in this

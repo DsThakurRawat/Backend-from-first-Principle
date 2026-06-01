@@ -1,0 +1,49 @@
+Detailed notes on *10. What are controllers, services, repositories, middlewares and request context?*
+
+### *1. The Backend Architecture Pattern*
+When a client sends an HTTP request to a server, separating the server's code into different components (Controllers, Services, and Repositories) is not strictly mandatory, but it is a vital design pattern. This separation of concerns makes the codebase scalable, maintainable, easier to debug, and easier to add new features.
+
+### *2. The Controller (Handler) Layer*
+The Controller (or Handler) is the entry point for an API route after the routing algorithm matches the URL. Its primary responsibility is managing the flow of data from the client to the server, and back to the client.
+
+*Step-by-Step Workflow of a Controller:*
+1.  *Data Extraction:* The controller receives the HTTP `request` and `response` objects from the underlying programming runtime. It takes the necessary data out of the request (e.g., query parameters for a GET request, or the JSON body for a POST request).
+2.  *Binding (Deserialization):* Because the request travels over the internet as a JSON string, the controller must deserialize it into the programming language's native data format (like a Go struct, a Python dictionary, or a JavaScript object). If this fails, the controller immediately halts and returns a `400 Bad Request`.
+3.  *Validation:* It checks if the incoming data matches the expected format, ensures mandatory fields are present, and prevents malicious payloads.
+4.  *Transformation:* It modifies the data for backend convenience before passing it downstream. For example, if a client doesn't provide an optional "sort" query parameter, the transformation pipeline can inject a default value (like sorting by date).
+5.  *Delegation:* It passes this clean, validated data to the Service Layer.
+6.  *Sending the Response:* Once the Service layer finishes processing, the Controller decides on the appropriate HTTP status code (e.g., `200 Success`, `201 Created`, or error codes like `400`/`500`) and sends the final response back to the client.
+
+### *3. The Service Layer*
+The Service Layer is where the actual business logic and core processing of the API happens.
+*   *Complete HTTP Isolation:* The Service layer should know *absolutely nothing* about HTTP. It should not deal with request/response objects, status codes, or validations. It simply acts as a standard function: it takes data in, processes it, and returns a result.
+*   *Orchestration:* A single service method can do many things. It can orchestrate multiple repository calls, merge different data sets, send emails, or make external API calls.
+
+### *4. The Repository (Database) Layer*
+The Repository layer's sole responsibility is dealing with database operations.
+*   *Workflow:* It takes data from the Service layer, constructs the specific database query (for inserting, filtering, or sorting), and returns the raw database results back to the Service layer.
+*   *Single Responsibility Principle:* A repository method should only do one specific thing and return one type of data. You should not use complex conditional logic inside a repository to make it return either a single book or an array of all books. Instead, you create two distinct repository methods.
+
+### *5. Middlewares*
+Middlewares are functions that execute in the middle of the request lifecycle—between the moment the server receives the request and the moment it hits the final Controller. 
+
+*   *Why use Middlewares?* To avoid duplicating code. Backend apps have common operations (security, logging, parsing) that need to run on hundreds of different API endpoints. Middlewares centralize this logic.
+*   *The `next()` Function:* Middlewares receive the standard `request` and `response` objects, but also a `next` function. Calling `next()` passes the execution to the subsequent middleware or handler in the chain. A middleware can optionally choose to not call `next()` and instead instantly return a response to the client, terminating the request early.
+*   *Execution Order Matters:* The order in which middlewares are arranged is critical because the request flows through them sequentially.
+
+*Common Examples of Middlewares:*
+*   *CORS & Security Headers:* Placed very early in the cycle to check the origin of the request. If the domain is unauthorized, it blocks the request instantly.
+*   *Rate Limiting:* Checks the user's IP address. If they are spamming the server, it instantly returns a `429 Too Many Requests` error to protect server resources.
+*   *Authentication:* Verifies the user's token. If invalid, it returns a `401 Unauthorized` error. If valid, it extracts the user's data and passes it downstream.
+*   *Logging:* Records details about the request (URL path, method, parameters) to the terminal for debugging.
+*   *Global Error Handling:* Usually placed at the *very end* of the middleware chain. It catches any unstructured errors thrown by the controllers or services and formats them into clean, standardized error messages for the client.
+
+### *6. Request Context*
+Request Context is a shared storage mechanism (usually a key-value store) that is strictly limited (scoped) to a single HTTP request.
+*   *Purpose:* Because the request passes through many different isolated function boundaries (multiple middlewares and the controller), Context allows them to share state and data without tightly coupling the system code.
+
+*Common Use Cases for Request Context:*
+1.  *Passing Authentication Data:* When the Authentication middleware validates a token, it extracts the `user_id` and the user's `role` (e.g., admin vs. standard user). It saves this inside the Request Context. Later, when the Controller is ready to save a new record, it pulls the `user_id` directly from the Context. This is crucial for security: you should never trust a `user_id` sent by the client in the JSON payload, as malicious users could spoof it.
+2.  *Request Tracing:* An early middleware can generate a unique ID (UUID) and save it to the Context. As the request travels through different microservices and logs, that specific ID is attached everywhere, allowing engineers to trace the exact path of a bug.
+3.  *Cancellations:* It can be used to store abort signals and timeout deadlines to prevent external service calls from hanging perpetually.
+

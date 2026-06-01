@@ -1,0 +1,6724 @@
+00:00 Every backend system that you will ever
+00:03 
+
+00:03 build all of them will have one common
+00:06 
+
+00:06 requirement which is it needs to be able
+00:09 
+
+00:09 to handle multiple things at once
+00:12 
+
+00:12 because if you have a web server an HTTP
+00:15 
+
+00:15 based web server which is what we mean
+00:18 
+
+00:18 in this context when we are saying a
+00:20 
+
+00:20 backend application if you have a web
+00:22 
+
+00:22 server which can only process one
+00:24 
+
+00:24 request which is coming from a web
+00:27 
+
+00:27 browser. If your server can only process
+00:30 
+
+00:30 one request like that coming from a user
+00:32 
+
+00:32 at a time then all the other say
+00:35 
+
+00:35 thousand users who are also trying to
+00:37 
+
+00:37 send their request they either have to
+00:39 
+
+00:39 wait or they will get an error that the
+00:41 
+
+00:41 server is busy processing one request.
+00:44 
+
+00:44 So you'll have to wait and that of
+00:46 
+
+00:46 course that is a very impossible
+00:48 
+
+00:48 situation and it will not work in a
+00:50 
+
+00:50 actual production application where we
+00:53 
+
+00:53 have thousands of users. So
+00:55 
+
+00:55 understanding how our servers and in
+00:58 
+
+00:58 turn how our operating system can do
+01:00 
+
+01:00 multiple things at once and all the
+01:03 
+
+01:03 different ways that different
+01:05 
+
+01:05 programming languages and different
+01:07 
+
+01:07 runtimes like NodeJS or Python or Rust
+01:10 
+
+01:10 or Go. The way they let you handle this
+01:13 
+
+01:13 or the way they let you express this
+01:15 
+
+01:15 requirement of yours to be able to
+01:17 
+
+01:17 handle multiple things that plays a very
+01:19 
+
+01:19 important role in forming your mental
+01:22 
+
+01:22 model while you're building your
+01:24 
+
+01:24 application. This particular video has
+01:26 
+
+01:26 nothing [music] to do with any kind of
+01:28 
+
+01:28 technique or any kind of tips or any
+01:31 
+
+01:31 kind of concrete actionable items that
+01:34 
+
+01:34 you can just watch the video and go
+01:36 
+
+01:36 ahead and implement that. But this is
+01:39 
+
+01:39 important in the sense that you can form
+01:41 
+
+01:41 a mental model about how your back end
+01:45 
+
+01:45 process your requests, process all the
+01:48 
+
+01:48 requests that are coming from your
+01:49 
+
+01:49 client and how it can perform multiple
+01:52 
+
+01:52 tasks. Having that level of
+01:54 
+
+01:54 understanding will help you debug
+01:56 
+
+01:56 things. It will help you structure your
+01:58 
+
+01:58 application a little better and will
+01:60 
+
+01:60 help you forming the bigger
+02:02 
+
+02:02 architectural decisions down the length.
+02:04 
+
+02:04 Most of us when we are learning to
+02:07 
+
+02:07 create [music] these backend systems, we
+02:09 
+
+02:09 learn from our respective programming
+02:11 
+
+02:11 languages APIs or its documentation that
+02:14 
+
+02:14 keywords like async and await. Using
+02:17 
+
+02:17 this will help us make things concurrent
+02:20 
+
+02:20 or will help us make things work
+02:23 
+
+02:23 together and using threads. They help us
+02:27 
+
+02:27 parallelize our executions. But we don't
+02:30 
+
+02:30 really understand what these keywords
+02:32 
+
+02:32 actually do behind the scenes. and how
+02:35 
+
+02:35 they actually help us on a mechanical
+02:38 
+
+02:38 level. We know that they help us and it
+02:40 
+
+02:40 works and we can go a long way without
+02:42 
+
+02:42 understanding how they work and the
+02:45 
+
+02:45 mechanics of it. But it's always good to
+02:48 
+
+02:48 understand how they work to get one step
+02:50 
+
+02:50 ahead in understanding your systems. So
+02:52 
+
+02:52 in this video what I want to do is I
+02:55 
+
+02:55 want to at least I will try to give a
+02:58 
+
+02:58 clear mental model of how things work
+03:01 
+
+03:01 from ground up starting from the root
+03:04 
+
+03:04 level to handling or interacting with
+03:06 
+
+03:06 your application code. Okay. So with
+03:09 
+
+03:09 that premise we can start. So one
+03:11 
+
+03:11 particular scenario that you can relate
+03:14 
+
+03:14 to or one particular scenario that you
+03:17 
+
+03:17 will face in your day-to-day life as a
+03:19 
+
+03:19 backend engineer is dealing with
+03:20 
+
+03:20 requests because of course that's where
+03:22 
+
+03:22 all of it starts. So let's start from
+03:24 
+
+03:24 there. We have a browser let's say a
+03:27 
+
+03:27 single client. We have a user and it is
+03:29 
+
+03:29 using Chrome to make a request to our
+03:32 
+
+03:32 server. This is our backend server and
+03:34 
+
+03:34 we have all this routing layer, service
+03:36 
+
+03:36 layer, handler layer, repository layer
+03:38 
+
+03:38 that you already know. But the gist is
+03:41 
+
+03:41 we receive a request from our client and
+03:44 
+
+03:44 we need to process it. And to process
+03:47 
+
+03:47 it, what do we mean? We need to make
+03:49 
+
+03:49 some kind of database interaction. This
+03:52 
+
+03:52 is our database. We need to make some
+03:54 
+
+03:54 kind of query, wait for the response
+03:57 
+
+03:57 while our database does its own
+03:59 
+
+03:59 execution, its own processing, and send
+04:01 
+
+04:01 the response back. That's what a typical
+04:03 
+
+04:03 API call looks like. Now, let's talk
+04:06 
+
+04:06 about this time. be sending a query to
+04:08 
+
+04:08 our database and the time [music] when
+04:10 
+
+04:10 we are waiting for our database to
+04:12 
+
+04:12 process that request. Now talking about
+04:14 
+
+04:14 this particular time on a local network
+04:17 
+
+04:17 while you are running your server in a
+04:19 
+
+04:19 local host this processing time might
+04:21 
+
+04:21 take somewhere around 1 to 2 millconds
+04:24 
+
+04:24 assuming it's a very simple database
+04:26 
+
+04:26 query and going further with that logic
+04:28 
+
+04:28 let's say we have deployed it in
+04:30 
+
+04:30 production and our database is in a
+04:32 
+
+04:32 different availability zone so this same
+04:34 
+
+04:34 query might take somewhere around 20 to
+04:37 
+
+04:37 30 milliseconds and if our database is
+04:41 
+
+04:41 in a different region itself Then the
+04:44 
+
+04:44 same query might take somewhere around
+04:45 
+
+04:45 90 to 100 millconds if it's a very far
+04:48 
+
+04:48 region. And now my question is while the
+04:52 
+
+04:52 server is waiting this time basically
+04:55 
+
+04:55 either [clears throat] 2 millconds or 30
+04:56 
+
+04:56 mconds or 100 millconds during this time
+04:59 
+
+04:59 what is our server doing right that is
+05:02 
+
+05:02 the question that we are trying to
+05:03 
+
+05:03 answer in this video. Now going by our
+05:05 
+
+05:05 naive approach assuming that our server
+05:09 
+
+05:09 can handle only one request at a time
+05:11 
+
+05:11 which was the premise that we
+05:13 
+
+05:13 established at the start of this video.
+05:15 
+
+05:15 So if we go by that premise if our
+05:18 
+
+05:18 server is processing synchronously which
+05:20 
+
+05:20 means line by line execution without any
+05:23 
+
+05:23 kind of concurrency then during this 2
+05:25 
+
+05:25 milliseconds or 30 mconds or 100
+05:28 
+
+05:28 millconds our server is doing nothing.
+05:30 
+
+05:30 the CPU of our server is completely
+05:33 
+
+05:33 idle. That's what we say in technical
+05:35 
+
+05:35 terms while it is waiting for our
+05:38 
+
+05:38 databases network packets to arrive.
+05:41 
+
+05:41 Right? So let's let's try to quantify
+05:44 
+
+05:44 let's try to give some numbers to this
+05:46 
+
+05:46 amount of waste that we are causing by
+05:49 
+
+05:49 keeping our server CPU idle. So a modern
+05:52 
+
+05:52 CPU, the kind of CPUs that we have
+05:54 
+
+05:54 access to today, the kind of CPUs that
+05:55 
+
+05:55 we work with today, they can execute
+05:58 
+
+05:58 around roughly speaking 3 billion
+06:01 
+
+06:01 instructions per second, which means 3
+06:04 
+
+06:04 million instructions per millisecond. So
+06:08 
+
+06:08 we are saying that our server is waiting
+06:11 
+
+06:11 and sitting idle for 100 millisecond
+06:14 
+
+06:14 straight while it is waiting for the
+06:16 
+
+06:16 response from our database. It could
+06:18 
+
+06:18 have executed 300 million instructions.
+06:23 
+
+06:23 300 million instructions it could have
+06:25 
+
+06:25 executed but instead since we are only
+06:29 
+
+06:29 processing one request at a time how
+06:31 
+
+06:31 many instructions it ended up processing
+06:33 
+
+06:33 ended up executing zero. So this is the
+06:36 
+
+06:36 amount of waste that you'll cause by not
+06:39 
+
+06:39 making your program concurrent by not
+06:41 
+
+06:41 doing multiple things at once. Now let's
+06:44 
+
+06:44 try to quantify it even further. A
+06:46 
+
+06:46 typical mid to complex level API call it
+06:50 
+
+06:50 will involve three to five database
+06:52 
+
+06:52 queries. It might also call one to
+06:54 
+
+06:54 external services like sending emails or
+06:57 
+
+06:57 interacting with radius to get things
+07:00 
+
+07:00 from the cache or insert things into the
+07:02 
+
+07:02 cache. And each of these operation so in
+07:05 
+
+07:05 total let's say there are five
+07:06 
+
+07:06 operations involving external services
+07:09 
+
+07:09 whether it is database or email provider
+07:11 
+
+07:11 or radius. So in total the API call
+07:14 
+
+07:14 involved five different network
+07:17 
+
+07:17 operations and if we say on average if
+07:20 
+
+07:20 it spent 50 milliseconds waiting for
+07:23 
+
+07:23 each of the network's response then in
+07:25 
+
+07:25 total it spent around 250 milliseconds
+07:29 
+
+07:29 waiting for network's response basically
+07:32 
+
+07:32 or in other words we say waiting for IO
+07:34 
+
+07:34 input output all these operations
+07:36 
+
+07:36 whether we are dealing with network or
+07:39 
+
+07:39 we are dealing with files or we are
+07:41 
+
+07:41 dealing with standard input or standard
+07:43 
+
+07:43 output like input from keyboard or
+07:46 
+
+07:46 showing on display etc etc. So all these
+07:48 
+
+07:48 operations are categorized as input
+07:50 
+
+07:50 output operations. But this is only the
+07:53 
+
+07:53 time your server spent waiting for the
+07:55 
+
+07:55 responses of different different network
+07:57 
+
+07:57 calls. But your server also did some
+08:00 
+
+08:00 amount of CPU level processing, right?
+08:03 
+
+08:03 And that was only 10 milliseconds. It
+08:05 
+
+08:05 only used the CPU for 10 mconds. But for
+08:09 
+
+08:09 the rest of the 250 mconds, it just
+08:11 
+
+08:11 waited for the responses of different
+08:14 
+
+08:14 different network calls. Which means
+08:16 
+
+08:16 that your server your server's resources
+08:19 
+
+08:19 your server's hardware resources CPU and
+08:21 
+
+08:21 memory they were idle 95% of the time
+08:25 
+
+08:25 you were not using any of your
+08:27 
+
+08:27 computer's hardware 95% of the time and
+08:30 
+
+08:30 this is exactly the problem concurrency
+08:33 
+
+08:33 tries to solve while we are building our
+08:36 
+
+08:36 backend applications if you notice most
+08:39 
+
+08:39 of the times or more than half of the
+08:41 
+
+08:41 times our application our program it
+08:44 
+
+08:44 either waits for the database response
+08:47 
+
+08:47 or it waits for external API calls like
+08:50 
+
+08:50 email cache etc etc or it waits for file
+08:54 
+
+08:54 system right if it is dealing with
+08:56 
+
+08:56 temporary files or file uploading file
+08:59 
+
+08:59 downloading etc etc all these which we
+09:01 
+
+09:01 call as IO more than 70% of the time in
+09:05 
+
+09:05 a typical backend application is spent
+09:07 
+
+09:07 on IO and what is the use of concurrency
+09:10 
+
+09:10 using this mechanism called concurrency
+09:13 
+
+09:13 which means to oversimplify doing
+09:15 
+
+09:15 multiple things at once. So using this
+09:17 
+
+09:17 mechanism concurrency we are able to
+09:20 
+
+09:20 make use of our CPU or our memory to do
+09:23 
+
+09:23 additional things to do the other things
+09:26 
+
+09:26 while it is waiting for the network
+09:28 
+
+09:28 calls. So for the 70% of the time when
+09:31 
+
+09:31 it is waiting for the responses of the
+09:33 
+
+09:33 network calls we say that while we wait
+09:37 
+
+09:37 for these network calls you can use the
+09:39 
+
+09:39 CPU you can use the memory for other
+09:40 
+
+09:40 things. We'll talk about what are those
+09:42 
+
+09:42 other things but that's the problem
+09:45 
+
+09:45 concurrency tries to solve. We have one
+09:47 
+
+09:47 terminology out of the way. Now let's
+09:50 
+
+09:50 tackle the other one which is
+09:52 
+
+09:52 parallelism which is often confused with
+09:54 
+
+09:54 concurrency and for good reasons. So at
+09:57 
+
+09:57 one side we have parallelism and another
+09:59 
+
+09:59 side which is concurrency. What does
+10:01 
+
+10:01 parallelism mean? It is exactly what it
+10:03 
+
+10:03 sounds like. So we say that a program is
+10:06 
+
+10:06 parallel when it is able to execute
+10:09 
+
+10:09 multiple instructions. at the same time
+10:11 
+
+10:11 at the same moment which means that to
+10:14 
+
+10:14 achieve parallelism we need hardware
+10:16 
+
+10:16 level support. So if you say that your
+10:19 
+
+10:19 program is executing instructions
+10:21 
+
+10:21 parallelly it means it needs two CPU
+10:24 
+
+10:24 cores at least so that it can at the
+10:26 
+
+10:26 same moment execute two different
+10:29 
+
+10:29 instructions at the same time because
+10:31 
+
+10:31 one CPU core can only execute one
+10:34 
+
+10:34 instructions at one moment. That is the
+10:37 
+
+10:37 limitation that we have. It is not
+10:38 
+
+10:38 really a limitation and you will not
+10:40 
+
+10:40 really see it as a limitation once we
+10:42 
+
+10:42 are done with this video. But that's the
+10:44 
+
+10:44 constraint that we have which is your
+10:46 
+
+10:46 CPU one CPU can only execute one
+10:49 
+
+10:49 instruction at one moment of time. So to
+10:51 
+
+10:51 achieve parallelism you need hardware
+10:53 
+
+10:53 level support which means at least two
+10:55 
+
+10:55 cores of CPU to execute two different
+10:57 
+
+10:57 instructions at the same time. That's
+10:59 
+
+10:59 what we mean by parallelism. It is very
+11:01 
+
+11:01 intuitive to understand. Now concurrency
+11:03 
+
+11:03 is a little tricky. Concurrency also
+11:06 
+
+11:06 means that we are doing multiple things
+11:08 
+
+11:08 at once. But the difference is we can
+11:11 
+
+11:11 also achieve concurrency with only one
+11:14 
+
+11:14 core of CPU because concurrency is
+11:17 
+
+11:17 primarily about structuring our program.
+11:20 
+
+11:20 It is about creating our program in a
+11:22 
+
+11:22 way that we can start, pause, resume
+11:26 
+
+11:26 multiple instructions at any moment of
+11:28 
+
+11:28 time so that it feels like we are doing
+11:30 
+
+11:30 multiple things [music] even though at
+11:32 
+
+11:32 one moment of time we are only using one
+11:35 
+
+11:35 CPU core to do or to execute one
+11:37 
+
+11:37 instructions at that moment. But since
+11:40 
+
+11:40 we have structured our program or our
+11:42 
+
+11:42 operating system or our programming
+11:44 
+
+11:44 language runtime enables us with its
+11:46 
+
+11:46 feature so that we can write our
+11:49 
+
+11:49 programs in a way so that one
+11:51 
+
+11:51 instruction can start here then it can
+11:53 
+
+11:53 go to some other thing while some other
+11:56 
+
+11:56 instruction is processing and then again
+11:58 
+
+11:58 this one comes back. So so this is all
+11:60 
+
+11:60 about structure that is the difference
+12:01 
+
+12:01 between parallelism and concurrency.
+12:04 
+
+12:04 We'll talk more about this and try to
+12:06 
+
+12:06 clear as much confusion as possible. But
+12:08 
+
+12:08 that is the most simplified definitions
+12:10 
+
+12:10 [music]
+12:11 
+
+12:11 of parallelism and concurrency. So to
+12:14 
+
+12:14 express it in one way, parallelism is
+12:17 
+
+12:17 about doing multiple things at once
+12:20 
+
+12:20 while concurrency is about dealing with
+12:23 
+
+12:23 multiple things at once. Even though we
+12:24 
+
+12:24 are doing one thing at a time, but we're
+12:26 
+
+12:26 dealing with multiple things at once. If
+12:28 
+
+12:28 we want to visualize it. So let's say
+12:32 
+
+12:32 this is our timeline and these are our
+12:36 
+
+12:36 millisecond scales. This is 1. This is
+12:38 
+
+12:38 10. This is 20, 30, 40, 50 and 60. This
+12:44 
+
+12:44 is how time passes in one direction. Now
+12:46 
+
+12:46 we have two different requests. This is
+12:50 
+
+12:50 request A and this is request B which
+12:53 
+
+12:53 let's say arrived at the same time which
+12:55 
+
+12:55 we got these two requests at the same
+12:57 
+
+12:57 time. Now this is the timeline of
+12:60 
+
+12:60 request A and this is the timeline of
+13:02 
+
+13:02 request B. So the moment request A
+13:05 
+
+13:05 arrived in our server we started
+13:07 
+
+13:07 processing it. So we did let's say some
+13:09 
+
+13:09 validation here some routing logic some
+13:12 
+
+13:12 JSON D serialization etc etc. So all of
+13:15 
+
+13:15 this requires CPU work. So for the first
+13:18 
+
+13:18 5 milliseconds right let's say this is
+13:20 
+
+13:20 half this is 5 millconds. So up till
+13:23 
+
+13:23 here we used our CPU. So let's imagine
+13:26 
+
+13:26 for this example we have only one core
+13:29 
+
+13:29 of circuit. We used our CPU for the
+13:31 
+
+13:31 first 5 milliseconds and meanwhile
+13:33 
+
+13:33 request B was waiting and after this we
+13:36 
+
+13:36 wanted to make a database query. Of
+13:38 
+
+13:38 course most of the API calls we have to
+13:40 
+
+13:40 make some amount of database
+13:41 
+
+13:41 interaction. So after 5 seconds of
+13:43 
+
+13:43 processing we needed some response from
+13:46 
+
+13:46 our database. So till here to let's say
+13:49 
+
+13:49 we took around 40 mconds. This is the
+13:52 
+
+13:52 time that we are waiting for our
+13:54 
+
+13:54 databases response. Now after 5
+13:57 
+
+13:57 milliseconds, we don't need the CPU
+13:58 
+
+13:58 anymore. So the moment we leave the CPU
+14:01 
+
+14:01 or the moment we don't need the CPU
+14:03 
+
+14:03 anymore because we are waiting for an IO
+14:06 
+
+14:06 response a network response that's when
+14:09 
+
+14:09 our operating system scheduleuler or a
+14:11 
+
+14:11 programming language runtime whatever is
+14:13 
+
+14:13 handling thisuling it takes the request
+14:16 
+
+14:16 B and gives it the access to CPU so that
+14:19 
+
+14:19 it can start processing and it can start
+14:21 
+
+14:21 using the CPU. So from 5 millisecond
+14:23 
+
+14:23 point the request B got access to the
+14:26 
+
+14:26 CPU. So let's say it took around 15
+14:30 
+
+14:30 millisecond since it had a lot of
+14:32 
+
+14:32 processing some kind of validation some
+14:34 
+
+14:34 kind of a long recursion loop whatever.
+14:37 
+
+14:37 So it took around till 15 the CPU slice
+14:41 
+
+14:41 for 15 millconds it used the CPU and
+14:44 
+
+14:44 after 15 mconds again it also had to
+14:47 
+
+14:47 make some kind of database interaction
+14:49 
+
+14:49 then again it also started waiting for
+14:51 
+
+14:51 the IO. So it also waited till 50. This
+14:56 
+
+14:56 is the time it is waiting for the
+14:58 
+
+14:58 database to respond back. Now at 40
+15:00 
+
+15:00 milliseconds our database return the
+15:03 
+
+15:03 response for request A. But it's not
+15:05 
+
+15:05 like the moment our database responds
+15:08 
+
+15:08 back the CPU will be given instantly to
+15:11 
+
+15:11 request A. So there will be some kind of
+15:12 
+
+15:12 shoulduling logic or some kind of
+15:14 
+
+15:14 priority based logic. So up till here
+15:17 
+
+15:17 even though our database was not really
+15:19 
+
+15:19 processing but our request A did not get
+15:21 
+
+15:21 the CPU but at exactly 50 milliseconds
+15:25 
+
+15:25 point our request A gets the CPU back
+15:27 
+
+15:27 and now again it does some kind of
+15:30 
+
+15:30 processing using the CPU let's say it
+15:32 
+
+15:32 tries to filter out some values etc. Now
+15:35 
+
+15:35 it is done at this point. It just
+15:37 
+
+15:37 responds back to our client. And same
+15:39 
+
+15:39 way after request A is done with it.
+15:41 
+
+15:41 Meanwhile the request B the database
+15:43 
+
+15:43 response for request B is also returned
+15:45 
+
+15:45 and it also does some kind of processing
+15:47 
+
+15:47 and returns the respond back. Now the
+15:50 
+
+15:50 point that I want to bring your
+15:52 
+
+15:52 attention is while request A was given
+15:55 
+
+15:55 the access to CPU the request B was
+15:58 
+
+15:58 waiting. It did not get [music] any kind
+16:00 
+
+16:00 of CPU access and only after request A
+16:04 
+
+16:04 was paused or at least it was suspended
+16:07 
+
+16:07 because it was waiting for IIO. It was
+16:09 
+
+16:09 waiting for a network's response after
+16:10 
+
+16:10 that request B was given access to CPU.
+16:13 
+
+16:13 Then only it started using the CPU for
+16:16 
+
+16:16 any kind of processing. That's the only
+16:18 
+
+16:18 point that I wanted to make. Even though
+16:20 
+
+16:20 we had one core, we still did not waste
+16:23 
+
+16:23 any amount of CPU. Of course, we have
+16:25 
+
+16:25 oversimplified it with two requests. But
+16:28 
+
+16:28 at a time, our server is not just
+16:30 
+
+16:30 dealing with requests. It's also trying
+16:32 
+
+16:32 to log messages to our standard output,
+16:35 
+
+16:35 which is also an IO process, right? It
+16:38 
+
+16:38 is also trying to send telemetry data,
+16:40 
+
+16:40 which means external API calls. It is
+16:42 
+
+16:42 also trying to run background jobs,
+16:45 
+
+16:45 hundreds of different things it tries to
+16:46 
+
+16:46 do. And you can imagine this CPU access
+16:50 
+
+16:50 being divided across all these demands
+16:52 
+
+16:52 for CPU. and the requests or any kind of
+16:56 
+
+16:56 task which requires any kind of network
+16:59 
+
+16:59 response or any kind of IO response they
+17:01 
+
+17:01 just wait while the CPU just jumps
+17:03 
+
+17:03 around does the processing work and the
+17:05 
+
+17:05 moment that particular task or that
+17:07 
+
+17:07 particular job or that particular
+17:09 
+
+17:09 process whatever you want to call it the
+17:11 
+
+17:11 moment it starts requiring some kind of
+17:13 
+
+17:13 IO response it jumps from that and goes
+17:16 
+
+17:16 to some other process so this is how
+17:18 
+
+17:18 concurrency works and this is how we
+17:20 
+
+17:20 don't waste our CPU cycles now Since we
+17:24 
+
+17:24 had only one core even though both of
+17:26 
+
+17:26 these requests for a client's
+17:28 
+
+17:28 perspective both of these requests are
+17:30 
+
+17:30 currently processing right they are both
+17:32 
+
+17:32 the request B has not ended yet it's not
+17:35 
+
+17:35 it has not thrown any kind of error for
+17:38 
+
+17:38 a client's perspective from a highle
+17:40 
+
+17:40 perspective both of them are currently
+17:42 
+
+17:42 in progress that's what we say but at
+17:45 
+
+17:45 this moment of time the moment you zoom
+17:48 
+
+17:48 in the moment you look at the time slice
+17:50 
+
+17:50 at one time window only one request is
+17:53 
+
+17:53 being processed by the CPU even though
+17:55 
+
+17:55 both of them are in progress even though
+17:57 
+
+17:57 we are doing multiple things but at a
+17:60 
+
+17:60 point of time we are only doing one. So
+18:02 
+
+18:02 this is exactly the definition of
+18:04 
+
+18:04 concurrency. But if we were to imagine
+18:07 
+
+18:07 how parallelism looks like as compared
+18:09 
+
+18:09 to concurrency, then this will change.
+18:11 
+
+18:11 Request Arived, it got CPU and request B
+18:14 
+
+18:14 arrived. And now that we have two cores,
+18:16 
+
+18:16 let's imagine for the sake of the
+18:18 
+
+18:18 parallelism example. The moment request
+18:20 
+
+18:20 B arrives, since we have another core
+18:22 
+
+18:22 available, the request B also gets a CPU
+18:25 
+
+18:25 slice and it also starts processing. So
+18:27 
+
+18:27 in case of parallelism also, both of the
+18:30 
+
+18:30 requests are currently in progress. But
+18:32 
+
+18:32 the difference is at this particular
+18:35 
+
+18:35 time window we are not doing just one
+18:37 
+
+18:37 thing. We are doing both of these things
+18:39 
+
+18:39 at the same time the same time window
+18:41 
+
+18:41 and that's what parallelism looks like.
+18:44 
+
+18:44 Now coming back to the practical
+18:46 
+
+18:46 question why does it matter? Why does it
+18:48 
+
+18:48 matter for us to understand this the the
+18:51 
+
+18:51 concept of IO and the concept of CPU?
+18:55 
+
+18:55 What is IO bound and what is CPU bound?
+18:57 
+
+18:57 Why do we need to understand this?
+18:59 
+
+18:59 Because as we have already said most of
+19:01 
+
+19:01 the things that happens in a requests
+19:03 
+
+19:03 life cycle in a typical API call are
+19:06 
+
+19:06 things that are IO bound. This means
+19:08 
+
+19:08 things that are waiting for some kind of
+19:11 
+
+19:11 external resources rather than doing
+19:14 
+
+19:14 actual computation. And the only time
+19:16 
+
+19:16 that we use the CPU is when we are doing
+19:19 
+
+19:19 actual computation when we are executing
+19:22 
+
+19:22 instructions in our CPU core. rest of
+19:24 
+
+19:24 the things things like interacting with
+19:26 
+
+19:26 the database interacting with file
+19:27 
+
+19:27 system interacting with logging standard
+19:29 
+
+19:29 input standard output everything
+19:30 
+
+19:30 requires IIO which means sending the
+19:33 
+
+19:33 request waiting for the response to come
+19:35 
+
+19:35 back so we call those kinds of things IO
+19:37 
+
+19:37 bound and when we are actually doing
+19:39 
+
+19:39 computation let's say you are validating
+19:41 
+
+19:41 so you are actually going through the
+19:43 
+
+19:43 JSON bytes you're checking the values
+19:45 
+
+19:45 you're comparing stuff you're adding
+19:46 
+
+19:46 stuff while you are doing that you're
+19:48 
+
+19:48 doing actual computation you're using
+19:50 
+
+19:50 CPU cycles we call that CPU bound so
+19:53 
+
+19:53 that is the difference between IObound
+19:54 
+
+19:54 and CPUbound and most of our backend
+19:57 
+
+19:57 applications they are IO bound for IO
+19:60 
+
+19:60 bound tasks one thing which is mandatory
+20:02 
+
+20:02 is concurrence otherwise as we have
+20:04 
+
+20:04 already said it it cannot function if it
+20:06 
+
+20:06 only process one request per second
+20:08 
+
+20:08 you're wasting 95% of your resources and
+20:10 
+
+20:10 that's just not reasonable because you
+20:13 
+
+20:13 want to handle as many requests
+20:15 
+
+20:15 simultaneously as possible and while
+20:17 
+
+20:17 you're doing that you want to keep the
+20:19 
+
+20:19 CPU busy with other requests actual
+20:21 
+
+20:21 computing so it does not matter whether
+20:24 
+
+20:24 you have one CPU core or eight. The
+20:26 
+
+20:26 bottleneck is always going to be IO when
+20:29 
+
+20:29 we are dealing with backend
+20:30 
+
+20:30 applications. But there are some kind of
+20:32 
+
+20:32 workloads which we call as CPUbound. The
+20:35 
+
+20:35 things that I already mentioned like
+20:37 
+
+20:37 validations or JSON dialing etc. They
+20:40 
+
+20:40 are CPUbound but they are not as heavily
+20:43 
+
+20:43 CPU bound. You will not notice it.
+20:45 
+
+20:45 They'll mostly be finished in one or 2
+20:47 
+
+20:47 milliseconds because our CPUs are that
+20:49 
+
+20:49 fast. But some of the heavy CPUbound
+20:52 
+
+20:52 operations are things like image
+20:53 
+
+20:53 processing because in image processing
+20:55 
+
+20:55 or graphics there are a lot of matrix
+20:57 
+
+20:57 multiplication and heavy computation
+20:59 
+
+20:59 tasks which use a lot of CPU cycles.
+21:02 
+
+21:02 Same way if you are dealing with
+21:04 
+
+21:04 encryption in our authentication
+21:05 
+
+21:05 middleware we are verifying a JWT token.
+21:08 
+
+21:08 So while we are doing that we are
+21:10 
+
+21:10 dealing with encryption and very
+21:12 
+
+21:12 low-level computation that also is
+21:15 
+
+21:15 CPUbound because it uses a lot of CPU
+21:17 
+
+21:17 cycles to process or to crunch numbers.
+21:19 
+
+21:19 So for CPUbound tasks what is more
+21:22 
+
+21:22 beneficial is parallelism because you
+21:25 
+
+21:25 want to use CPU you want to finish all
+21:27 
+
+21:27 these tasks you want to finish executing
+21:30 
+
+21:30 all these instructions as fast as
+21:32 
+
+21:32 possible and parallelism using multiple
+21:34 
+
+21:34 CPU cores to finish these executions is
+21:37 
+
+21:37 always faster as compared to concurrency
+21:39 
+
+21:39 where you only use CPU for one
+21:41 
+
+21:41 instruction at a time in your backend
+21:43 
+
+21:43 system of course you need both you need
+21:46 
+
+21:46 concurrency so that you can handle your
+21:48 
+
+21:48 IO bound workloads. You can deal with
+21:51 
+
+21:51 multiple database connections. You can
+21:52 
+
+21:52 deal with external API calls. You can
+21:54 
+
+21:54 deal with file system. You can do
+21:56 
+
+21:56 logging. You can deal with background
+21:58 
+
+21:58 jobs etc. All these different IO bound
+21:60 
+
+22:00 workloads. But you also need parallelism
+22:02 
+
+22:02 so that you can do all these heavy tasks
+22:04 
+
+22:04 or any kind of computation based
+22:06 
+
+22:06 operations as fast as possible. But one
+22:09 
+
+22:09 thing to remember is most of the back
+22:10 
+
+22:10 end applications are mostly IO bound.
+22:13 
+
+22:13 they are not CPUbound unless you are
+22:16 
+
+22:16 doing some niche work of video encoding
+22:18 
+
+22:18 or encryption etc etc. Now let's talk
+22:21 
+
+22:21 about how do computers actually do
+22:24 
+
+22:24 multiple different things at once. What
+22:26 
+
+22:26 are the technical elements that come
+22:28 
+
+22:28 into play to make this possible and
+22:31 
+
+22:31 fundamentally looking there are majorly
+22:34 
+
+22:34 only two ways. First is using threads
+22:37 
+
+22:37 and second event loops. So every
+22:39 
+
+22:39 concurrency feature that you encounter
+22:41 
+
+22:41 in any of your programming languages. So
+22:44 
+
+22:44 if you work with go then it is go
+22:46 
+
+22:46 routines or if you work with javascript
+22:48 
+
+22:48 or typescript or nodejs it is asyncate
+22:51 
+
+22:51 or if you work with java it's virtual
+22:53 
+
+22:53 threads. All of these concurrency
+22:56 
+
+22:56 primitives that we are aware of in all
+22:58 
+
+22:58 our programming languages that we work
+23:00 
+
+23:00 with on our day-to-day basis. All of
+23:02 
+
+23:02 them build on these two mechanisms
+23:05 
+
+23:05 mostly. It's not like they use threads
+23:08 
+
+23:08 directly but the primitives that have
+23:10 
+
+23:10 been built they are either built on top
+23:13 
+
+23:13 of threads or the concept of event
+23:15 
+
+23:15 loops. We'll talk about what these two
+23:17 
+
+23:17 mean. That's what it all boils down to.
+23:19 
+
+23:19 So let's talk about threads first. So to
+23:22 
+
+23:22 simplify thread can be considered as an
+23:25 
+
+23:25 independent piece of execution by your
+23:28 
+
+23:28 operating system. We are not talking in
+23:30 
+
+23:30 the context of programming languages
+23:32 
+
+23:32 yet. But thread is a feature that is
+23:34 
+
+23:34 given by your operating system to run a
+23:38 
+
+23:38 single and independent piece of
+23:40 
+
+23:40 execution in your CPU obviously. So when
+23:42 
+
+23:42 you create a thread or uh a piece of
+23:45 
+
+23:45 logic, a piece of program which will be
+23:48 
+
+23:48 run independently on top of your
+23:50 
+
+23:50 operating system, your operating system
+23:52 
+
+23:52 allocates or it creates or it assigns a
+23:55 
+
+23:55 couple of things. First is stack. And
+23:57 
+
+23:57 what do we use the stack for? For
+23:59 
+
+23:59 keeping track of our function calls. For
+24:01 
+
+24:01 example, if it starts with a main
+24:04 
+
+24:04 function, then main function called
+24:06 
+
+24:06 another function like get users, we'll
+24:09 
+
+24:09 keep pushing different function calls
+24:12 
+
+24:12 which was called after which in the
+24:14 
+
+24:14 order into the stack. Same way we also
+24:16 
+
+24:16 keep our local variables. If we have a
+24:18 
+
+24:18 function, let's say we have a main
+24:21 
+
+24:21 function and here we say let a equals to
+24:24 
+
+24:24 3, then this variable that we created,
+24:27 
+
+24:27 this variable that we assigned, the
+24:29 
+
+24:29 memory for this will be inside our stack
+24:32 
+
+24:32 and apart from stack OS also creates an
+24:35 
+
+24:35 instruction pointer and what is the use
+24:38 
+
+24:38 of instruction pointer to keep track of
+24:40 
+
+24:40 where exactly we are in our execution
+24:44 
+
+24:44 workflow in the code. So it keeps a
+24:46 
+
+24:46 pointer to that so that it can come back
+24:48 
+
+24:48 to it after the context switch. Now one
+24:50 
+
+24:50 critical property, one behavior of
+24:52 
+
+24:52 threads and it is an important property
+24:54 
+
+24:54 because this is where it differs from
+24:57 
+
+24:57 other models of concurrency like event
+24:59 
+
+24:59 loop and all which is the the the piece
+25:02 
+
+25:02 of logic also called as a scheduleuler
+25:04 
+
+25:04 which decides if we have multiple
+25:06 
+
+25:06 threads let's say 1 2 3 which thread
+25:10 
+
+25:10 stops which thread starts and which
+25:12 
+
+25:12 thread blocks resumes all these things
+25:15 
+
+25:15 is decided by a scheduleuler and the
+25:17 
+
+25:17 important property is this scheduleuler
+25:19 
+
+25:19 is controlled by our operating system.
+25:21 
+
+25:21 That is an important property because in
+25:23 
+
+25:23 the later part we'll discuss how a
+25:25 
+
+25:25 certain programming language runtimes
+25:27 
+
+25:27 they also have a scheduleuler on top of
+25:29 
+
+25:29 our operating system scheduleuler to
+25:31 
+
+25:31 make things more efficient to make
+25:33 
+
+25:33 things more lightweight. But
+25:34 
+
+25:34 traditionally speaking threads are
+25:36 
+
+25:36 scheduled using a scheduleuler which is
+25:38 
+
+25:38 controlled by our operating system. So
+25:40 
+
+25:40 what does the scheduleuler actually do?
+25:41 
+
+25:41 It gives each of the thread a time or a
+25:44 
+
+25:44 time slice for doing what? for some
+25:47 
+
+25:47 amount of processing using our CPU. So
+25:50 
+
+25:50 each thread is given a time slice for a
+25:52 
+
+25:52 particular amount of CPU processing
+25:54 
+
+25:54 capability and usually it's in
+25:56 
+
+25:56 milliseconds. It might be less also but
+25:58 
+
+25:58 we measure it in terms of milliseconds
+26:01 
+
+26:01 and let's say if it assigns somewhere
+26:03 
+
+26:03 like 2 millconds to each thread preigned
+26:06 
+
+26:06 then after 2 milliseconds the
+26:08 
+
+26:08 scheduleuler will go ahead and pause
+26:10 
+
+26:10 this particular thread. It will save the
+26:12 
+
+26:12 state of it like what was the last
+26:15 
+
+26:15 instruction that it was trying to
+26:16 
+
+26:16 execute. It will save that information
+26:18 
+
+26:18 and it will switch to another thread to
+26:21 
+
+26:21 start processing that and after another
+26:23 
+
+26:23 2 millconds it will switch to thread 3.
+26:25 
+
+26:25 So that's how the basic schedule
+26:27 
+
+26:27 shoulder algorithm works. We will not go
+26:30 
+
+26:30 into operating system should schedule
+26:31 
+
+26:31 shoulder algorithms and all. It's it's a
+26:33 
+
+26:33 huge topic. People have written books
+26:35 
+
+26:35 about it. If you are interested more to
+26:37 
+
+26:37 learn about threads and operating system
+26:40 
+
+26:40 shoulduling and everything then you can
+26:42 
+
+26:42 read a book. One of the most popular
+26:43 
+
+26:43 books is this one operating system three
+26:47 
+
+26:47 easy pieces. A very good book to give
+26:49 
+
+26:49 you that that intuition that
+26:51 
+
+26:51 understanding of how our operating
+26:53 
+
+26:53 systems actually work. Then you can make
+26:55 
+
+26:55 more sense of all these abstractions of
+26:57 
+
+26:57 our programming language concurrency.
+26:59 
+
+26:59 But anyway that's optional. That's your
+27:01 
+
+27:01 choice if you want to go down that path.
+27:03 
+
+27:03 And another thing is this type of
+27:05 
+
+27:05 shoulduling after a given time the
+27:08 
+
+27:08 shoulduler pausing a thread and starting
+27:10 
+
+27:10 the execution of another thread. This is
+27:12 
+
+27:12 called preemptive shoulduling because
+27:14 
+
+27:14 threads or executions are preempted or
+27:18 
+
+27:18 stopped before they're finished whether
+27:21 
+
+27:21 they like it or not. It's not in their
+27:22 
+
+27:22 control. So coming back to our IO
+27:25 
+
+27:25 problem when a thread let's say it it
+27:28 
+
+27:28 performs a blocking operation. What do
+27:30 
+
+27:30 we mean by blocking operation? which
+27:32 
+
+27:32 means any kind of operation any kind of
+27:34 
+
+27:34 activity where the CPU cannot do
+27:37 
+
+27:37 anything right the CPU is useless which
+27:40 
+
+27:40 is any kind of input output operation or
+27:42 
+
+27:42 any kind of operation which deals with
+27:44 
+
+27:44 devices for example we've already talked
+27:47 
+
+27:47 about things like logging or network
+27:50 
+
+27:50 calls which is basically dealing with
+27:52 
+
+27:52 your network card dealing with packets
+27:54 
+
+27:54 TCP HTTP and all these things same goes
+27:57 
+
+27:57 on database calls database call is also
+27:60 
+
+28:00 kind of a network call only But no it
+28:02 
+
+28:02 can be considered as a major category.
+28:05 
+
+28:05 So all these things we already know are
+28:07 
+
+28:07 blocking calls or IO calls where CPU is
+28:09 
+
+28:09 useless. CPU cannot do anything. CPU can
+28:11 
+
+28:11 only do raw processing, crunching
+28:13 
+
+28:13 numbers, crunching information, all
+28:15 
+
+28:15 these things. So whenever a thread
+28:17 
+
+28:17 encounters any kind of blocking
+28:19 
+
+28:19 operation, it goes ahead and it tells
+28:22 
+
+28:22 your operating system that I have
+28:23 
+
+28:23 encountered an a blocking operation, an
+28:25 
+
+28:25 IO operation. So I cannot really do
+28:27 
+
+28:27 anything until that completes. So what
+28:29 
+
+28:29 your operating system does it marks that
+28:32 
+
+28:32 particular thread let's say in this case
+28:34 
+
+28:34 it is thread number one so it marks that
+28:36 
+
+28:36 as blocked as in it cannot be processed
+28:39 
+
+28:39 by CPU at the moment and it switches to
+28:42 
+
+28:42 a different thread is thread number two
+28:44 
+
+28:44 and when the IO of thread number one
+28:46 
+
+28:46 completes let's say it was a database
+28:48 
+
+28:48 query if the database comes back with a
+28:51 
+
+28:51 response then this becomes runnable
+28:54 
+
+28:54 again it's not like it will instantly
+28:56 
+
+28:56 the moment we get the response it will
+28:58 
+
+28:58 again get the CPU processing capability
+29:00 
+
+29:00 but it will be put in a state some state
+29:04 
+
+29:04 so that the scheduleuler can pick it up
+29:06 
+
+29:06 again when it gets the opportunity
+29:08 
+
+29:08 another important property of threads
+29:11 
+
+29:11 which I should also mention is if we
+29:13 
+
+29:13 have two processes I don't think we
+29:16 
+
+29:16 talked about processes yet let's say we
+29:18 
+
+29:18 have process one and process two so
+29:21 
+
+29:21 every time you run your program it can
+29:24 
+
+29:24 only run as a process as a process of
+29:27 
+
+29:27 your operating system So if you have two
+29:29 
+
+29:29 process even though they are from the
+29:31 
+
+29:31 same program or the same code if you
+29:33 
+
+29:33 have two processes then the thread from
+29:35 
+
+29:35 process one is isolated from a thread
+29:38 
+
+29:38 from process two right it makes sense
+29:40 
+
+29:40 because of security reasons because of
+29:43 
+
+29:43 memory corruption reasons and they
+29:44 
+
+29:44 cannot see each other's memory. That is
+29:47 
+
+29:47 a very important point to remember. But
+29:49 
+
+29:49 if we have two threads let's say in
+29:52 
+
+29:52 process one these are the processes and
+29:54 
+
+29:54 these are threads let's say. But if we
+29:57 
+
+29:57 have a thread two for process one, then
+29:60 
+
+29:60 these people can share memory. All
+30:02 
+
+30:02 right. And what do we mean by memory in
+30:05 
+
+30:05 the first place? Memory like the heap or
+30:08 
+
+30:08 global variables in your program or
+30:11 
+
+30:11 anything that gets allocated
+30:12 
+
+30:12 dynamically. The interesting thing here
+30:14 
+
+30:14 is if thread one allocates let's say a
+30:18 
+
+30:18 an object or a strct if you're dealing
+30:20 
+
+30:20 with Go or an object if you are dealing
+30:22 
+
+30:22 with JavaScript. If thread one allocates
+30:25 
+
+30:25 an object or a strct in the heap or in
+30:28 
+
+30:28 memory then thread two can also access
+30:31 
+
+30:31 that particular object using a pointer
+30:34 
+
+30:34 using the address of that object. Okay.
+30:37 
+
+30:37 Another important feature of threads.
+30:38 
+
+30:38 Two threads can access the memory of
+30:42 
+
+30:42 each other as long as they are in the
+30:44 
+
+30:44 same process. This particular memory
+30:46 
+
+30:46 sharing this is very powerful because
+30:48 
+
+30:48 threads two different threads they can
+30:50 
+
+30:50 communicate by simply reading and
+30:53 
+
+30:53 writing to the same memory place or the
+30:56 
+
+30:56 same data structure or the same variable
+30:58 
+
+30:58 whatever data structure that we are
+30:59 
+
+30:59 talking about it can be a map it can be
+31:01 
+
+31:01 a particular variable global variable or
+31:03 
+
+31:03 any kind of storage. So the
+31:05 
+
+31:05 communication happens through shared
+31:08 
+
+31:08 memory and since all of this happens
+31:11 
+
+31:11 through pointers because they know the
+31:13 
+
+31:13 exact address of that particular
+31:16 
+
+31:16 variable that particular map in the
+31:18 
+
+31:18 memory there is no kind of copy no kind
+31:21 
+
+31:21 of serialization anything that's why the
+31:24 
+
+31:24 access the thread access is also pretty
+31:27 
+
+31:27 fast but this particular property of
+31:30 
+
+31:30 threads and the fact that threads
+31:32 
+
+31:32 communicate by sharing the memory This
+31:35 
+
+31:35 can become very dangerous and we'll
+31:36 
+
+31:36 discuss that part the dangerous part in
+31:38 
+
+31:38 the later part of this video. But the
+31:41 
+
+31:41 point here is if you have multiple CPU
+31:43 
+
+31:43 cores you have let's say two CPU cores
+31:46 
+
+31:46 then multiple threads thread 1 and
+31:49 
+
+31:49 thread 2 they can actually execute in
+31:52 
+
+31:52 parallel at the same time window. Let's
+31:55 
+
+31:55 say 0 to 50 millisecond. Both of these
+31:58 
+
+31:58 threads can run in two different CPU
+32:01 
+
+32:01 cores at the same time. We're not
+32:02 
+
+32:02 talking about concurrency. We are
+32:04 
+
+32:04 talking about parallelism now. Same way
+32:06 
+
+32:06 if you have four cores then four threads
+32:08 
+
+32:08 can run in parallel. And as you have
+32:10 
+
+32:10 already discussed using this kind of
+32:12 
+
+32:12 parallelism truly can speed up any kind
+32:15 
+
+32:15 of CPU bound work that your program is
+32:19 
+
+32:19 trying to perform. But one discussion
+32:21 
+
+32:21 that always happens when we are talking
+32:22 
+
+32:22 about thread is the cost or also called
+32:25 
+
+32:25 as an overhead of using threads. What
+32:28 
+
+32:28 kind of overheads that we're talking
+32:30 
+
+32:30 about? The first one is memory. As we
+32:32 
+
+32:32 have already discussed, each thread
+32:34 
+
+32:34 whenever our operating system creates a
+32:36 
+
+32:36 new thread, it's also creating a new
+32:38 
+
+32:38 stack for that thread for pushing
+32:41 
+
+32:41 function calls, variables and all these
+32:44 
+
+32:44 things. And this particular stack size
+32:47 
+
+32:47 on an operating system like Linux, it
+32:50 
+
+32:50 can be somewhere around 8 mgabytes. Even
+32:53 
+
+32:53 though most of the memory in this 8
+32:55 
+
+32:55 mgabytes is just virtual memory, the
+32:58 
+
+32:58 actual physical space is not assigned
+33:01 
+
+33:01 until it is needed. So that feature is
+33:03 
+
+33:03 there. That feature is provided by the
+33:05 
+
+33:05 operating system. But it still comes
+33:07 
+
+33:07 with some megabytes of memory the actual
+33:10 
+
+33:10 physical space. So even if you are
+33:11 
+
+33:11 talking about kilobytes of space for
+33:14 
+
+33:14 stack, let's say your programming
+33:15 
+
+33:15 language or your framework, it creates a
+33:18 
+
+33:18 new thread for each request it gets.
+33:21 
+
+33:21 Even though no kind of framework does
+33:23 
+
+33:23 that but assuming it deals with HTTP
+33:26 
+
+33:26 requests that way using a new thread so
+33:28 
+
+33:28 that they can work concurrently and
+33:31 
+
+33:31 sometimes they can also work parallelly.
+33:33 
+
+33:33 So if you get 10,000 requests during a
+33:36 
+
+33:36 traffic spike, which means 10,000
+33:38 
+
+33:38 threads, 10,000 native operating system
+33:41 
+
+33:41 threads and assuming each one has around
+33:44 
+
+33:44 like 500 KB or even 1 MB, we're talking
+33:46 
+
+33:46 about 10,000 and more than around 8 or 9
+33:49 
+
+33:49 GB of memory just to deal with HTTP
+33:52 
+
+33:52 requests. Your server also needs memory
+33:54 
+
+33:54 for a lot of different kinds of tasks,
+33:56 
+
+33:56 hundreds of different kinds of tasks.
+33:57 
+
+33:57 they will quickly run out of memory and
+33:59 
+
+33:59 your program is eventually going to
+34:01 
+
+34:01 crash or your server might also
+34:03 
+
+34:03 eventually going to crash. So this thing
+34:05 
+
+34:05 is already clear that thread is very
+34:08 
+
+34:08 memory heavy because of the requirement
+34:10 
+
+34:10 that each thread comes with a cost of
+34:12 
+
+34:12 creating a particular stack of some
+34:14 
+
+34:14 kilobytes or some megabytes. Second kind
+34:17 
+
+34:17 of overhead is the creation overhead. So
+34:20 
+
+34:20 every time we want to create a thread,
+34:22 
+
+34:22 every time our programming language or
+34:24 
+
+34:24 our framework wants to create a thread,
+34:26 
+
+34:26 it has to make a system call to our
+34:28 
+
+34:28 operating system kernel. And once the
+34:31 
+
+34:31 kernel receives this system call, it
+34:33 
+
+34:33 does a couple of things. things like
+34:35 
+
+34:35 setting up the stack as you already
+34:37 
+
+34:37 discussed, allocating different data
+34:39 
+
+34:39 structures that it needs to internally
+34:41 
+
+34:41 manage this particular thread, things
+34:43 
+
+34:43 like instruction pointers. Then at last
+34:46 
+
+34:46 adding it to the scheduleuler to
+34:48 
+
+34:48 schedule it, pause it and block it etc
+34:51 
+
+34:51 etc in different different phases. Now
+34:52 
+
+34:52 all these things can take somewhere from
+34:55 
+
+34:55 a few microconds to a few milliseconds.
+34:57 
+
+34:57 Now that's that does not sound like a
+34:59 
+
+34:59 lot of time in terms of human perception
+35:02 
+
+35:02 but when we are talking about function
+35:04 
+
+35:04 calls we are talking about running our
+35:06 
+
+35:06 programs this this is a major overhead
+35:08 
+
+35:08 this can be a major cause of latency
+35:10 
+
+35:10 that's about the creation overhead of
+35:12 
+
+35:12 threads. Then the last one which is the
+35:15 
+
+35:15 most important one and the major cause
+35:18 
+
+35:18 of latency most of the times is the
+35:20 
+
+35:20 context switch. So imagining we have
+35:22 
+
+35:22 three threads going on and we have a
+35:25 
+
+35:25 scheduleuler here. So every time our
+35:27 
+
+35:27 schedule shoulder wants to switch from
+35:29 
+
+35:29 thread one to thread two or thread two
+35:31 
+
+35:31 to thread three or thread two to thread
+35:33 
+
+35:33 one or thread three to thread two
+35:34 
+
+35:34 whatever any kind of switch from one
+35:36 
+
+35:36 thread to another. First thing it has to
+35:39 
+
+35:39 save the current threads CPU registers.
+35:43 
+
+35:43 Then it also has to update all kind of
+35:45 
+
+35:45 bookkeeping to keep track of the state.
+35:48 
+
+35:48 Then it has to select the next set that
+35:52 
+
+35:52 it wants to run. then fetch all the
+35:54 
+
+35:54 saved registers of that thread, the
+35:56 
+
+35:56 thread that it wants to run currently
+35:59 
+
+35:59 and the bookkeeping, the state
+36:00 
+
+36:00 management, all that. So restore and all
+36:03 
+
+36:03 these things can take somewhere around 1
+36:05 
+
+36:05 to 10 microconds in our modern hardware
+36:08 
+
+36:08 at least. So if we have four cores of
+36:12 
+
+36:12 CPUs and you have around 100 threads, so
+36:15 
+
+36:15 this scheduleuler, our operating system
+36:17 
+
+36:17 scheduleuler has to constantly juggle
+36:19 
+
+36:19 between them like and constantly switch
+36:21 
+
+36:21 between them. And we are talking about
+36:22 
+
+36:22 microsconds and milliseconds of context
+36:25 
+
+36:25 switching time for each switch depending
+36:27 
+
+36:27 on where is your data whether it is CPU
+36:30 
+
+36:30 cache or not. And if we are talking
+36:32 
+
+36:32 about thousand threads then this context
+36:34 
+
+36:34 switch time can go beyond milliseconds
+36:36 
+
+36:36 and milliseconds of time. And the
+36:38 
+
+36:38 context switch time is primarily very
+36:41 
+
+36:41 unproductive. We are not really doing
+36:43 
+
+36:43 anything. It's just a maintenance work.
+36:45 
+
+36:45 It's just work that needs to happen
+36:47 
+
+36:47 before the actual work happens, the
+36:50 
+
+36:50 actual processing happens. So all these
+36:52 
+
+36:52 milliseconds and milliseconds of CPU
+36:54 
+
+36:54 time that you are wasting on context
+36:56 
+
+36:56 switch can be spent on actual programs
+36:59 
+
+36:59 processing and making the program faster
+37:01 
+
+37:01 and this is one of those reasons threads
+37:04 
+
+37:04 per request at least this kind of model
+37:07 
+
+37:07 has always struggled in terms of high
+37:10 
+
+37:10 concurrency high concurrency
+37:11 
+
+37:11 requirements. Now the second method that
+37:14 
+
+37:14 our operating system has to do multiple
+37:17 
+
+37:17 things at once. The first one that we
+37:18 
+
+37:18 discussed was threading using threads to
+37:20 
+
+37:20 do multiple things at once. The second
+37:22 
+
+37:22 one is the event loop model. Now the
+37:25 
+
+37:25 number one difference that we can see in
+37:27 
+
+37:27 the event loop model at least is instead
+37:29 
+
+37:29 of having multiple threads to do
+37:31 
+
+37:31 multiple things at once. In the event
+37:33 
+
+37:33 loop model we usually have one thread
+37:36 
+
+37:36 and that one thread and using this
+37:39 
+
+37:39 mechanism of waiting and using callbacks
+37:42 
+
+37:42 and all these thing that we'll discuss.
+37:43 
+
+37:43 It does all these multiple things but it
+37:45 
+
+37:45 does not solely depend on the number of
+37:48 
+
+37:48 threads to do multiple things at once.
+37:50 
+
+37:50 So usually we have only one thread and
+37:53 
+
+37:53 the key differentiation here is the the
+37:56 
+
+37:56 number one thing that we have to keep in
+37:58 
+
+37:58 mind is we can never block the event
+38:01 
+
+38:01 loop and what do we mean by not blocking
+38:04 
+
+38:04 the event loop. So when a particular
+38:06 
+
+38:06 task let's say the request A it needs to
+38:08 
+
+38:08 do some kind of database query. So this
+38:11 
+
+38:11 request a instead of blocking and
+38:13 
+
+38:13 waiting for the response of the database
+38:15 
+
+38:15 it says that okay I want the result of
+38:18 
+
+38:18 this database it says that to the
+38:20 
+
+38:20 program to the event loop using the
+38:22 
+
+38:22 primitives of your language mostly it's
+38:24 
+
+38:24 using the async syntax it says that okay
+38:27 
+
+38:27 I want the result of this particular
+38:29 
+
+38:29 database query from this function and it
+38:31 
+
+38:31 says when we finally get the response
+38:34 
+
+38:34 back from our database then only resume
+38:37 
+
+38:37 my functionality until then I am handing
+38:40 
+
+38:40 of the control of CPU execution so that
+38:42 
+
+38:42 you can run other things. The moment it
+38:44 
+
+38:44 does that it is pushed into a queue. Now
+38:47 
+
+38:47 event loop has multiple cues and
+38:49 
+
+38:49 multiple algorithms priorities and all
+38:51 
+
+38:51 these things that is a completely
+38:52 
+
+38:52 different topic of discussion but you
+38:55 
+
+38:55 can imagine it as a simple queue. So the
+38:57 
+
+38:57 moment some kind of IO happens using the
+38:59 
+
+38:59 event loop mechanism the task hands over
+39:03 
+
+39:03 the control back to the event loop and
+39:04 
+
+39:04 it pauses until the IO is complete. So
+39:07 
+
+39:07 the event loop keeps track of all these
+39:10 
+
+39:10 tasks that are currently waiting for any
+39:12 
+
+39:12 kind of CPU processing but they are
+39:14 
+
+39:14 blocked because of some kind of IO
+39:16 
+
+39:16 operation. To support this functionality
+39:18 
+
+39:18 the programming languages cannot
+39:20 
+
+39:20 themselves implement this. The operating
+39:22 
+
+39:22 system has to support this. So in Linux
+39:25 
+
+39:25 we use something called eol provided by
+39:28 
+
+39:28 the Linux operating system. Same way for
+39:31 
+
+39:31 Mac OS operating system we use something
+39:32 
+
+39:32 like KQ. So all these things that are
+39:35 
+
+39:35 provided by our operating system they
+39:38 
+
+39:38 make event loop possible to to make
+39:40 
+
+39:40 concurrency easy basically and using
+39:42 
+
+39:42 these things the event loop can monitor
+39:45 
+
+39:45 all these thousand different connections
+39:47 
+
+39:47 at the same time in a loop. So every
+39:49 
+
+39:49 time the iteration of a loop runs it
+39:52 
+
+39:52 checks whether the IO operation is
+39:54 
+
+39:54 complete or not. If it is complete then
+39:56 
+
+39:56 it puts that task back into the queue
+39:59 
+
+39:59 depending on the priority of course and
+40:01 
+
+40:01 it resumes its functionality resumes by
+40:03 
+
+40:03 giving it more CPU processing time. So
+40:05 
+
+40:05 on every loop iteration check for IO
+40:08 
+
+40:08 operation completion then run call back
+40:11 
+
+40:11 then back to the loop. This is how the
+40:14 
+
+40:14 event loop works in a very
+40:15 
+
+40:15 oversimplified way. And because of this
+40:17 
+
+40:17 setup, because of this singlethreaded
+40:19 
+
+40:19 call back and loop based setup of our
+40:22 
+
+40:22 event loop architecture, we can have a
+40:25 
+
+40:25 lot of efficiency. When it comes to
+40:27 
+
+40:27 IObound problems, you have to remember
+40:29 
+
+40:29 that when it comes to CPUbound problem,
+40:32 
+
+40:32 the more the number of threads, the
+40:34 
+
+40:34 faster our program is going to execute.
+40:36 
+
+40:36 But when it comes to IO bound problems,
+40:39 
+
+40:39 it does not matter how many threads that
+40:41 
+
+40:41 you have. In fact, the more number of
+40:42 
+
+40:42 threads, the more amount of context
+40:45 
+
+40:45 switching it happens. and eventually
+40:47 
+
+40:47 your program becomes slower. So for
+40:49 
+
+40:49 concurrent workloads as we have already
+40:51 
+
+40:51 discussed and for IO bound workloads
+40:54 
+
+40:54 event loop works better. Event loop is
+40:56 
+
+40:56 more efficient as compared to the
+40:58 
+
+40:58 threading model. Threading based
+40:60 
+
+41:00 concurrency. No kind of context
+41:02 
+
+41:02 switching happens here because you only
+41:04 
+
+41:04 have single thread. There is no multiple
+41:06 
+
+41:06 megabytes and gigabytes of stack memory
+41:08 
+
+41:08 because you only have single thread. So
+41:10 
+
+41:10 a lot of problems related to memory and
+41:13 
+
+41:13 latency and context switching comes down
+41:15 
+
+41:15 because of the fact that we are only
+41:16 
+
+41:16 using single thread for performing our
+41:18 
+
+41:18 event loop. But what is the trade-off?
+41:20 
+
+41:20 The trade-off is you can never block the
+41:23 
+
+41:23 event loop. For example, if your code in
+41:25 
+
+41:25 your programming language, if you do
+41:28 
+
+41:28 something which is CPU intensive or
+41:30 
+
+41:30 CPUbound task which takes let's say 100
+41:33 
+
+41:33 milliseconds or more. So during this
+41:35 
+
+41:35 time your event loop completely stops.
+41:38 
+
+41:38 It cannot do anything. it just waits for
+41:41 
+
+41:41 that particular task to finish. That's
+41:44 
+
+41:44 why in an event loop based architecture
+41:47 
+
+41:47 in an event loop based concurrency
+41:48 
+
+41:48 handling mechanism our priority is
+41:51 
+
+41:51 always to not block our event loop ever.
+41:55 
+
+41:55 Anyway coming back. So our priority when
+41:57 
+
+41:57 we are dealing with event loop based
+41:59 
+
+41:59 architecture our callbacks whatever we
+42:01 
+
+42:01 execute after IO or the CPU processing
+42:04 
+
+42:04 part they have to be fast and usually
+42:07 
+
+42:07 talking realistically in a most of our
+42:09 
+
+42:09 backend applications in SAS backend
+42:11 
+
+42:11 applications. We do not really have any
+42:14 
+
+42:14 kind of task which takes like 100
+42:16 
+
+42:16 millconds and any kind of tasks which
+42:18 
+
+42:18 are this amount of CPU bound. mostly
+42:21 
+
+42:21 only if you are dealing with animations
+42:24 
+
+42:24 and images, video rendering or ML
+42:27 
+
+42:27 workloads all these things then only you
+42:30 
+
+42:30 take this much time but in a typical
+42:32 
+
+42:32 backend SAS workload the latency is
+42:35 
+
+42:35 always because of IObound stuff and this
+42:38 
+
+42:38 is the reason because of this limitation
+42:40 
+
+42:40 because of this constraint of event loop
+42:42 
+
+42:42 based architecture any language which
+42:45 
+
+42:45 uses event loop for example JavaScript
+42:47 
+
+42:47 they make use of these callbacks
+42:50 
+
+42:50 promises
+42:51 
+
+42:51 and async weight all these primitives
+42:53 
+
+42:53 all these primitives are basically
+42:55 
+
+42:55 syntactic sugars all these convenient
+42:58 
+
+42:58 functions so that you have the right
+43:00 
+
+43:00 mental model of how your program is
+43:03 
+
+43:03 going to work you do not write any kind
+43:05 
+
+43:05 of blocking operation so that you get in
+43:07 
+
+43:07 the way of your event loop so all these
+43:09 
+
+43:09 primitives that is provided to us by
+43:11 
+
+43:11 JavaScript and it can be the same for
+43:13 
+
+43:13 other programming languages also asynch
+43:16 
+
+43:16 primitives they they just help you to to
+43:18 
+
+43:18 to to give up your control at particular
+43:21 
+
+43:21 IO bound operations at particular points
+43:24 
+
+43:24 for example the moment you start a
+43:26 
+
+43:26 database query you write await right or
+43:28 
+
+43:28 the moment you make some kind of API
+43:30 
+
+43:30 call you write await and the moment you
+43:32 
+
+43:32 write await you're saying that okay I'm
+43:34 
+
+43:34 giving up control of my CPU slice or my
+43:37 
+
+43:37 processing so that when this particular
+43:40 
+
+43:40 network operation is complete I will be
+43:41 
+
+43:41 given back the CPU processing capability
+43:44 
+
+43:44 so that I can finish this particular
+43:46 
+
+43:46 function. So these are all syntactic
+43:47 
+
+43:47 sugars or syntactic convenient functions
+43:51 
+
+43:51 so that it is easy for you to deal with
+43:53 
+
+43:53 the event loop. Let's understand how in
+43:56 
+
+43:56 the context of a back end in the context
+43:57 
+
+43:57 of a backend dealing with different
+43:60 
+
+43:60 different requests at the same time and
+44:02 
+
+44:02 doing different IO operations like
+44:04 
+
+44:04 database operations works in different
+44:06 
+
+44:06 different concurrency models. how it
+44:08 
+
+44:08 works in a threading model, how it works
+44:10 
+
+44:10 in the event loop model and how it works
+44:12 
+
+44:12 with languages like Go which uses a
+44:15 
+
+44:15 different kind of setup which we'll
+44:16 
+
+44:16 discuss. So this is how it works with
+44:18 
+
+44:18 the first kind of setup which is the
+44:20 
+
+44:20 threading model. We use multiple threads
+44:23 
+
+44:23 to do multiple things at once. So
+44:25 
+
+44:25 imagine we are dealing with two
+44:27 
+
+44:27 requests. One is request A and one is
+44:29 
+
+44:29 request B. The first thing that happens
+44:32 
+
+44:32 is our back end receives a request which
+44:34 
+
+44:34 is request A. And the first thing that
+44:36 
+
+44:36 you do after receiving a request is we
+44:38 
+
+44:38 parse whatever the JSON body or whatever
+44:41 
+
+44:41 the query parameters that are being sent
+44:43 
+
+44:43 in that particular request and which is
+44:45 
+
+44:45 a CPU operation because it deals with
+44:48 
+
+44:48 parsing bytes and loading it to memory
+44:50 
+
+44:50 and all these things. Okay, so this is
+44:52 
+
+44:52 pretty much straightforward. Then what
+44:54 
+
+44:54 happens after we are done with all the
+44:55 
+
+44:55 parsing and all the validation etc etc
+44:57 
+
+44:57 we want to make a database call and this
+44:59 
+
+44:59 is what our query looks like. Select
+45:01 
+
+45:01 star from users. This particular handler
+45:03 
+
+45:03 deals with returning all the users from
+45:06 
+
+45:06 our database and sending it back to the
+45:08 
+
+45:08 client sending back to the front and for
+45:10 
+
+45:10 that we want to run this particular
+45:12 
+
+45:12 database query which is select star from
+45:14 
+
+45:14 users. Now to go a little deeper into
+45:17 
+
+45:17 how this particular query works in
+45:19 
+
+45:19 phases. In the first phase, we establish
+45:22 
+
+45:22 a TCP connection with the database or if
+45:24 
+
+45:24 we have a pool, we get a connection from
+45:26 
+
+45:26 the pool and use that connection to send
+45:29 
+
+45:29 some bytes. The information that you
+45:31 
+
+45:31 want to receive this particular query,
+45:32 
+
+45:32 we send it over to our database. We have
+45:35 
+
+45:35 a database which our back end talks to
+45:37 
+
+45:37 and we send this query to our database.
+45:38 
+
+45:38 Now after we send it, we have a socket
+45:41 
+
+45:41 using which we are communicating with
+45:42 
+
+45:42 our database and we use that socket for
+45:44 
+
+45:44 the read operation or basically we are
+45:46 
+
+45:46 waiting for any kind of response from
+45:48 
+
+45:48 our database using this function read on
+45:51 
+
+45:51 our database socket which is a blocking
+45:53 
+
+45:53 operation which is an IO operation the
+45:55 
+
+45:55 kind of operation that we've been
+45:57 
+
+45:57 discussing for so long any kind of
+45:59 
+
+45:59 operation which our CPU does not have
+46:01 
+
+46:01 any power over or it it it does not have
+46:04 
+
+46:04 the capacity to do anything in that
+46:05 
+
+46:05 situation because it mostly depends on
+46:08 
+
+46:08 external things. So in this case this is
+46:10 
+
+46:10 one of those function which is IObound.
+46:12 
+
+46:12 So we have to wait for the response from
+46:14 
+
+46:14 our database and the moment it happens
+46:17 
+
+46:17 as we have already discussed that the
+46:19 
+
+46:19 moment our thread blocks in a threading
+46:21 
+
+46:21 model based concurrency the moment our
+46:23 
+
+46:23 thread blocks the task tells our
+46:25 
+
+46:25 operating systemuler that since this
+46:28 
+
+46:28 thread one is blocked we have to switch
+46:29 
+
+46:29 to a different thread. Since we are
+46:31 
+
+46:31 trying to do multiple things at once the
+46:33 
+
+46:33 moment something blocks because of IO we
+46:35 
+
+46:35 have to switch to a different task. So
+46:38 
+
+46:38 while we are dealing with request A, our
+46:40 
+
+46:40 back end also receives request number B.
+46:42 
+
+46:42 So we switch to request B and we start
+46:44 
+
+46:44 executing that. And the same thing we
+46:45 
+
+46:45 do, we get the request, we do the
+46:48 
+
+46:48 routing, we do the body parsing, load it
+46:50 
+
+46:50 into the memory, load it into a strct or
+46:52 
+
+46:52 object or whatever your programming
+46:53 
+
+46:53 language provides and then we do the
+46:56 
+
+46:56 validation transformation whatever we
+46:57 
+
+46:57 want and then we want to do a database
+46:60 
+
+46:60 query. Now this time we want to fetch
+47:01 
+
+47:01 all the orders from our system and
+47:03 
+
+47:03 return it to our front end. So same
+47:05 
+
+47:05 thing we establish a connection to our
+47:08 
+
+47:08 database and we send this particular
+47:10 
+
+47:10 query in the form of bytes to our
+47:12 
+
+47:12 database in using a TCP connection. Then
+47:15 
+
+47:15 on the same connection socket we call
+47:17 
+
+47:17 read and we wait for the response. Then
+47:20 
+
+47:20 again this is an IO block operation.
+47:22 
+
+47:22 This is an IO bound operation and our
+47:24 
+
+47:24 CPU cannot do anything. So again this
+47:26 
+
+47:26 task tells the scheduleuler that we are
+47:28 
+
+47:28 blocked. So we have to switch to a
+47:30 
+
+47:30 different thread and then our OS
+47:33 
+
+47:33 scheduleuler checks that if we have a
+47:35 
+
+47:35 another thread which is thread number
+47:37 
+
+47:37 three. So in this case if you are
+47:40 
+
+47:40 creating a new thread per request or if
+47:42 
+
+47:42 you have a another thread available then
+47:44 
+
+47:44 it will switch to thread three and will
+47:46 
+
+47:46 do the same kind of thing again. If
+47:48 
+
+47:48 there are no threads then it will just
+47:50 
+
+47:50 wait and block everything until one of
+47:53 
+
+47:53 these IO operations are complete. One of
+47:55 
+
+47:55 these database responses are received
+47:57 
+
+47:57 back. The moment we receive some kind of
+47:59 
+
+47:59 network packets from our network card,
+48:01 
+
+48:01 then OS goes ahead. Our OS schedule
+48:03 
+
+48:03 should scheduleuler whichever is dealing
+48:05 
+
+48:05 with all this pausing resuming of task
+48:07 
+
+48:07 and threads. It goes ahead and wakes up
+48:10 
+
+48:10 thread one that okay uh we have received
+48:12 
+
+48:12 our response back. You can start
+48:13 
+
+48:13 executing the rest of the logic that you
+48:16 
+
+48:16 have which is a CPU operation. So at
+48:18 
+
+48:18 this point the database has returned the
+48:20 
+
+48:20 response. Now it continues the remaining
+48:23 
+
+48:23 of the functionality which is like
+48:25 
+
+48:25 process the query results. It receives
+48:27 
+
+48:27 some kind of bytes from the database. It
+48:29 
+
+48:29 takes that bytes and it reads it, parses
+48:31 
+
+48:31 it and loads it into some kind of memory
+48:34 
+
+48:34 which is a native data structure of that
+48:36 
+
+48:36 programming language. So if you're
+48:37 
+
+48:37 dealing with JavaScript, it might load
+48:39 
+
+48:39 it into objects or an array of objects.
+48:42 
+
+48:42 In Python, it might load it into a
+48:44 
+
+48:44 dictionary. In Go, it might load it into
+48:46 
+
+48:46 a strct. So that's what we do. Serialize
+48:48 
+
+48:48 it into our own data structure so that
+48:50 
+
+48:50 we can read it in the process phase.
+48:52 
+
+48:52 Then we take that our own data structure
+48:55 
+
+48:55 our own something like strruct object
+48:57 
+
+48:57 dictionary whatever we have whatever
+48:59 
+
+48:59 programming language that we have then
+49:01 
+
+49:01 we take that and we serialize it into a
+49:03 
+
+49:03 JSON since we have to send it over the
+49:05 
+
+49:05 network we have to make a network call
+49:08 
+
+49:08 an HTTP call we have to serialize into
+49:10 
+
+49:10 JSON assuming that's what you're using
+49:12 
+
+49:12 for your serialization standard after
+49:14 
+
+49:14 that we send the response back and this
+49:16 
+
+49:16 particular thread which was executing
+49:18 
+
+49:18 request A this goes back to the pool of
+49:20 
+
+49:20 threads that we have if If we try to
+49:22 
+
+49:22 imagine it as a code, let's say we are
+49:24 
+
+49:24 using Python as our programming
+49:26 
+
+49:26 language. Then this is what it would
+49:28 
+
+49:28 look like. We have a function which
+49:29 
+
+49:29 called handle request. It is the handler
+49:31 
+
+49:31 which deals with this particular
+49:33 
+
+49:33 endpoint. And here we make a database
+49:35 
+
+49:35 query. We want to fetch a single user
+49:38 
+
+49:38 from our database. So we are seeing
+49:39 
+
+49:39 select star from users where ID is this
+49:42 
+
+49:42 as a parameter. We are passing the ID of
+49:44 
+
+49:44 the user. And the moment we do this,
+49:46 
+
+49:46 this becomes a IO operation or a network
+49:49 
+
+49:49 call. So at this point our thread blocks
+49:51 
+
+49:51 right assuming that we are doing a
+49:53 
+
+49:53 threading based execution. It is not
+49:55 
+
+49:55 async aait based execution that which
+49:57 
+
+49:57 you might be more familiar with. So this
+49:59 
+
+49:59 is a threading model. So we don't use
+50:01 
+
+50:01 any kind of async aait or the event loop
+50:04 
+
+50:04 based architecture. So the moment we do
+50:06 
+
+50:06 it our thread blocks whichever thread
+50:08 
+
+50:08 was executing this particular function
+50:09 
+
+50:09 it blocks and switches over to another
+50:12 
+
+50:12 thread if that exists or it waits for
+50:14 
+
+50:14 the response back from our database. And
+50:16 
+
+50:16 the moment it gets the response back
+50:18 
+
+50:18 from our database gets the CPU
+50:20 
+
+50:20 processing time again and it starts
+50:22 
+
+50:22 executing and returns the response back
+50:24 
+
+50:24 to whatever the parent function is. So
+50:26 
+
+50:26 this blocking operation at this point if
+50:29 
+
+50:29 we take a look while we are reading the
+50:31 
+
+50:31 code as a human it looks like okay this
+50:34 
+
+50:34 executes and then this executes and
+50:36 
+
+50:36 since it all happens in microconds or
+50:38 
+
+50:38 milliseconds it looks like okay we are
+50:39 
+
+50:39 just going from line by line it's all
+50:41 
+
+50:41 sequential but the blocking operation is
+50:44 
+
+50:44 not visible to us. the the the the
+50:46 
+
+50:46 switch between different threads that is
+50:48 
+
+50:48 not visible to us but it is happening
+50:50 
+
+50:50 behind the scenes. So this is how a
+50:52 
+
+50:52 threading model based multiple request
+50:55 
+
+50:55 handling works. Now let's look at how an
+50:58 
+
+50:58 event loop based multiple request
+50:60 
+
+50:60 handling would look like. So first we
+51:01 
+
+51:01 have request a the similar kind of setup
+51:03 
+
+51:03 that we had with threading. There is not
+51:06 
+
+51:06 much of difference when it comes to the
+51:09 
+
+51:09 sequence of operation that happened or
+51:11 
+
+51:11 the result that we got using threading
+51:14 
+
+51:14 and kind of results that we'll get while
+51:16 
+
+51:16 using event loop. There is not much of a
+51:19 
+
+51:19 difference there but the difference lies
+51:21 
+
+51:21 in the pausing the blocking and the
+51:24 
+
+51:24 resuming of operations and how efficient
+51:27 
+
+51:27 it is. So first we get the request
+51:29 
+
+51:29 number a and as usually we will parse
+51:32 
+
+51:32 that particular request for any kind of
+51:34 
+
+51:34 body query parameter etc etc so that we
+51:36 
+
+51:36 understand what exactly the client wants
+51:39 
+
+51:39 from us. Then we start our database
+51:41 
+
+51:41 query. So same kind of setup we
+51:44 
+
+51:44 establish a connection with our database
+51:46 
+
+51:46 using TCP connection. We send all those
+51:48 
+
+51:48 bytes and we register a call back. Now
+51:50 
+
+51:50 this is how it it differentiates. We'll
+51:53 
+
+51:53 look at the code of how this looks like
+51:55 
+
+51:55 in a bit. But what we are saying in an
+51:57 
+
+51:57 event loop based architecture at the
+51:59 
+
+51:59 point of where we are giving up control
+52:02 
+
+52:02 back to our operating system saying that
+52:04 
+
+52:04 okay this operation is now waiting for
+52:08 
+
+52:08 an IO response that is the reason I'm
+52:10 
+
+52:10 giving up control so that you can
+52:12 
+
+52:12 execute more tasks while I am waiting
+52:14 
+
+52:14 for IO using a CPU processing and that
+52:17 
+
+52:17 it does by registering a call back. So
+52:19 
+
+52:19 it says so something like db.query query
+52:23 
+
+52:23 it runs this and it also passes a
+52:26 
+
+52:26 function a piece of logic and we call
+52:28 
+
+52:28 this a call back which means once the
+52:32 
+
+52:32 result of bitquery returns we want to
+52:35 
+
+52:35 run this piece of function that's why we
+52:37 
+
+52:37 are calling it as a call back okay
+52:39 
+
+52:39 that's how the event loop based
+52:41 
+
+52:41 architecture works it all works on top
+52:43 
+
+52:43 of call back sludge okay now the moment
+52:46 
+
+52:46 it does that it it returns and what do
+52:48 
+
+52:48 we mean by return it's not like we will
+52:50 
+
+52:50 return the response of that HTTP request
+52:53 
+
+52:53 no it basically switches to another task
+52:56 
+
+52:56 while we were parsing request A let's
+52:59 
+
+52:59 imagine request B also arrives so the
+53:01 
+
+53:01 moment request A pauses for IO the
+53:05 
+
+53:05 moment request A hands over the control
+53:07 
+
+53:07 of CPU processing because of the IO
+53:10 
+
+53:10 blocking we pick up request B as in the
+53:13 
+
+53:13 event loop picks up request B okay now
+53:15 
+
+53:15 it does the same thing it passes the
+53:16 
+
+53:16 HTTP request it makes a different
+53:19 
+
+53:19 database query with the TCP connection
+53:21 
+
+53:21 and It establishes or it registers a
+53:23 
+
+53:23 different call back a different piece of
+53:25 
+
+53:25 logic that it wants to run for request B
+53:27 
+
+53:27 and again it switches. Now while this is
+53:30 
+
+53:30 happening how does it check that whether
+53:33 
+
+53:33 the database response of request A is
+53:36 
+
+53:36 completed or not. That's why we call it
+53:38 
+
+53:38 as a loop. So you can imagine a loop is
+53:40 
+
+53:40 running. In each iteration it checks
+53:42 
+
+53:42 whether the IO of A is completed or not
+53:45 
+
+53:45 whether the IO of B is completed or not.
+53:47 
+
+53:47 So each iteration of that loop you can
+53:50 
+
+53:50 imagine it as a infinite loop and it
+53:52 
+
+53:52 keeps running the loop keeps running
+53:54 
+
+53:54 that's why we call it as an event loop
+53:56 
+
+53:56 and with each iteration it checks
+53:58 
+
+53:58 whether the IO operations are complete
+53:60 
+
+53:60 or not the ones for which we have
+54:02 
+
+54:02 registered our call backs for which we
+54:04 
+
+54:04 have a particular piece of function that
+54:06 
+
+54:06 we want to run when that particular IO
+54:08 
+
+54:08 response is back and how does it monitor
+54:11 
+
+54:11 this how does it wait for all these IO
+54:13 
+
+54:13 responses how does it know whether they
+54:15 
+
+54:15 are complete or not using OS OS level
+54:17 
+
+54:17 functions as we have already mentioned
+54:19 
+
+54:19 for Linux it's using eole for Mac OS
+54:22 
+
+54:22 it's using KQ and something for Windows
+54:25 
+
+54:25 right and using these it becomes very
+54:27 
+
+54:27 efficient to check for all these IO
+54:29 
+
+54:29 responses in each iteration so let's say
+54:32 
+
+54:32 after a couple of iterations of event
+54:34 
+
+54:34 loop while it is doing other things like
+54:35 
+
+54:35 logging things to a standard output or
+54:37 
+
+54:37 doing some kind of email sending etc etc
+54:40 
+
+54:40 in a couple of iterations it saw that
+54:42 
+
+54:42 the DB response of request B has been
+54:45 
+
+54:45 completed okay so what happens the eole
+54:48 
+
+54:48 connection monitoring it returns it
+54:50 
+
+54:50 returns and it says that socket B is now
+54:53 
+
+54:53 readable. So the database socket from
+54:55 
+
+54:55 which we were expecting bytes back some
+54:58 
+
+54:58 kind of response back now it is
+54:59 
+
+54:59 readable. So the moment we do that the
+55:02 
+
+55:02 call back that it had registered the
+55:04 
+
+55:04 piece of function that it had said that
+55:06 
+
+55:06 after the database query returns the
+55:09 
+
+55:09 response for request B we want to run
+55:11 
+
+55:11 this piece of logic the one that we had
+55:12 
+
+55:12 registered now it starts running that
+55:15 
+
+55:15 using event loop and it does all the
+55:18 
+
+55:18 different kind of processing loading
+55:19 
+
+55:19 data into the data structure as we did
+55:21 
+
+55:21 in our setting model and returns the
+55:23 
+
+55:23 result back to the client after doing
+55:25 
+
+55:25 the JSON serialization etc all the
+55:28 
+
+55:28 boiler plate stuff after that the
+55:30 
+
+55:30 database response for request A also
+55:32 
+
+55:32 comes back and we run the call back for
+55:34 
+
+55:34 request A and we send it back as a
+55:37 
+
+55:37 response back to our browser. Now, now
+55:39 
+
+55:39 it all looks kind of the same. The only
+55:42 
+
+55:42 difference is instead of pausing the
+55:43 
+
+55:43 thread and resuming the operation from
+55:46 
+
+55:46 the instruction that we're running at
+55:49 
+
+55:49 that particular point of time before
+55:50 
+
+55:50 pausing. The way we pause and unpause in
+55:54 
+
+55:54 an event loop based architecture is
+55:56 
+
+55:56 using callbacks. And when we use
+55:58 
+
+55:58 threading model use make use of
+55:60 
+
+55:60 operating systems native data structures
+56:02 
+
+56:02 operating system native instruction
+56:04 
+
+56:04 pointers all these heavy data structures
+56:06 
+
+56:06 to resume our operation. But in an event
+56:08 
+
+56:08 loop based architecture use callbacks to
+56:11 
+
+56:11 resume our operation back. Now if you
+56:13 
+
+56:13 try to see the code of how an event loop
+56:16 
+
+56:16 based concurrency looks like this is a
+56:18 
+
+56:18 JavaScript code where we are using event
+56:21 
+
+56:21 loop to perform concurrency or basically
+56:24 
+
+56:24 dealing with multiple requests at once.
+56:26 
+
+56:26 So this is what it looks like before ES6
+56:29 
+
+56:29 JavaScript version. This is how we used
+56:31 
+
+56:31 to do concurrency the upper part where
+56:34 
+
+56:34 we have a function we are receiving the
+56:36 
+
+56:36 request and the function to send
+56:39 
+
+56:39 response back some kind of abstraction
+56:41 
+
+56:41 over request of JSON. So we are calling
+56:44 
+
+56:44 this function which is our database
+56:46 
+
+56:46 driver which has the database connection
+56:48 
+
+56:48 this TCB connection handling logic. So
+56:50 
+
+56:50 this is our query select star from users
+56:52 
+
+56:52 and we want to fetch a particular user
+56:53 
+
+56:53 ID which we are receiving in our
+56:55 
+
+56:55 request. Now in the third parameter as
+56:57 
+
+56:57 you can see we are passing a function an
+56:59 
+
+56:59 anonymous function and we are saying
+57:01 
+
+57:01 that after this particular piece of
+57:04 
+
+57:04 logic runs this particular IO response
+57:07 
+
+57:07 is received right so after our event
+57:10 
+
+57:10 loop receives the response back from our
+57:12 
+
+57:12 database the result of that is going to
+57:14 
+
+57:14 be available in this function if there
+57:17 
+
+57:17 are some errors it will be in the first
+57:19 
+
+57:19 parameter and the result is going to be
+57:21 
+
+57:21 available in the second parameter and we
+57:23 
+
+57:23 can use that value in this particular
+57:25 
+
+57:25 particular call back. So this is what we
+57:27 
+
+57:27 mean by call back. A particular piece of
+57:29 
+
+57:29 logic that we provide beforehand to our
+57:33 
+
+57:33 event loop. So that the moment this
+57:35 
+
+57:35 particular piece of logic returns some
+57:37 
+
+57:37 response, we run this function. So once
+57:40 
+
+57:40 we get the user, we send it back to our
+57:42 
+
+57:42 client using this send response function
+57:44 
+
+57:44 using these parameters. Right? This is
+57:46 
+
+57:46 what it used to look like. Now with
+57:48 
+
+57:48 modern JavaScript after ES6, this is
+57:50 
+
+57:50 what it looks like using async commit.
+57:52 
+
+57:52 So we have the similar function and we
+57:55 
+
+57:55 run this database query and we pass the
+57:58 
+
+57:58 user id but there are no callbacks.
+57:60 
+
+57:60 Okay, we are just using two more
+58:01 
+
+58:01 keywords. One is async, the second one
+58:04 
+
+58:04 is await. This async await based syntax
+58:07 
+
+58:07 is just a syntactic sugar on top of
+58:10 
+
+58:10 callback. So I don't want to go too deep
+58:12 
+
+58:12 into the JavaScript ecosystem. But the
+58:15 
+
+58:15 the problem with this kind of setup the
+58:17 
+
+58:17 call back based setup the reason we came
+58:20 
+
+58:20 up with this async aait based syntax is
+58:22 
+
+58:22 let's imagine you want to do another
+58:24 
+
+58:24 database query and another API call
+58:26 
+
+58:26 after you get the response from this
+58:28 
+
+58:28 particular database. So in the call back
+58:30 
+
+58:30 you have to write another database query
+58:32 
+
+58:32 right select star from orders or
+58:34 
+
+58:34 whatever then for that again you have to
+58:36 
+
+58:36 pass a call back and if you have let's
+58:38 
+
+58:38 say five or six of these async
+58:41 
+
+58:41 operations six of these IO bound
+58:42 
+
+58:42 operations and for each of those you'll
+58:45 
+
+58:45 have to pass a call back so after a
+58:47 
+
+58:47 point it will start looking like this
+58:49 
+
+58:49 okay there are more and more nested
+58:51 
+
+58:51 functions inside each of these and that
+58:53 
+
+58:53 continued for a long time before we came
+58:55 
+
+58:55 up with this async. So previously we
+58:58 
+
+58:58 used to have these kinds of functions
+58:59 
+
+58:59 where we had a lot of these nested
+59:01 
+
+59:01 callbacks. So to prevent that to make it
+59:04 
+
+59:04 more readable they came up with this
+59:06 
+
+59:06 async await based syntax which is just a
+59:09 
+
+59:09 syntactic sugar and by that I mean the
+59:12 
+
+59:12 moment you write await whatever comes
+59:14 
+
+59:14 after that at least in the context of
+59:16 
+
+59:16 this function I don't mean in the
+59:18 
+
+59:18 context of the whole program for this
+59:20 
+
+59:20 function the moment you write await
+59:22 
+
+59:22 whatever comes after that until the
+59:25 
+
+59:25 completion of this function until the
+59:27 
+
+59:27 last line of the function that you can
+59:29 
+
+59:29 imagine is being passed as a call back
+59:31 
+
+59:31 to this IO blocking operation. So this
+59:34 
+
+59:34 is same as writing this but when we
+59:37 
+
+59:37 write like this we can do multiple IO
+59:40 
+
+59:40 blocking operation and we won't have any
+59:42 
+
+59:42 nested call backs. The idea is the same.
+59:44 
+
+59:44 The moment you write await you hand over
+59:46 
+
+59:46 your control to the event loop saying
+59:48 
+
+59:48 that until we get the response back from
+59:50 
+
+59:50 our database you can do other stuff and
+59:53 
+
+59:53 the moment you get a response back you
+59:55 
+
+59:55 can continue from this point. Okay. And
+59:57 
+
+59:57 your event loop handles all that using a
+59:59 
+
+59:59 single thread. There are no context
+60:01 
+
+60:01 switching and no expensive stack memory
+60:05 
+
+60:05 allocating by your operating system. So
+60:07 
+
+60:07 everything happens in a very efficient
+60:09 
+
+60:09 manner and a very lightweight manner.
+60:12 
+
+60:12 That's why event loop is considered more
+60:14 
+
+60:14 efficient than the threading model as
+60:17 
+
+60:17 long as we are talking about IO bound
+60:19 
+
+60:19 operations. We are not talking about
+60:21 
+
+60:21 CPUbound operations. For CPUbound
+60:23 
+
+60:23 operations, threading will always be
+60:24 
+
+60:24 faster than event loop. Next, let's take
+60:27 
+
+60:27 a look at another interesting
+60:29 
+
+60:29 concurrency model which is not exactly
+60:32 
+
+60:32 threading and not event loop. Also, it
+60:35 
+
+60:35 uses something else. We can consider it
+60:39 
+
+60:39 as a virtual thread. And we call it
+60:42 
+
+60:42 virtual thread and not thread because
+60:44 
+
+60:44 when we say thread, it is a an operation
+60:48 
+
+60:48 an entity which is managed natively by
+60:50 
+
+60:50 your operating system. It is not
+60:52 
+
+60:52 something that your programming language
+60:54 
+
+60:54 or your programming runtime handles. The
+60:56 
+
+60:56 facility is managed by your operating
+60:59 
+
+60:59 system which we already know is
+61:00 
+
+61:00 considered heavy because there is a lot
+61:03 
+
+61:03 of overhead related to memory creating
+61:05 
+
+61:05 and switching. So, Go uses a different
+61:08 
+
+61:08 approach which we consider as a virtual
+61:11 
+
+61:11 thread. But you will not see this term
+61:14 
+
+61:14 being used when you're working with Go
+61:16 
+
+61:16 or when you're reading documentation of
+61:18 
+
+61:18 Go or anywhere. They don't call it
+61:19 
+
+61:19 virtual thread. they call it a go
+61:22 
+
+61:22 routine. Okay. So the conceptually they
+61:24 
+
+61:24 can be considered as a virtual thread
+61:26 
+
+61:26 but they are called go routines and the
+61:29 
+
+61:29 moment you start a go program it it runs
+61:32 
+
+61:32 as a go routine and that go routine the
+61:34 
+
+61:34 main go routine can also create other go
+61:36 
+
+61:36 routines while it is running. Okay. So
+61:38 
+
+61:38 that's how the go programming language
+61:40 
+
+61:40 works. We'll not go too deep into go in
+61:43 
+
+61:43 this video. We'll just focus on the
+61:45 
+
+61:45 concurrency model of how go concurrency
+61:48 
+
+61:48 works. So one interesting thing with Go
+61:51 
+
+61:51 is as a backend language when you are
+61:53 
+
+61:53 using Go the standard library Go creates
+61:57 
+
+61:57 a new Go routine which is a virtual
+61:59 
+
+61:59 thread for each request and in the start
+62:02 
+
+62:02 of this video at least when we were
+62:04 
+
+62:04 talking about the threading model we
+62:06 
+
+62:06 discussed that create if you create a
+62:08 
+
+62:08 separate thread for each of the requests
+62:10 
+
+62:10 that you're receiving then you might run
+62:12 
+
+62:12 out of memory because each thread comes
+62:14 
+
+62:14 with some megabytes of overhead and
+62:17 
+
+62:17 eventually if to create like let's say
+62:19 
+
+62:19 10,000 threads or 20,000 threads
+62:21 
+
+62:21 eventually you'll run out of memory
+62:23 
+
+62:23 because threads are very expensive but
+62:25 
+
+62:25 if you take a look at go's code the
+62:28 
+
+62:28 standard libraries code the source code
+62:30 
+
+62:30 of the go programming language then
+62:32 
+
+62:32 there is this function which is the
+62:34 
+
+62:34 serve function this is the function
+62:36 
+
+62:36 which basically accepts all the incoming
+62:38 
+
+62:38 connections listens for new connections
+62:41 
+
+62:41 and it creates a new goin for each new
+62:44 
+
+62:44 HTTP request that it receives and it
+62:47 
+
+62:47 assigns a handle handler a particular
+62:48 
+
+62:48 handler that you had configured
+62:50 
+
+62:50 beforehand while writing code and it
+62:52 
+
+62:52 assigns that handler to deal with that
+62:54 
+
+62:54 request. So if you go to this line at
+62:57 
+
+62:57 the end you can see that it is creating
+62:59 
+
+62:59 a new go routine in go programming
+63:01 
+
+63:01 language you can use this keyword called
+63:03 
+
+63:03 go to create a new go routine or create
+63:06 
+
+63:06 a new virtual thread and whatever
+63:08 
+
+63:08 function that you pass after writing
+63:10 
+
+63:10 this keyword that will run as a new
+63:12 
+
+63:12 virtual thread or as a new go routine.
+63:15 
+
+63:15 So go programming language by default it
+63:18 
+
+63:18 creates a new go routine for each
+63:20 
+
+63:20 request it receives. We are talking in
+63:22 
+
+63:22 the context of back end now. So imagine
+63:25 
+
+63:25 this scenario we have two requests
+63:27 
+
+63:27 request A and B and first we receive
+63:31 
+
+63:31 request A it created a new go routine
+63:33 
+
+63:33 our programming language runtime and
+63:35 
+
+63:35 then we got request B it created another
+63:38 
+
+63:38 go routine. Okay now we do the same kind
+63:41 
+
+63:41 of stuff. We parse the request we do
+63:43 
+
+63:43 validation transformation. We load it
+63:46 
+
+63:46 into memory by d serializing into a
+63:48 
+
+63:48 strct and all those stuff. Then we get
+63:50 
+
+63:50 into the database stuff. Same we do the
+63:52 
+
+63:52 TCP connection stuff. We convert our SQL
+63:55 
+
+63:55 query into bytes. We send those bytes
+63:57 
+
+63:57 and wait for network. Now the moment
+63:60 
+
+63:60 that happens, we know that this is a IO
+64:02 
+
+64:02 block operation. Right? Same for go
+64:04 
+
+64:04 routine 2 also. We do all this stuff and
+64:07 
+
+64:07 the moment we run the database query,
+64:09 
+
+64:09 this is an IO block operation. The
+64:11 
+
+64:11 moment it happens the go runtime
+64:13 
+
+64:13 scheduleuler we'll talk about what this
+64:15 
+
+64:15 is we're not talking about OS shoulduler
+64:18 
+
+64:18 it's not anuler which is provided by our
+64:20 
+
+64:20 operating system it is go runtime's own
+64:23 
+
+64:23 scheduleuler it pauses this particular
+64:25 
+
+64:25 go routine the same way our osuler our
+64:28 
+
+64:28 operating system scheduleuler pauses a
+64:30 
+
+64:30 particular thread switches the context
+64:33 
+
+64:33 goes to the next thread and start
+64:35 
+
+64:35 executing the go runtime shoulduler does
+64:37 
+
+64:37 something similar but instead of dealing
+64:40 
+
+64:40 with actual ual operating system level
+64:42 
+
+64:42 threads. It deals with go routines which
+64:44 
+
+64:44 are kind of a virtual thread which only
+64:46 
+
+64:46 exist in the context of go runtime.
+64:48 
+
+64:48 Okay. Now same thing happens the moment
+64:51 
+
+64:51 some kind of IO operation starts and we
+64:54 
+
+64:54 start waiting for the response the go
+64:56 
+
+64:56 schedule shoulduler it pauses that
+64:58 
+
+64:58 function and it moves on to some other
+65:01 
+
+65:01 go routine right the go routine two
+65:03 
+
+65:03 maybe or go routin 3 if there are
+65:05 
+
+65:05 thousand go routines because for each
+65:07 
+
+65:07 request we are spinning up a new go
+65:09 
+
+65:09 routine we may be switching into any of
+65:11 
+
+65:11 those thousand go routines that does not
+65:13 
+
+65:13 matter okay now let's talk a little bit
+65:16 
+
+65:16 about the go runtime shoulduler how does
+65:18 
+
+65:18 it network. If you remember the
+65:20 
+
+65:20 threading model, which you should
+65:22 
+
+65:22 because we literally talked about it 10
+65:24 
+
+65:24 minutes back, it is exactly the same
+65:26 
+
+65:26 which happened on this layer, the
+65:28 
+
+65:28 operating system level threads which we
+65:31 
+
+65:31 only had a limited amount of for good
+65:33 
+
+65:33 reasons because threads are expensive.
+65:35 
+
+65:35 They come with a lot of overhead
+65:36 
+
+65:36 overhead like creating overhead,
+65:39 
+
+65:39 switching overhead and the memory
+65:41 
+
+65:41 overhead of maintaining all the stacks.
+65:43 
+
+65:43 So we already know this model of
+65:46 
+
+65:46 execution creating and using different
+65:49 
+
+65:49 operating system level threads to do
+65:51 
+
+65:51 multiple things and it usually relates
+65:54 
+
+65:54 to how many CPU cores that you have
+65:56 
+
+65:56 because in one CPU core only one thread
+65:59 
+
+65:59 can execute at a time. Okay, it is not
+66:01 
+
+66:01 necessary that the number of threads are
+66:03 
+
+66:03 directly related to the number of CPU
+66:06 
+
+66:06 cores that you have. So even if you have
+66:08 
+
+66:08 one CPU core, you can have four threads
+66:10 
+
+66:10 but at a time only one thread will be
+66:12 
+
+66:12 executing in your CPU. We already know
+66:14 
+
+66:14 this layer of execution how threads
+66:17 
+
+66:17 work, how the context switch happens,
+66:19 
+
+66:19 how threads are created, a new stack is
+66:22 
+
+66:22 allocated, the instruction pointer is
+66:24 
+
+66:24 created and the data structures are
+66:27 
+
+66:27 created to maintain the state of the
+66:28 
+
+66:28 thread and all these things. Right? This
+66:30 
+
+66:30 layer now comes another layer, the go
+66:33 
+
+66:33 routines layer or the go runtime
+66:35 
+
+66:35 scheduleuler. Now this is not related to
+66:38 
+
+66:38 our operating system. This is something
+66:40 
+
+66:40 which comes with the Go programming
+66:42 
+
+66:42 language. This is embedded. Now this is
+66:44 
+
+66:44 where the magic happens and this is why
+66:47 
+
+66:47 Go is such an efficient language when it
+66:50 
+
+66:50 comes to both CPU and IO. Even though it
+66:53 
+
+66:53 is not using an event loop based
+66:55 
+
+66:55 architecture but because of this Go
+66:57 
+
+66:57 runtime scheduleuler based architecture,
+66:59 
+
+66:59 it manages IO operations so efficiently.
+67:02 
+
+67:02 So this is how it works. For each
+67:04 
+
+67:04 operating system thread there is a flag
+67:06 
+
+67:06 that you can set while starting a go
+67:09 
+
+67:09 program which is go max which means how
+67:12 
+
+67:12 many threads that you want to create by
+67:14 
+
+67:14 default how many CPU cores you have that
+67:17 
+
+67:17 many threads are created right so let's
+67:19 
+
+67:19 imagine you have four CPU cores and four
+67:21 
+
+67:21 operating system threads are created now
+67:24 
+
+67:24 you're capped at four threads for your
+67:26 
+
+67:26 go program that's the first fact and
+67:28 
+
+67:28 these are those four threads m1 m2 m3
+67:31 
+
+67:31 and m4 now for each time you create a
+67:34 
+
+67:34 new go routine the go runtime shoulduler
+67:37 
+
+67:37 it assigns that particular go routine or
+67:39 
+
+67:39 it pushes that particular go routine
+67:42 
+
+67:42 into one of these cues. So each
+67:44 
+
+67:44 operating system thread you can imagine
+67:46 
+
+67:46 it as a queue and depending on some
+67:49 
+
+67:49 algorithm your go runtimeul it pushes go
+67:52 
+
+67:52 routines into these cues. So one
+67:55 
+
+67:55 operating system thread will be dealing
+67:57 
+
+67:57 with multiple go routines at once. So
+67:60 
+
+67:60 instead of dealing or instead of
+68:01 
+
+68:01 creating, pausing, switching all these
+68:04 
+
+68:04 things on operating system level
+68:05 
+
+68:05 threads, now you're dealing with go
+68:08 
+
+68:08 routines. You're still doing the
+68:09 
+
+68:09 resuming operation, the switching
+68:11 
+
+68:11 operation and the memory thing, all
+68:13 
+
+68:13 those things. But now it's much more
+68:15 
+
+68:15 lightweight because the go runtime is
+68:17 
+
+68:17 handling it. And when you actually
+68:19 
+
+68:19 switch from one go to other, it is
+68:22 
+
+68:22 usually just a pointer switch, which
+68:24 
+
+68:24 means you just take the pointer and you
+68:26 
+
+68:26 point it to something else. Okay? And
+68:28 
+
+68:28 that thing is pretty lightweight. So for
+68:31 
+
+68:31 that reason at a time we can spin up
+68:33 
+
+68:33 like thousands and millions of go
+68:35 
+
+68:35 routines depending of course you'll run
+68:37 
+
+68:37 out of memory at some point but compared
+68:40 
+
+68:40 to the number of threads that you can
+68:42 
+
+68:42 create the operating system level
+68:44 
+
+68:44 threads you can create 100 times more go
+68:47 
+
+68:47 routines because the mapping happens
+68:49 
+
+68:49 like this. So going back to our earlier
+68:52 
+
+68:52 example, let's say there are two
+68:54 
+
+68:54 requests, two HTTP requests and since we
+68:56 
+
+68:56 create a new go routine and this is the
+68:59 
+
+68:59 reason the go HTTP package creates a new
+69:01 
+
+69:01 go routine for each request because go
+69:04 
+
+69:04 routines are so lightweight that we do
+69:06 
+
+69:06 not care. We can afford to create a new
+69:09 
+
+69:09 go routine for each request. So if G1 is
+69:12 
+
+69:12 blocked for some kind of IO operation,
+69:13 
+
+69:13 for any kind of database operation, the
+69:15 
+
+69:15 M1 thread, the M1 OS level thread, now
+69:18 
+
+69:18 the execution of course happens on the
+69:21 
+
+69:21 OS level thread, which means at a single
+69:24 
+
+69:24 point of time, the OS level thread M1
+69:26 
+
+69:26 takes one of these go routines and it
+69:28 
+
+69:28 runs it. The moment G1 blocks, go routin
+69:31 
+
+69:31 one blocks, it pauses G1, which means
+69:33 
+
+69:33 the go runtime pauses G1 and M1 starts
+69:37 
+
+69:37 running G2 now. Okay. And if we take a
+69:39 
+
+69:39 look at the code of how a particular go
+69:41 
+
+69:41 handler would look like. This is what it
+69:43 
+
+69:43 looks like. We have a function here and
+69:45 
+
+69:45 it takes the request returns a response
+69:47 
+
+69:47 and this is the database query. We are
+69:49 
+
+69:49 running this function DB.query. This is
+69:51 
+
+69:51 our query. Select star from users where
+69:53 
+
+69:53 ID equal to this. We are passing the
+69:54 
+
+69:54 user ID in the second parameter. And the
+69:56 
+
+69:56 moment we do this this particular go
+69:58 
+
+69:58 routine whatever go routine that was
+69:60 
+
+70:00 executing this function it pauses and
+70:03 
+
+70:03 the go scheduleuler picks up another go
+70:05 
+
+70:05 routine. Maybe it's another request or
+70:07 
+
+70:07 maybe it's a logging operation or
+70:08 
+
+70:08 whatever and it starts executing that
+70:10 
+
+70:10 and when this response comes back this
+70:14 
+
+70:14 particular go routin which was paused
+70:16 
+
+70:16 because of this IO operation now it
+70:18 
+
+70:18 starts executing again and it sends a
+70:20 
+
+70:20 response back to the client. Now, okay.
+70:23 
+
+70:23 So, the distinction, the primary
+70:24 
+
+70:24 distinction here is the virtual thread
+70:27 
+
+70:27 method is kind of the same as the
+70:29 
+
+70:29 threading model, but we are dealing with
+70:32 
+
+70:32 another layer of abstraction. Instead of
+70:35 
+
+70:35 operating system leveler, we are using
+70:37 
+
+70:37 the go scheduleuler. Instead of
+70:39 
+
+70:39 operating system threads, we are using
+70:41 
+
+70:41 the virtual threads also called as go
+70:43 
+
+70:43 routines. And that is the reason it is
+70:45 
+
+70:45 so lightweight. Another thing that
+70:46 
+
+70:46 causes a lot of confusion at least in
+70:48 
+
+70:48 the event loop model is how does the
+70:50 
+
+70:50 async await keyword works because in
+70:52 
+
+70:52 different different programming
+70:53 
+
+70:53 languages like Python, JavaScript, Rust
+70:56 
+
+70:56 and all that. So let me talk a little
+70:58 
+
+70:58 bit about that. Consider this particular
+70:60 
+
+70:60 function. We have a function here which
+71:02 
+
+71:02 is fetch user data and the parameter is
+71:05 
+
+71:05 a user ID. We take that user ID. We run
+71:07 
+
+71:07 the first query, the database query
+71:09 
+
+71:09 which is to get the user DB.get user. We
+71:12 
+
+71:12 pass the user ID and we await that which
+71:14 
+
+71:14 means this is a blocking operation and
+71:16 
+
+71:16 by writing await in front of this
+71:19 
+
+71:19 function we are saying that we are
+71:20 
+
+71:20 giving up the processing to our event
+71:23 
+
+71:23 loop until this is completed and all
+71:26 
+
+71:26 this should be put into a call back
+71:27 
+
+71:27 function which will only run after we
+71:30 
+
+71:30 get the response back from this
+71:32 
+
+71:32 function. Okay. Now the moment we get
+71:34 
+
+71:34 the response back from this function
+71:35 
+
+71:35 this call back all the code after this
+71:38 
+
+71:38 line this starts executing again we have
+71:40 
+
+71:40 a database call here. So we hand over
+71:43 
+
+71:43 our control back to the event loop and
+71:46 
+
+71:46 we start waiting for the response of
+71:47 
+
+71:47 this and this will be put into a call
+71:49 
+
+71:49 back which will only get executed after
+71:51 
+
+71:51 we get the response back from this
+71:53 
+
+71:53 function and after we get the response
+71:55 
+
+71:55 back from this function we take the
+71:56 
+
+71:56 result and return it back. So this is
+71:59 
+
+71:59 what it means from all the discussions
+72:01 
+
+72:01 that we have done so far. To make it a
+72:03 
+
+72:03 little more technical how our
+72:05 
+
+72:05 programming language deals with it, you
+72:07 
+
+72:07 can imagine it as a state machine. So
+72:11 
+
+72:11 the same function we can convert it into
+72:13 
+
+72:13 this function. Now the signature is the
+72:15 
+
+72:15 same. We have a function the name is
+72:17 
+
+72:17 fetch user data and the parameter is a
+72:19 
+
+72:19 user ID. So we can imagine an async
+72:21 
+
+72:21 function as a state machine which
+72:24 
+
+72:24 interacts with the event loop. Let's say
+72:26 
+
+72:26 for user ID while running this function
+72:29 
+
+72:29 we passed user ID as 1 2 3 and we start
+72:32 
+
+72:32 executing. In the first step our state
+72:34 
+
+72:34 is zero. We are initializing a variable
+72:36 
+
+72:36 called state and while starting out it
+72:39 
+
+72:39 is zero. And we also have two more
+72:41 
+
+72:41 variables to store the users and also to
+72:44 
+
+72:44 store orders. Then we define another
+72:46 
+
+72:46 function inside this function and which
+72:48 
+
+72:48 we will keep returning again and again.
+72:50 
+
+72:50 And since in JavaScript functions are a
+72:52 
+
+72:52 first class citizens you can return
+72:54 
+
+72:54 functions from other functions. So we
+72:56 
+
+72:56 define this function which is called
+72:58 
+
+72:58 step and we return that after defining.
+73:01 
+
+73:01 Now when this function runs what happens
+73:03 
+
+73:03 we have a switch statement here and
+73:05 
+
+73:05 depending on which state we are in we
+73:08 
+
+73:08 run that particular state. Okay. So by
+73:10 
+
+73:10 default in the first execution run the
+73:13 
+
+73:13 value is zero. So in case zero the
+73:16 
+
+73:16 moment we enter the execution we make it
+73:19 
+
+73:19 as state one. Okay we increment the
+73:22 
+
+73:22 value of state to one. And this is where
+73:24 
+
+73:24 the IO blocking operation comes. We call
+73:27 
+
+73:27 this database function and we pass it
+73:29 
+
+73:29 the parameter. And in the then statement
+73:32 
+
+73:32 which is the call back part. We are
+73:33 
+
+73:33 assigning whatever results come back
+73:36 
+
+73:36 from the database query and we are
+73:38 
+
+73:38 assigning it to user since we are trying
+73:40 
+
+73:40 to fetch the user in the first place.
+73:42 
+
+73:42 And we go to the next step. And since
+73:44 
+
+73:44 this is a state machine kind of setup
+73:46 
+
+73:46 and the caller when it runs this
+73:47 
+
+73:47 function so during this state transition
+73:50 
+
+73:50 so in the first await the moment we
+73:52 
+
+73:52 write the first await keyword we are
+73:54 
+
+73:54 running this part the first state which
+73:57 
+
+73:57 is the state equals to zero and after
+73:60 
+
+74:00 this completes we hand over the
+74:02 
+
+74:02 transition part when this part completes
+74:05 
+
+74:05 and before this part starts the state
+74:07 
+
+74:07 machine execution one starts during this
+74:10 
+
+74:10 time our event loop is free is not
+74:12 
+
+74:12 executing this function function. Of
+74:14 
+
+74:14 course, it is executing other racing
+74:15 
+
+74:15 functions or other racing functions, but
+74:17 
+
+74:17 it is not executing this function. And
+74:19 
+
+74:19 after we get the result of database,
+74:21 
+
+74:21 after we get the user back, we
+74:23 
+
+74:23 transition into into state machine
+74:25 
+
+74:25 execution one. Then again, we do it the
+74:28 
+
+74:28 value two, we call this async function
+74:30 
+
+74:30 in the call back. We assign the result
+74:33 
+
+74:33 to orders variable and when we
+74:36 
+
+74:36 transition into the next state and after
+74:39 
+
+74:39 the event loop pauses and then the
+74:41 
+
+74:41 result of this returns and we go to the
+74:44 
+
+74:44 execution two and finally we return user
+74:47 
+
+74:47 and orders. So you can imagine this is
+74:49 
+
+74:49 kind of how your programming language
+74:52 
+
+74:52 runtime executing async functions as a
+74:55 
+
+74:55 state machine. It goes from one state to
+74:58 
+
+74:58 another every time we use an await
+75:01 
+
+75:01 keyword. If you understand the state
+75:02 
+
+75:02 machine kind of setup, a couple of
+75:04 
+
+75:04 things that become clear is one why can
+75:07 
+
+75:07 we only use await inside async
+75:11 
+
+75:11 functions. Why? Because this function
+75:13 
+
+75:13 the moment you write async in front of
+75:15 
+
+75:15 that function that has to be transformed
+75:18 
+
+75:18 into a state machine. That's why if a
+75:20 
+
+75:20 function is not marked as async you
+75:22 
+
+75:22 cannot use the await keyword. Both of
+75:24 
+
+75:24 them work together as a state machine.
+75:27 
+
+75:27 Second, why blocking the event loop is
+75:29 
+
+75:29 so bad? Because if you block the event
+75:32 
+
+75:32 loop, which means that state machine
+75:34 
+
+75:34 will never get to go to the next state,
+75:36 
+
+75:36 it cannot go from state zero to state
+75:38 
+
+75:38 one, from state one to state two. So
+75:41 
+
+75:41 it's important that we never block the
+75:43 
+
+75:43 event loop. Right? Of course, you don't
+75:46 
+
+75:46 have to internalize all these things.
+75:48 
+
+75:48 You don't have to understand deeply all
+75:49 
+
+75:49 these things. How your programming
+75:51 
+
+75:51 language runtime converts async
+75:53 
+
+75:53 functions into state machines. How all
+75:55 
+
+75:55 these concurrency primitives works
+75:56 
+
+75:56 behind the scenes. But it it it helps if
+75:59 
+
+75:59 you do understand it. And like any
+76:02 
+
+76:02 system concurrency also comes with its
+76:05 
+
+76:05 own set of problems. And most of the
+76:08 
+
+76:08 time all the different kinds of
+76:09 
+
+76:09 problems, different categories of
+76:11 
+
+76:11 problems that are caused due to
+76:13 
+
+76:13 concurrency is because of this single
+76:15 
+
+76:15 reason which is shared state or shared
+76:19 
+
+76:19 memory. To understand a few of these
+76:21 
+
+76:21 problems, let's take this very simple
+76:23 
+
+76:23 example which is a counter example. And
+76:26 
+
+76:26 what we are trying to do, we have two
+76:28 
+
+76:28 different threads and they are trying to
+76:30 
+
+76:30 update a variable which is this counter
+76:34 
+
+76:34 variable which starts with the value of
+76:36 
+
+76:36 zero and they try to update this
+76:38 
+
+76:38 variable at the same time or
+76:40 
+
+76:40 simultaneously in a concurrent way. Now
+76:42 
+
+76:42 to take a variable and increment its
+76:45 
+
+76:45 value with one a thread has to perform
+76:48 
+
+76:48 three different operations. First, it
+76:50 
+
+76:50 has to read the current value of the
+76:53 
+
+76:53 counter into a register into a CPU
+76:55 
+
+76:55 register. Before it can perform any kind
+76:57 
+
+76:57 of operation, it has to read the current
+76:59 
+
+76:59 value. Then once it has read the value
+77:02 
+
+77:02 of the counter into the register, it
+77:04 
+
+77:04 needs to add one. Now the value of that
+77:07 
+
+77:07 register becomes one. Once that is done,
+77:10 
+
+77:10 finally it can take the value of this
+77:12 
+
+77:12 register which is one and write it back
+77:15 
+
+77:15 to the counter variable which is this
+77:16 
+
+77:16 one. So to increment the value with one,
+77:20 
+
+77:20 it has to perform three different
+77:22 
+
+77:22 operations. Now imagine this kind of
+77:24 
+
+77:24 scenario where two different threads are
+77:27 
+
+77:27 trying to increment the value at the
+77:29 
+
+77:29 same time. And this is a timeline. So
+77:31 
+
+77:31 you can imagine it as millisecond 1, 2,
+77:35 
+
+77:35 3 or second 1, second 2, second or any
+77:37 
+
+77:37 kind of time unit as you want. So at
+77:40 
+
+77:40 millisecond 1, f a started first as a
+77:43 
+
+77:43 step one read the value of this counter
+77:45 
+
+77:45 variable into the memory which is the
+77:47 
+
+77:47 value of zero. And at the same time at
+77:50 
+
+77:50 millisecond 2 before thread A could even
+77:53 
+
+77:53 increment its value in its register
+77:56 
+
+77:56 thread B read the value of the counter
+77:58 
+
+77:58 variable into the memory which is the
+77:60 
+
+78:00 value of zero. And at millisecond 3
+78:03 
+
+78:03 thread A incremented its own resistors
+78:06 
+
+78:06 value one. And at millisecond 4, thread
+78:08 
+
+78:08 B did the same thing. It increased the
+78:11 
+
+78:11 it added one to the register value. Then
+78:13 
+
+78:13 finally at millisecond 5, thread A wrote
+78:16 
+
+78:16 the value of one into the counter
+78:19 
+
+78:19 variable. So now the value of counter
+78:21 
+
+78:21 variable is 1 at millisecond 5. Now at
+78:24 
+
+78:24 last at millisecond 6 the last operation
+78:28 
+
+78:28 that happens is thread B after it has
+78:31 
+
+78:31 increased the value of its own register
+78:34 
+
+78:34 it takes that value which is value one
+78:36 
+
+78:36 and it writes it back to the counter
+78:38 
+
+78:38 variable. So ideally since both of these
+78:41 
+
+78:41 threads are working on this single
+78:44 
+
+78:44 variable and they are trying to
+78:46 
+
+78:46 increment its value. Ideally after
+78:48 
+
+78:48 running all these operations we should
+78:51 
+
+78:51 expect the value of two for the counter
+78:53 
+
+78:53 variable. But because these two threads
+78:56 
+
+78:56 are interacting or trying to increment
+78:59 
+
+78:59 the value of a single shared variable
+79:02 
+
+79:02 and their operations are intertwined in
+79:04 
+
+79:04 different different milliseconds. we get
+79:06 
+
+79:06 the final value of one. And this problem
+79:09 
+
+79:09 is called a lost update problem which
+79:12 
+
+79:12 happens when two different threads try
+79:14 
+
+79:14 to operate or try to work on a single
+79:18 
+
+79:18 shared variable. And because of this the
+79:20 
+
+79:20 increment of one of the thread was
+79:22 
+
+79:22 completely lost. This is what we call as
+79:25 
+
+79:25 a race condition. And at this point you
+79:27 
+
+79:27 might say that if I use a programming
+79:30 
+
+79:30 language like JavaScript which has a
+79:33 
+
+79:33 single thread and I use async aait so I
+79:36 
+
+79:36 should not worry about the problem of
+79:38 
+
+79:38 race condition or any other problem
+79:40 
+
+79:40 which happens due to concurrency. Right.
+79:42 
+
+79:42 Unfortunately in async await based setup
+79:46 
+
+79:46 for example this code where what we are
+79:48 
+
+79:48 doing we have a variable which is the
+79:50 
+
+79:50 variable of balance and with the initial
+79:53 
+
+79:53 value of 100 and we have a function
+79:55 
+
+79:55 which called withdraw which takes the
+79:57 
+
+79:57 parameter of amount. First here what we
+79:60 
+
+79:60 check we check if the value of balance
+80:03 
+
+80:03 is greater than or equal to amount is
+80:06 
+
+80:06 the parameter that we are passed and
+80:08 
+
+80:08 balance is the global variable. If yes,
+80:11 
+
+80:11 then we call this function which is
+80:12 
+
+80:12 process withdrawal which maybe executes
+80:14 
+
+80:14 a database query. That's why we have to
+80:16 
+
+80:16 write await. This is an async function.
+80:18 
+
+80:18 And finally, after this is done, we take
+80:20 
+
+80:20 the global variable and we subtract the
+80:24 
+
+80:24 value amount from our balance because we
+80:26 
+
+80:26 withdrew that amount from our global
+80:29 
+
+80:29 balance. Okay, this is how it works. So
+80:31 
+
+80:31 imagine we called the withdraw function
+80:34 
+
+80:34 twice in some location in our program.
+80:36 
+
+80:36 And when we do that, we can imagine a
+80:38 
+
+80:38 situation like this. So we have our
+80:41 
+
+80:41 balance variable. So we are just trying
+80:43 
+
+80:43 to visualize whatever function that we
+80:45 
+
+80:45 just saw in our JavaScript using async
+80:47 
+
+80:47 of it. Okay. So this is the execution of
+80:50 
+
+80:50 the first withdraw function call and
+80:53 
+
+80:53 this is the execution of the second
+80:54 
+
+80:54 withdraw function call. We pass the
+80:56 
+
+80:56 amount 100 in both of these and now we
+80:59 
+
+80:59 can track how they execute. So in both
+81:01 
+
+81:01 of these instances let's say this
+81:03 
+
+81:03 started executing first since this is a
+81:05 
+
+81:05 concurrent setup this started executing
+81:07 
+
+81:07 first and the first thing that we do is
+81:10 
+
+81:10 we compare and what do we compare? We
+81:12 
+
+81:12 compare the amount with the balance to
+81:14 
+
+81:14 check if we have the balance to perform
+81:17 
+
+81:17 the withdraw then we allow it. So we
+81:19 
+
+81:19 checked if 100 is either greater or
+81:22 
+
+81:22 equal to 100 which is true because 100
+81:24 
+
+81:24 equals to 100 and we come inside and
+81:26 
+
+81:26 here we have to perform an async
+81:28 
+
+81:28 function and because of that we started
+81:31 
+
+81:31 executing this async function and the
+81:33 
+
+81:33 and the moment we do that we have to
+81:35 
+
+81:35 take the control and give it back to our
+81:37 
+
+81:37 event loop because that's how event loop
+81:39 
+
+81:39 based architecture works. Okay. And here
+81:42 
+
+81:42 at this point we give up control and the
+81:44 
+
+81:44 moment we give up control the second
+81:46 
+
+81:46 function started executing. We can
+81:48 
+
+81:48 imagine and here we again compared the
+81:51 
+
+81:51 value which is if 100 is greater than or
+81:54 
+
+81:54 equals to 100. So true and we came
+81:56 
+
+81:56 inside again we started with this async
+81:59 
+
+81:59 function and gave the control back and
+82:01 
+
+82:01 the moment we gave the control back we
+82:03 
+
+82:03 came back to this function because this
+82:05 
+
+82:05 is how concurrent setups work. Every
+82:07 
+
+82:07 time you call await, you give up control
+82:10 
+
+82:10 of your CPU so that your program can go
+82:13 
+
+82:13 and execute something else while you are
+82:16 
+
+82:16 waiting for your casing function to
+82:18 
+
+82:18 finish or your database call to finish.
+82:20 
+
+82:20 So when we come here, this was
+82:22 
+
+82:22 successful and we update the value of
+82:25 
+
+82:25 balance 100 minus 100 and the balance is
+82:27 
+
+82:27 now zero. After we are done with this,
+82:29 
+
+82:29 we come back to this. By this time, the
+82:31 
+
+82:31 database has responded back. Now at this
+82:34 
+
+82:34 line by the time we start executing this
+82:37 
+
+82:37 the value of balance is already zero and
+82:40 
+
+82:40 since this check that we made if we had
+82:42 
+
+82:42 done this check after the value of
+82:45 
+
+82:45 balance became zero this would not have
+82:47 
+
+82:47 been true we would not have entered into
+82:50 
+
+82:50 this function and since this check
+82:52 
+
+82:52 happened in between this execution now
+82:55 
+
+82:55 we are in this situation what happens by
+82:57 
+
+82:57 the time we start executing this line
+82:59 
+
+82:59 which is the balance deduction line here
+83:02 
+
+83:02 the value of balance balance is already
+83:03 
+
+83:03 zero because we ran this and now the
+83:06 
+
+83:06 value of balance is 0. So now what
+83:08 
+
+83:08 happens instead of 100 - 100 it becomes
+83:11 
+
+83:11 0 - 100. So the value of balance is now
+83:14 
+
+83:14 minus 100 which is an inappropriate
+83:17 
+
+83:17 value which is not a valid value for
+83:20 
+
+83:20 this function. So even if you use a
+83:23 
+
+83:23 single threaded async awaitbased setup
+83:26 
+
+83:26 you are still not free from race
+83:28 
+
+83:28 conditions because this kind of
+83:30 
+
+83:30 situations can also happen. So what is
+83:33 
+
+83:33 the solution? How do we prevent race
+83:35 
+
+83:35 conditions? This is again one of those
+83:37 
+
+83:37 topics which can go very deep and you
+83:39 
+
+83:39 can read more about different different
+83:41 
+
+83:41 race condition prevention mechanisms
+83:43 
+
+83:43 that we have available in the operating
+83:45 
+
+83:45 system book. But some of the most famous
+83:47 
+
+83:47 ones that I will just give a brief about
+83:49 
+
+83:49 is first locks or mutexes. So this is
+83:53 
+
+83:53 how it works. Imagining we are using
+83:55 
+
+83:55 Python as our programming language and
+83:58 
+
+83:58 we are using this library called
+83:59 
+
+83:59 threading to use the locking mechanism.
+84:02 
+
+84:02 So we have a function which is the
+84:04 
+
+84:04 increment function that we are just
+84:05 
+
+84:05 talking about and before we start
+84:08 
+
+84:08 executing or before we actually perform
+84:11 
+
+84:11 this operation the write operation what
+84:13 
+
+84:13 we do we acquire a lock which means that
+84:16 
+
+84:16 this particular statement whatever is
+84:18 
+
+84:18 inside this this is also called as
+84:21 
+
+84:21 mutual exclusion in technical language.
+84:24 
+
+84:24 So this area while we have this lock
+84:26 
+
+84:26 only one thread can enter into this
+84:29 
+
+84:29 area. The moment one thread acquires a
+84:31 
+
+84:31 lock and goes inside all the other
+84:33 
+
+84:33 threads which are called to execute the
+84:35 
+
+84:35 same function they have to wait to get
+84:37 
+
+84:37 the lock and they will only get the lock
+84:39 
+
+84:39 after this first function is done with
+84:41 
+
+84:41 it. So with this kind of setup we can
+84:44 
+
+84:44 avoid race condition to certain extent.
+84:46 
+
+84:46 There are also other techniques, other
+84:48 
+
+84:48 mechanisms using which we can avoid race
+84:51 
+
+84:51 conditions etc etc. Like in in Go
+84:53 
+
+84:53 programming language especially there is
+84:55 
+
+84:55 a primitive called channels where
+84:57 
+
+84:57 instead of depending on a particular
+85:00 
+
+85:00 global variable or depending on a shared
+85:03 
+
+85:03 variable where uh different go routines
+85:05 
+
+85:05 or different threads virtual threads
+85:07 
+
+85:07 whatever you want to call different
+85:08 
+
+85:08 independent executions can update that
+85:11 
+
+85:11 particular variable. what you do these
+85:14 
+
+85:14 different threads these different go
+85:15 
+
+85:15 routines they pass messages and only one
+85:19 
+
+85:19 particular go routine updates the value
+85:22 
+
+85:22 of that variable. So channels are
+85:24 
+
+85:24 another modern solution to the problem
+85:27 
+
+85:27 of race conditions. So over the time a
+85:30 
+
+85:30 lot of people have come up with a lot of
+85:31 
+
+85:31 solutions for all the different problems
+85:34 
+
+85:34 related to concurrency. But this video
+85:36 
+
+85:36 is not about the the technicalities of
+85:39 
+
+85:39 dealing with concurrency and the
+85:41 
+
+85:41 problems that come with it. Is mostly to
+85:43 
+
+85:43 wrap our head around one single concept
+85:46 
+
+85:46 which is what is IO bound and what is
+85:48 
+
+85:48 CPUbound. That's the only goal of this
+85:51 
+
+85:51 video. It does not matter whether you
+85:53 
+
+85:53 understand all these threads, logs,
+85:55 
+
+85:55 concurrency etc or not. As long as you
+85:57 
+
+85:57 understand the concept of IO bound and
+85:59 
+
+85:59 CPUbound, this video has been
+86:00 
+
+86:00 successful. Okay. Now let's summarize
+86:03 
+
+86:03 everything that we discussed in this
+86:05 
+
+86:05 video. For any kind of IO bound
+86:08 
+
+86:08 workloads which requires a high amount
+86:10 
+
+86:10 of concurrency things like web servers,
+86:12 
+
+86:12 API gateways, services that make a lot
+86:14 
+
+86:14 of API calls to other services, all
+86:16 
+
+86:16 these things. These kinds of primitives
+86:18 
+
+86:18 prove a lot more efficient as compared
+86:20 
+
+86:20 to the threading model which is like
+86:22 
+
+86:22 things like async aait or go routines
+86:25 
+
+86:25 which is the virtual threads for go
+86:28 
+
+86:28 runtime and also if you're using Java
+86:30 
+
+86:30 Java also has virtual threads in the
+86:32 
+
+86:32 modern versions of it. Same way for
+86:34 
+
+86:34 CPUbound workloads which means any kind
+86:37 
+
+86:37 of numbers processing or string
+86:40 
+
+86:40 manipulation, image manipulation, video
+86:42 
+
+86:42 manipulation, any kind of core
+86:44 
+
+86:44 processing, crunching numbers, crunching
+86:46 
+
+86:46 bytes into the memory, out of the memory
+86:49 
+
+86:49 or any kind of processing that you can
+86:50 
+
+86:50 imagine which happens in our CPU which
+86:53 
+
+86:53 is performed by the CPU that is called
+86:55 
+
+86:55 CPUbound workloads and in those cases
+86:58 
+
+86:58 threads with parallelism is more
+87:01 
+
+87:01 efficient as compared to our event loop
+87:03 
+
+87:03 based architecture. So all in all,
+87:05 
+
+87:05 concurrency lets your program stay
+87:08 
+
+87:08 productive to not waste CPU cycles while
+87:11 
+
+87:11 it is waiting for any kind of IO. IO in
+87:14 
+
+87:14 the sense any kind of work which is not
+87:17 
+
+87:17 handled by the CPU. It can be
+87:19 
+
+87:19 interacting with your network card to
+87:21 
+
+87:21 send and receive packets to interact
+87:24 
+
+87:24 with your input output standard input
+87:26 
+
+87:26 output or making any kind of external
+87:28 
+
+87:28 API calls dealing with databases. All
+87:30 
+
+87:30 these things these are called IO or
+87:32 
+
+87:32 input output and parallelism. It lets
+87:35 
+
+87:35 you use multiple CPU cores to do
+87:38 
+
+87:38 multiple things at the same moment of
+87:41 
+
+87:41 time. And most of the backend work that
+87:44 
+
+87:44 you will see it will lean heavier on the
+87:46 
+
+87:46 concurrency side not on the parallelism
+87:49 
+
+87:49 side. But again
+87:51 
+
+87:51 there are cases where you might need
+87:53 
+
+87:53 both or you might need parallelism more
+87:56 
+
+87:56 than you need concurrency. But as long
+87:58 
+
+87:58 as you understand the difference between
+87:59 
+
+87:59 them you should be able to make the
+88:01 
+
+88:01 right decision. You should be able to
+88:03 
+
+88:03 choose the right tools for your use

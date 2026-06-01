@@ -1,0 +1,566 @@
+00:00 in this video we are going to cover three topics handl services and repository pattern middle a and request
+00:09 context initially the plan was to cover each Topic in different different videos
+00:15 so this was supposed to be three videos but since these three topics are so
+00:22 closely related with each other in fact pretty much all the topics are closely related to each other since we are
+00:29 talking about backends here but I cannot go ahead and make a 100 hours video
+00:34 right so in this case these are in this case these are very closely rated to each other and it'll be easier to
+00:42 explain all three of them in the same context instead of repeating the same thing again and again in different
+00:48 different videos and that's the reason we are going to cover all three of the topics in this same video now let's talk
+00:55 about handlers services and repositories I know that I have talked about this
+01:01 topic in different different videos I have mentioned it in fact I have even explained it a little bit in other
+01:07 videos so it might sound a little bit uh repetitive but uh I have never
+01:12 officially covered this topic so this is the time that we can do that okay so
+01:20 let's start with client and server we have our client here and we have say
+01:27 server here okay this is our client and server and we communicate with each
+01:34 other over HTTP now when a client sends a request when it sends a request it
+01:40 reaches our server so the moment it reaches our server and until the moment
+01:47 it receives a response there are a lot of things happening uh in the server and
+01:53 we call that a request life cycle we already talked about the request life cycle external to the
+02:00 server like what happens at this point the sending the request and sending the response but we have not covered the
+02:07 request life cycle inside the server what happens inside the server throughout the life cycle of the request
+02:13 so let's cover that what happens now the request reaches here and we have our
+02:21 entry point the entry point of the server the entry the moment our operating system forwards that
+02:29 particular h P request to the particular Port it can be 3,000 it can be 4,000 any
+02:36 port that your server is running your operating system forwards that request
+02:41 to your server and the request reaches your server that is the entry point of your request now what happens your
+02:47 server must be doing some kind of listen on some particular port and that's how it gets the request at the start of the
+02:54 request what happens we have routing after the request reaches our server
+02:59 entry point we have routing mechanisms we have different different routes for example users then we have users sl12
+03:08 three we have Dynamic routes and etc etc we have already talked about routing and all it reaches our routing algorithm and
+03:16 depending on the routing algorithm we map that request to a
+03:22 particular Handler Handler is basically any function that we have predefined
+03:29 that is supposed to handle the request of that API we have mapped some kind of
+03:34 function for this as a Handler for this route now we have the concept of
+03:42 handlers or controllers services and repositories and why do we have three
+03:48 separate components why don't we only have a single Handler which does all the
+03:53 stuff and the thing is we can have that there is no uh requirement that we have
+03:59 to separate out the responsibilities into three different components there is no hard
+04:04 requirement it is just a design pattern so that your code base is scalable it is
+04:10 more maintainable and it is easier to add features and it is easier to debug things right now let's see what are the
+04:18 responsibilities of these three components the first level once we get the request here uh from the routing
+04:25 algorithm it reaches the Handler or the controller so we have here Handler slash
+04:31 controller okay what is the responsibility of this we get the request and in pretty much all the
+04:39 servers does not matter you're dealing with goang or nodejs or python those are
+04:44 the three languages that I have personally used so I'm not aware how the pattern Works in other language but I'm
+04:50 pretty sure is is an established pattern right uh in each Handler you will receive at least two objects or two
+04:57 variables depending on what programming language that you are using you'll receive two
+05:03 objects or two variables one is the request object one is the response
+05:11 object and the Handler can take out values from that HTTP request from the
+05:17 request object and it can send responses and it can modify response headers etc
+05:22 etc using the response object this is why we get these two objects and we
+05:29 don't necessar add these two objects ourselves the the runtime the
+05:34 programming language that you are using if you're using go then go provides these two objects to you uh by default
+05:43 on your handlers parameters and similarly for noes also if you're using Express or anything like that you will
+05:50 get this request and response provided to you you don't have to add them you will get them for each request now what
+05:57 happens at the entry point of Handler what is the first thing that comes to your mind that we need to find what is
+06:03 the request about we already know that what is this API supposed to do because
+06:09 this API was routed to a particular route above here and we got this in this
+06:14 particular handle so we know that what particular API that this client is
+06:19 trying to call we already have that part of the information now we want to take
+06:25 out different different values so that we can process the request and send a response accordingly we can do different
+06:32 uh database operations we can do external Logics we can do external API calls we can do uh we can send emails we
+06:39 can send notifications we can do a lot of things inside our uh processing logic
+06:45 and we have to send a response or we don't have to send a response depending on what kind of request it is if it is a
+06:51 delete request then uh restful standards say that you have to send a response
+06:57 code of 204 no content uh with an empty response body depending on that we can
+07:05 decide what response now at the entry point what is the first thing that comes to your mind that you have to take out
+07:12 the data from this request object that is the first responsibility of a Handler
+07:17 of a controller so this is what you have to keep in mind again this is not a
+07:23 necessary requirement you can do everything in your Handler SL controller but in a typical backend architecture
+07:29 this is how how we structure it to make it more skillable now the first entry point of your controller or Handler your
+07:36 responsibility is taking out the data from the request object depending on what kind of request it is if it is a
+07:43 get request if it is a get request you have to take out the query params right if it is a post request you have to take
+07:50 out the request body similarly for delete we can take out the request body
+07:56 and for put or patch we can also take out the request body depending on what
+08:02 kind of request that is we can take out the request body that is the first responsibility of a Handler or a controller now we've already talked
+08:09 about serialization and deserialization and there is the reason we are following this order we are trying to trace the uh
+08:18 flow of the request from top to bottom right the request started from the
+08:24 client and that's why the first thing that we covered was how HTTP life cycle
+08:29 work works right then we went into uh routing then we went to serialization
+08:36 and deserialization then validation and Transformations etc etc right we are following the request from the top until
+08:44 it reaches our repository or our database layer okay we already know that
+08:50 we have do some kind of serialization and deserialization at this point because the request the client sends a
+08:57 request and that request is serialized into a Json format because it has to
+09:02 travel over the internet and Json is a serializable format that is used across
+09:09 front end and backend boundaries and there are other serialization formats but Json is the most popular one as of
+09:16 now okay now the first thing that we have to do in the controller layer
+09:22 depending on your programming languages the implementations might be different but this is a common pattern the first
+09:28 thing that you have to do is deserialize the Json object that you
+09:34 received from the request into your native data format now if it is a node
+09:40 just backend then you might not necessarily do this step there will be a
+09:45 middleware somewhere somewhere Upstream before the routing happens which derealize all the Json into JavaScript
+09:52 objects right that's why we have Json do body parer ET ET middle in our node J
+09:59 apps so that's that's why we don't necessarily do the Step at the Handler layer but in other programming languages
+10:05 like go or python we have to do this step explicitly we have to deserialize
+10:10 whatever Json that we receive in the request into a our native format so if
+10:17 it's a go app we have to deserialize into a native struct if it is a python
+10:23 app we have to deserialize into a dictionary or a class and similarly for
+10:29 rust we can disiz into a struct etc etc right we have to take the Json data and
+10:36 convert into a format that we can understand that our programming language can understand that it has to follow its
+10:43 native data format this the first thing that the Handler does takes out the data from the request object and it
+10:50 deserializes into the native format of the programming language that you are
+10:56 using that is the first step okay this is also called binding depending on what
+11:04 framework that you are using but most of the Frameworks use this terminology which is called binding the request body
+11:11 into your native format and and at this step if the deserialization fails or
+11:18 some error occurs then we send a request uh we send a response to the client with
+11:24 the status code of 400 which is bad request
+11:30 use the error code of 400 to tell the client that this request is not valid
+11:38 something is wrong with this request payload right we send the 4and request and we terminate the request at this
+11:45 point we don't continue we don't proceed ahead right first thing now second thing
+11:52 and again I am talking about an ideal production grid backend pattern now okay
+11:59 depending on on the implementation you might not have a validation layer but we have already talked about validation and
+12:05 transformation in a previous video and the advice is you should validate everything that is coming inside your
+12:13 server from an external client everything starting from your path parameters to your request body to your
+12:20 request uh query parameters etc etc everything that you can validate and be
+12:26 as specific as possible while you're validating it we have already covered these things in
+12:31 our validation transformation video now that's the second thing that happens here once we have deserialized the data
+12:39 into a native format now we understand the data our programming language can make sense of the data it cannot make
+12:46 sense of the Json data because uh that is a serializable format and not every programming language JavaScript has a
+12:53 very good support for Json because Json is inspired by the JavaScript object and
+12:58 it has first support for Json but then you come to other programming languages you don't have as uh smooth integration
+13:07 with Json we have to do a lot of manual processing right now at the second step
+13:13 we do validations and Transformations we take the data that we have bound here to
+13:19 our native format let's say we are using go programming lger now we have a struct
+13:25 if you are using python now we have a class or a dictionary which contains all
+13:30 the data that the client has sent but in our own programming language format the
+13:37 client is using JavaScript it has sent using Json but now we have a struct in go which contains the same data in a
+13:44 different representation but with the same values now we take that data and we
+13:50 validate it we validate it we make sure that all the data that the client has sent it is in the expected format all
+13:58 the mandatory values are sent all the values that are sent are in the expected
+14:04 format there is no malicious intent there is no uh missing values etc etc
+14:11 everything that we do in a validation pipeline after we validate it we also
+14:16 optionally do a transformation what does transformation mean transformation is basically after we validate the data
+14:23 that has come from the client we do some kind of modifications to make it convenient for our server to process the
+14:30 data for example we can set defaults let's say we have a get AP we have a get
+14:37 API where we are fetching all the books we are fetching all the books and there
+14:44 is a query parameter the client can send which is sort and in the value can be
+14:50 name or by date the created date of the book right these are the values that the
+14:57 client can send and the require mment is and this is a good pattern that you
+15:02 should establish in your backend apps that query parameters you should try your best to do all the query parameters
+15:10 optional right that should be your requirement that is a good pattern to establish early in your API design and
+15:17 we'll cover all about API designs all the best practices restful architecture and everything in the next video that is
+15:24 all about API designs and principles and how to think about apis how to design design them etc etc so there you'll have
+15:33 all your doubts cleared about this how to structure this how to uh start about this but just a info for the sake of
+15:40 this video that you should try to make all your query parameters in your apis
+15:45 optional and coming back to transformation let's say this is the requirement the client can send two
+15:50 values in the sort query parameter either name or date and if the client
+15:55 sends name you have to sort all the books by the name of the book books or if it sends date then you have to sort
+16:02 by the date of the book at what date that book was created now in the
+16:08 transformation pipeline let's say uh this request went through the validation and client did not send any query
+16:14 parameters it just send CL books that is the URL it did not send any query
+16:20 parameters in the validation pipeline it goes through because you have made all the query parameters optional as a good
+16:26 pattern so the validation pipeline succeeds you don't get any errors you don't send any 400 bad request errors to
+16:33 your client it goes through now it reaches your transformation pipeline now you want to uh make it convenient for
+16:40 your database layer to process the data and that is the reason in the transformation pattern what you can do
+16:47 if the client has not sent any query parameters you can set defaults you can set defaults here which means in the
+16:55 transformation pipeline what you will do you will check if there is if there are
+17:00 no query parameters passed you set the value of sort as dat or depending on the
+17:08 requirements you can also set it to name that's why we use transformation pipeline so that we can do a couple of
+17:14 operations on the data that we have received from the client before it goes to the database layer or before it goes
+17:21 to the service layer so that we can make it more intuitive and more uh convenient
+17:28 for our down stream layers to process the data in a more expected way let's say we did not pass anything then the
+17:34 service layer has to check if the S field is passed or not if it not passed
+17:40 then do this if it is passed then do this then we have a condition Branch there so a lot of inconvenience but
+17:47 still doing this makes your code a lot more readable it makes your code follow an expected path of processing that's
+17:55 why we have validation and transformation byeline we won't go too deep into this we have already covered about this in the previous video that's
+18:00 the second thing your Handler does now you have taken out the request object
+18:06 the request information from the request object then we have validated the data you have transformed the data according
+18:13 to your convenience now you have a solid data format that is ready to get
+18:19 processed that is ready to get processed by your Downstream layers now at this point what happens the controller layer
+18:27 controller layer calls the service layer with all the data that it has properly
+18:34 validated and transformed it passes that data to the service layer and all the
+18:39 information that the service layer might need to process the data for example the authentication information like user ID
+18:46 the user permissions etc etc pass all those data and then the service layer starts processing now what happens in
+18:53 the service layer now the service layer ideally should not deal with any kind of
+19:01 HTTP related stuff we try to limit all the HTTP related stuff in the controller
+19:07 layer for good reasons that we'll explore a a little bit later now the service layer is just a function you can
+19:14 think of service layer just a just a function that has nothing to do with any
+19:20 kind of backend frontend interaction or such if you take a look at your service
+19:25 method then from one look you should not not be able to tell that this is a
+19:31 function that is being used in an API that is a good pattern to follow your service layer should be in isolated
+19:38 manner should be doing all the processing and then returning the data it should take some data process it and
+19:45 returns and data without worrying about what Response Code to return to the
+19:50 client what kind of data it is receiving should the validation etc etc you should not have to worry about all those stuff
+19:57 that is the responsibility of the Handler layer that's where we draw the line the responsibility line okay now
+20:04 what happens in the service layer it takes all the data that is needed to process uh that is needed to do all the
+20:11 operations that we want to do then what it does it calls the repository method
+20:16 for your database operations if that is needed there are of course service methods for example if this service is
+20:23 only supposed to send an email to some client or to some user then what does in
+20:29 the data it might be receiving the email address and it takes that email address
+20:35 it executes the logic which sends the email to the client and it then returns
+20:41 a response that looks something like this success is true to your Handler
+20:47 back it can also do something like this without calling the repository method we also have services like this or if it
+20:53 needs to deal with databases whether it needs to persist some data or whether it needs to fet some data from the database
+21:01 then it uses the repository layer for that kind of information now at this
+21:07 point what happens we have the repository we have the repository layer
+21:13 or the database layer depending on what terminology that you and your team is using the r again takes the data
+21:20 whatever data that needs to be inserted or whatever data that needs to be
+21:25 fetched now all the requirements of the data for example we received the parameter sort from Upstream from
+21:32 our Handler which either has a value name or has a value date it takes the
+21:37 data service layer takes the data from the Handler and it passes the data to the repository layer and the repository
+21:43 layer takes the data and it construct the database query the sole
+21:48 responsibility of repository layer is it takes whatever the data that has to be inserted or it takes all the filtering
+21:54 data the Sorting data whatever data that is needed to fetch dat from database
+22:00 takes all the data it constructs the database query and it returns whatever the result that was return return by the
+22:07 database it has a single responsibility take some data performs a database
+22:12 operation returns it again the requirement is one repository method
+22:17 should only return one kind of data which means let's say uh you have two repository methods one for getting all
+22:24 books and one for getting a single book then ideally you should not pass an
+22:31 optional parameter in the same function and depending on the optional parameter you should not return a single book or
+22:37 you should not return all books you should not do that repository methods have a single responsibility if that
+22:43 repository method uh needs to return all books then it should return all books
+22:48 and if needs to return a single book then it needs to take the idea of that book and it needs to return the single
+22:54 book that's how you should design your repository methods so that the service
+22:60 layer we have the service layer here the service layer has also service layer
+23:05 also has the responsibility to orchestrate which means it can take the different different data that is
+23:12 returned by the different different repository methods and it can like merge those data take the necessary fields for
+23:18 different different results and it can return that data to the Handler okay that's the responsibility of the service
+23:24 layer a service layer can use multiple repository methods it can do different
+23:29 different operations to merge different types of data from the database and ET ET a service layer can do a lot of
+23:34 things inside this a one service method but a repository method should do a
+23:40 single thing is fetch some data depending on the requirements or insert some data depending on the requirement
+23:45 or delete some data depending on the requirement okay and service layer orchestrates different different
+23:50 repository method or it does external API calling it sends notification it
+23:55 sends like an email to your user Etc ET it does everything that an API needs to
+24:01 do all the actual processing of the API happens in the service layer handlers
+24:08 deal with data formats the input data formats the output data formats the actual processing happens in the service
+24:15 layer all the database calls happens in the repository layer that's how we
+24:20 isolate the three layers okay now the service layer called the repository layer for fetching all the books
+24:27 depending on the S parameter it got the response from the repository layer and it returned that
+24:33 response to our Handler or to our controller and we are back from the
+24:38 service layer the controller layer called the service layer and it returned
+24:44 the data the service layer returned data and now we are back at the controller layer okay now what all happened one we
+24:51 did The Binding of the data from the request in the controller layer we did validations and transformation s okay
+25:00 third thing what did did call service layer which did the actual processing of the data fourth we got the data what the
+25:09 next thing to do send response to the client so as you can see the controller
+25:15 layer actually controls the data flow from client to server from server to
+25:22 client it got the data it did some validation transformation processed the data and now it will send the response
+25:28 an appropriate response back to our user back to the client and depending on the
+25:33 success or failure of the service method whether we were able to process the data
+25:39 or not the controller layer decides on a appropriate response code it can be 200
+25:45 codes uh it can be 200 2011 204 depending on the success it can be any
+25:51 of the 200 series codes or if there was a failure then it can also be 400 if it
+25:58 is a class failure it will be 400 if it is a server failure it can also be 500
+26:03 and it is the responsibility of the controller layer to decide an appropriate response code and send an
+26:09 appropriate error message if it was an error or send an appropriate success
+26:14 message with the success data in this case it it will return all the books an
+26:19 array of books with a response code of 200 because it it was successfully able
+26:26 to fetch all the books and then it will send the data back to the client that's
+26:32 how the request life cycle looks for a single API call and that's how handlers
+26:38 SL controllers services and repositories integrate or cooperate with each other
+26:45 to process data from a client and send an appropriate response back that's how
+26:50 we that's how cut next up we have middleware in the same context now where
+26:56 do middleware come in in this whole picture of a request life cycle now
+27:02 let's do the whole request life cycle again but this time we'll use middle ver and we'll understand how middle W work
+27:08 and where do they actually come in okay we have a client let's not imagine
+27:13 client now let's say we get the request from a client now the moment we get a
+27:20 request the moment the request uh reaches our entry point the moment the operating system forwards our request to
+27:27 the entry point our server from that moment on we can have different
+27:33 different functions different different functions in between like let's imagine these are
+27:40 break points these are boundaries of different different functions and we can have this function then somewhere we can
+27:46 have our routing route matching stuff where we forward a particular API call
+27:52 depending on which route it wants to go we can have routing here then again
+27:59 after routing we can also have middle wees here right these are just different different boundaries here then we'll
+28:06 have our Handler service repository access then after this also we can have
+28:13 middle here until the response is sent back to the client now let's imagine
+28:20 What's Happening Here what are these boundaries okay we have this boundaries
+28:25 we we are already familiar about this part we are doing a routing here and this part we that we just saw that the
+28:32 Handler takes the request it takes out the unnecessary data it does validation transformation it calls the service
+28:39 layer service layer does the processing by using the repository layer for database operations then it sends the
+28:45 response back then the Handler sends the response back to the client we already understood this part and this part now
+28:52 what are these things what are these functions that are coming in between we
+28:57 call these functions middle ver and from the name you can take some meaning out
+29:03 of it that these functions are supposed to be executed somewhere in the middle
+29:09 somewhere in the middle of what in the middle of these things in the middle of routing in the middle of Handler
+29:16 services and repositories and in the middle of sending the response back to the client these functions are executed
+29:22 in the middle boundaries of different different execution environments or
+29:27 different different exec context that's why they are called middlewares now why
+29:33 do we use them what do they actually do middlewares also like normal handlers
+29:39 that we have already discussed that an Handler typically a Handler receives two
+29:45 things a request and a response by default in its parameters which is
+29:52 provided by our programming language or our framework or our library whatever
+29:57 that we are using using to build our server these two objects request object and the response object that is provided
+30:06 to the Handler by default by the runtime environment in case of middlewares also
+30:12 since these are also one kind of handlers but with a one additional
+30:18 capability these also get a request these also get a response object but
+30:23 these also get another thing called next next is a function and we'll come back
+30:29 to next soon these are the three things a typical middleware gets by default
+30:35 from the runtime from the language run time it gets three things one the request object one the response object
+30:41 to modifying the response and stuff and one is the next function and the use of next function is we have these
+30:48 boundaries that we saw that there can be one middleware there can be another middleware and then there is the routing
+30:54 then there is the multiple middle here or there cannot be a middle from the routing we can straight up go to Handler
+31:02 right we can also skip these middlewares all the middle Wares are optional that's
+31:07 something you have to keep in mind middlewares are optional functions that depending on your requirement that you
+31:12 can Implement that you can execute these things may be there and they may not be there okay depending on your requirement
+31:20 middlewares receive three objects which are request response and next next is a
+31:25 function which is basically passes the the execution from one middleware to the next middleware to cross this boundary
+31:33 from one middleware to next middleware the runtime gives us one function called Next and as the name sounds we are just
+31:40 proceeding to the next mid l or the next execution function we cannot always say
+31:46 the next middleware because if we focus on this execution this is going from one
+31:52 middleware to our routing or if you focus on here this going from one
+31:57 middleware to our handl that's why next function passes the execution to the next context whatever context next is
+32:06 supposed to process the request or is supposed to process the response next function call that okay that's the use
+32:14 of next function it just passes the execution to the next processing context that's all about next okay now since a
+32:23 middleware receives a request object and a response object you can already imagine that a middleware can take out
+32:32 values from your request and it can send a response back to the client from this
+32:37 point only the request may not reach our routing part the request may not reach
+32:43 after the routing algorithm and it may not reach to the handlers Which is far ahead in the request life cycle this
+32:50 middleware can do some logic and it can send a response back to the client from this point on so okay because it
+32:58 receives a response object from the runtime that is the capability of a
+33:03 middleware it can take values out from request it can modify the values of the request and it can also send back a
+33:10 response to the client that's the capabilities of a middleware now why do we use middlewares okay why not do
+33:18 everything in the handlers only why do we use different different things now
+33:23 the obvious answer is because the same reason we use functions why do we use functions so that we don't have to write
+33:30 the same set of lines the same set of lines of execution all the time in
+33:37 different different places we can just write those few lines in one function we
+33:43 can pack that in in one environment then we can call that function again and again in different different places
+33:50 depending on our requirement you can pass different different parameter to it and change the order of the execution or
+33:57 the uh result of the execution but we can reuse that code in different different places that's the reason we
+34:03 use functions in programming same way we use middleware so that we can do some
+34:09 logic in our whole API request life cycle again and again in different
+34:15 different request so as a backend application your app receives thousands
+34:21 or depending on the scale depending on the popularity of your platform it might
+34:26 be receiving thousands and millions and billions of requests every day and because of that you have to do some kind
+34:32 of common operations you have to do some kind of uh security operations logging operations and authentication operations
+34:39 and data passing operations for all those requests now you also as a huge
+34:45 backend application you also have hundreds and sometimes thousands of API end points now for each API endpoint you
+34:52 will have handlers there is no way avoiding that you have to write different different handlers for different different API points that is
+34:59 there now if we don't have middlewares we have to perform the same set of
+35:05 operations for each Handler we have to duplicate that code for each Handler and
+35:11 at this point you might also say that we can write a function and we can call that function in every Handler you can
+35:18 do that but this that is still some kind of duplication that you have to call that function in every Handler that is
+35:26 the reason to minimize that code duplication to minimize that redundancy
+35:31 we delegate the responsibility of dealing with some common operations
+35:36 whether it is security whether it is logging whether it is Data passing whether it is compression all these
+35:42 different different common operations we delegate those parts to a different component of our request life cycle and
+35:49 we call that middleware functions middleware functions because they will be placed in the middle before it
+35:55 reaches the appropriate component before it reaches the Handler and they will do these common operations
+36:01 and depending on the result of those operations it can they can even send a response back to the client before that
+36:07 request reaches our handlers so that we don't waste our precious server
+36:12 resources that's I use middleware number one uh requirement being to reduce code
+36:19 duplication now the second thing to keep in mind is the order of middleware is
+36:24 important this order is important because as a request from our client
+36:29 reaches here at the enter point and starting from this every middleware using next function passes the execution
+36:36 to the next middleware okay it passes this to the next middleware then it passes to routing then routing passes
+36:41 the execution to the next middleware then then then then then then until a
+36:47 response is sent back to the client this all happens using the next MW can use
+36:52 next function to pass the execution to the next middle if there is one this order of passing the execution to all
+36:59 the different different middle is important that's how our request will be processed the order is important now
+37:06 these are some examples where we use middleware typically in a backend application for let's say security
+37:13 purpose security purpose can be let's say we have different different materials let's say we have course then
+37:19 we have security headers to add security headers
+37:24 then we have authentication middleware then we have rate limit let's see what each of these middlewares
+37:30 do then we'll understand why they are a middleware instead of a common function we have already understood course uh
+37:36 course U is basically a security mechanism a privacy mechanism followed by the browsers which states that your
+37:44 application that is running in the browser cannot access resources outside
+37:50 of your own origin which means if you have domain example.com then you can only access resources from example.com
+37:58 that is a restriction browser poses on you as a client now to um bypass that
+38:04 not bypass necessarily but if the resource the remote resource sends a header remote resource sends an
+38:10 appropriate header which says that your client is allowed to access the
+38:16 resources from this server in that case the browser won't block the response
+38:22 won't block that request that's why we have course so that we can limit what
+38:27 kind of clients at least web apps can communicate with our servers okay now on
+38:33 the server side what happens is your server gets the request from the client
+38:38 and it has to check the origin of the request where it is coming from that is automatically given to us by our runtime
+38:46 we receive an origin value from where the request is coming from and depending
+38:52 on the origin value and depending on what are the origins that we are
+38:57 allowing to communicate with us we can set some headers if it is an allowed
+39:03 origin that is if it is the front end domain that is our frontend platform
+39:09 that is trying to communicate with our backend platform if that condition is true if it is our frontend platform in
+39:15 that case we want to add the appropriate headers we have covered this whole
+39:20 workflow in our HTTP video right in the back end from first principles uh playlist that you can watch to
+39:27 understand how the course flow works we don't want to go too deep into this since it is about a different topic now
+39:33 you want to add this particular headers that will tell the browsers that it is
+39:39 allowed this request should be allowed in the same origin policy now we want
+39:44 that to happen if the origin matches our frontend origin if that condition passes through we and want to add those headers
+39:51 and then we want to pass that on to the next middleware as we have already seen as we have already seen here each
+39:57 middleware does something and passes that request to the next middleware or it can send the response back to the
+40:02 client at this point in the course middleware what happens it gets the
+40:07 request it takes out the origin It checks if it is our front end domain if it is our front end domain it adds some
+40:15 headers to our response to our response object it adds our some response headers
+40:20 that there is the allowed Origins and Etc then it passes that to the next
+40:26 execution environment or for the next middleware okay if it does not match then we don't add any headers and the
+40:33 browser will block the request by default when we send the response back to the client okay now the question is
+40:39 why did we make this as a middleware because this is a function that needs to
+40:44 happen that needs to get executed for each API call that our server will
+40:52 receive that is the first requirement we want to reduce the code duplication it needs to deal with the request object or
+40:58 the response object in this case it it deals with both it takes the origin out of the request it modifies the response
+41:05 headers that is a second requirement there is some code that needs to run for each request and it needs to deal with
+41:10 the request and response object that's why me made this a middleware so that we don't have to do this for each Handler
+41:18 okay this is the perfect requirement for a middleware that's why course is usually implemented in the middleware
+41:25 layer not in the Handler layer okay similarly we have security headers from
+41:30 the server we can set different different security headers for example content security policy etc etc and we
+41:37 want to set that for each API call that we receive that's why we also made this
+41:43 a middleware it gets the request it adds the appropriate security headers and it forwards that to the next middleware
+41:50 similarly we have authentication we make authentication as a middleware because we don't want to
+41:56 duplicate the function of getting the token uh usually when we authenticate we
+42:01 take the token if you have seen the authentication authorization video in the pack in from first principles
+42:07 playlist then you'll understand this usually in authentication we take some kind of token can be JW it can be S ID
+42:14 Etc from the request object and from the headers or from the payload or whatever
+42:20 your implementation is we do some kind of logic to verify whether it is proper
+42:26 credentials or not whether it is a proper token or not depending on the success or failure of that if it is a
+42:33 failure then we send a 401 unauthorized error code to the client right from here
+42:40 without going to our Handler layers without forwarding the request to the next middleware we immediately send an
+42:48 error code back to the client and we terminate the request right there or if it was a success what we do we
+42:54 authenticate we take out whatever details is is needed for example the user ID or the permission or the role of
+43:03 the user whether the user is admin or not etc etc we take this we add this to
+43:09 our request context and that's the reason the request context is our next topic of discussion we add this
+43:16 information to our request context and we forward it to our next middleware we don't um send the response back to the
+43:22 client immediately that we do only in case of failures that's the reason we
+43:28 make authentication as a middleware so that for each request and for each
+43:33 request it verifies the credentials or the token and accordingly it terminates
+43:38 the execution or it passes the execution with the appropriate metadata like user ID and user role to the next middleware
+43:46 similarly rate limits rate limits we Implement so that one client cannot do a
+43:51 lot of request in a short amount of time we pred decide a reasonable number
+43:57 request that a client can send in a particular period and we add a
+44:03 middleware which checks that we do that with IP addresses we check that whether
+44:09 this IP address has made more than 30 API calls in the last 2 seconds something like that we decide the
+44:15 threshold ourselves we decide the thresholds of the time and what time period we want to check we also decide
+44:22 the threshold of the API calls whether it is 30 API calls whether it is 500 API calls etc etc and according to that we
+44:28 Implement our rate limit if the client exceeds the limit what we do we send an error code of
+44:35 429 which basically we send when there are too many requests from the client we send an error code of 4 to9 back to the
+44:42 client saying there are too many rquest in the short period of time if the client has not exceeded the limits then
+44:48 we pass the execution to the next middle a using the next function okay that's
+44:54 how that's some of the examples of the security medal similarly we have logging middlewares and monitoring logging
+44:60 middlewares logging and monitoring middlewares which basically every time we get an HTTP request let's say we got
+45:06 got a get request okay we can do some kind of logging in our server uh in our terminal or whether a log file so that
+45:15 we can later on it helps us debug information it helps us in reports ET
+45:21 Etc to track different different parameters for each request this middleware gets different different
+45:27 parameters out of that request for example what is the path we are trying to access which is users uh what is the
+45:33 request method which is get what are the query parameters what is the request board ET we can log a lot of information
+45:40 for each request so that it's easier to deug and it's easier to audit and etc
+45:45 etc okay that is the example of logging middle we also have Global error handling and this is very important uh
+45:52 you feel every backend application should some kind of should have some kind of global error handling so that
+45:58 what happens it does not matter uh at what point some error occurs in your
+46:03 application it can happen in the Handler layer it can happen in the service layer or it can happen in any of the
+46:09 middlewares that are executing in between in between different different function boundaries in all these
+46:14 different different execution environments does not matter at what point an error occurs this middle lay
+46:20 can get that error it will get that error uh that generic error whatever happened and from that what it can do it
+46:28 can find out whether this is a client error or not we can Define different different parameters or different
+46:34 different fields inside the errors to indicate whether this error was a client error or this was a server error
+46:40 something went wrong in our server execution depending on that it can send a 400 errors or 500 errors and it can
+46:49 send a properly structured error message which usually has a message or some kind
+46:54 of code so that the front end can render different different uh userfriendly messages depending on the code or the ID
+47:03 sometimes also called ID and the status back to our client so the goal of the global error handling middleware is it
+47:10 takes out an unstructured error from anywhere from our app and since it is a
+47:16 middleware it has access to that and because of the nature of global error handling middleware usually what we do
+47:23 in our middleware life cycle we have different different middleware at different different points right it is the entry point this is the first
+47:29 middleware that happens and this is the last middleware usually what happens we keep the error handling middleware at
+47:35 the last we send a response back to our client because in all these different different executions error might happen
+47:41 in any of these cases so the last middleware can get that it can check whether some error occurred if it did
+47:49 then it can properly structure that error and send a properly structured error message back to the client that's
+47:54 the reason we use error middleware error close Global error handling middleware at the last point of our execution as
+48:01 the last middleware and as I said The Ordering of middleware is important
+48:06 because if you use error middleware somewhere in the middle then if some
+48:11 error happens in our Handler at this point then the error middleware won't have access to that error because the
+48:18 execution of that middleware was happening here but our error occurred somewhere in the here and the request
+48:25 flows this way okay it flows one way we cannot get the error back here that's
+48:32 the reason we should think more about how we are ordering our middlewares now coming back we similarly have
+48:39 compression middle so that uh if you have a large response let's say we have a Json which has thousands and thousands
+48:44 of fields we can use some kind of compression algorithm like G etc etc to
+48:50 compress that response and send the response back typically modern browsers have the capability to decompress that
+48:56 response back to a format that browsers can understand that clients can understand so that during the transit a
+49:04 compressed format is in use but during the client dation process that
+49:10 compressed format is again converted into a proper client form for example a JavaScript project etc etc right we also
+49:18 use middle in case of compression Etc similarly for data passing the process
+49:23 of serialization and deserialization we can also delegate that to a middleware so that we don't have to do that in
+49:29 different different handlers of course that depends on the requirement of your backend on your code base and what are
+49:36 the standards that you use what are the styling standards that you are using but you can also do that you can delegate
+49:43 the validation transformation into a different middleware the data passing The Binding of data the serialization
+49:48 and deserialization data to a different middleware so these are all the examples of how middlewares work and as I said
+49:54 The Ordering of middleware is important that's the reason typically in our rec life cycle the first middleware that
+50:01 gets executed is course because if it is coming from An Origin that is not
+50:07 supposed to have access to your server in that case you want to find out that
+50:12 information at the early stage of your request so that you can terminate the request right here that's the reason
+50:18 course is executed the early face then we usually execute some kind
+50:24 of logging middleware then we have authentication then at the end we have Global error handling as I said The
+50:31 Ordering of middleware is important depending on how you're structuring your
+50:36 application and what are your requirements you should spend some time in thinking at what order these requests
+50:44 has to be modified or at what order the request life cycle should follow to
+50:50 provide a appropriate experience to the client which is making the API call and
+50:55 that's pretty much all about middle now somewhere at this point somewhere at this point we talked about the
+51:02 authentication middleware and how it stores some kind of information like the
+51:07 user ID and the user role in some kind of storage and it passes that to the next middleware uh to the next Handler
+51:14 okay and that part is called a request context is called a request context
+51:20 request context is also something that you will see in a lot of backend
+51:25 applications uh does not whether we are using nodejs or goang or python etc etc
+51:31 every framework every language every Library provides some kind of request context implementation uh request
+51:38 context can be an abstract concept um but it it is also a concrete implementation the implementation logic
+51:45 might vary depending on what language or environment that you're using but this
+51:50 concept kind of Remains the Same across different different languages so what is this concept exactly request concept is
+51:57 basically some kind of storage or some kind of state that is scoped for a
+52:02 particular request that is scoped for a particular request that is limited to a particular request so each request so
+52:10 let's say you have a server you have a client a client across the worlds you have hundreds and thousands of clients
+52:17 and each of them send different different different different requests hundreds and thousands of requests for each client each of these API calls each
+52:25 of this request will will have a context attached to them depending on the
+52:31 implementation of your HTTP server okay each of them will have some kind of context and why do we have this context
+52:39 so that we can have some kind of storage or some kind of state attached which is
+52:46 accessible across our middleware and Handler boundary so as you saw somewhere
+52:52 early here when the request reaches here and until the response is sent back to
+52:57 the client there are different different function boundaries usually we have different different middlewares that are
+53:03 processing here there's a course middleware there's a logging middleware then we have routing then we have
+53:08 authentication middleware then we have some kind of middleware that is limited to the application okay some kind of
+53:14 permission checks then we have the Handler logic then at the end we have Global error handling mod etc etc until
+53:21 response is sent back to the client we have different different middlewares now a context a context is typically some
+53:28 kind of storage usually a key value pair we store some kind of key value pairs
+53:34 inside the context so that this information is accessible by all these
+53:40 different different execution environments it is accessible in all these middlewares now this middleware
+53:45 can set some value in this context now this value will be accessible to this middleware at this point without
+53:53 explicitly passing those values directly with without coupling the system
+53:58 together too closely that's the reason we have some kind of state which is accessible by all these middlewares and
+54:04 all these handlers all of them receive this context this context or also called as a state which is limited to this
+54:12 request and is accessible by all the execution environments all the middlewares all the handlers etc etc
+54:19 okay so that our system is not closely coupled we have this state this is accessible by all of them which is
+54:25 modifiable by all of them some kind of storage for the sake of convenience so
+54:31 in this example what we did in the authentication middleware what we did we verified the credentials of the user if
+54:38 it was a login attempt it was the first time the user was logging in we verified
+54:44 the credentials the email and the password and and if it was successful we
+54:50 created a user if it was an already existing user we took out the user ID
+54:56 and we also took out the role the role can be user or admin or sales any role
+55:04 right depending on your RB implementation we have already discussed RB in our authentication and authorization video from there you can
+55:12 uh understand what are roles and why do use them and also about different different authentication methods okay so
+55:18 we have some kind of authentication mechanism and using which after the authentication is successful we have
+55:24 different different information you have the ID of the user for our platform we have the role of the user whether it is
+55:30 a user it is admin Etc have a sales or different permissions whether the user
+55:36 has read permission for the resource whether it is a write permission etc etc all this metadata about the request and
+55:44 it is only limited to this request this particular HTTP request this will be
+55:50 store in the context so that let's say your authentication middleware set these
+55:56 values in inside the context so later on Downstream your handlers your handlers
+56:02 which is going to insert so it is a API which is a post API to the slash books
+56:09 endpoint so what your Handler can do somewhere Upstream your authentication
+56:14 middleware uh verified the credentials of the user verified the token of the user and it found out these information
+56:21 and it saved those information in the request context now what happens in the Handler
+56:27 when the execution reaches your Handler the Handler can take out this information the user ID the user role
+56:34 etc etc and what it can do it want to insert a book it want to
+56:40 insert a book into the database so a book table might have a field called user ID so instead of taking the value
+56:48 of user ID from the client from the user payload instead of doing that what we do
+56:54 we take the user ID from the authentic ation information from the result of the
+56:59 successful authentication we can take out who is the user that is making this API call and that's how we take the user
+57:07 ID and we insert that into the database and why do we do this because if we take the user ID from the client a client
+57:14 with a malicious intent client with a malicious intent can send the user ID of
+57:19 some other user to do unexpected operations in our server that's the reason when we want to access the user
+57:26 ID we want to store or when we want to check different different user related information we take that information out
+57:31 of the authentication middleware we save that into a context and in the downstream methods in the handlers and
+57:38 in the next middlewares we take that user ID and we perform different different permission checks in the
+57:44 database layer or in different different RB layers depending on that information
+57:49 whether the user has permission to insert a book or not we can take that from this if the user is an user if the
+57:55 user is an admin so all in all a context is just a shared
+58:00 state that is accessible to all the middlewares and handlers so that our system is not closely coupled and we
+58:08 have some kind of state some kind of storage that is limited to one request
+58:13 similarly uh we can use uh the request context to store the request ID so
+58:19 initially somewhere Upstream we can have a middleware which let's say somewhere
+58:25 here we have have a middle a somewhere here where we generate a unique ID let's
+58:30 say a uu ID we generate a uu ID and save that in the context so throughout the
+58:36 execution of this request life cycle we use this particular ID we take that out
+58:41 from our context and we use that in different different information we can log the ID here and we can use the ID to
+58:49 make API calls to different different uh Services let's say it's a microservice architecture so we can take that ID and
+58:56 we can call that API with this ID in somewhere in the header let's say x request ID or
+59:02 something like that so that when we are auditing our logs or when we are reviewing our logs when we are debugging
+59:09 something we can trace the request where it started from which service it started
+59:14 from all all the services that it called etc etc right and we can do that because
+59:21 we have a shared state which is called request context where we can save information for that request
+59:27 okay that is another example of when we use request context request context we
+59:32 also use to send cancellation signals and abort signals and deadlines to our
+59:38 Downstream external services so that our service does not hang up
+59:44 perpetually these are all the use cases of request contexts that we typically have in a backin server so that's all
+59:52 about uh handlers Services repositories middlewares and request context
