@@ -1,0 +1,1152 @@
+00:00 API design is something that as a backend engineer you will spend a lot of
+00:05 time working on and thinking about and it is one of the most important videos
+00:11 in this playlist and in this video we are going to talk a lot about uh
+00:17 designing apis a lot of Concepts surrounding uh apis in general and we'll
+00:23 be mostly focusing on rest API there are different technologies that people use
+00:29 to build API uh we have RPC calls and we have graphql
+00:36 etc etc so in this one we are going to only focus on rest API one of the most
+00:42 used API standards now the problem with API design is we have all these
+00:49 resources and we also have this common standard which is called a rest API or
+00:55 restful API standard and years of research and many many developers
+01:01 particularly backend Engineers experience over the years and but still
+01:06 even now when someone who is learning backend or in the early stages of their
+01:12 journey into backend engineering they still get confused by certain questions
+01:17 questions like should the URI path segment be plural or singular or when
+01:24 updating a resource should you call patch or should you call put right
+01:29 different different http methods and also if it's a non- crud operation
+01:35 meaning if it's not a fetch operation or create operation or an update operation or a delete operation it's it's a custom
+01:42 action something that you want the server to perform it's called an action
+01:48 call so which method should you use since it it sounds like update should
+01:53 you go with patch orput or since it's creating something should you post etc etc like questions like these and also
+02:01 what uh HTTP status code to use for different different scenarios a lot of
+02:07 questions like this even now we still get confused about all these questions and the reason is when people were
+02:14 developing these standards uh these widespread HTTP API standards the state
+02:21 of the internet and the state of the web and the state of the clients and the
+02:26 state of the servers were very different from what we have today and and previously when these standards were
+02:33 being developed we were heavily using MPS also known as uh multi-page
+02:40 applications and these days if you uh are aware of the front end side of the
+02:46 ecosystem then we heavily make use of single page applications know where in
+02:52 the first API call the browser makes a request and downloads all the JavaScript that is required required and it
+03:00 performs all the routing on the client side using the browser's path and URL
+03:05 etc etc it's a completely client side a client heavy application now the purpose
+03:12 of this video uh is to standardize not to create new standards but as the
+03:18 standards already exist to extract certain rules and guidelines from this
+03:24 existing standards we aim to stick to these guidelines to make it as convenient as possible possible for
+03:31 everyone to follow A single standard and a consistent styling pattern when
+03:37 designing apis know designing apis designing payloads and documentation etc
+03:43 etc everything surrounding API design this way we won't have to question these
+03:49 issues anymore these common issues that backend Engineers face in day-to-day lives we can simply move forward with
+03:56 our development now we already have this standard in place and by sticking to
+04:02 them we can focus on our business logic instead of worrying about whether our API is restful or not or whether we are
+04:08 following the latest industry standards or not etc etc so in this video we will explore API design from end to end
+04:14 starting from how to design your resources how to design your routes how to return success responses how to
+04:20 return error responses which status code to use what kind of data to accept and much much more essentially everything
+04:27 related to API design so that we can concentrate on our business logic after
+04:32 this video we can move on from standards and we'll get into execution phase now
+04:38 before we start about the technical stuff the actual API designing part
+04:44 let's talk a little bit about the history of where we are coming from and
+04:49 why we are talking about it so that we have a little more context so in 1990
+04:56 Tim berners Le started a project called the worldwide web to share knowledge
+05:02 with the whole world that was the initial motivation for starting what we
+05:07 call as Internet today and this project was built to facilitate the sharing of
+05:13 knowledge and information globally and with that goal team mesly within a year
+05:20 or so invented all these different concepts or Technologies first one URI
+05:27 what we call as uniform resource identifier second one HTTP the HTTP
+05:33 protocol that uh we use underneath to communicate between client
+05:39 and servers we have already covered how HTTP works and etc etc in previous video so you can check that out third HTML
+05:47 HTML is basically the markup language which we use to construct web pages what
+05:54 you can call is the skeleton of a page fourth the first web server fifth the
+06:02 first web browser and sixth the first what you see is what you get editor an
+06:12 HTML editor which was built directly into the browser now he built all these
+06:18 things which we still use today by the way and we use the advanced and the more
+06:26 developed version of all these Technologies we still use Uris we still use make use of HTTP protocols now uh it
+06:34 started with HTTP 1.1 then now we have HTTP 2.0 and 3.0 etc etc we still make
+06:41 use of HTML right we still use HTML we have a lot of different types of web servers
+06:47 these days we have a lot of different types of browsers these days etc etc and we also have the browsers uh in built
+06:54 HTML editor right so he invented and he came up with all these new technologies
+06:60 and Concepts within an year or so but soon now the problem arises the problem
+07:07 was the project which was known as the
+07:12 worldwide web was headed towards breakdown because of the exponential growth of its user base within a short
+07:19 period of time a lot of users a lot of people started using this new technology
+07:25 which is known as the worldwide web and the Creator uh Team Bal Le he had not
+07:30 accounted for all this uh scale all this number of users when he was building the
+07:37 project this was not accounted for so to scale the web to accommodate this large
+07:43 user base new techniques standards and components had to be introduced the
+07:49 previous one the all the mindsets and all the Technologies and all the
+07:55 planning that went behind creating or coming up with all these Technologies was not enough to scale the web to
+08:03 account for the huge user base that it was acquiring every day it was scaling
+08:08 exponentially now at this point we have one other major contributor to the
+08:14 project web so around 1993 Roy Fielding the co-founder of the
+08:20 Apache HTTP server project became concerned about the web scalability problem that we just talked about the
+08:27 web was not ready to accommodate this large user base the thousands and
+08:33 thousands of users and people that were using the worldwide web project every day to address this issue uh and make
+08:41 the worldwide web more scalable he proposed a couple of constraints that could help achieve the
+08:48 goal and these constraints are number one client server which we still follow
+08:54 by the way the client server model this constraint basically emphasizes the separation of con concerns between the
+09:00 client and the server the client handles all the user interface the user
+09:07 experience while the server manages data storage and business logic which we also
+09:12 call as the front end and back end this separation allows each component to
+09:18 evolve independently and to improve scalability that's the first constraint
+09:24 the second constraint is uniform interface this constraint simplifies the
+09:29 overall system architecture by establishing a standardized way a
+09:35 standardized way of components different different components that the web
+09:40 comprises of to communicate with each other it also includes uh four subc
+09:46 constraints which are called resource identification resource manipulation
+09:52 through representation self-descriptive messages and Hyper media as the engine of
+09:57 application State we have also sub constraints under this one the uniform interface the philosophy of uniform
+10:03 interface the uniformity provides a consistent interface across all the services third one layered system now
+10:11 this says that the architecture composed of hierarchical layers and each layer
+10:17 can only see and interact with the immediate layer below it and this allows
+10:22 for better scalability security and the ability to add intermediate components like load balancers and prox servers Etc
+10:31 which we use today to scale our web applications to cater to millions of
+10:37 users right and and this happens without affecting the system's core functionality now fourth cach cach uh
+10:46 responses from the server must be explicitly labeled as the cachable or non-cashable that's what this constraint
+10:53 says the server should label different different responses as whether it should be cached or not by the client and when
+11:01 the clients need they can cash the responses which helps reduce the server
+11:08 load uh improve Network efficiency and enhance the user experience by providing faster response times now fifth one is
+11:17 stateless now stateless we have already covered in a much more depth in the
+11:23 previous video I think it was the HTTP video uh this basically means that each request from the client to the server
+11:31 must contain all the information necessary to understand the and process the request the server basically will
+11:38 not remember what your previous request was about with each request you have to include all the information necessary uh
+11:46 so that the server can identify you and the server can take your data understand it and process it that's what stateless
+11:53 means and the server does not store any client context between requests and this
+11:59 in turn improves reliability scalability and visibility since any server can
+12:05 handle the request let's say you are scaling your web application and you
+12:10 have added two more servers and there is a load balancer in between which forwards your traffic depending on
+12:16 different different algorithm like round robin etc etc and because of this stateless constraint all the servers can
+12:25 process request from the same client because of the statelessness nature of
+12:31 the web because all the requests consist all the information that the server needs to process the data and the sixth
+12:39 one which is code on demand this is an optional one uh which means that servers
+12:46 can temporarily extend client functionality by transferring executable code like JavaScript to the client and
+12:53 this is only an optional constraint in rest architecture because it provides flexibility to add client side
+13:00 functionality when we need it uh while maintaining other constraints and etc etc this is not something you will see
+13:07 getting used heavily these six are basically all the constraints that Roy
+13:13 Fielding came up with to solve the problem of scalability in web and later
+13:19 on Fielding worked with Team Berner Le and both of them together worked to
+13:26 increase the scalability of web and and to standardize their designs and
+13:32 together they wrote a specification for the new version of HTTP which we today
+13:39 know as HTTP 1.1 the first major version the first standard version of the HTTP
+13:46 protocol and then in the year 2000 after the scalability crisis of web was avered
+13:54 Fielding Roy Fielding named and described the web's architecture style
+14:00 in his PhD dissertation and it was called as rest representational State
+14:07 transfer which was Roy fielding's PhD dissertation that was the name that Fielding gave to his description of the
+14:15 web architectural style and which today we know as rest apis and if you go and
+14:23 search Roy Fielding rest paper you can directly open this and and read the
+14:31 first document that was written about Rest apis by ra fielding and you can get
+14:38 more insight more context and what uh LED them to come up with all these
+14:43 patterns come up with all these Concepts etc etc right it is a must read if you are a backend engineer reading this
+14:49 gives you a lot of context about where all these Technologies originated from
+14:55 all these Technologies patterns standards that we have today okay great
+15:00 now that brings us to why is it called a rest API what does it actually mean if
+15:08 you read the paper that was uh written by Roy Fielding you'll definitely get the idea why was he calling it rest
+15:16 architecture or restful architecture or rest API but if you want to make it
+15:22 brief why the name rest why the name representational State transfer then we
+15:28 can up with some points number one is
+15:34 representational the first part of this name r which means representation this
+15:40 basically means that resources on the internet resources on the web which
+15:45 means data or objects are represented in a specific format they have a specific
+15:53 representation depending on the specific servers and specific clients and these
+15:58 representations can be in various formats it can be in Json that is the most popular uh
+16:05 representation format that we have these days but we also have
+16:10 XML and we also have HTML so different different representations depending on
+16:17 different different context for example a server to server communication will depend on the Json based representation
+16:24 while a server to client based communication depend on the HTML ml
+16:29 based communication right that's what representation means when we are talking
+16:35 about web's architecture the rest API architecture the same resource can have
+16:40 different representation based on the client's needs so a user for example
+16:46 let's say we have a user resource which might have different different fields an ID field a name field a created at field
+16:56 etc etc so let's say we have a user resource a database resource let's
+17:03 assume so a user resource this can have different different representation
+17:09 depending on different different clients let's say this can be represented as a Json right for an API client let's say
+17:16 another server is making a request to get this object or get this resource then this can have a Json based
+17:22 representation but if we want to send some uh UI data to the browser then we
+17:30 can represent this as an HTML document or as some kind of HTML representation
+17:35 right for the client which is a web browser so that's what we mean by representational in the restful
+17:42 architecture coming back to the second part state representational state transfer so what do we mean by state
+17:49 here State basically refers to the current condition or attributes of a
+17:55 particular resource the current property of a resource the state of the resource
+17:60 and each resource let's say we had a user resource here so each resource has
+18:06 a state that can be transferred between client and server and the state is
+18:12 driven by the resource representation so taking an example let's say we have a uh
+18:18 e-commerce site let's say we have Amazon we have Amazon and we have a shopping
+18:24 cart in the cart we have a couple of items so a shopping cart State includes
+18:30 all the items the quantities of the items and the total price so that we can
+18:37 call as a state of a particular resource of a particular module that we have in
+18:42 our web application that is transferred between a client and a server with each
+18:48 API call and the last part which is transfer representational State transfer
+18:56 the third part talks about transfer what does transfer mean so transfer basically indicates the movement of resource the
+19:03 movement of resource representations between client and server so obviously since we have a client server model the
+19:10 primary intention of that is sending data between client and server and the client and server can exchange different
+19:17 representations of the same resource we have a client here and we have a server
+19:23 here and the transfer of data happens uh through a common standard which is
+19:29 HTTP and we have uh different different methods associated with that which is
+19:36 get post uh put delete patch options head etc etc right we have all these
+19:43 different different uh methods which we use to send data between client and
+19:50 server for example when you get a web page when you uh send a get request to a
+19:55 server for a web page you are transferring a repres presentation from server to client using an common HTTP
+20:04 method which is get so when we combine this when we combine all these three
+20:09 elements uh which is called representational State transfer or also
+20:15 known as rest or restful or rest API this describes an architectural style
+20:22 where one resources are representated in different formats we have different
+20:27 different formats we have J on we have HTML we have XML etc etc first thing is resources have different different
+20:34 formats second the state of these resources can be transferred between
+20:39 server and client client and server first is the format of the resource the second is the state of the resource
+20:46 third clients and servers communicate between each other by sharing these
+20:51 representations of a resource okay the representations can be different but the
+20:57 idea is client and server communicate with each other using these representations and third the system
+21:04 this whole system follows specific constraints specific constraints to make the whole workflow more scalable right
+21:12 which we have already discussed so that's what we mean by restful API or
+21:19 rest architecture that's the history behind uh where and when and how we came
+21:27 up with this whole architecture this whole model of representing resources
+21:32 and transferring resources between client and servers and different different formats etc etc right this is
+21:38 all the theory that you need to understand on a very high level you don't need to remember any of it but
+21:45 this gives you a little bit of context of where and how we came up with all these things and where are we currently
+21:53 let's start with a URL and this is what a typical high level structure of a URL
+22:00 looks like know in any website that we visit this part what we call is the
+22:06 scheme uh whether it can be HTTP or it can be https the secure version the
+22:12 encrypted version then we have the authority or the domain it can also have
+22:18 a subdomain but in this case we have the main domain which is sly. XYZ then we have the resource or the
+22:26 path so this part uh uh is called the resource that we are trying to access
+22:33 and this symbol the forward slash symbol represents a hierarchical relationship
+22:39 between different resources and then we have the query parameters which we use
+22:45 in usually get apis to pass some kind of key value pairs to give more information
+22:53 to server about uh some kind of filters parameters etc etc then we have
+23:01 fragments uh this section usually uh navigates you to a particular section of
+23:08 a web page if this is present in the URL when you first time navigate to a web
+23:13 page if you have a fragment then the browser Scrolls you to that part of the
+23:20 page okay so this is what a typical uh website URL looks like now we since we
+23:27 are talking about apis and best apis starting from this what would a an API
+23:33 URL or an API route will look like so we can start from this we will obviously
+23:40 have the scheme so let's imagine we have the encrypted version the secure version htps then we will have a subdomain so
+23:48 I'm talking about the industri standard right this is not a rule uh this is more of a standard or best practices that
+23:56 most companies follow uh when they are implementing when they're creating their backends so usually it starts with a
+24:03 subdomain of the main with a subdomain of API so API dot let's say example
+24:13 example.com okay this is the subdomain part subdomain part then we have
+24:20 versioning most apis implement or follow some kind of versioning pattern and usually through routes so this will
+24:28 follow something like V1 or V2 etc etc then we reach the path or the resource
+24:36 that we are trying to access so let's imagine it is a it is an API which is
+24:43 like good reads if you are aware of good read it's a platform where there are a
+24:49 lot of books there are a lot of authors and books are associated with authors you can provide your reviews feedbacks
+24:57 etc etc it's a whole community about readers and authors and books Etc if
+25:02 this API is of good RS then an apaa
+25:07 which fetches all the list of books will have something of a structure like this
+25:13 so then we write the name of the resource so book now the first rule is
+25:20 in an API when you're designing a route when you're designing an API in the path
+25:26 segment whatever resource that you you are providing whatever resource your
+25:31 client is trying to access or whatever resource the backend is serving that
+25:36 should always be in the plural form it is a standard that all the resources in
+25:42 your path segment of the URL should be of plural form so ideally it should be books okay then we have this API uh
+25:50 which has the subdomain api. example.com SL we have the versioning here and then
+25:55 we have books this is an API to list all the books to fetch the list of all books
+26:02 similarly we can have another API so let's say we remove this this this let's
+26:10 say we have another AP which fetches a single book so up to this point we have
+26:19 bit constant right uh of course the we can have different different versions of
+26:26 the same API but for the sake of this example let's imagine up to this point
+26:31 we are in the version one only and this part is constant we will have the scheme https then we will have the subdomain
+26:38 api. example.com then we'll have the version in which is the V1 but in the
+26:43 second API we want to fetch the information for a single book so what
+26:48 will the path look like now there is one mistake here which most people do is since we are fetching the information of
+26:55 single book uh people make this as a singular now right they make this slash
+27:02 book or then whatever the book ID etc etc you should not do that because um
+27:08 even though you are fetching the information of a single book but the resource that it is concerned about this
+27:15 resource which is the book resource that is represented as a plural noun when we
+27:22 are dealing with path segments in the URL so even if this is about a single
+27:27 book we have to put we have to make it plural here so it will still be books
+27:34 then we have the ID now uh since we are talking about URLs one thing that you
+27:41 have to uh keep in mind when you're are designing apis are the readability the
+27:47 representation of URLs in browsers or different different client environments couple of things that you have to
+27:54 remember is you should not put spaces or under scores etc etc these characters in
+28:00 a URL whether it can be a uh slug or whether it can be an ID know whatever
+28:08 part that you're dealing with for a route you should not put spaces or
+28:13 underscores in a URL the thumb roll is if you have a phrase which has spaces
+28:19 and you want to put that into the URL let's say uh we have this API and we
+28:25 want to fetch the information of a single book and we want to fet the information using the slug of the book
+28:30 now slug is basically the name or some property of the book let's say the name
+28:38 of this book is Harry Potter the name of this book is Harry Potter now the slug
+28:46 of this book will be a human readable representation of some property of that
+28:54 resource which is ideal to put inside a URL
+28:59 which means first thing that we do to convert this into a slug is we make all
+29:05 of this a small case even though we can put Capital case but because the URL
+29:11 will be traveling to different different environments it will travel to different server environments different client
+29:16 environments different operating system we don't want to mess with the case
+29:22 mismatch etc etc right so first thing that we'll do is we make both of this as
+29:28 smaller is the first change is the part okay this is the first change second
+29:34 every time we have a space we will replace that with a hyphen now we have
+29:40 the final slug which is Harry Potter and now we can put this into a URL so/ book
+29:48 SL Harry Potter one thing that I mentioned a while bag is I said whenever
+29:54 we use this character the forward SL character in a URL uh uh in an API route
+29:59 in a path segment this means there is a hierarchical relationship between these
+30:05 resources so for example this API this says that we have a resource a
+30:12 collection of resource which are called books in our server in our database or
+30:19 wherever your storage is and that is the first level of hierarchy the second
+30:25 level of hierarchy is we want to access one particular resource from that collection of resource that resides in
+30:32 our database or some kind of storage so this is what I meant whenever we use the
+30:40 path segment you have to uh think of this as a hierarchical relationship
+30:45 between different resources okay so I think that's pretty much all the primer about URLs uh that we need to talk about
+30:52 right now we'll of course explore more about how to design your routes in different different apis
+30:58 when we get to the demo part okay so moving on another important concept that
+31:04 we have when we are talking about restas is em potency this is a very important
+31:10 theoretical concept uh of course it has a practical implication but the concept
+31:16 of item potency basically means the property of certain operations in which
+31:22 performing the same action multiple times has the same effect as performing it once
+31:29 which means an action which you have performed using an API call it does not
+31:34 matter how many times you perform that action the effect the side effect the
+31:39 change that happens in that environment Remains the Same it does not matter how
+31:44 many times you perform that action that's what we mean by em potency so in this context in the context uh where we
+31:52 are talking about rest apis item potency basically means it does not matter how
+31:57 many times the client performs a particular request the outcome the
+32:03 result of that request in the server environment Remains the Same so even if
+32:09 I call an API once or I call the API thousand times the outcome of that the
+32:16 result of that should be the same if we call a particular API or a particular
+32:21 action is item poent now as you already know when talking about different different actions that we can perform
+32:28 using API calls we come to the concept of HTTP methods and in the previous
+32:37 video of HTTP we have already discussed this in depth what are the different types of methods how they work what are
+32:43 the properties Etc ET so we have around five major kinds of methods that we use
+32:50 to handle different different data operations okay we have get we have post
+32:56 we have put we have patch and we have delete okay these are the five major
+33:03 methods we have other methods also head and options etc etc which um head is used to patch the headers information
+33:10 and options is used to uh options is used in our course flow to find out
+33:16 whether the origin is allowed or not etc etc right but majorly these are the five
+33:21 kinds of methods that we use for data transfer between clients and servers now relating the concept of emut see two s
+33:29 methods uh gives us a lot of insights into which method should we use in which
+33:35 context okay now the get call which we
+33:40 usually use to fetch some information from the server now this method is used
+33:46 to retrieve data from a server and it is em potent a get method or a get action
+33:53 on a server is considered as item poent because it does not matter how many
+33:59 times you perform a get request you will get the same outcome right let's say we
+34:04 in the previous example we are fetching a list of books we fetching a list of books so it does not matter how many
+34:10 times you call this API you'll get a list of books and now you must be
+34:16 thinking what if uh while you're are making these API calls someone else creates another book and the result
+34:23 changes the response of the API changes in the subsequent calls of the G and and
+34:29 that's true but that is not what we consider when we are talking about item poent item poent basically means from
+34:36 the client using an API call what side effect can you cause in the server and whether that side effect is different
+34:43 with each API call or that remains same during the first API call or the 1,000
+34:49 API call okay now and because of that reason the get call is considered item
+34:55 poent it does not matter how many times you fetch some information you do not make any change with your API call in
+35:02 the server environment okay it is just a fetch operation that's why the get is called an item Buton method similarly
+35:10 the patch method and the put method these two methods that we generally use
+35:16 to update some data in the server to update a particular resource or a part
+35:23 of a resource we use patch when we up we want to update a part of a resource let's say a single single field or two
+35:29 three fields of a resource in the server in that case we use patch we use put when we want to completely replace the
+35:36 representation of resource in the server using the client payload so let's say we
+35:42 have a user object in the server it has ID it has name it has created at etc etc
+35:50 and for an update operation if we want to update the name of the user if you
+35:57 want to use the p method then we can just send the name field with the new
+36:02 value of the name and the server will handle it accordingly it will just update the name but using put method
+36:09 what it does we have to send both the ID the name the created all the fields in
+36:15 that payload so that the server can take that payload and completely replace it
+36:20 with whatever instance of that user object the server has currently now it is true that um most of the time put and
+36:28 Patch is used interchangeably and that is fine that is fine to some extent uh
+36:36 as long as you using your API internally but let's imagine you are building some
+36:42 kind of public API in that case you have to implement your API specs in a way
+36:49 that sticks to the standard as much as it can so that other people other
+36:54 Engineers who want to integrate your API do not get confused because they assume
+36:60 that you are following a standard but you are not so if you are using put when
+37:06 you should be using patch then that gives some kind of wrong assumption and it might be a confusing situation but
+37:13 again it does not cause as much of a harm because obviously from the behavior of the a people can tell whether it is a
+37:21 patch operation happening or I put operation but yes uh you should always try to stick to the standard stick to
+37:28 the semantic standard that the rest a offers so if you want to update a
+37:34 particular resource partially then use patch if you want to completely replace the representation of a resource then
+37:40 use put okay now patch and put are also called as emed because let's say we are
+37:49 updating the name of the user with a new value let's say the previous name of the user was a and we want to replace it
+37:56 with the new payload which is B okay so we make our first API call and we send
+38:04 this payload okay and the name of the user becomes from A to B that's the side
+38:10 effect that we caused using our API in the first API call what happens in the second API call the name of the user is
+38:17 already B but we make the same API call with the same payload now from B it
+38:23 again changes to B okay now that continues it does not matter how many times you all that API it can be
+38:29 thousand it can be million but the result will be same after each operation the state of the user Remains the Same
+38:36 the name is still B you are not causing different side effects with each API
+38:41 call that's the reason patch andp put any kind of update operation with the
+38:46 same payload will obviously be item now we have ruled out get and patch and put
+38:53 as uted methods next up is delete now what do you think delete is whether it
+38:59 is item button or not now imagine again we have this user object uh which has an
+39:05 ID name and created at field and we make a delete API call to the server and we
+39:12 deleted this user this user does not exist that is the result of the first
+39:17 API call what happens in the second API call you make the same request to delete
+39:23 the API uh to delete the user which has the ID as one okay you made the same API
+39:31 call in the first payload with the user ID one and you are making the same API call again with the user ID on you want
+39:38 to delete this user in the second API call since this user is already deleted
+39:43 the server checks your payload it checks whether the user exists or not and it
+39:48 sends you an error that this user does not exist it sends you a 404 error since
+39:54 you are trying to perform some action on an entity which does not exist that's
+39:59 the reason you are getting a 404 error but did you cause any side effect in the second AP go you did not because in the
+40:06 first API call you deleted the user in the second API call nothing really happened the server just checked whether
+40:12 the user exists or not and it send you an error but nothing really changed no
+40:19 state of the entity changed in the server it it had no side effects that's
+40:24 the reason it does not matter how many times you call this delete API call you can call it a million times you'll
+40:30 get the same error million times that this user does not exist you only made
+40:35 the change in the first API call and that's the reason delete is also considered as an item poent method at
+40:42 last we reach post now this is the only
+40:47 method in the HTTP semantics which is considered as a nonm poent method
+40:54 because when we use a post request usually the post request is used when we
+41:01 want to create a new resource or a new entity in the server so taking from our
+41:06 previous example which was a book API if you want to create a new book we want to
+41:13 add a new book to our inventory in that case we'll send the name of the book and
+41:19 some kind of description some kind of um weight Dimensions Etc different
+41:26 different properties of the book and we will take this payload put it in the
+41:31 body and we send this to the server in a post call and the server receives it it
+41:37 takes the payload and it performs some kind of database operation and in it
+41:43 inserts that uh entity into the database it creates a new book now that's that's
+41:50 what happened in the first AP call in the second API call let's imagine you made the same payload with the same name
+41:57 description ion bit Dimensions etc etc you just took the Cur of that request
+42:02 and you executed that Cur again you made the same API call again what happens now
+42:08 there is a chance that um in this API the name has to be
+42:15 unique if that is one condition that your server is following or your database is following then you might get
+42:22 an error which is the name cannot be duplicate ET
+42:28 but for the sake of this example and it for the sake of real world scenario it
+42:34 is often the case that names can be duplicated right multiple books can have the same name right the that's that's
+42:41 the reason we differentiate between different books from their IDs not from
+42:47 the names so that's the reason uh when you make the same API call in the second time what happens the server takes your
+42:54 payload it performs the same operation and it inserts it into the database now you have the second book with the same
+43:00 information right but with a different ID IDs are usually generated at the database level uh whether uu ID or some
+43:08 kind of Serial value 1 2 3 4 ET IDs are generated at the database level that's the reason you can have multiple books
+43:13 with the same kind of properties name description weight Dimensions etc etc but the IDS will be different that's the
+43:19 reason an error does not occur that's the second API call and this is the pattern with each API call you are
+43:26 creating a new book and when you if you call this API a thousand times you'll have a thousand new books now what we
+43:35 discussed what is the property of what is the condition of idency the side effects that you cause in the server
+43:43 should not be different with each request right but it's the opposite
+43:48 happening for the Post calls right with each API call you are creating a new book the side effects are changing and
+43:54 that's the reason post request post methods are are called nonm poent Methods now one more thing about post is
+44:02 whenever we have a noncured operation an operation an action that does not fall
+44:08 under any of the methods that is defined by HTTP spec right it is not a fetch
+44:14 operation it is not an update operation not a create operation not a delete operation it does not fall under any of
+44:20 the methods in that scenario because of the existence of scenarios like these
+44:26 the s spec the rest AP spec has made the post method as open-ended which means
+44:34 whenever you find yourself in a scenario where you cannot put some action
+44:39 some uh action in any of the existing methods then you can put that under the
+44:46 post call in the post method so let's imagine we have an API which uh says we
+44:53 which is like send email okay we have this AP and when we call this we can
+44:60 send an email to a client so let's say the payload the body of this API call
+45:06 looks something like this target is some email address right and when we make
+45:12 this API call the server takes it and extracts the
+45:18 payload the target email and sends the email that is basically the functionality of this API now the point
+45:25 that I'm trying to make here is what HTTP method that you would assign to
+45:30 this action or this API because it say send email but is this a fetch operation
+45:37 it's not right it is some kind of action we want to tell the server that do
+45:42 perform this action whether it is a create operation it's not it's not an update or delete operation either that's
+45:49 the reason it is called a custom action in the HTTP or rest AP terminology so
+45:55 whenever we have scenarios like is whenever we have custom actions the
+46:01 operations or API calls which we cannot categorize under any of the Curr operations those are the situations that
+46:08 we can make use of the post method which is meant to be used for custom actions
+46:14 as for the rest TP specification okay and that's pretty much all about HTTP
+46:20 methods uh when we are talking about rest apis now let's move on to some demo
+46:27 right how exactly do you start with your API design how do you actually design the
+46:34 interface for your API the interface that other clients whether it is server
+46:39 based clients or browser based clients any kind of clients can uh talk to can
+46:45 interact the first thing if you are a backend engineer the first thing before
+46:51 you start coding before you write any of the business Logic the first thing you
+46:56 should do uh while creating an API is designing the interface for the API the interface
+47:03 should be intuitive it should be delightful to use and it should not be
+47:08 vague it should follow most of the standards of uh rest apis and the reason
+47:15 for that is the reason for following standards the reason for
+47:21 following restful standards is to eliminate uh confus usion eliminate
+47:29 assumptions or any kind of human related errors in your whole workflow what that
+47:36 means is let's say you are designing your apis and you did not follow any of
+47:43 the standards and uh whenever you should have used put you used uh post and you
+47:51 used delete operation to perform fetch operation ET ET you messed up the AP
+47:57 interface completely intentionally now as a result someone the consumer whoever
+48:03 that is any engineer who is integrating your API the only way the only way for
+48:09 them to find out all the behavior of your API starting from the successful
+48:15 Behavior and the error behavior and how the payloads are structured how the data
+48:20 is structured and what uh method to call ET the complete API integration workflow
+48:28 for them to figure it out completely they have only two options they have to
+48:33 either read your code if it is open source or it is someone within your
+48:38 organization who has access to your code or they have to try out different methods and see as a result of the
+48:44 deoration if it is expected or not and you can see that that that's a lot of
+48:51 room for error a lot of room for confusions and assumption etc etc now
+48:56 having a common standard and following a particular standard in your workflows
+49:02 especially when you're designing API interfaces gives you and all the consumers of your apis the advantage
+49:09 that they do not have to do any kind of guess work most of the behaviors are
+49:14 already defined in the standard so assuming that assuming the standards are
+49:21 uh at least 80% followed in most cases the the effort and the time to integrate
+49:28 the API decreases a lot when you follow standards and uh there are less bugs
+49:34 there are less confusions and there are less synup calls with the uh whoever is
+49:39 integrating your apas Etc ET because all the uh you have been following all the standards the documentations are in
+49:46 place you have an interactive API uh playground etc etc now there is almost
+49:51 no room for errors or confusions right that is the advantage of following standards following best practices so
+49:58 that the creator of the API and the consumer of the API already have some
+50:04 some kind of knowledge that this API will have these kinds of behaviors and
+50:10 there is no guess for involved there the first thing what is the first thing that you should do as a backend engineer when
+50:16 you are creating an API you should start with is from your UI design interface it
+50:23 could be uh figma or any other kind of software that your designer or your
+50:29 product team uses to build wireframes or uh user stories etc etc now that's the
+50:36 place you should start with when you're designing an API because when you follow the wireframe you have an idea that how
+50:45 the end user not the frontend engineer the engineer F consumer API will
+50:51 interact with it you but you will have an idea that how the end user the users who are going to use your platform are
+50:58 going to interact with data in general so uh usually this is how it works you
+51:05 have your users they interact with your platform the platform is built by your
+51:12 front end engineer and your front-end engineer consumes whatever API that you
+51:17 have built and you in turn interact with different different databases Etc as
+51:22 like you know the DB level so in a way when you look at the W frames the
+51:28 designs of how the users are going to interact with your platform you have a
+51:34 very good understanding of how the user the first level of consumption are
+51:42 related to the last the low level of uh consumption which is the database right
+51:50 and forgetting about all this middlemen that comes into play whenever
+51:55 uh we have the whole SAS platform Etc once you have the clarity on how your
+52:01 users are related to your data and that's an excellent point to start your
+52:08 actual API interface design because at this point you will find out what are
+52:13 the resources so since we are talking about restas the first important concept
+52:19 the first important entity uh that we should cover is resources now the resources are
+52:26 basically any any kind of nouns that you can identify from your wireframes or by
+52:33 talking to your clients by understanding the requirements after you understood
+52:38 all the requirements whether by um from the whether from the wireframes or from
+52:43 talking to different people the product people or client people etc etc once you have the requirements from those
+52:49 requirements whatever noun you can find okay of of course this is an oversimplified uh definition of what are
+52:56 resource in a backend workflow but mostly this rule works this is a kind of
+53:03 a thumb rule so whatever nouns you can find from there are your resources so
+53:10 imagine it is a uh project you are working on a project which is a project
+53:17 management SAS a project management platform okay uh something like uh jira
+53:24 or linear etc etc you working on a product which is similar to J linear
+53:31 which is a project management platform now after going through all the wireframes all the figma designs and
+53:36 after talking to your clients your product people you can analyze your requirements and you can find out some
+53:43 of the nouns that come up in those requirements what could be some of the nouns the obvious ones are since this is
+53:49 a project management platform it will have projects right this is the first noun what is the second noun your users
+53:58 obviously it's a project management platform it will have users users are another noun then you can have
+54:05 organizations users can be part of different different organization so that is another uh resource that you can come
+54:12 up with then each project will have tasks associated with it there is
+54:17 another noun then uh task can be um organized with different different tags
+54:24 so tags are another noun similarly as you can see the pattern once you have
+54:29 analyzed your figma designs you can easily come up with these resources and you can note it down and once you have
+54:37 all the resources noted down you have figured out uh what are the different different resources that your back end
+54:43 that your platform will have okay the nouns the top level entities after this
+54:49 uh usually you jump into the database schema right since uh this video is only
+54:56 about the rest DPA side of it which usually comes after you have done with your DB schema designs the next video of
+55:03 course deals with uh all the DV schema designs and different different concepts of databases so we'll skip this part how
+55:11 you design your DV schema how you um interact with your databases all the
+55:17 concepts surrounding Etc ET we'll leave this for the next video we'll focus only on the rest of part this is what the
+55:22 workflow looks like once you have identified all the resources from your fig designs you jump into your DB schema
+55:29 design and after you done with your DB schema design you get to your API
+55:34 interface design part since we are not talking about uh the DB schema design and all in this video we'll just do a
+55:41 very quick uh schema design so that we can continue to the rest API phase of
+55:47 the API design workflow since we have skipped the database schema design part
+55:52 which we'll cover in the next video Let's imagine you are done with your databas schema design and you have these
+55:58 three tables okay uh since it's a project management platform you started with these three tables you have the
+56:04 organization table where you will keep track of all the organizations that exist in your platform then you have
+56:12 project uh what are all the projects that exist within an organization then
+56:17 you have task uh inside task you will keep uh track of what are all the tasks
+56:23 that are created inside a project so for the sake of this demo and for the sake
+56:29 of this video uh we are building the API interface for a project management platform and we will get started with
+56:37 this schema design we have an organization table we have a project table have task table with this we will
+56:43 start our API design now the next thing to do we have already uh gone through
+56:48 our figma designs and understood all the requirements we have come up with all the nouns all the resources that we have
+56:55 to create and using the resources we have created all the database schemas and now we have database tables now we
+57:02 have we already know the resources of our platform now we need to create apis
+57:08 for that the next thing to do since we already have this schema the next thing to do is finding out what are the
+57:15 actions that a client a typical client who will interact with your API needs to
+57:22 perform on our server what are the actions and you can get started uh with
+57:29 some template actions using our crud API endpoints right uh a typical resource
+57:34 will have fetchall uh get a single resource update delete create etc etc
+57:39 right using that you will you will list out all the actions that you need to uh
+57:45 the users need to perform using your API which we usually call is CR operations
+57:51 create read update and delete and after you know all the actions you'll jum jump
+57:56 into the API interface design part and for the API interface design part we'll
+58:03 use this Tool uh which is called insomnia uh it's an alternative to
+58:08 postman it is an alternative to postman but it has lesser features and it's a
+58:15 lighter in weight as compared to postman so we'll make use of this tool to uh design the interface of our API what
+58:24 should the API of this platforms look like right remember we are designing the interface for this API which means that
+58:31 uh we are designing how clients who are going to consume our API who are going
+58:37 to integrate our API what the apis will look like how they will interact with
+58:43 etc etc right the interface point we are designing the interface Point not the
+58:48 execution point which includes writing whatever programming language that
+58:53 you're writing your server in etc etc your actual business logic your database interactions Etc ET we are
+58:59 not going to cover that in this part we are only going to be concerned about the
+59:04 design of your API okay with that uh let's start so we have identified three
+59:12 uh major resources in our API which are uh organization project and task right
+59:18 so we have to design API surrounding these three resources starting with organization and we have also identified
+59:25 what are the actions that clients need to perform with our a so according to
+59:31 those we have come up with five different kinds of actions for organization uh create organization get
+59:38 all organizations get a single organization and update organization
+59:43 delete organization etc etc right so let's start how the AP will look like I will create a new HTTP request so the
+59:51 first let's design the get all organizations AP so it is it will be a
+59:56 get API because we are doing a fetch operation right now the next thing is we'll write the URL of our server now
+60:05 this is subject to change uh when you go to production uh the domain will change the scheme will change from HTTP to
+60:12 https and since I am running it in Local Host the scheme is HTTP and the domain
+60:18 is Local Host and my server is running on Port 3000 that's that and since it is just a
+60:24 demo we have not uh integrated versioning here but usually uh apis will
+60:29 have some kind of versions here/ V1 then the actual path will come but here we are not doing versioning as of now so we
+60:37 are done with the URL part now comes the important part the actual route the actual path segment which is going to um
+60:45 identify what is that that we are trying to fetch from the server since it is an
+60:50 API so let's rename this to list organizations right
+60:57 list all organization so this is what it looks like right as I already said uh we
+61:03 don't put Capital case in the path segment so we write organization and we
+61:09 have already mentioned that uh it should always be plural the resource part so it
+61:14 will be organizations this is what a typical list uh resource API looks like
+61:21 you have the domain you have the versioning if it exists and then uh the resource name in plural so this is
+61:29 ideally the list API and when we call this we are getting the empty response
+61:38 okay the empty response so let's jump into the second API uh which is the create organization AP then we'll have a
+61:45 better idea about how the get one works right create organization and this will
+61:51 be a post operation because we are creating a resource in the server right it's a create operation that's why we
+61:57 are using the method post uh let's just copy this and paste this now here our
+62:07 URL looks pretty much the same for list organizations and for create
+62:14 organization and the reason for that is the server differentiates between these
+62:19 two API calls using the HTTP method if it is a post method then this route goes
+62:25 towards the controller which handles creating an organization and if it is a get call with the same URL it goes to
+62:33 the controller which deals with listing all the organizations right so this is what a typical create operation for a
+62:39 particular resource looks like uh we have the as usual the servers address
+62:44 and Slash the name of the resource in plural form okay now this is a post call
+62:52 so we have to attach the payload the data that the server needs to create an
+62:58 organization so if we look at the organization schema we have to exclude
+63:05 these three Fields these are database handled Fields right the ID the created
+63:11 it and updated it these are handled from the server side so we exclude these from
+63:16 the payload now these three Fields the name the status and the description
+63:22 these three Fields can be passed from the client side using a pay Lo so let's pass these three name status and
+63:29 description name will provide as Arc one status since it's a Json payload we have
+63:36 to wrap all the fields in double codes so second is status status let's say is
+63:43 active and the last one is description is some some description right and these
+63:50 are payload and when we run this we get this right we have have an ID which is
+63:58 created in the server s side and we have the created at which is also created in
+64:03 the server site and then we have the name status and description which we had passed in the payload that is provided
+64:09 here so this is the first thing that we should notice here in a typical post API
+64:15 call uh after calling the response is usually 2011 which we return when we
+64:22 create a resource in the server if a new resource is created cre then we return the status code AS 2011 which means U
+64:30 created okay and then we return the newly created entity as it is in the
+64:37 success response that's why we have received the newly created organization here okay this is what the typical post
+64:44 interaction looks like now going back to our earlier list organization when we
+64:50 call this now now we are getting the entry the organization that we created
+64:56 the organization that we created just now using the post call okay here the status code is 200 because 200 uh we
+65:04 return 200 status code when it is a successful response 2011 is when we create something but 20 is when it is
+65:13 just a success response we are sending some kind of data etc etc right
+65:18 this another thing to focus here is What's Happening Here uh we have a data field we have a total field we have a
+65:25 page field we have total Pages etc etc and this thing is called pagination the
+65:33 terminology is pagination and why do we actually need pagination the need for
+65:39 pagination pagination is basically a technique uh which is used in server side when uh we are doing some kind of
+65:47 API call where a list of a particular resources returned in this case we are
+65:53 requesting a list of organizations whenever we have an API call like this which returns a list of some kind of
+65:59 resource and depending on the requirement we use this technique we implement this technique which is called
+66:04 pagination what it does it does not return all the resources that exist in the database in the server side in that
+66:12 particular request right it returns a particular portion of the data in the
+66:19 response okay and since at this point we only have one organization so I cannot
+66:24 uh show you the difference but we'll create a couple of organization we'll see how the pagination works right so let's understand the theory first so
+66:31 this is the this is why we use pagination if we have a lot of data in the database and when the client makes
+66:39 an API call so we only return a particular portion of that data in the
+66:45 response so that first thing Json serialization and deserialization as we
+66:50 have already covered in the previous uh some video that is a heavy operation right so if we let's say send a,
+66:58 organization in the response so serializing a th000 organizations into a
+67:05 payload which is transferable across uh internet is a resource heavy task right
+67:12 it can introduce some kind of delay in our API it can have some kind of
+67:18 performance impact so that is one reason the second is if the server takes a
+67:24 little longer to send the response then the client uh the whatever the front end platform that is requesting that is
+67:30 using this API that will also have some kind of perceived delay and the user the
+67:36 end user who is using the platform they will notice the difference right they will notice there is some kind of 3
+67:42 seconds and 4 seconds of delay that is happening because the client is fetching a thousand organizations in the list API
+67:50 call even though even though the on the first look on the first look when
+67:56 someone is using the platform they will only see let's say a 10 or 20 organization right if they want to see
+68:04 more organization they'll obviously have to scroll right now because of that kind of scenario people have come up with
+68:11 this technique called page nation in page Nation what happens in the initial call you return some portion of data
+68:17 usually from the first and sorted by some parameter let's say the created parameter you return the latest 10
+68:26 organization in the first API call right then when the user the end user clicks
+68:32 on page two or if it's an infinite scroll Scrolls down you make another API
+68:37 call and you say this part I already have give me the next portion this
+68:44 portion of the data right and then you take this and you show it to the user similarly when the user goes on page
+68:50 three you ask for this portion and you s this data and this is how it works at at
+68:55 once you only fetch let's say 20 or 30 organizations and show it to the user so
+69:01 the user is also not overwhelmed network is not overwhelmed and the client in server perform better and that is the
+69:07 advantage of pation and this is often used whenever we are implementing some
+69:13 kind of list API so in this case we are listing organizations right that's why
+69:19 we have implemented pagination here now the second thing to notice here is what
+69:24 are the fields that we are returning from in a pag response the first part is data whatever portion of the data we
+69:31 have to return that we return in the data field the second is total now this
+69:37 total field Returns the total count of all the organizations that is in the
+69:43 database and using this information the client can s some kind of metadata to
+69:49 the user that um you have around 50 organization but at this page you are
+69:56 only viewing 10 right it can show some kind of UI like this 10 or 50 something something so for representation purpose
+70:03 for UI purpose we return a field which which uh shows the total count of all
+70:10 the resources that exist in our database which is independent of what portion of
+70:15 the data we are returning it is independent of the page response next is we return the Page Field uh which page
+70:23 which portion of data that the server is is returning for this response this
+70:28 response which page it is associated with which portion it is right we have
+70:34 to assign some kind of number some kind of identifier the portion of the data
+70:40 that we are asking from the server that's the reason we call it a page and in this the server is saying this
+70:47 response is for page one you are doing page one then we return total Pages how
+70:53 many pages in total there are and we can use this to show some kind of nice UI
+70:58 interactions or uh if it's an infinite scroll we can check for each time we are
+71:04 making the API call we can check whether uh the page and the total Pages if they
+71:09 are both same then we stop making the API call so because now that we know that uh we have reached the end of the
+71:16 pages right so this also provides some nice functionalities it helps the front
+71:23 end make some decisions about whether to make the next API call or not etc etc
+71:28 this is what a typical paginated response looks like now let's go to the
+71:34 create a and create a few more organizations right let say organization
+71:39 2 oration three organization 4 oration five okay we've created Five
+71:48 organizations and when we go to the list API and we call this we're getting all
+71:53 five now that we have around five organizations how do we
+71:59 access let's see how the pageon actually works and how the client can ask for
+72:05 different different portions of the data using different different parameters since it is a get call the only way we
+72:11 can send data from client to server some kind of payload data is using query parameters now the server takes two kind
+72:19 of parameters for controlling how the pagination works the first one is limit
+72:24 limit basically means what is the count of data that you want in each response
+72:29 since we have five entries five organizations what if we do limit is two
+72:36 each time we only want two organizations right the second parameter is page which
+72:43 portion of the data that you want by default if we don't send page and limit
+72:48 the server should and remember since we are in designing the interface try to
+72:55 focus what are the points uh the server should Implement right if the client does not send anything in limited page
+73:01 the server should set some kind of default values for these so by default
+73:07 the server sets the value of page as one if the client does not send any kind of
+73:13 uh parameter in the page parameter same way the limit will be set to something like 10 or 20 if the client does not
+73:19 send it but here we are explicitly sending it so let's make this request
+73:25 what happens when we do limit two and when we make this request the server returned us two organizations sorted by
+73:33 created at know the latest organizations that's why we are getting organization five and organization four because
+73:39 that's the order that we created we first created organization 4 then organization 5 that's why we are getting
+73:45 in this order okay second in total the server is returning how many entries are
+73:51 present in the database yes we have five organizations but we are returning two
+73:57 okay because the client has passed the limit as two then which portion of the data that the server is returning which
+74:03 is which page the server is returning which is page one and how many pages are
+74:08 there in total there are three pages because if the limit is two and the
+74:14 total number of organizations are five then then to send all the data to
+74:22 clients the server has to make three pages in The First page there will be two entries in the second page there
+74:27 will be two entries in the last page there will be one entry okay that's how pation works so when we do page as two
+74:35 and we keep the limit as two and then we make this request this is what we get we
+74:40 get organization 3 and organization two in the response basically we have this
+74:47 whole data portion where we have let's say uh organization 5 4 3 2 and one when
+74:56 we make page as one we get organization five and organization 4 basically this
+75:02 portion when we make Pages two we get this portion right three and two and at
+75:09 the last when we'll make page three we should ideally get only the organization
+75:14 one because in the in the last page there is only one entry let's change this to page three
+75:23 and we got organization one and single response because we are asking give us
+75:28 the page three the last portion of the data so the total is five the current
+75:34 page is three and the total pages is three okay these are basically the metadata about what is the current state
+75:41 of pation and this is how the client can and the client should interact with your apis right you should allow for a limit
+75:49 parameter and a page parameter so that the client can uh conditionally and programmatically access different
+75:55 different portions of the data so that's pretty much all about pagination how the server should Implement pagination okay
+76:03 a typical list API also has other parameters let's say let's get rid of
+76:09 this okay let's get rid of these we don't want to uh look at page Nation anymore and when we send this we get all
+76:15 the five organization because by default the server sets the limit s 10 or some
+76:21 random value because even if the client does not send anything in the limit parameter the server should set some
+76:28 number as limit and page one as default parameters right now let's talk about
+76:34 sort in a typical list API we a server should also support sorting and this is
+76:42 how it looks like we can pass one parameter for defining by which field we
+76:49 want to sort by okay it is typically written as sord by and here we can
+76:54 provide the name of the field that we want to sort by so here let's say we
+76:59 want to sort by name we are saying we want to sort by name okay and when we send this you're getting oration 5 4 3 2
+77:07 1 okay no difference as of now now let's
+77:12 add another parameter which is called sort order and here let's send ascending and when
+77:20 we do that here as you can see by default the server was returning all the
+77:28 organizations in the descending order so by now you should have realized this
+77:33 rule the rule that the server should ideally ideally take as many as it can s
+77:42 defaults and by S defaults I mean it should not depend on the client to send
+77:47 obvious fields for example in a list API by default even if the client does not
+77:54 send anything we still got a response right we did not get any validation error that you are missing this parameter you're missing the page
+77:60 parameter um that made our whole experience way better because we did not
+78:05 have to pass obvious Fields obvious fields are such as page if the client
+78:10 does not pass the any explicit page the server should set the default pages one
+78:17 similarly for limit if limit is not passed you should set a default limit
+78:23 either 10 or 20 something okay same way even if the client does not do any kind
+78:29 of manual or explicit sorting the server should do some kind of sorting by
+78:35 default so that the response of the data does not change between different
+78:41 different API calls if you don't sort by some parameter in the server before sending the response each time the
+78:47 client makes an API call it will get the response in a random order because the database does not store and entries in
+78:56 any kind of sequence you have to explicitly do sorts that's the reason by
+79:01 default if you're creating an API especially a list API you should have some kind of default sort parameters so
+79:08 by default what uh we usually do we take the created at field take the created at
+79:15 field and we sort by this field and sort by what order we sort by descending
+79:21 order now this is the natural state the default state of sort even if the client does not pass anything because it's a
+79:29 obvious response right we want to list all the entities all the resources in
+79:35 the descending order of their creation basically all the latest entries right
+79:41 that is a natural thing to assume from the server side that's the reason this is considered a s default when it comes
+79:48 to sorting scenarios in list apis but if the client does want to do some kind
+79:55 kind of explicit setting the server should also support two parameters for sorts one is sort by by which field of
+80:04 the resource that you want to sort by it can be name it can be status it can be
+80:09 ID Etc it depends on your implementation but it should have some uh fields from
+80:16 the resource entry same way uh we should take another parameter which is called
+80:21 sort order what order the client wants the sort to happen in by default again
+80:28 even if the client passes a sort by field you will still have to set the default that sort order if not passed
+80:34 you should set it as descending that is the reason when we did not pass any sort order we still got our data our response
+80:42 sorted by name in descending order because descending is the default state
+80:47 of sort order that the server sets even if the client does not send any sort orders but if the client sends ascending
+80:56 as sort order then the server takes that into account it takes the field it sorts
+81:02 names in ascending order that's why we got organization 1 2 3 4 5 in the ascending order this is how sorting is
+81:10 implemented in a typical list API we have covered page naations we have covered sorting there is one last thing
+81:16 that is usually supported in a list API which is called filtering so let's
+81:22 remove this and and what filtering means is um even if it's a list API the client
+81:30 wants to filter that list by some parameters right so let's say let's go
+81:37 and create an organization in the body we see organization as six and in the
+81:42 status instead of active we do archived and we create this and this is created
+81:49 and we got a 2011 response now we go to list and when we send this we are getting this or oration six the latest
+81:57 one right and the status is archived now what if the client has some kind of
+82:03 button some kind of switch using which the user can filter the list by saying I
+82:09 only want all the organizations whose statuses are active or whose statuses
+82:15 are archived basically some kind of filter functionality and this is how we
+82:21 add support for filteration in a typical list API so so we take the name of the
+82:26 field uh so let's say the client wants to filter by status so we add a
+82:32 parameter which called status and inside this the client can pass what is the
+82:38 status that it wants to filter by so if we pass archived and when we send this
+82:46 we only get the list of all the organizations whose status is archived
+82:51 same way if you pass active and when we send this we only got all the
+82:57 organizations which has the status as active and this is called filter okay
+83:03 and is just one field we can also filter by other fields so let's say uh we add
+83:10 another parameter and the filter is name one the list of all the organizations
+83:16 whose name is let's say or and when we send this we are getting only one response because um in this scenario in
+83:24 this example we only have one organization which has the name r for and that's the reason the API is
+83:30 returning this okay so with that we have covered pagination filtering and sorting
+83:38 all the features that a typical list API should have okay now moving on let's
+83:45 create an update API create a new request and it is a patch request right
+83:51 the thing is I have personally not used used a put implementation of an update
+83:58 APA as much because usually what we do we take some fields of a resource of an
+84:05 entity and we want to update those we never want to replace the whole entity
+84:10 with a payload that is passed from the client okay uh it it was usually a practice when we were building MPS or
+84:17 multi-page applications but in the single page applications where the data is mostly Json heavy we usually pass
+84:25 partial fields of a resource and we only want to update those fields so mostly
+84:31 you will see patch getting used for update appear instead of put and that is
+84:36 usually best practice because um if it's partial Fields then patch conveys that
+84:42 semantic meaning in a better way as compared to put which is a little confusing uh but mostly developers use
+84:50 put and Patch interchangeably so try to stick to the standards uh you patch
+84:55 whenever you are updating partial Fields oft a resource okay it's a patch request and we have to uh provide the servers
+85:02 URL so the servers URL is this one paste it here organizations now which
+85:09 organization that we want to update so this is where a dynamic parameter comes
+85:14 into play we have already explored what are Dynamic parameters etc etc and our routing video so for now we'll just go
+85:21 ahead and use it so Dynamic parameter is usually uh some kind of string that we can arbitrarily pass so let's fetch the
+85:30 list and let's say we want to update this we want to update the status of
+85:36 organization 6 so let's copy the ID and we take the ID and let's rename this to
+85:42 date organization okay and as usual this is the server's address we have the path
+85:49 which is the plural form of the resource organizations and after this we write to
+85:55 the slash we paste the idid of the organization and this is a valid route
+85:60 for a patch API con okay we want to update a single organization that's why
+86:06 we are passing the ID of the organization in the dynamic parameter now the pass request takes a body and
+86:13 we'll send a Json inside the Json want to update the status of the organization
+86:19 and the status is the existing status is archived we want to make get active Okay
+86:26 and let's call this and we call this we are getting the organization six and the
+86:33 status is active we are successfully updated it the updated the value of the
+86:39 status field and when we go to the list API call and we call this we are getting the status is active for organization 6
+86:46 now uh the typical response for an update or a patch API call the success
+86:53 response is uh the client sends the payload in the body and the server sends a 200 response since it did not create
+86:60 any resource it is a successful API call that's why it is sending 200 the
+87:05 response the success response and in the response we are sending the updated data
+87:12 of the organization okay this is what the typical practice looks like for a patch IPI call now similarly what if we
+87:19 want to fetch the information of a single organization we want to patch the
+87:25 information so that's why it'll be a get call so let's first copy copy this and
+87:30 create a new request let's rename this to get okay get AR and this is a get
+87:37 call and let's paste this one and getting the information of a single
+87:43 organization and updating the information of a single organization and deleting a single organizations mostly
+87:49 what you will see all these three apis the get update and delete for aing single organization the route will look
+87:56 similar we'll have the server address we'll have the path parameter with the plural form of the resource and with a
+88:04 slash with a forward slash we'll have the ID in the dynamic parameters place okay this is what the route will look
+88:11 like and since it's a get call we uh don't pass any body or anything and we
+88:16 can just execute it and we got the information of the organization we have passed the ID of the organization 6 and
+88:23 we got the organization six with status code 200 because it is just a successful response we did not create anything we
+88:29 just fetched information okay at last we have a delete call we want to delete an
+88:36 organization so let's uh create an HTTP request and rename this to Arc and the
+88:44 method is delete let's paste this as I said the get call update call and delete
+88:50 call of a single organization apis will look similar the route will look similar
+88:55 the only thing that will differentiate them is the method whether it is a get method whether it is a patch method or
+89:02 it is a delete method okay and we are not sending anybody we are just sending
+89:07 the ID of the organization in the dynamic parameter and we execute this and when we execute this we do not get
+89:14 anything uh the response is empty but we got a different status code which is
+89:20 which is 204 which means no content the server is saying that whatever uh operation that
+89:28 you're trying to do it was successful that's why the status code starts with 200 series right 200 series all the
+89:36 codes in the 200 series are success responses whatever you're trying to do you trying to delete a resource that was
+89:43 successful but there is no content I can send you because it is a delete
+89:48 operation and it is successful you successfully deleted the organization there is no information about the
+89:55 organization that I can send you that's what the server is saying that's why we did not get any response in the response
+90:01 of the delete API call and this is the usual practice whenever we have a delete API call uh we send an empty response
+90:08 with status code 204 and now when we go back and we get the list organization we
+90:15 are getting the organization from organization 5 because we deleted the organization six and what happens uh
+90:21 when we come to the get call the get single organization API call and we run
+90:27 this we are getting organization not found as an error message and in the
+90:33 status code in the status code we are getting 404 so this is an ideal use case
+90:40 for status 404 which basically says that you are requesting a particular entity
+90:47 you are requesting a particular entity a particular resource which has the ID this one and that resource does not
+90:54 exist in the server since we have already deleted this that does not exist in the server that's why we are wrting
+91:01 returning error code of 404 which means resource not pound okay but in the list
+91:08 API call we do not get any error even if there are no organizations in the list
+91:15 it is empty we still do not get an error because in list API call we are not
+91:20 requesting for a particular resource we are requesting a list list of the resource right a list of organizations
+91:27 that is the reason we never send four or4 responses in list API calls a 404
+91:33 response is usually sent when the client is sending a particular resource ID okay
+91:40 a particular resource a single resource or a bunch of resource in different different
+91:46 representations when the client request for a particular number of resources or a single resource that is the use case
+91:52 when we should send a 404 but if it is a list API call and we don't have any data let's say the filter
+91:59 does not match any data let's say in the params we pass a filter so we pass
+92:05 status filter and here instead of active and archived we pass some uh random
+92:11 value some random value and when we execute this we are getting data as an
+92:18 empty array and total is zero page one total Pages zero this is the kind of response we get in a list API call this
+92:26 response code is still 200 because it is a this is a list API call if you notice
+92:32 this we are not requesting a particular organization a particular resource that
+92:37 is the reason we should not throw 404 here even if we have no data for this
+92:42 filter we do not say resource not found we say the data is empty this is a thumb
+92:49 rule that you have to remember that if it's a list API call and there is no data you should return an empty array
+92:55 with 200 response instead of returning 404 404 is only return When the client
+93:01 is requesting for a particular entity which does not exist in the server okay with that we have covered all the CED
+93:08 operations C basically means create read in the read we have get and list we have
+93:14 update and we have delete cow operations we have covered all the crow operations and this is how the typical crowd
+93:20 operations based API design interface will look like now what we have a custom
+93:25 action by custom action I mean we want to perform some action on the server
+93:31 which does not fall under any of these categories it is not a create operation it is not a get operation or an update
+93:38 or a delete operation it is a particular action that we want to perform on a
+93:43 single organization entry let's say this is organization five and we want to
+93:48 Archive organization 5 okay now archiving an organization
+93:54 you can on the first look you can imagine that if we update the status field of an organization to status
+94:02 archived then it is archived right so ideally it should fall under patch right
+94:09 but that is not the case you want to perform some action you want don't want
+94:14 to update an entity even though at the end of the day it is updating the entity
+94:19 uh you are updating organization five from status active to archived but at
+94:25 the end of the day it is an custom action because let's say you want to Archive organization five right you want
+94:32 to make the status from active to archived now this is the action that you
+94:38 want to perform but you cannot simply just update the status field because when an organization is archived a lot
+94:46 of operations will have to be performed maybe all the projects that resides
+94:51 under that organization will also have to get get removed get deleted or some
+94:56 kind of operation maybe the users that are involved in that organization have to be sent notifications or they have to
+95:04 be sent emails right and all the tasks that fall under all the projects that
+95:09 fall under all the organization they have to be deleted right lot of actions have to be performed from server side
+95:16 when a particular organization is archived that is the reason updating the
+95:21 status field of an organization from active to archived is not actually archiving an organization it at the end
+95:29 of the day is an custom action you want to Archive an organization so now we
+95:35 have a use case where we want to perform some kind of custom action in this case
+95:41 the action is want to Archive a particular organization you want to
+95:47 perform this custom action on the server side for a particular organization right now as I have mentioned before whenever
+95:54 we have a use case which does not fall under any of the crud flows it is not a
+96:01 create get delete or update method then we can use post with the custom action
+96:07 to construct an API call to execute that custom action in the server set so let's
+96:13 do that in the next API we'll create a new request and let's rename this to
+96:21 Archive archive organization right and here from the name also you can see that
+96:30 up until here we have crud endpoints we have delete get update create list right
+96:35 from the names you can see that these are crud operations but at the end we have archive this is not a cud operation
+96:43 that's why we are classifying it as a custom action okay now how do you
+96:48 perform customer action we make it a post call we make it a post call then we
+96:54 take uh let's say uh let's execute this let's remove this and the ID of
+97:01 oranization 5 is this we take this ID let's paste this here and before that we need the servers address for that this
+97:10 one is the address let's spacee this here and here we have the service address here there is the root path with
+97:19 the organizations then we have passed which organization like we want to
+97:25 Archive organization five that's why we are passing the ID of organization five
+97:30 then at last we want to write the action that we want to perform so in this case
+97:36 it is an archive operation this is an archive action we have written archive
+97:41 now we have the route ready okay and if you notice here this completely follows
+97:48 a hierarchical relationship that we had uh mentioned earlier we have the service
+97:54 address so ignore this part from this path segment we can see that we have all organizations inside all organization we
+98:01 have a single particular organization and for that organization we want to perform some action so it is a clear
+98:08 hierarchical path that your API endpoint should ideally fall now when we execute
+98:13 this we are getting a response and in the response we have the organization
+98:19 five and the status is archived we have made organization five from status
+98:24 active to status archived as a custom action with post end point right and
+98:30 even though we have used post here we still got the Response Code as 200
+98:36 that's the reason you should not blindly assume that every post call will have
+98:41 the Response Code of 2011 which is the creator Response Code because there
+98:46 could be also custom actions custom actions like these which will return 200
+98:51 because they did not create any resource they will return 200 for custom API
+98:57 calls for custom action based API calls okay now with that we have covered all
+99:02 the API endpoints for the schema for the data model organizations okay now with
+99:08 that we have covered all the API end points for organization this schema now
+99:14 let's move on to projects right we will do this one more time uh so that you can
+99:20 internalize all the patterns that we are using while while designing our endpoints all the patterns that we are
+99:27 using while designing the interface of our API okay okay so now let's continue
+99:35 designing all the apas for projects right projects endpoints so going back to
+99:41 insomnia uh what I've done here I have created a folder called org and I've
+99:47 moved all the organization based endpoints inside the org folder so that it's easier to manage now that we'll be
+99:53 creating all the endpoints for projects this part is categorized as organization endpoints
+99:59 now we can minimize this create another folder and we'll name this as project
+100:05 and under this let's this let's create our first request which will be a post
+100:12 request and this time we'll do this L still faster since I've already explained all the concepts behind it in
+100:19 the previous endpoint creation flows so this time we'll just uh Focus Fus on the patterns but we'll move faster so we
+100:27 have the servers address which is htdp Local Host and the port is
+100:34 3,000 slash since we are designing now the endpoint for project that's why as
+100:42 our pattern says the plural form of the resource in small case which gives us
+100:49 projects okay now this is for the post AP call okay now this route is ready now
+100:57 now what should go in the body since post request uh we are creating a new
+101:02 project what should go in the body a Json payload in the Json payload we can
+101:08 basically send name organization ID status description because the ID
+101:15 created at and updated at are server handle fields we do not uh accept that
+101:20 from the client payload we are only accepting name organization ID status and description so name will be some
+101:27 project name then organization ID will be some organization ID that is already existing and the status will be let's
+101:33 say planned and the description will be some kind of description okay so let's
+101:39 come here and name is let's say project one then we have
+101:47 organization id id is some random ID for
+101:52 now let's not worry about that then we have status let's say it is planned and
+101:60 in the end we have description the description we can pass some back okay
+102:06 now we have the payload ready now another thing to notice here is any kind of Json payloads whether it is a Json uh
+102:13 any kind of Json data whether it is a payload that we send from client to server or it is a response that we
+102:20 receive from server to client it should always follow the fields should always
+102:26 follow camel case right that is a common standard when it comes to Json so that
+102:33 is something you have to keep in mind whether you are accepting payloads or you are giving responses from server
+102:38 side always try to stick to Json standards if you are using Json as your calization format uh that way uh clients
+102:47 do not have to do a lot of guess work because it is already established pattern that Json Fields always follow
+102:53 camel case okay now let's hit this and we got a status 2011 because a new
+103:02 project is created and we got all the um fields that we have passed and the
+103:07 project entity that is created the typical create a using post let's go
+103:13 ahead and let's create another request and it will be a let's rename this to
+103:19 create project and we'll name this one to list project okay and this will be as
+103:27 usual a get call and we can copy the route of the post call because as I've
+103:34 already mentioned the routes of create a resource and list resource will most of
+103:40 the time look similar and the routes of get a single resource update a single
+103:46 resource and delete a single resource will most of the time look similar because of the semantic meaning that
+103:53 comes with them right so we don't have to make any other changes here it is a
+103:59 list call and when we send this the server senses all the projects that is
+104:05 inside the database okay so in the create one we can create a few more
+104:10 project two project 3 and in the list we can go
+104:16 ahead and we can do different different parameters can pass limit as one right
+104:24 if you pass limit is one we only get one response but when we add page with limit
+104:30 and the page is two here we are getting project three but when we are sending
+104:36 limit one and page two we'll ideally get project two because it is the next portion of the data that we are fetching
+104:42 from the server similarly this will also have sorts this will also have filters that we have already discussed in the
+104:49 previous endpoint while we are uh dealing with list organizations endo right we have create projects and we
+104:56 have list projects now another thing I want to mention here is when you are designing apis uh for a particular
+105:03 platform right as long as you are inside a single project so all the apis inside
+105:10 that project does not matter what the resources are here we have two resources we have organization and we have project
+105:16 but across different resources your query parameters and your Json payload
+105:22 should look similar and what I mean by that is let's say in the create
+105:27 organization if you see the body you can see the name uh the project has an
+105:34 organization has name and it has description and we are expecting those fields from the client now similarly in
+105:40 the create project also we have name and we also have description that we are expecting from the client now the point
+105:46 I'm trying to make here is you should always try to be consistent when it comes to the Json payloads so so in the
+105:54 create organization API you made description the key of description like this so in the create project API also
+106:01 we have to uh you should keep the key similar you should not like go ahead and
+106:09 DSC right this also expresses that this field is associated with the description
+106:15 field but since you already have an API where the Json payload contains a
+106:20 description field from that point on all all the apis that you design should follow a consistent pattern and if it's
+106:28 a description field then you should only uh then you should try to match that you
+106:33 should not try to rename Fields when the context is the same because because
+106:41 usually what happens when a front end engineer when some kind of client right
+106:46 they integrate your API they consume one API they integrate one API and from that
+106:52 point on that frontend engineer that uh client they make a lot of assumptions of
+106:58 how your API functions they make assumptions that let's say this is a create organization API right from this
+107:06 point on when they want to integrate the project endpoints they will make a lot
+107:11 of assumptions that the since the project also has a name field since the project also has a description field
+107:17 this is what the payload will look like for a project and it did look like that because that's the way you have designed
+107:23 it but imagine if you made the description field as
+107:28 DSC and the client the front end engineer without looking at the docs without looking at the specs of your API
+107:36 they executed the API right with the description field and they get a validation error now of course uh during
+107:42 development these kind of these kinds of things happen and that's totally fine but the point is you should not waste um
+107:51 the people who are integrating your AP you should not waste their time and you should not waste their effort you should
+107:57 not make them do guess work right your API should always follow a consistent
+108:02 pattern whether it comes to routes or whether it comes to payloads whether it comes to responses always follow
+108:09 consistent pattern once you create an API stick to that standard whatever styling that you have followed stick to
+108:15 that not make arbitrary decisions across different different resources for
+108:21 different different end points right always be consistent that's one of the most important characteristic of a good
+108:27 backend engineer the consistency of styling when it comes to API design
+108:33 similarly for list for create organization here we followed this pattern where uh the route is
+108:40 organizations the plural form of the resource now for the projects part let's say if we had did just project right now
+108:49 the person who is integrating your API judging and assuming from your create
+108:55 organization API they'll they'll assume that the create project API must also
+109:00 follow the plural form right because that's what the organizations API followed so if you do not follow the
+109:08 same style if you do not be consistent then they'll also get an error at that then they have to figure out they have
+109:14 to read the specs they have to read the documentation etc etc right which is a lot of drag and that is the reason uh
+109:21 that is the importance of sticking sticking to a particular style sticking to a global standard now let's move on
+109:28 let's create the rest of the apis we also have a get API let's create the
+109:35 rest of the apis we also have a get project API so what we can do copy this
+109:42 let paste this we have projects and up to this point we have to pass the project ID because it is a single
+109:49 project fetching API it is a get API which fetches a single projects that's why in the dynamic parameter you have to
+109:56 pass the ID of the project now let's execute this uh list projects and list
+110:03 this parameters and execute this let's copy some ID and in this let's rename
+110:10 this one to project and let's paste this ID and when we execute this we got the
+110:16 response for a single project right ideally uh with the Response Code of 200
+110:23 similarly let's go ahead and create the update API let's rename this project
+110:31 okay and here also we can let's copy the get project and here we can paste it as
+110:38 I've already mentioned the routes of get single resource update single resource
+110:43 and delete single resource will always look similar because of the semantic meaning that they represent behind the
+110:48 scenes now this is an update API so will do patch because we are sending partial
+110:55 Fields right and this will re require some kind of body so this what should we
+111:01 update the description let's update the description we are say the description is the existing description is some
+111:07 random value we'll change it so in the body we can send partial Fields so we
+111:13 just need to send the value of the new description field and here we can say
+111:18 that new description okay and when we send this we get a 20 when we send this
+111:24 we got a 200 response because it is a patch request and we got the updated
+111:29 entity and as you can see the description is new description yeah that's the typical behavior of patch
+111:36 similarly let's implement the delete request this one inside project new
+111:42 request and let's rename let's rename this to delete project okay and we can
+111:50 just copy this because it is a single project API and we make this method as
+111:56 delete and there will be no body Etc right and I can send this and as usual
+112:04 since it is a delete method we got a 204 no content response and there is nothing
+112:11 in the response because it is a delete request and at last we have a custom action so in case of project we have a
+112:18 requirement that the client the front end can clone a particular project and
+112:25 when they clone it what happens that project all the values of that project gets cloned and a new project with a
+112:32 different ID is created in the database with that other operations might also get executed in the server side which we
+112:39 don't know about that is the reason it is a custom action and it is not a
+112:44 create action we could have also done that uh the client would also call the create project API and it could take all
+112:53 the values from the existing project it could pass uh all of them in the payload and create a new project with the all
+112:59 the same values it could simulate a cloning operation but but we don't know
+113:05 what clone means on the server side right if project clone can also mean that we have to take all the tasks that
+113:14 are inside that project and we have to also clone them right and maybe we have
+113:19 to send an email to the owner of the project that your project have cloned ET right the server maybe has to perform a
+113:27 lot of other operations when a project is cloned that is the reason we cannot simulate cloning operation using just a
+113:35 create project API right we have to explicitly create an endo uh with a custom action for cloning
+113:43 okay so let's go ahead and do that let's create a new one let's rename this clone
+113:51 project and this will be post call as you already know all the custom actions which do not fall under any crud
+113:57 operations are categorized under post because post is an open-ended method
+114:03 when it comes to rest APS specification so let's copy this one because the route
+114:09 will be similar we want to clone this particular project right let's paste this at the end we just write the name
+114:16 of the action this is how we designed a custom action based API we have the
+114:22 servers address we have the resource in the plural form we have the particular resource that we
+114:28 want to perform the action on and at last the name of the action this is what the structure of the API looks like and
+114:34 it does not have any payload uh for this use case but maybe you can take payloads
+114:39 maybe you can take um some fields that the client wants to override for a clone operation okay now when we execute this
+114:47 we get a project not found and 404 response because we already deleted this project so let's go ahead and pick up a
+114:54 new project and replace this ID and then we execute this and we got it 20 one
+115:02 response now as I said you cannot assume from the method that since this the post
+115:09 method it will be a 20 1 response or since it is a custom action it cannot
+115:15 return 2011 because depending on what happens on the server side the Response Code might change because during in
+115:23 cloning the server creates a new project that's why the server returned a
+115:28 response which says 2011 which means I created a new resource for you okay we got a 2011
+115:35 response and the newly created resource and the name is Project to clone and all the fields that are similar to the
+115:43 project 2 entry that we had next this is the custom action based API for projects
+115:50 endpoint and with that all end points of project resource are completed hopefully
+115:56 by now you are able to establish all the patterns that goes behind designing all these apis and if you were to design all
+116:05 the apis for task so you would follow the same kind of pattern right you'll have a list API you'll have a get single
+116:11 task API you'll have delete update and you'll have some kind of Uh custom action right the patterns are same does
+116:17 not matter how many resources do you have the patterns still remain the same
+116:23 with these patterns you can go out and design as many apis as you want right
+116:29 the basics are the same the foundation is still the same now with that out of the way there are a couple of things
+116:36 that you have to keep in mind while you are creating your apas to provide a good
+116:42 experience to whoever is integrating your apas and whoever is maintaining your apas always try to provide an
+116:49 interactive documentation for your apas uh for for example start integrating
+116:54 Swagger tools like Swagger API which provide uh an interactive playground for
+117:00 trying out your apas right start planning that from your initial planning
+117:06 so that even so that you can use it to test your apas and whoever is integrating your apas they can use it as
+117:12 a form of documentation and as a form of testing right that's the first thing
+117:18 this is very important and one of the most important things that sets part as a backend engineer how consistently and
+117:25 how frequently you uh create maintain and update your open API or Swagger
+117:32 documentation second thing is make your apis intuitive and consistent which I've
+117:38 already mentioned all your routes all the patterns when it comes to your
+117:44 Dynamic parameters when you or custom actions or Json payloads all of them
+117:49 should follow a single pattern so if your following the global pattern the
+117:54 global standards of rest API then that's great right but even if you're not
+117:59 following that for some reason for some random reason that I cannot understand even if you cannot follow it but follow
+118:08 something right and stick to it do not change your styling do not change your
+118:14 patterns of your API in different different end points across different different resources right that is a huge
+118:21 pain point for or whoever is trying to integrate your apis keep the behavior keep the data format keep the naming
+118:28 everything consistent and intuitive third provide CN defaults and by this I
+118:34 mean uh as we saw in the pag generation API right even if the client does not pass a default page the server sets the
+118:41 default page as one if the client does not pass a limit parameter the default
+118:47 limit is 10 or 20 if the client does not part pass a sort field the default field
+118:54 is created at if the sort order is not passed the default sort order is descending similarly for post calls
+119:02 let's say there is a post operation in that case only require the amount of
+119:08 information that you absolutely need to create that entity otherwise provide
+119:13 some same defaults so even if it's a uh post call there are some fields for
+119:18 example in our earlier create organization API there is a field for
+119:23 status if you see here the organization has a field for status which can have
+119:28 active or archived but judging from the business logic judging from common sense
+119:36 right you can assume that when an organization is created by default it
+119:42 should be in active state right so from the client if the client does not pass
+119:47 the status field the server should by default set the status as active because
+119:52 it is a same default that part you can assume and it is a safe assumption so
+119:58 for feels like status you can take some
+120:04 status entry which makes most sense for your use case and provide that as a same
+120:09 default so that for creating an organization even if the client just passes name and a description and since
+120:16 the description is optional here even if the client just passes a name this organization is is successfully created
+120:23 with status active because on the server side you have provided same defaults that's what we mean by same defaults
+120:30 both in get a calls in post a calls similarly always avoid abbreviations uh
+120:37 like DEC for description etc etc right because the amount of information you
+120:44 have while creating apis while creating the interface for your apas is not the same amount of information that the
+120:50 people will have who are integrating your apis right so you cannot assume that if you provided some kind of
+120:56 abbreviation or some kind of short form of a field the people will be able to
+121:04 understand that and will be able to provide a appropriate entry for that
+121:09 field and that is the reason keep your peels whether it is payloads or whether
+121:15 it is query parameters keep them intuitive keep them readable and do not
+121:22 use use abbreviations and stuff right now these are just a couple of things that you have to keep in mind while
+121:28 designing your API interfaces and that is pretty much all that I have about API
+121:33 designing uh hopefully it will help you uh make decisions make good decisions
+121:40 make decisions faster and stick to a particular standards so that it is easier for people who are maintaining
+121:46 your apis and it is easier for people who are integrating and consuming your apis in the future as a backend engineer
+121:52 that's your responsibility to provide delightful to provide intuitive apis and
+121:59 always remember that an API a rest API at least is designed in the initial form
+122:06 it is not coded or it is not programmed right away at the first at the first
+122:11 phase of the API creation it is designed you have to make a lot of decisions to design your apis you cannot
+122:19 right away jump into programming that is the reason if you start uh with an open
+122:25 API playground like Swagger or some kind of um API clients like insomnia or
+122:30 Postman to design the interface for your apis it will provide you more insights
+122:36 into how your clients or how the consumers of your apis are going to use
+122:41 it and that will make you think and that will make you make your apis in a much
+122:47 better way in a much more intuitive way and that is the reason before getting into
+122:52 the coding part the programming of the API part regardless of the programming language that you're using whether it is
+122:59 go whether it is notes or any other language you should dedicate a separate session a separate session for just
+123:06 designing your interface the designing the interface for your apis without
+123:11 thinking about programming languages that's the reason in this video we did not uh talk about programming languages
+123:17 or language specific or framework specific implementation at all right we only focused on designing the interface
+123:24 for our apis with this we'll end this video and ideally and hopefully you
+123:29 should be able to create delightful and intuitive apas from now on

@@ -1,0 +1,7486 @@
+00:00 Scaling and performance, two very widely
+00:04 
+
+00:04 used buzzwords and at the same time
+00:07 
+
+00:07 equally important concepts when we are
+00:10 
+
+00:10 talking about systems, backends and
+00:13 
+
+00:13 infrastructure and this is also a topic
+00:16 
+
+00:16 which expands into a lot of territories
+00:19 
+
+00:19 and a lot of domains. uh scaling and
+00:22 
+
+00:22 performance has a very different
+00:25 
+
+00:25 definition when we are talking about
+00:27 
+
+00:27 browser systems or front ends and it has
+00:30 
+
+00:30 a very different meaning when we are
+00:33 
+
+00:33 discussing about infrastructure. uh but
+00:35 
+
+00:35 in this video of course we are going to
+00:38 
+
+00:38 cope it down to the concepts and the
+00:42 
+
+00:42 things that are relevant in the context
+00:45 
+
+00:45 of backend engineering and we will start
+00:48 
+
+00:48 from the very beginning from the primary
+00:51 
+
+00:51 question of what even we mean when we
+00:55 
+
+00:55 talk about performance and we will build
+00:57 
+
+00:57 up from there layer by layer and we'll
+01:00 
+
+01:00 develop an intuition for how systems
+01:03 
+
+01:03 behave for how systems behave under load
+01:06 
+
+01:06 where bottlenecks actually hide and how
+01:09 
+
+01:09 to think clearly when everything seems
+01:12 
+
+01:12 to be falling apart when your system is
+01:14 
+
+01:14 actually under load and I'm hoping by
+01:17 
+
+01:17 the end of this video you will not just
+01:20 
+
+01:20 learn about a few techniques about a few
+01:24 
+
+01:24 scaling techniques you will understand
+01:27 
+
+01:27 how to think about scaling and
+01:30 
+
+01:30 performance in a way does not matter
+01:33 
+
+01:33 whether we are talking out backends or
+01:35 
+
+01:35 any other systems otherwise but your
+01:38 
+
+01:38 knowledge should be applicable
+01:40 
+
+01:40 universally in any system that you will
+01:43 
+
+01:43 encounter in your future. So with that
+01:46 
+
+01:46 let's start our discussion about
+01:48 
+
+01:48 performance performance. So let's ask a
+01:52 
+
+01:52 question first. What do we actually mean
+01:55 
+
+01:55 when we say a system is fast? And by
+01:59 
+
+01:59 talking in the context of our modern
+02:02 
+
+02:02 systems, modern websites or modern web
+02:05 
+
+02:05 apps, we can consider a system to be
+02:08 
+
+02:08 fast. When let's say we have a website
+02:12 
+
+02:12 or our web app and a user comes to our
+02:15 
+
+02:15 web app and they do some kind of
+02:18 
+
+02:18 interactivity. Let's say they click a
+02:20 
+
+02:20 button on our web app and the moment
+02:23 
+
+02:23 they click a button a series of events
+02:26 
+
+02:26 start executing the browser that they
+02:29 
+
+02:29 are interacting with let's say in this
+02:31 
+
+02:31 case it is a Chrome browser the browser
+02:34 
+
+02:34 sends a request across the internet to
+02:37 
+
+02:37 our server the server which caters to
+02:40 
+
+02:40 this particular front end or this
+02:41 
+
+02:41 particular web app and our server
+02:44 
+
+02:44 receives that request let's say is our
+02:47 
+
+02:47 server And this is somewhere here,
+02:50 
+
+02:50 right? This request comes to our server
+02:52 
+
+02:52 and our server receives this particular
+02:55 
+
+02:55 request. It processes it and maybe if
+02:58 
+
+02:58 needed, it most likely interacts with
+03:01 
+
+03:01 our database, right? To either store
+03:04 
+
+03:04 some information or fetch some
+03:06 
+
+03:06 information about the user or something
+03:08 
+
+03:08 that the user needs any kind of
+03:10 
+
+03:10 interaction with the database. And if
+03:13 
+
+03:13 needed, it might also call some other
+03:15 
+
+03:15 API. Let's say it needs to send an
+03:17 
+
+03:17 email. So it needs to call the API of a
+03:21 
+
+03:21 service called recent. Send an email to
+03:23 
+
+03:23 a user and after doing all this has to
+03:26 
+
+03:26 eventually send a response. Let's scroll
+03:28 
+
+03:28 down a little bit. After doing all this
+03:31 
+
+03:31 has to send a response and typically
+03:33 
+
+03:33 it's a JSON response and that response
+03:36 
+
+03:36 again travels back over the internet for
+03:39 
+
+03:39 the internet and back to your browser.
+03:42 
+
+03:42 Then your browser takes that JSON
+03:45 
+
+03:45 response and by doing some kind of JSON
+03:48 
+
+03:48 parsing or any kind of JavaScript
+03:50 
+
+03:50 processing it shows it on the screen.
+03:52 
+
+03:52 Let's say it renders a couple of cards.
+03:54 
+
+03:54 Now there is some amount of time passed
+03:57 
+
+03:57 between the user clicking the button and
+04:00 
+
+04:00 the cards finally showing up on the
+04:03 
+
+04:03 screen. this whole interaction and the
+04:05 
+
+04:05 total time that it took for the user to
+04:09 
+
+04:09 click the button to finally the
+04:12 
+
+04:12 rendering of elements on the screen.
+04:14 
+
+04:14 This whole thing that we can call as
+04:17 
+
+04:17 latency, right? There's an first concept
+04:20 
+
+04:20 that we are going to introduce and
+04:22 
+
+04:22 latency is one of the most fundamental
+04:26 
+
+04:26 concept when we are talking about
+04:28 
+
+04:28 performance and when we are talking
+04:30 
+
+04:30 about performance metrics metric in the
+04:32 
+
+04:32 sense how to measure performance there
+04:34 
+
+04:34 should be some kind of measurable unit
+04:36 
+
+04:36 where we can define performance
+04:39 
+
+04:39 mathematically or in some kind of
+04:42 
+
+04:42 numbers instead of just talking about
+04:44 
+
+04:44 figurative stuff like fast and all. So
+04:47 
+
+04:47 latency is an important concept to
+04:49 
+
+04:49 measure our performance and latency is
+04:52 
+
+04:52 actually the the the the phenomenon that
+04:56 
+
+04:56 users feel in a sense when someone says
+04:59 
+
+04:59 that your application is slow. They are
+05:01 
+
+05:01 talking about latency just so you know
+05:04 
+
+05:04 and it does not matter whether they know
+05:06 
+
+05:06 the word latency or not but they are
+05:09 
+
+05:09 talking about latency when someone says
+05:11 
+
+05:11 your app is fast or app is slow. But the
+05:14 
+
+05:14 next thing that we should understand is
+05:17 
+
+05:17 latency is not a single number. It is
+05:20 
+
+05:20 not as straightforward as saying
+05:22 
+
+05:22 something like 500 milliseconds. It is
+05:24 
+
+05:24 not as simple as that. The latency it
+05:28 
+
+05:28 varies from request to request. One
+05:31 
+
+05:31 request might complete in let's say 50
+05:34 
+
+05:34 seconds or no not 50 seconds 50
+05:37 
+
+05:37 milliseconds. Another request might take
+05:39 
+
+05:39 let's say something around 200
+05:40 
+
+05:40 millconds. And why is there a difference
+05:43 
+
+05:43 between the two? Because when we are
+05:45 
+
+05:45 talking about real world, real world in
+05:47 
+
+05:47 the sense when requests traveling
+05:49 
+
+05:49 through internet, nothing is as
+05:52 
+
+05:52 predictable as they are when you are
+05:54 
+
+05:54 talking on whiteboards where everything
+05:56 
+
+05:56 is measurable, where everything is
+05:57 
+
+05:57 predictable. It's never as simple as
+05:60 
+
+05:60 that. Maybe for this particular request,
+06:02 
+
+06:02 it was able to hit some kind of cache
+06:04 
+
+06:04 either some kind of CDN. CDN we'll talk
+06:07 
+
+06:07 about what are CDNs or some kind of
+06:09 
+
+06:09 in-memory cache like radius right it was
+06:12 
+
+06:12 able to get a hit which means the result
+06:15 
+
+06:15 of this particular request was already
+06:18 
+
+06:18 present in a storage in some kind of
+06:21 
+
+06:21 persistent storage which is much faster
+06:24 
+
+06:24 than trying to fetch the result from a
+06:26 
+
+06:26 traditional storage like database and a
+06:29 
+
+06:29 storage which is much farther from the
+06:32 
+
+06:32 user's location and this one had to
+06:34 
+
+06:34 travel all the way back to our server
+06:36 
+
+06:36 and it had to do a database query.
+06:39 
+
+06:39 That's why it took around 200 millconds.
+06:41 
+
+06:41 Or maybe this is not the case. The cache
+06:43 
+
+06:43 is not the case. This request maybe the
+06:46 
+
+06:46 reason was this request, the one which
+06:48 
+
+06:48 took 50 mconds, it was able to get to
+06:50 
+
+06:50 our server when our server was idle.
+06:53 
+
+06:53 When our server was not really doing
+06:55 
+
+06:55 anything and when this request hit our
+06:57 
+
+06:57 server, it was already concurrently
+06:60 
+
+06:60 processing like 50 other requests at the
+07:03 
+
+07:03 same time. That's why this request took
+07:05 
+
+07:05 200 millconds, right? It can be any of
+07:08 
+
+07:08 these reasons since we are talking about
+07:10 
+
+07:10 real world traffic. So if we try to do
+07:13 
+
+07:13 something, let's say if we try to take
+07:16 
+
+07:16 the average latency of all these
+07:19 
+
+07:19 requests, let's say in this example, the
+07:21 
+
+07:21 first one was 50 and the second one was
+07:24 
+
+07:24 200 and the average would be something
+07:26 
+
+07:26 like 125 milliseconds. If you think
+07:30 
+
+07:30 about it, does this particular number,
+07:32 
+
+07:32 the average latency of the requests
+07:34 
+
+07:34 which is going to our server, does this
+07:37 
+
+07:37 number say anything meaningful to you?
+07:39 
+
+07:39 Now, averages are a very useful number,
+07:43 
+
+07:43 a very useful statistics, when we are
+07:46 
+
+07:46 talking about understanding systems in
+07:49 
+
+07:49 other context. But when we are talking
+07:52 
+
+07:52 about performance in particular,
+07:54 
+
+07:54 averages can be very misleading and they
+07:58 
+
+07:58 are in my opinion pretty much useless
+08:01 
+
+08:01 when we are talking about performance
+08:02 
+
+08:02 because the variations are very
+08:06 
+
+08:06 important in this particular context. So
+08:08 
+
+08:08 average is not that useful in expressing
+08:12 
+
+08:12 the variations of the request latencies.
+08:15 
+
+08:15 So let's consider a scenario. Let's say
+08:18 
+
+08:18 you measured over a thousand requests
+08:20 
+
+08:20 and the average latency that you got out
+08:23 
+
+08:23 of them was around 100 milliseconds.
+08:26 
+
+08:26 Okay. But in this particular number in
+08:29 
+
+08:29 100 milliseconds that the average
+08:30 
+
+08:30 latency number that you are able to
+08:33 
+
+08:33 calculate there is a very misleading
+08:35 
+
+08:35 outlier here because 99% of the request
+08:39 
+
+08:39 they were able to complete under 50
+08:41 
+
+08:41 mconds while the other 1% it took around
+08:44 
+
+08:44 5 seconds. And this 1% this percentage
+08:49 
+
+08:49 of users they describe they represent
+08:53 
+
+08:53 real users in your system that are
+08:55 
+
+08:55 having terrible user experience in your
+08:57 
+
+08:57 web app. If you take the same math and
+09:01 
+
+09:01 scale it up what happens? Let's say your
+09:04 
+
+09:04 back end was able to serve 1 million
+09:07 
+
+09:07 requests per day. Per day. Out of those
+09:10 
+
+09:10 1 million requests, 10,000
+09:13 
+
+09:13 10,000 requests, they had to wait for 5
+09:16 
+
+09:16 seconds. Which means that after clicking
+09:19 
+
+09:19 the button or after landing on your
+09:22 
+
+09:22 screen, the user had to wait 5 seconds
+09:25 
+
+09:25 or they had to see the loader for 5
+09:27 
+
+09:27 seconds before any kind of data showed
+09:29 
+
+09:29 up on their screen. Now, if you take
+09:31 
+
+09:31 this math and calculate the average, the
+09:34 
+
+09:34 average will tell you that your system
+09:35 
+
+09:35 is performing very good. you have a few
+09:38 
+
+09:38 hundred milliseconds of latency but you
+09:40 
+
+09:40 will never understand the frustration.
+09:43 
+
+09:43 You'll never get to realize your systems
+09:46 
+
+09:46 limits when it comes to the 1% of users
+09:49 
+
+09:49 who are having a very big a very
+09:53 
+
+09:53 alarming amount of latency in their
+09:55 
+
+09:55 systems. And this is the exact reason
+09:58 
+
+09:58 when we are talking about performance
+10:01 
+
+10:01 instead of talking about averages what
+10:04 
+
+10:04 we actually talk about is percentiles.
+10:06 
+
+10:06 And this is something that I have
+10:08 
+
+10:08 mentioned in my previous videos which is
+10:11 
+
+10:11 before understanding the mechanics the
+10:14 
+
+10:14 hidden mechanics of a system before
+10:15 
+
+10:15 understanding how a particular concept
+10:19 
+
+10:19 works how to build that and everything
+10:21 
+
+10:21 you have to understand the lingo of it
+10:24 
+
+10:24 or the jarens of it so that you
+10:27 
+
+10:27 understand different opinions in that
+10:30 
+
+10:30 ecosystem different opinions that are
+10:32 
+
+10:32 spread across a spectrum. uh that is the
+10:34 
+
+10:34 same reason since we are talking about
+10:37 
+
+10:37 performance you have to understand all
+10:39 
+
+10:39 the lingo all the jarens that are used
+10:41 
+
+10:41 when people are talking about measuring
+10:43 
+
+10:43 performance when they are talking about
+10:45 
+
+10:45 scaling and that's why percentile is a
+10:48 
+
+10:48 very important terminology here so now
+10:51 
+
+10:51 talking about percentile the 50th
+10:54 
+
+10:54 percentile or also known as P50 when
+10:58 
+
+10:58 people say the term P50 what they mean
+11:01 
+
+11:01 is if your P50 latency is something like
+11:05 
+
+11:05 400 milliseconds. It means that 50% of
+11:08 
+
+11:08 your users experience 400 milliseconds
+11:11 
+
+11:11 of latency. Same way the 90th percentile
+11:15 
+
+11:15 also called as P90. It means that 10%
+11:19 
+
+11:19 let's say if your P90 is around 900
+11:23 
+
+11:23 millconds. It says that 10% of your
+11:26 
+
+11:26 users experience 900 milliseconds of
+11:28 
+
+11:28 latency. The same way another important
+11:31 
+
+11:31 term is P99. Let's say if your P99 is 2
+11:35 
+
+11:35 seconds, it means that 1% of your users
+11:38 
+
+11:38 experience the latency of 2 seconds. In
+11:41 
+
+11:41 other words also when we say P99
+11:43 
+
+11:43 latency, it means 99% of your users get
+11:48 
+
+11:48 a latency which is less than 2 seconds.
+11:50 
+
+11:50 Which means it is for them the system is
+11:52 
+
+11:52 faster as compared to the other 1% of
+11:55 
+
+11:55 the users. But of course as compared to
+11:57 
+
+11:57 that definition it is much more
+11:60 
+
+11:60 intuitive to think in terms of if we are
+12:03 
+
+12:03 talking about P99 latency it means that
+12:06 
+
+12:06 if you minus that number from 100 which
+12:08 
+
+12:08 is 1%. So 1% of your users experience 2
+12:12 
+
+12:12 seconds of latency. Same way for P90 if
+12:15 
+
+12:15 you minus 90 from 100 which is 10. So
+12:18 
+
+12:18 10% of your users experience 900
+12:20 
+
+12:20 millconds of latency. These three
+12:22 
+
+12:22 numbers are very important. Every time
+12:24 
+
+12:24 you are discussing latency, every time
+12:26 
+
+12:26 you are discussing performance,
+12:28 
+
+12:28 optimization, scaling, all these things,
+12:30 
+
+12:30 these numbers will keep coming up P50,
+12:32 
+
+12:32 P90 and P99. So if we represent this as
+12:36 
+
+12:36 a graph something like this, right? It's
+12:39 
+
+12:39 not a very good drawing, but let's say
+12:42 
+
+12:42 this is your P9,
+12:46 
+
+12:46 this is somewhere around P90, this is
+12:49 
+
+12:49 somewhere around P50 and so on. So this
+12:52 
+
+12:52 experience the maximum amount of latency
+12:56 
+
+12:56 this a little bit less and this a little
+12:58 
+
+12:58 bit le and other users experience a very
+13:01 
+
+13:01 less amount of latency. So in practice
+13:04 
+
+13:04 mostly backend engineers they focus
+13:06 
+
+13:06 heavily on P99 and P95 latencies and the
+13:12 
+
+13:12 reason for that is not just caring about
+13:15 
+
+13:15 unhappy users. That is of course the
+13:17 
+
+13:17 case. But the requests that end up here,
+13:21 
+
+13:21 the requests that end up having the
+13:23 
+
+13:23 maximum amount of latency, that's where
+13:26 
+
+13:26 our most complex business logic is or
+13:30 
+
+13:30 that's where our most complex database
+13:32 
+
+13:32 queries are and that's where our most
+13:34 
+
+13:34 complex service synchronization logic
+13:36 
+
+13:36 is. For example, calling external
+13:39 
+
+13:39 services, calling services, sending
+13:41 
+
+13:41 emails, waiting for web hook calls,
+13:44 
+
+13:44 etc., etc. So all these complex
+13:46 
+
+13:46 operations are most probably happening
+13:49 
+
+13:49 in the workflows of these latency charts
+13:52 
+
+13:52 is P99 and P95. And [snorts] because of
+13:55 
+
+13:55 that the users experiencing the P99 or
+13:59 
+
+13:59 P95 latencies, they mostly represent our
+14:03 
+
+14:03 most valuable customers. The customers
+14:05 
+
+14:05 that are paying us a lot and the
+14:08 
+
+14:08 customers whose workflows should matter
+14:10 
+
+14:10 us more. For example, a user who is
+14:13 
+
+14:13 making a payment, a user who is making a
+14:16 
+
+14:16 purchase on your platform, that will
+14:18 
+
+14:18 generate more complex database queries
+14:21 
+
+14:21 that will generate more complex business
+14:22 
+
+14:22 logic as compared to a user who just
+14:25 
+
+14:25 browsing through your platform. That is
+14:26 
+
+14:26 why caring about P99 and P95 latency is
+14:30 
+
+14:30 important. Okay. Now, that's all about
+14:33 
+
+14:33 latency that you should be aware of. We
+14:36 
+
+14:36 still not have learned anything new,
+14:39 
+
+14:39 learned any new scaling technique or
+14:41 
+
+14:41 anything but eventually you'll be more
+14:42 
+
+14:42 and more comfortable with the language
+14:44 
+
+14:44 of performance with the all the
+14:47 
+
+14:47 technical jargon of performance and
+14:49 
+
+14:49 scaling. Another metric that we often
+14:52 
+
+14:52 talk about when we talk about scaling is
+14:54 
+
+14:54 throughput. Now latency tells us how
+14:57 
+
+14:57 long an individual request takes from
+15:02 
+
+15:02 origin to getting the response. But
+15:04 
+
+15:04 throughput tells us how many requests
+15:07 
+
+15:07 our system can handle in a given time
+15:09 
+
+15:09 period. And this is typically measured
+15:12 
+
+15:12 with something like requests per second
+15:15 
+
+15:15 or requests per minute, right? The
+15:17 
+
+15:17 throughput of our system. That's what we
+15:20 
+
+15:20 call it. And the reason this is an
+15:22 
+
+15:22 important metric and the reason that we
+15:24 
+
+15:24 are talking about this is for your
+15:26 
+
+15:26 system you can have a very impressive
+15:29 
+
+15:29 amount of latency. For example, when
+15:32 
+
+15:32 handling 10 requests per second, your
+15:35 
+
+15:35 latency might be very less, something
+15:37 
+
+15:37 like 150 mconds or something. But the
+15:40 
+
+15:40 moment the request numbers per second go
+15:43 
+
+15:43 up, something like,000 requests per
+15:46 
+
+15:46 second, your latency suddenly increases
+15:48 
+
+15:48 to 2 seconds from 150 milliseconds to 2
+15:51 
+
+15:51 seconds. Right? And that is the reason
+15:53 
+
+15:53 understanding throughput with latency is
+15:55 
+
+15:55 also as important. It helps you answer
+15:58 
+
+15:58 very practical very real world
+16:00 
+
+16:00 questions. questions like can our system
+16:03 
+
+16:03 let's say your system is a e-commerce
+16:06 
+
+16:06 platform or you handle some kind of
+16:09 
+
+16:09 learning management system or you sell
+16:11 
+
+16:11 courses whatever system that you have
+16:14 
+
+16:14 and you want to answer the question that
+16:16 
+
+16:16 can our system handle the traffic the
+16:19 
+
+16:19 traffic search or the traffic spike of
+16:22 
+
+16:22 black Friday which happens very certain
+16:25 
+
+16:25 right one big day just your traffic
+16:28 
+
+16:28 spikes to hundreds thousands and
+16:30 
+
+16:30 millions of requests So understanding
+16:32 
+
+16:32 throughput with latency is very
+16:34 
+
+16:34 important so that you can answer
+16:36 
+
+16:36 questions like can our system handle the
+16:39 
+
+16:39 black Friday rush. Similarly if our
+16:41 
+
+16:41 systems can survive the load if we
+16:44 
+
+16:44 suddenly started a email campaign we
+16:47 
+
+16:47 started an email campaign or if we got
+16:50 
+
+16:50 featured in a podcast or we got featured
+16:54 
+
+16:54 in a very popular website or a blog. How
+16:57 
+
+16:57 many concurrent users can we support?
+16:59 
+
+16:59 How many requests per second can we
+17:01 
+
+17:01 support before we'll start needing more
+17:04 
+
+17:04 resources? All the answers of all these
+17:08 
+
+17:08 questions can be answered only when you
+17:10 
+
+17:10 understand throughput with latency. So
+17:13 
+
+17:13 one thing is obviously clear latency and
+17:16 
+
+17:16 throughput are connected to each other
+17:18 
+
+17:18 but not in a way that makes intuitive
+17:22 
+
+17:22 sense to us because as throughput
+17:25 
+
+17:25 increases as the amount of throughput
+17:28 
+
+17:28 increases the amount of latency also
+17:30 
+
+17:30 starts increasing. It starts happening
+17:32 
+
+17:32 very slowly at first but after a point
+17:35 
+
+17:35 it starts increasing dramatically like
+17:37 
+
+17:37 this right and this particular
+17:40 
+
+17:40 relationship between throughput and
+17:42 
+
+17:42 latency. This is a very interesting
+17:44 
+
+17:44 concept in performance engineering and
+17:48 
+
+17:48 of course we'll talk about this more in
+17:50 
+
+17:50 the next sections of this video. Now let
+17:52 
+
+17:52 us jump into more intuitive concepts
+17:55 
+
+17:55 about performance and scaling. So let's
+17:58 
+
+17:58 talk about a ice cream shop. Right?
+18:01 
+
+18:01 There is an ice cream shop and there is
+18:04 
+
+18:04 someone at the shop wearing a cap and
+18:07 
+
+18:07 he's giving out ice creams. Right? So it
+18:11 
+
+18:11 is a Sunday evening and you go to this
+18:14 
+
+18:14 particular ice cream shop and when you
+18:17 
+
+18:17 walk into the shop the shop is
+18:19 
+
+18:19 completely empty and you go to the
+18:21 
+
+18:21 counter, you ask for an ice cream, you
+18:24 
+
+18:24 pay the bill and you instantly get an
+18:26 
+
+18:26 ice cream. this ice cream gets
+18:28 
+
+18:28 transferred to you and since you got the
+18:30 
+
+18:30 ice cream you are very happy very happy.
+18:32 
+
+18:32 Anyway, the point of this example was
+18:34 
+
+18:34 you made a request and since there was
+18:36 
+
+18:36 no one at the shop, your request was
+18:39 
+
+18:39 responded instantly. So this is the
+18:42 
+
+18:42 situation of low utilization with low
+18:45 
+
+18:45 latency. Low utilization because the
+18:47 
+
+18:47 shop was empty. The worker, the owner,
+18:50 
+
+18:50 whoever was giving out the ice cream,
+18:52 
+
+18:52 they were not really working very hard.
+18:55 
+
+18:55 So low utilization of resources and also
+18:57 
+
+18:57 low latency because you got your request
+19:00 
+
+19:00 served instantly. So this situation was
+19:03 
+
+19:03 very low latency. Now let's imagine it
+19:06 
+
+19:06 is Tuesday lunchtime and you go into the
+19:10 
+
+19:10 same shop. There is the worker hat
+19:13 
+
+19:13 giving out ice creams. But this time you
+19:16 
+
+19:16 are not alone here. This time there is a
+19:18 
+
+19:18 huge rush. Since it is a weekday,
+19:20 
+
+19:20 everyone wants to have an ice cream.
+19:22 
+
+19:22 There is a huge rush and you are
+19:23 
+
+19:23 somewhere in the line. This one in the
+19:25 
+
+19:25 blue with a grumpy face. This is you. By
+19:28 
+
+19:28 the way, you are standing here and
+19:29 
+
+19:29 you're waiting for your request. So in
+19:32 
+
+19:32 this particular case, even if this
+19:34 
+
+19:34 worker, this ice cream shop worker, even
+19:37 
+
+19:37 if he works exactly at the same speed,
+19:41 
+
+19:41 preparing each ice cream in the same 2
+19:44 
+
+19:44 minutes as before. For each ice cream,
+19:47 
+
+19:47 it takes around 2 minutes to prepare. It
+19:49 
+
+19:49 takes a long time for you because you
+19:51 
+
+19:51 are waiting for others to get their ice
+19:53 
+
+19:53 creams first. Now the concept that I
+19:57 
+
+19:57 want to that I want you to pay attention
+20:00 
+
+20:00 to is the workers execution rate. The
+20:04 
+
+20:04 workers work rate has not reduced at
+20:06 
+
+20:06 all. Previously they used to take 2
+20:08 
+
+20:08 minutes to make a single ice cream and
+20:11 
+
+20:11 right now they are also working at the
+20:13 
+
+20:13 same pace at the same rate. But for you
+20:15 
+
+20:15 the perceived weight time the actual
+20:18 
+
+20:18 wait time has increased significantly
+20:21 
+
+20:21 because you have to wait for the others
+20:23 
+
+20:23 to get their ice creams. Now talking
+20:24 
+
+20:24 about actual relevant stuff talking
+20:26 
+
+20:26 about backend engineering your backend
+20:28 
+
+20:28 systems your servers they act in the
+20:32 
+
+20:32 exact same way when the utilization of
+20:36 
+
+20:36 the resources of CPU memory whatever
+20:38 
+
+20:38 when the utilization is low the request
+20:41 
+
+20:41 comes and the response is sent back
+20:43 
+
+20:43 almost immediately. The CPU grabs each
+20:46 
+
+20:46 request, processes it, and returns the
+20:49 
+
+20:49 response instantly. But as more number
+20:52 
+
+20:52 of requests come, each request waits for
+20:55 
+
+20:55 the request that is ahead of it to
+20:57 
+
+20:57 complete until it gets its chance. And
+20:60 
+
+20:60 they all start forming a queue- like
+21:02 
+
+21:02 structure. So the higher the
+21:05 
+
+21:05 utilization, the higher the utilization,
+21:08 
+
+21:08 the longer the queue and also the longer
+21:12 
+
+21:12 the wait time, the longer the each
+21:14 
+
+21:14 request waits. Okay. Now talking about
+21:17 
+
+21:17 all of this, the metric that I wanted to
+21:20 
+
+21:20 come to was this one which is
+21:23 
+
+21:23 utilization.
+21:25 
+
+21:25 Utilization which in formal definition
+21:28 
+
+21:28 in formal technical definition is the
+21:31 
+
+21:31 percentage of your system the percentage
+21:34 
+
+21:34 of your systems capacity that is
+21:36 
+
+21:36 currently at use that is currently
+21:39 
+
+21:39 running actively. So at 0% utilization
+21:43 
+
+21:43 you'll say that your system is idle. It
+21:45 
+
+21:45 is not doing anything. It is not making
+21:47 
+
+21:47 use of any of its resources. And at 100%
+21:51 
+
+21:51 of utilization, your system is maxed out
+21:54 
+
+21:54 of course and it cannot do anything else
+21:56 
+
+21:56 and it is at the brink of collapse. Now
+21:59 
+
+21:59 an interesting relationship that I
+22:02 
+
+22:02 wanted to show here is the relationship
+22:05 
+
+22:05 between utilization and latency. Let's
+22:08 
+
+22:08 say this is the utilization in our
+22:12 
+
+22:12 x-axis and this is latency. Now the
+22:16 
+
+22:16 counterintuitive relationship here is as
+22:19 
+
+22:19 our utilization increases. This is the
+22:22 
+
+22:22 relationship that we intuitively expect
+22:25 
+
+22:25 from our system. The more utilization
+22:27 
+
+22:27 that we have, the more latency will
+22:29 
+
+22:29 experience a linear growth. But what
+22:31 
+
+22:31 happens at 100% utilization of our
+22:34 
+
+22:34 system? It does not stay linear anymore.
+22:37 
+
+22:37 The more we are growing towards 100%
+22:40 
+
+22:40 utilization starting from let's say 1 to
+22:43 
+
+22:43 100 this is how the curve starts look
+22:45 
+
+22:45 like it starts growing exponentially
+22:48 
+
+22:48 instead of growing like this it starts
+22:50 
+
+22:50 growing like this right this is a very
+22:53 
+
+22:53 counterintuitive relationship between
+22:55 
+
+22:55 latency and utilization and also very
+22:58 
+
+22:58 important to wrap our head around the
+23:01 
+
+23:01 concept of performance and scaling. This
+23:04 
+
+23:04 is something that you should keep in
+23:05 
+
+23:05 mind. We'll come back to this or we'll
+23:07 
+
+23:07 connect our concepts to this eventually.
+23:10 
+
+23:10 So again taking about a very irrelevant
+23:14 
+
+23:14 example or analogy here to make it more
+23:17 
+
+23:17 digestible. Let's say we have our
+23:19 
+
+23:19 highway right? Let's say this is our
+23:21 
+
+23:21 highway national highway. When we say
+23:24 
+
+23:24 that our highway is at 50% capacity. So
+23:28 
+
+23:28 let's say these are the cars. Let's I'll
+23:31 
+
+23:31 make it as blue. These are our cars.
+23:33 
+
+23:33 Okay. We can say that this is at 50%
+23:36 
+
+23:36 capacity. There is enough space for each
+23:38 
+
+23:38 car to overtake other cars and you know
+23:41 
+
+23:41 go on its way. So around at 50% capacity
+23:45 
+
+23:45 the traffic flows pretty smoothly in our
+23:48 
+
+23:48 highway. The cars they can maintain
+23:50 
+
+23:50 speed and everyone reaches their
+23:52 
+
+23:52 destination in time in a very
+23:54 
+
+23:54 predictable time. Now at 80% capacity
+23:57 
+
+23:57 let's say we add more cars here or more
+23:59 
+
+23:59 cars more. Now what happens? you will
+24:02 
+
+24:02 start noticing some slowdowns, right?
+24:04 
+
+24:04 Because the overtaking is not as
+24:07 
+
+24:07 straightforward, at least not without
+24:09 
+
+24:09 compromising your safety. Again, we
+24:11 
+
+24:11 don't safety here. But the problem is
+24:14 
+
+24:14 you cannot change your lanes as often
+24:17 
+
+24:17 now because there are way too many cars
+24:19 
+
+24:19 here and you have to think twice before
+24:22 
+
+24:22 you change your lanes and you have to
+24:23 
+
+24:23 strategize how to go from here to here
+24:25 
+
+24:25 and all these different aspects that
+24:27 
+
+24:27 come into play. Now let's say we raise
+24:30 
+
+24:30 it to 90%. We add more cars here. Now
+24:33 
+
+24:33 what happens? This traffic now becomes
+24:36 
+
+24:36 very unpredictable. Sometimes it will
+24:38 
+
+24:38 flow when the cars are perfectly aligned
+24:41 
+
+24:41 with all the gaps. So each one can make
+24:44 
+
+24:44 perfect turns and they can through. But
+24:47 
+
+24:47 sometimes when we have very impatient
+24:50 
+
+24:50 people on the road, the traffic will
+24:52 
+
+24:52 jam, right? Because everyone wants to
+24:53 
+
+24:53 pass through. No one wants to give way
+24:56 
+
+24:56 to anyone. Now it has become very
+24:58 
+
+24:58 predictable depending on the mood of the
+24:60 
+
+25:00 people depending on a very unpredictable
+25:03 
+
+25:03 out of control phenomenon of nature. Our
+25:06 
+
+25:06 traffic can either pass through or it
+25:08 
+
+25:08 can jam. Every time someone breaks,
+25:10 
+
+25:10 every time someone changes lane, every
+25:12 
+
+25:12 time someone starts merging, you'll see
+25:15 
+
+25:15 a ripple effect when everyone behind
+25:19 
+
+25:19 that car will start honking and they
+25:22 
+
+25:22 cannot move anymore. Anyway, at 100%
+25:24 
+
+25:24 capacity, let's say you have cars at
+25:27 
+
+25:27 every spot now. There is no space to
+25:30 
+
+25:30 move anymore. Now, at this point, no one
+25:32 
+
+25:32 can move. Your whole pathway is blocked.
+25:35 
+
+25:35 No one can move on our highway anymore.
+25:37 
+
+25:37 So, that is a very irrelevant but very
+25:41 
+
+25:41 intuitive understanding of utilization
+25:43 
+
+25:43 and latency that we can think about to
+25:46 
+
+25:46 make sense of our systems. Of course,
+25:48 
+
+25:48 when we are talking about these abstract
+25:50 
+
+25:50 analogies of highways, restaurants and
+25:53 
+
+25:53 cafes, these very simplified examples,
+25:56 
+
+25:56 it all makes sense. But the moment you
+25:58 
+
+25:58 start putting all those concepts into
+26:00 
+
+26:00 the context of computing, it starts
+26:03 
+
+26:03 becoming a little unintuitive. Anyway,
+26:05 
+
+26:05 you can do a onetoone mapping in this
+26:07 
+
+26:07 case for the relationship between
+26:09 
+
+26:09 utilization and latency. Now the whole
+26:12 
+
+26:12 point of this analogy, the whole point
+26:14 
+
+26:14 of the graph showing utilization and the
+26:16 
+
+26:16 latency and the exponential growth
+26:18 
+
+26:18 relationship between them. The point of
+26:20 
+
+26:20 all of this is the realization that you
+26:24 
+
+26:24 have to come to at some point in your
+26:27 
+
+26:27 back end engineering career is you
+26:29 
+
+26:29 cannot run your systems at 100%
+26:31 
+
+26:31 utilization and also expect them to
+26:35 
+
+26:35 perform well or at least perform in any
+26:37 
+
+26:37 kind of capacity. you need some amount
+26:40 
+
+26:40 of headroom, some amount of capacity
+26:44 
+
+26:44 that is able to absorb the traffic or in
+26:47 
+
+26:47 this case that is able to absorb the
+26:49 
+
+26:49 request traffic. So usually in the wild
+26:52 
+
+26:52 or in real world production systems
+26:54 
+
+26:54 you'll see that most systems run at 60
+26:57 
+
+26:57 to 80% utilization and reserving the 20%
+27:02 
+
+27:02 for a buffer in case there are any
+27:04 
+
+27:04 amount of traffic spikes. Another reason
+27:07 
+
+27:07 to keep this buffer or keep this
+27:09 
+
+27:09 headroom is because the property of
+27:12 
+
+27:12 traffic is not very linear. It is not
+27:16 
+
+27:16 like a metronome. Every second you'll
+27:18 
+
+27:18 get this number of fixed amount of
+27:20 
+
+27:20 requests. That never happens. The
+27:22 
+
+27:22 varying nature of traffic is they come
+27:25 
+
+27:25 in bursts. Right? This is also a term
+27:27 
+
+27:27 you'll hear a lot when you're talking
+27:29 
+
+27:29 about performance and scaling. Traffic
+27:31 
+
+27:31 always comes in bursts. Which means that
+27:34 
+
+27:34 at 1 minute a lot of requests will start
+27:36 
+
+27:36 showing up in your server and another
+27:38 
+
+27:38 minute there are zero requests. Then
+27:41 
+
+27:41 after half an hour you'll get a thousand
+27:43 
+
+27:43 other requests. So this is how the real
+27:45 
+
+27:45 world traffic works at scale. So even if
+27:49 
+
+27:49 your average traffic that is well below
+27:52 
+
+27:52 the capacity which is like 50% or even
+27:55 
+
+27:55 40%, these bursts when they happen they
+27:58 
+
+27:58 can instantly do the spike and you can
+28:01 
+
+28:01 easily go above 100%. And if you don't
+28:04 
+
+28:04 have that additional buffer that
+28:06 
+
+28:06 additional headroom for all these
+28:08 
+
+28:08 traffic spikes your system will
+28:09 
+
+28:09 obviously crash. So that is the reason
+28:12 
+
+28:12 uh understanding utilization
+28:13 
+
+28:13 understanding the exponential
+28:14 
+
+28:14 relationship of latency with utilization
+28:17 
+
+28:17 and the realization that you should
+28:19 
+
+28:19 never and you can never run your systems
+28:21 
+
+28:21 at 100% utilization. There should always
+28:24 
+
+28:24 be some amount of headroom. There should
+28:26 
+
+28:26 always be some amount of buffer for your
+28:28 
+
+28:28 systems resources. Right? That is the
+28:31 
+
+28:31 whole point of all this discussion at
+28:33 
+
+28:33 least the first part of our discussion.
+28:35 
+
+28:35 We have not even started with our
+28:37 
+
+28:37 scaling and performance talks. I'm just
+28:39 
+
+28:39 intuitively building the mental models
+28:42 
+
+28:42 so that you can connect the dots on your
+28:44 
+
+28:44 own instead of just mugging up all these
+28:46 
+
+28:46 vertical scaling, horizontal scaling,
+28:48 
+
+28:48 all these concepts that people just
+28:50 
+
+28:50 throw at you whenever they are talking
+28:51 
+
+28:51 about system design and performance.
+28:54 
+
+28:54 Okay. Next, when you say your system is
+28:57 
+
+28:57 slow, it means that something specific
+29:00 
+
+29:00 in your system is causing the slowness.
+29:03 
+
+29:03 Right? That's what we mean when you say
+29:04 
+
+29:04 our system is slow. and finding that
+29:07 
+
+29:07 particular something whichever is
+29:10 
+
+29:10 causing this slowness that is called as
+29:14 
+
+29:14 identifying the bottleneck. Bottleneck.
+29:17 
+
+29:17 Let me a couple of circles here. This is
+29:19 
+
+29:19 another important terminology another
+29:21 
+
+29:21 jargon that you have to remember or at
+29:25 
+
+29:25 least should be able to identify when it
+29:27 
+
+29:27 shows up again. All right. Of course
+29:29 
+
+29:29 this sounds obvious but in practice when
+29:33 
+
+29:33 we are working with backend engineering
+29:35 
+
+29:35 we often skip this particular step which
+29:38 
+
+29:38 is finding that specific part of our
+29:41 
+
+29:41 system which is causing the delay which
+29:43 
+
+29:43 is causing the slowness also called as
+29:45 
+
+29:45 bottleneck and we start just jumping
+29:48 
+
+29:48 into solutions. We start jumping into
+29:51 
+
+29:51 all the standard by the book practices
+29:53 
+
+29:53 which are supposed to be implemented
+29:55 
+
+29:55 whenever we encounter slowness in our
+29:58 
+
+29:58 system. Whenever we encounter a system
+29:60 
+
+29:60 lagging, we do things like uh we just go
+30:02 
+
+30:02 ahead and add caching because we just
+30:05 
+
+30:05 know from all the different resources
+30:08 
+
+30:08 that every time you encounter any amount
+30:12 
+
+30:12 of latency, every time you encounter
+30:14 
+
+30:14 some kind of bottleneck, just go ahead
+30:16 
+
+30:16 and add caching. That is the solution to
+30:18 
+
+30:18 pretty much all kind of latency related
+30:20 
+
+30:20 problems that we have always heard and
+30:23 
+
+30:23 always learned. Or if our database seems
+30:26 
+
+30:26 to be the problem, we what we do, we
+30:28 
+
+30:28 let's say we are running Postgress
+30:31 
+
+30:31 version 16, let's upgrade it to
+30:33 
+
+30:33 Postgress version 18. Let's just upgrade
+30:35 
+
+30:35 stuff. Let's just upgrade our packages.
+30:38 
+
+30:38 Or if our server is seeming like it is
+30:41 
+
+30:41 the bottleneck, then let's add more
+30:43 
+
+30:43 servers. Right? In other words, we also
+30:45 
+
+30:45 call it as horizontal scaling. And
+30:48 
+
+30:48 sometimes we do get lucky. Sometimes all
+30:50 
+
+30:50 this stuff, all these buy the book
+30:53 
+
+30:53 solutions, they often help. But more
+30:56 
+
+30:56 often we spend days or weeks
+30:59 
+
+30:59 implementing solution to a problem that
+31:01 
+
+31:01 we do not actually have. While the
+31:03 
+
+31:03 actual bottleneck the actual specific
+31:06 
+
+31:06 part of our system that completely
+31:08 
+
+31:08 remains ignored and even after
+31:11 
+
+31:11 implementing our solution our system
+31:12 
+
+31:12 still remains slow because the reason
+31:15 
+
+31:15 the system was slow there still out
+31:18 
+
+31:18 there and still causing the slowness to
+31:20 
+
+31:20 put this in perspective let's say we
+31:22 
+
+31:22 have an API which is / products and it
+31:26 
+
+31:26 is something let's say a patch call
+31:29 
+
+31:29 which is we are calling this API with a
+31:32 
+
+31:32 product ID path parameter and there's a
+31:36 
+
+31:36 patch call to update a specific product
+31:39 
+
+31:39 with some amount of information from our
+31:41 
+
+31:41 front end. So let's say we have this API
+31:44 
+
+31:44 and we note that this particular API is
+31:47 
+
+31:47 appearing to be a little slow and the
+31:50 
+
+31:50 first thing that comes to our mind and
+31:52 
+
+31:52 in fact my mind is most likely the
+31:55 
+
+31:55 database is the problem right because
+31:58 
+
+31:58 well the database is always the problem
+32:00 
+
+32:00 and what we do we go ahead and add
+32:03 
+
+32:03 caching let's say we just add radius to
+32:06 
+
+32:06 our stack and we add a caching function
+32:08 
+
+32:08 in front of this API to speed up of was
+32:12 
+
+32:12 now that I think about it caching an
+32:15 
+
+32:15 update function does not make any sense.
+32:17 
+
+32:17 So let's say this was not a patch call.
+32:19 
+
+32:19 This was a get call, right? We are
+32:20 
+
+32:20 fetching the details of a product. And
+32:22 
+
+32:22 to make this API appear a little faster,
+32:25 
+
+32:25 we go ahead and implement caching in our
+32:28 
+
+32:28 service and add it in front of this API.
+32:30 
+
+32:30 And we spend one week implementing
+32:33 
+
+32:33 caching a system and adding it in front
+32:36 
+
+32:36 of our database. And we go ahead and
+32:39 
+
+32:39 deploy this change to our production
+32:41 
+
+32:41 servers. And we observe and what we
+32:43 
+
+32:43 observe the API is still slow. After
+32:45 
+
+32:45 doing all this, after spending a week on
+32:48 
+
+32:48 finding the solution and implementing
+32:50 
+
+32:50 this solution, our API still appears to
+32:52 
+
+32:52 be slow. So this time we think that
+32:55 
+
+32:55 okay, let's get a little deep into the
+32:58 
+
+32:58 problem. Instead of just assuming our
+32:60 
+
+32:60 database was the problem, let's add
+33:02 
+
+33:02 actual logs in our code. So we go ahead
+33:05 
+
+33:05 and add timing measurements in our code.
+33:08 
+
+33:08 When does the request arrive in our
+33:10 
+
+33:10 system? When do we actually call the
+33:12 
+
+33:12 database query? When do we call the
+33:14 
+
+33:14 caching? etc etc etc. We add very
+33:17 
+
+33:17 granular timing functions across our
+33:19 
+
+33:19 codebase at least for this function. And
+33:22 
+
+33:22 what do we discover? We discover that
+33:24 
+
+33:24 this particular database query it only
+33:27 
+
+33:27 takes around 10 milliseconds. And this
+33:30 
+
+33:30 newly added radius cache. This takes 5
+33:34 
+
+33:34 millconds. But what we additionally
+33:37 
+
+33:37 discover is a logging function. a
+33:40 
+
+33:40 logging function in our particular API
+33:44 
+
+33:44 in our particular service function. The
+33:46 
+
+33:46 function that we are measuring the
+33:47 
+
+33:47 timing of this logging function writes
+33:50 
+
+33:50 to a remote logging service something
+33:53 
+
+33:53 like elastic search or whatever logging
+33:55 
+
+33:55 service that we use which is not really
+33:58 
+
+33:58 a problem. We often have to make use of
+34:00 
+
+34:00 a remote logging service. But the
+34:02 
+
+34:02 problem was this was happening
+34:05 
+
+34:05 synchronously growously which means that
+34:08 
+
+34:08 instead of doing it concurrently or
+34:11 
+
+34:11 parallelly whatever you want to call in
+34:13 
+
+34:13 the next video of this playlist we are
+34:15 
+
+34:15 going to very extensively cover
+34:17 
+
+34:17 concurrency and parallelism. So I'll not
+34:19 
+
+34:19 get too deep into the technicalities of
+34:21 
+
+34:21 the difference between the two. But we
+34:23 
+
+34:23 can just on a very high level on a very
+34:25 
+
+34:25 oversimplified level assume that instead
+34:27 
+
+34:27 of doing it in a parallel way. What we
+34:30 
+
+34:30 do we block this request. We make this
+34:33 
+
+34:33 API call or whatever request or whatever
+34:36 
+
+34:36 transmission format that we have to log
+34:39 
+
+34:39 this in our remote logging service. Then
+34:41 
+
+34:41 we resume our service. Then we resume
+34:44 
+
+34:44 our API. And this whole thing takes
+34:46 
+
+34:46 around 500 milliseconds. And in the end
+34:50 
+
+34:50 what we realized the database was never
+34:52 
+
+34:52 a problem because without actually
+34:55 
+
+34:55 measuring what is causing the problem we
+34:58 
+
+34:58 just went by the books and implemented
+34:60 
+
+35:00 caching because every time we are having
+35:03 
+
+35:03 problems with any kind of latency. We
+35:05 
+
+35:05 have learned this that just go ahead and
+35:07 
+
+35:07 add caching. That's why we were not able
+35:10 
+
+35:10 to catch the real issue the catch the
+35:13 
+
+35:13 actual culprit which was causing the
+35:14 
+
+35:14 latency which was our logging service.
+35:16 
+
+35:16 And in fact it was the synchronous
+35:18 
+
+35:18 nature of our logging service which was
+35:21 
+
+35:21 causing the actual latency. In the same
+35:23 
+
+35:23 way there are a lot of cases when all
+35:26 
+
+35:26 these unintuitive components of our
+35:30 
+
+35:30 whole API workflow which is causing the
+35:32 
+
+35:32 actual latency. But mostly we just blame
+35:35 
+
+35:35 our database. We just blame our indexing
+35:38 
+
+35:38 strategy. We just blame our caching
+35:39 
+
+35:39 strategy. whatever uh the very obvious
+35:42 
+
+35:42 ones instead of actually measuring each
+35:44 
+
+35:44 part each component of our whole
+35:46 
+
+35:46 workflow and finding out the root cause
+35:48 
+
+35:48 that is the reason often when we
+35:50 
+
+35:50 encounter some kind of latency in our
+35:52 
+
+35:52 API we'll start investigating first into
+35:55 
+
+35:55 our database query even though the
+35:57 
+
+35:57 actual culprit might be something like a
+36:01 
+
+36:01 JSON serialization step or an XML
+36:03 
+
+36:03 serialization step or maybe the whole
+36:06 
+
+36:06 workflow of the API is fast the code is
+36:08 
+
+36:08 fast but the latency Laty is caused
+36:10 
+
+36:10 because the response payload is huge and
+36:14 
+
+36:14 the network transmission here is
+36:16 
+
+36:16 actually causing the latency. So the
+36:18 
+
+36:18 lesson in this part of the discussion is
+36:21 
+
+36:21 without measuring you should never guess
+36:24 
+
+36:24 which component which part of your
+36:26 
+
+36:26 workflow is actually causing the latency
+36:28 
+
+36:28 which is actually adding your
+36:29 
+
+36:29 milliseconds number. So every time you
+36:32 
+
+36:32 are talking about performance, never
+36:34 
+
+36:34 guess, always measure, right?
+36:36 
+
+36:36 Measurement is very important whenever
+36:39 
+
+36:39 we are talking about performance and
+36:41 
+
+36:41 scaling and optimization. And since we
+36:43 
+
+36:43 are talking about measuring stuff,
+36:46 
+
+36:46 another important concept that comes
+36:48 
+
+36:48 here is profiling. You might have
+36:50 
+
+36:50 already heard this which falls under a
+36:52 
+
+36:52 little advanced category. But this is
+36:55 
+
+36:55 something that you should also know of.
+36:57 
+
+36:57 This is also uh something that you have
+36:60 
+
+36:60 access to and that should be in your
+37:02 
+
+37:02 arsenal whenever you are trying to debug
+37:04 
+
+37:04 performance related stuff. So profiling
+37:07 
+
+37:07 to explain it, it is the practice of
+37:10 
+
+37:10 measuring where your application where
+37:13 
+
+37:13 your system actually spends its time. So
+37:16 
+
+37:16 these profilers they attach to your
+37:18 
+
+37:18 running application and during runtime
+37:21 
+
+37:21 during actual processing actual request
+37:24 
+
+37:24 serving and what they do they start
+37:26 
+
+37:26 recording a sample of that request
+37:29 
+
+37:29 response data and monitoring exactly
+37:32 
+
+37:32 what happens at every corner of your
+37:34 
+
+37:34 system. Things like which functions are
+37:36 
+
+37:36 executing when they started executing
+37:38 
+
+37:38 when they gave a response and recording
+37:40 
+
+37:40 all these different numbers from end to
+37:43 
+
+37:43 end. Now the output of a profiler can be
+37:46 
+
+37:46 very overwhelming because there are
+37:48 
+
+37:48 thousands of functions and each
+37:50 
+
+37:50 accounting for some fraction of total
+37:53 
+
+37:53 time etc etc. So we have a tool called
+37:57 
+
+37:57 flame graph a flame graph which makes
+37:60 
+
+37:60 this whole output of the profiler a
+38:02 
+
+38:02 little more digestible. So flame graphs
+38:05 
+
+38:05 what they do they show you the call
+38:07 
+
+38:07 stack over time. Call stack is basically
+38:09 
+
+38:09 the function execution. So all the
+38:11 
+
+38:11 variables that went to it the output etc
+38:13 
+
+38:13 etc. So functions that take more time
+38:16 
+
+38:16 they appear a little wider in the graph
+38:20 
+
+38:20 so that you can pay a little more
+38:22 
+
+38:22 attention to those functions and
+38:24 
+
+38:24 functions that are called by other
+38:26 
+
+38:26 functions they appear stacked on top.
+38:28 
+
+38:28 Right? Another thing that you can take a
+38:30 
+
+38:30 look at. So if you take a visual look
+38:33 
+
+38:33 without reading into the output of the
+38:35 
+
+38:35 profiler, you can make a guess about
+38:38 
+
+38:38 where your application spends most time
+38:41 
+
+38:41 on. But the first time you take a look
+38:44 
+
+38:44 at your profiler output, you'll be
+38:46 
+
+38:46 surprised because the bottleneck in most
+38:50 
+
+38:50 real world applications, the bottleneck
+38:53 
+
+38:53 is never where you expect. You will
+38:56 
+
+38:56 assume that your bottleneck is your
+38:58 
+
+38:58 complex business logic, right? The
+38:60 
+
+38:60 CPUbound task is often the business
+39:03 
+
+39:03 logic. But the actual time that your
+39:04 
+
+39:04 application is spending on is
+39:06 
+
+39:06 serializing the JSON. While you're
+39:08 
+
+39:08 expecting your application to be
+39:11 
+
+39:11 spending most time on database queries,
+39:13 
+
+39:13 the actual culprit was you calling an
+39:16 
+
+39:16 external API call in a loop, right? All
+39:19 
+
+39:19 these things start showing up when you
+39:21 
+
+39:21 start measuring your application end to
+39:23 
+
+39:23 end. But the profiler is in my
+39:26 
+
+39:26 experience not very good at IO bound
+39:28 
+
+39:28 task. IOB bound tasks are basically all
+39:31 
+
+39:31 these things which is database queries,
+39:33 
+
+39:33 file handling, serialization or making
+39:36 
+
+39:36 external API calls. All these different
+39:39 
+
+39:39 kinds of tasks are called IObound tasks
+39:41 
+
+39:41 which deals with input output and
+39:43 
+
+39:43 waiting for the results of input output.
+39:46 
+
+39:46 But the profilers are actually more
+39:49 
+
+39:49 useful at measuring CPUbound tasks where
+39:52 
+
+39:52 your application is actually using CPU
+39:54 
+
+39:54 cycles where it is actually performing
+39:57 
+
+39:57 some kind of computation. But most of
+39:59 
+
+39:59 the time our backend applications uh
+40:02 
+
+40:02 when we are talking about performance
+40:04 
+
+40:04 problems are IO bound. It is always some
+40:07 
+
+40:07 kind of input output problem whether it
+40:09 
+
+40:09 is at the database level or external
+40:11 
+
+40:11 service or or cues whatever mostly those
+40:14 
+
+40:14 are the culprits whenever we are talking
+40:16 
+
+40:16 about performance stuff unless you deal
+40:18 
+
+40:18 with things like image processing or
+40:20 
+
+40:20 machine learning related calculations
+40:22 
+
+40:22 and all where there are metrics
+40:25 
+
+40:25 manipulations and etc etc mostly in a
+40:27 
+
+40:27 typical SAS applications it's always the
+40:30 
+
+40:30 IO bound task that cause performance
+40:32 
+
+40:32 related problems and CPU profilers they
+40:36 
+
+40:36 are not very good at catching all these
+40:38 
+
+40:38 IO bound task or at least measuring them
+40:41 
+
+40:41 and that is the reason we have another
+40:43 
+
+40:43 tool at our disposal which is called
+40:46 
+
+40:46 distributed tracing and this falls under
+40:49 
+
+40:49 the category of observability. Now
+40:51 
+
+40:51 tracing what it means is it let's say a
+40:54 
+
+40:54 request came into your system. So
+40:56 
+
+40:56 following that particular request as it
+40:59 
+
+40:59 flows through your system and it records
+41:02 
+
+41:02 at what time it entered this particular
+41:04 
+
+41:04 component at what time it started the
+41:06 
+
+41:06 database query at what time it started
+41:08 
+
+41:08 executing this particular function at
+41:10 
+
+41:10 what time it left the function what time
+41:12 
+
+41:12 it started making this particular
+41:14 
+
+41:14 external API call all these things it
+41:16 
+
+41:16 starts measuring. So after you have
+41:19 
+
+41:19 spent setting up distributed tracing in
+41:22 
+
+41:22 your API in your application, you will
+41:24 
+
+41:24 see things like your particular request
+41:27 
+
+41:27 which which was this one products/
+41:30 
+
+41:30 product ID let's say in this case five.
+41:32 
+
+41:32 This spent only two milliseconds in your
+41:36 
+
+41:36 actual business code in your API logic
+41:38 
+
+41:38 but it spent around 800 milliseconds at
+41:42 
+
+41:42 your database query level. And now that
+41:45 
+
+41:45 you have this particular data, you can
+41:47 
+
+41:47 focus on your database query right. But
+41:50 
+
+41:50 having these numbers at what level at
+41:53 
+
+41:53 what component and at what element we
+41:56 
+
+41:56 are spending the most time on to find
+41:59 
+
+41:59 out this we have to implement a
+42:01 
+
+42:01 distributed tracing in our application.
+42:03 
+
+42:03 This is a very useful tool for measuring
+42:05 
+
+42:05 different kinds of latencies in our API
+42:08 
+
+42:08 very quickly. where it's due. Databases
+42:11 
+
+42:11 are typically uh the bottlenecks in most
+42:15 
+
+42:15 of the backend applications at least
+42:16 
+
+42:16 when we are trying to optimize our
+42:19 
+
+42:19 performance. Databases are one of the
+42:22 
+
+42:22 first things that we take a look at and
+42:24 
+
+42:24 there are good reasons for this because
+42:26 
+
+42:26 databases typically they do the hard
+42:29 
+
+42:29 work. They store the data whatever data
+42:33 
+
+42:33 that we have they store it on disk
+42:35 
+
+42:35 durably to persist that data so that
+42:38 
+
+42:38 every time we boot our system that data
+42:40 
+
+42:40 is available to us and same for
+42:42 
+
+42:42 insertion updation deletion and
+42:44 
+
+42:44 everything by also making sure there are
+42:47 
+
+42:47 no crashes and there are no failures.
+42:50 
+
+42:50 They also give us the guarantee of
+42:52 
+
+42:52 consistency by handling things like
+42:55 
+
+42:55 concurrent reads, concurrent writes,
+42:58 
+
+42:58 locking a lot of advanced concepts and a
+43:01 
+
+43:01 lot of advanced uh research go into
+43:03 
+
+43:03 databases every day and they also
+43:05 
+
+43:05 execute complex queries across millions
+43:08 
+
+43:08 and billions of rows and all of this
+43:10 
+
+43:10 does take some time. So we cannot really
+43:13 
+
+43:13 blame databases directly for all our
+43:16 
+
+43:16 performance problems. There are some
+43:18 
+
+43:18 common uh lowhanging fruits when it
+43:21 
+
+43:21 comes to the typical performance related
+43:24 
+
+43:24 problem that we face related to our
+43:27 
+
+43:27 databases. The first one which is a very
+43:29 
+
+43:29 notorious problem which is n +1 query
+43:33 
+
+43:33 problem. So in order to understand this,
+43:36 
+
+43:36 let's say you are a front-end engineer
+43:38 
+
+43:38 and you are on the client side working
+43:41 
+
+43:41 on a react app and you are working on a
+43:44 
+
+43:44 blog application and in order to show a
+43:47 
+
+43:47 list of 20 blogs around 20 blogs in the
+43:51 
+
+43:51 homepage you have to make a API call but
+43:55 
+
+43:55 for each of those posts or each of those
+43:58 
+
+43:58 blogs you also need to show the author's
+44:01 
+
+44:01 name here and the author's name is not
+44:04 
+
+44:04 available in the uh in the list API
+44:07 
+
+44:07 where we are getting the list of all
+44:10 
+
+44:10 these blogs details in there we do not
+44:13 
+
+44:13 get the details for the author of a
+44:16 
+
+44:16 particular post of a particular blog for
+44:19 
+
+44:19 that what you do you make the first API
+44:22 
+
+44:22 call where you fetch the whole list and
+44:25 
+
+44:25 then in a loop for each of those blog
+44:29 
+
+44:29 posts let's say items here you make
+44:32 
+
+44:32 another API to fetch the author. So for
+44:35 
+
+44:35 20 blogs you make 20 API calls here 20
+44:40 
+
+44:40 author API calls and total how many API
+44:44 
+
+44:44 calls you did which was 21 API calls for
+44:48 
+
+44:48 showing this single page. Now this
+44:50 
+
+44:50 pattern of fetching data, this pattern
+44:53 
+
+44:53 of accessing data is called n +1 query
+44:57 
+
+44:57 because you do the first query the first
+44:60 
+
+45:00 query to get n items and then you do n
+45:03 
+
+45:03 queries to fetch details about those n
+45:06 
+
+45:06 it single piece of detail. Now imagine
+45:09 
+
+45:09 for 20 you had to make around 21 API
+45:13 
+
+45:13 calls. For 100 similarly you'll have to
+45:17 
+
+45:17 make 10 and1 API calls. For 1,000 you'll
+45:21 
+
+45:21 have to make, 101 API calls. On the
+45:23 
+
+45:23 y-axis if you see the number of API
+45:26 
+
+45:26 calls that you need to make and on the
+45:28 
+
+45:28 x-axis you see the number of items that
+45:31 
+
+45:31 you need to show then it grows linearly
+45:34 
+
+45:34 with the number of items. So what is the
+45:36 
+
+45:36 problem here? Now of course there is an
+45:38 
+
+45:38 obvious problem the the number of items
+45:40 
+
+45:40 that you need to show and the number of
+45:42 
+
+45:42 network calls that we need to make
+45:44 
+
+45:44 should not be related in a linear
+45:46 
+
+45:46 relationship. So any engineer can u feel
+45:50 
+
+45:50 that there is something wrong here. We
+45:52 
+
+45:52 should not be making thousand requests
+45:54 
+
+45:54 for showing thousand items. But even if
+45:58 
+
+45:58 we ignore the obvious problem, the
+45:60 
+
+46:00 second problem is each database query
+46:03 
+
+46:03 has some amount of overhead because
+46:06 
+
+46:06 there is a network involved which is
+46:08 
+
+46:08 used to transmit the request and
+46:11 
+
+46:11 response across starting from your
+46:13 
+
+46:13 application server to your database
+46:16 
+
+46:16 server back and forth. And for this
+46:18 
+
+46:18 request transmission before this happens
+46:20 
+
+46:20 there is also a TCP connection layer or
+46:23 
+
+46:23 if you use connection pooling then u
+46:26 
+
+46:26 will not have to do that. But assuming
+46:28 
+
+46:28 uh you are getting a new connection for
+46:30 
+
+46:30 this then there is also a TCP connection
+46:33 
+
+46:33 um setup layer. There is the TCP
+46:35 
+
+46:35 connection setup overhead. Even after
+46:38 
+
+46:38 the request the query reaches your
+46:40 
+
+46:40 database the database also has to parse
+46:44 
+
+46:44 the query. it has to plan its execution.
+46:48 
+
+46:48 It has to actually execute the query and
+46:51 
+
+46:51 then it has to return the results back
+46:53 
+
+46:53 to your application. So even if let's
+46:55 
+
+46:55 say one query only takes 5 milliseconds
+46:58 
+
+46:58 which is extremely fast but for showing
+47:02 
+
+47:02 a,000 items and you're making thousand
+47:04 
+
+47:04 requests which means a,000 queries which
+47:06 
+
+47:06 will end up taking 5,000 millconds or 5
+47:10 
+
+47:10 seconds. So for 5 seconds your users
+47:14 
+
+47:14 users who are using your blog
+47:16 
+
+47:16 application they are seeing a loader for
+47:19 
+
+47:19 5 seconds straight is not a very good
+47:21 
+
+47:21 user experience at least by the
+47:23 
+
+47:23 standards of 2025. Now what is the
+47:26 
+
+47:26 solution here? The solution is pretty
+47:28 
+
+47:28 obvious. We don't uh even have to go
+47:30 
+
+47:30 into the mechanics of it which is
+47:32 
+
+47:32 fetching data in bulk. Right? Instead of
+47:35 
+
+47:35 making thousand API calls for thousand
+47:38 
+
+47:38 items, we should be able to fetch all
+47:41 
+
+47:41 those thousand items in a single
+47:42 
+
+47:42 request. So in our case instead of
+47:45 
+
+47:45 making uh a thousand or a 100 API calls
+47:48 
+
+47:48 a 100 different requests for fetching
+47:51 
+
+47:51 the author details you collect all the
+47:53 
+
+47:53 author ids in a single array or a single
+47:57 
+
+47:57 list whatever data structure that you
+47:58 
+
+47:58 use in your programming language and you
+48:01 
+
+48:01 fetch all of those in a single request
+48:03 
+
+48:03 in a single query. So now it will be one
+48:06 
+
+48:06 query to fetch all the posts and another
+48:09 
+
+48:09 query to fetch all the authors of those
+48:12 
+
+48:12 posts. Two queries in total. It does not
+48:14 
+
+48:14 matter whether you have to show 20 blog
+48:17 
+
+48:17 post or you have to show 100 blog post
+48:19 
+
+48:19 or you have to show thousand blog post.
+48:22 
+
+48:22 You'll always need to make only two API
+48:24 
+
+48:24 calls. If you don't see it in the
+48:27 
+
+48:27 perspective of front end, if you see in
+48:29 
+
+48:29 the perspective of your server, so far
+48:32 
+
+48:32 we've been talking in the context of
+48:34 
+
+48:34 your front end or your react app making
+48:37 
+
+48:37 an API call to your server to fetch the
+48:40 
+
+48:40 post to fetch the author information
+48:41 
+
+48:41 etc. Even if you forget about this part
+48:43 
+
+48:43 because server does not really store the
+48:46 
+
+48:46 data in any way. The server uses the
+48:49 
+
+48:49 database to store its data. So every
+48:51 
+
+48:51 time you are fetching a list of posts,
+48:53 
+
+48:53 the server is actually fetching those
+48:55 
+
+48:55 list of posts from the database. In same
+48:57 
+
+48:57 way, every time you are fetching the
+48:58 
+
+48:58 author's information, the server is
+48:60 
+
+49:00 fetching it from the database. The N +1
+49:03 
+
+49:03 query problem is actually at our server
+49:05 
+
+49:05 level, not at our front end level. So
+49:07 
+
+49:07 traditionally one of the problems with
+49:10 
+
+49:10 using OMS was people used to write uh
+49:13 
+
+49:13 code like this. So in the so let's say
+49:16 
+
+49:16 we have a uh function here fetch posts
+49:20 
+
+49:20 and in this function what people uh used
+49:23 
+
+49:23 to do was db dot select posts right
+49:28 
+
+49:28 where user id is etc etc and fetch a
+49:31 
+
+49:31 list of all the posts right this is an
+49:33 
+
+49:33 array of posts then in a for loop for
+49:37 
+
+49:37 post in posts fetch or select author
+49:42 
+
+49:42 from users where user id equals to
+49:45 
+
+49:45 author ID something like this. So in a
+49:47 
+
+49:47 for loop they used to run and fetch the
+49:50 
+
+49:50 information of all the others. Now this
+49:52 
+
+49:52 was traditionally called the n +1 query
+49:55 
+
+49:55 problem because when we are talking in
+49:57 
+
+49:57 the context of database your server your
+49:59 
+
+49:59 back end is actually the front end for
+50:01 
+
+50:01 your database and the n plus1 query
+50:03 
+
+50:03 problem traditionally happened at our
+50:06 
+
+50:06 server level not at our front end level.
+50:07 
+
+50:07 the front end uh example was just to uh
+50:10 
+
+50:10 make it more intuitive. But this is
+50:12 
+
+50:12 where the actual problem was. But in a
+50:15 
+
+50:15 lot of modern OMS, for example, if you
+50:18 
+
+50:18 take a look at Django, you can use
+50:20 
+
+50:20 things like select related for fetching
+50:24 
+
+50:24 all the data related to your foreign key
+50:27 
+
+50:27 relationships or you can also do
+50:29 
+
+50:29 prefetch related for doing things like
+50:32 
+
+50:32 many relationship. Same way if you are
+50:34 
+
+50:34 using Ruby in Rails then it has
+50:37 
+
+50:37 something like includes and if you're
+50:40 
+
+50:40 using a TypeScript type OM then it has
+50:43 
+
+50:43 things like left join and select right
+50:46 
+
+50:46 in pretty much every OM does not matter
+50:48 
+
+50:48 you are using Prisma drizzle all of
+50:50 
+
+50:50 these warms have primitives to bulk
+50:53 
+
+50:53 fetch or to fetch data using joins right
+50:58 
+
+50:58 if you are using SQL queries raw SQL
+50:60 
+
+50:60 queries of course the solution is to use
+51:02 
+
+51:02 join joints, left joints or inner joints
+51:04 
+
+51:04 or whatever. But if you're purely
+51:07 
+
+51:07 expressing your data fetching logic in
+51:10 
+
+51:10 terms of your OM then there are
+51:12 
+
+51:12 primitives available in your OM's uh
+51:15 
+
+51:15 level to fetch all the related data
+51:17 
+
+51:17 using foreign keys. And the solution was
+51:20 
+
+51:20 this. Instead of fetching whatever data
+51:22 
+
+51:22 that you need in a loop using your OM,
+51:25 
+
+51:25 you should instruct your OM to fetch or
+51:28 
+
+51:28 prefetch all the data that you need in
+51:30 
+
+51:30 bulk before you run the query, right?
+51:32 
+
+51:32 Which is much more efficient which only
+51:34 
+
+51:34 runs around two queries or a single SQL
+51:37 
+
+51:37 query instead of doing a,000 queries or
+51:40 
+
+51:40 thousand items. Now the problem of N +1
+51:44 
+
+51:44 query was very apparent using OMS is
+51:47 
+
+51:47 because OMS give you this this way of
+51:50 
+
+51:50 accessing data using your programming
+51:53 
+
+51:53 languages types and constructs. So
+51:56 
+
+51:56 something like this which is like posts
+51:59 
+
+51:59 equals to await db dot select dot posts
+52:05 
+
+52:05 where etc etc. Now after running this
+52:07 
+
+52:07 statement you have an array of posts.
+52:09 
+
+52:09 Now by intuition you'll do something
+52:12 
+
+52:12 like for post in post await fetch author
+52:16 
+
+52:16 information etc. Now it looks like
+52:18 
+
+52:18 normal code to you. It looks like uh
+52:21 
+
+52:21 your typescript code but since you are
+52:24 
+
+52:24 using an OM and the OM has its own way
+52:27 
+
+52:27 of fetching data which in turn uses raw
+52:30 
+
+52:30 SQL queries behind the scenes but since
+52:32 
+
+52:32 it looks very familiar a programming
+52:34 
+
+52:34 language constructs we don't think about
+52:37 
+
+52:37 how exactly the OM executes all these
+52:40 
+
+52:40 statements behind the scenes that's why
+52:42 
+
+52:42 in modern OM there is an option to u
+52:45 
+
+52:45 print the actual SQL queries that it is
+52:48 
+
+52:48 running behind the scenes. So that while
+52:50 
+
+52:50 development you can debug whether this
+52:53 
+
+52:53 is the SQL query pattern that you
+52:55 
+
+52:55 actually want to execute or do you want
+52:57 
+
+52:57 to make any modification or do you want
+52:59 
+
+52:59 to write your own raw SQLs. So anyway
+53:02 
+
+53:02 the problem of n +1 query is something
+53:05 
+
+53:05 to be aware of and something uh to look
+53:09 
+
+53:09 out for whenever you are using OMS and
+53:11 
+
+53:11 databases. Always try to use joins and
+53:14 
+
+53:14 your OM's bulk fetch constructs to avoid
+53:17 
+
+53:17 the N plus problem. Now moving on the
+53:20 
+
+53:20 second and the most relevant concept
+53:23 
+
+53:23 when it comes to database and
+53:25 
+
+53:25 performance is indexes. Indexes every
+53:28 
+
+53:28 single engineer knows this. The most
+53:30 
+
+53:30 common source of database performance
+53:33 
+
+53:33 problems involves indexes or to be more
+53:36 
+
+53:36 specific the lack of indexes the absence
+53:39 
+
+53:39 of indexes. So uh people who are
+53:42 
+
+53:42 familiar with indexes there is nothing
+53:44 
+
+53:44 much to explain there. You have to
+53:46 
+
+53:46 understand your uh data access patterns
+53:49 
+
+53:49 through your application observability
+53:51 
+
+53:51 framework and then accordingly you have
+53:53 
+
+53:53 to add indexes to different different
+53:55 
+
+53:55 tables so that the uh access is a little
+53:58 
+
+53:58 faster. But uh just to give a brief
+54:01 
+
+54:01 about what exactly are indexes whenever
+54:04 
+
+54:04 we talk about databases and indexes and
+54:06 
+
+54:06 the explanation for it. This is a very
+54:08 
+
+54:08 common uh example that people come up
+54:11 
+
+54:11 with which is the example of a library.
+54:13 
+
+54:13 So imagine a library which has around a
+54:17 
+
+54:17 million books in different different
+54:19 
+
+54:19 shells, different different sections,
+54:21 
+
+54:21 different different brooms, different
+54:22 
+
+54:22 different floors. But there is no
+54:24 
+
+54:24 catalog. There is no way to track down
+54:26 
+
+54:26 which kind of books lives in which
+54:29 
+
+54:29 floor, which section and which shelf. So
+54:31 
+
+54:31 if a new customer comes or a new excited
+54:35 
+
+54:35 reader comes to your library and they
+54:37 
+
+54:37 ask for a book by a specific author,
+54:40 
+
+54:40 right? Someone comes to your library and
+54:42 
+
+54:42 says they want to explore all the books
+54:45 
+
+54:45 of the author John Green. Now since you
+54:48 
+
+54:48 as a librarian do not maintain any kind
+54:51 
+
+54:51 of catalog whatsoever, you only have one
+54:54 
+
+54:54 choice. Walk through the entire library
+54:56 
+
+54:56 examining every single book and uh
+54:59 
+
+54:59 collecting all of that and giving the
+55:01 
+
+55:01 user a box which contains all the books
+55:04 
+
+55:04 of geometry. And of course there is a
+55:07 
+
+55:07 problem with that one. It takes a long
+55:10 
+
+55:10 time probably uh 3 days until you're
+55:13 
+
+55:13 done. And the second is if the user
+55:16 
+
+55:16 comes the second time asking for the
+55:18 
+
+55:18 same request asking for all the books of
+55:20 
+
+55:20 John Green or a second user comes asking
+55:22 
+
+55:22 for the same request again your 3-day
+55:25 
+
+55:25 adventure starts you start collecting
+55:26 
+
+55:26 all the books of John Green again since
+55:29 
+
+55:29 uh after the user reads them or after
+55:31 
+
+55:31 the user is done with all the books you
+55:34 
+
+55:34 put it back in random order in the
+55:36 
+
+55:36 shelves again. Anyway, so now that you
+55:39 
+
+55:39 have some kind of a very irrelevant
+55:41 
+
+55:41 intuition there, what we are trying to
+55:44 
+
+55:44 explain with this library example is the
+55:47 
+
+55:47 the activity of going through your whole
+55:50 
+
+55:50 library, examining each book to make
+55:53 
+
+55:53 sure that this is the book that you
+55:54 
+
+55:54 want. This whole process is called a
+55:57 
+
+55:57 sequential scan also called as full
+56:00 
+
+56:00 table scan which means exactly what it
+56:04 
+
+56:04 sounds like going through each row of a
+56:06 
+
+56:06 table to find out if this is the row
+56:08 
+
+56:08 that you want if this is the row that
+56:10 
+
+56:10 you want and collecting them one by one
+56:12 
+
+56:12 and returning the results to the user.
+56:15 
+
+56:15 Of course since we are talking about
+56:17 
+
+56:17 computing and databases it does not take
+56:20 
+
+56:20 3 days to get the results. It usually
+56:22 
+
+56:22 takes somewhere between 1,000
+56:24 
+
+56:24 milliseconds or 2 seconds if it is a
+56:26 
+
+56:26 very large table. But still from the
+56:29 
+
+56:29 standards of our modern uh performance,
+56:32 
+
+56:32 this is still slow. So what what is the
+56:34 
+
+56:34 solution here? Going back to our library
+56:36 
+
+56:36 example, if we as librarians, we
+56:39 
+
+56:39 maintain a catalog. A catalog which is
+56:43 
+
+56:43 organized by the author's name. Let's
+56:45 
+
+56:45 say there are all the authors in the
+56:48 
+
+56:48 alphabet A, B, C, N, and with the J. We
+56:51 
+
+56:51 have John Green and with that we also
+56:53 
+
+56:53 store the locations of all the books of
+56:56 
+
+56:56 John Green and where are they exactly
+56:58 
+
+56:58 stored in our library and once we have
+57:00 
+
+57:00 that information we directly go to all
+57:03 
+
+57:03 the places all the shelves all the
+57:05 
+
+57:05 sections in our library and fetch all
+57:07 
+
+57:07 the books and return it to our user
+57:09 
+
+57:09 which takes around 2 to 3 minutes
+57:11 
+
+57:11 depending on how big your library is. So
+57:14 
+
+57:14 mapping it back to our database context
+57:17 
+
+57:17 this is what an index is. It is
+57:19 
+
+57:19 typically a data structure and usually
+57:22 
+
+57:22 it is a B tree index. There are other
+57:24 
+
+57:24 types of indexes called hash index and
+57:27 
+
+57:27 all but for this particular use case
+57:29 
+
+57:29 that we talked about we use the database
+57:32 
+
+57:32 uses a B tree index a B tree data
+57:34 
+
+57:34 structure and what is the property of
+57:36 
+
+57:36 this particular data structure. It
+57:39 
+
+57:39 maintains a sorted copy a sorted copy of
+57:44 
+
+57:44 all the values of a column. Let's say uh
+57:46 
+
+57:46 B indexed our posts table with the value
+57:50 
+
+57:50 of author id. So starting from here like
+57:52 
+
+57:52 1 2 3 4 and all. It will maintain this
+57:55 
+
+57:55 list and the pointer to all the books.
+57:58 
+
+57:58 Since author ID is a foreign key there.
+58:01 
+
+58:01 So when you search by a particular
+58:02 
+
+58:02 column let's say we want all the books
+58:04 
+
+58:04 of author three. Then using this pointer
+58:07 
+
+58:07 relationship, we can instantly get
+58:09 
+
+58:09 access to all the books of that
+58:11 
+
+58:11 particular author. Instead of your
+58:12 
+
+58:12 database having to scan each and every
+58:15 
+
+58:15 single row, it knows exactly which rows
+58:18 
+
+58:18 it needs to fetch before. So of course
+58:21 
+
+58:21 as compared to the full table scan or
+58:24 
+
+58:24 the sequential scan, this is a much
+58:26 
+
+58:26 faster operation. So the operation
+58:28 
+
+58:28 depending on how many rows that you had
+58:30 
+
+58:30 in the first place. For a million rows,
+58:32 
+
+58:32 it takes around 4 seconds to find all
+58:35 
+
+58:35 the books for that author. Then with an
+58:38 
+
+58:38 index in place, it will take somewhere
+58:40 
+
+58:40 like 40 milliseconds or 100 millcond
+58:43 
+
+58:43 under 100 millconds, which is a huge
+58:46 
+
+58:46 performance improvement. But with index,
+58:48 
+
+58:48 there is another important fact that you
+58:52 
+
+58:52 have to keep in mind, which is indexes
+58:55 
+
+58:55 are not free. They are not a one-stop
+58:58 
+
+58:58 solution to all your database
+58:60 
+
+58:60 performance problems because indexes
+59:02 
+
+59:02 have their own cost. The cost is cost.
+59:05 
+
+59:05 First, each index it takes some amount
+59:08 
+
+59:08 of space. Of course, if it wants to
+59:11 
+
+59:11 store this sorted list with all the
+59:14 
+
+59:14 pointers and all the information to
+59:16 
+
+59:16 fetch all the rows etc etc. Then it has
+59:18 
+
+59:18 to store that information somewhere. And
+59:22 
+
+59:22 depending on how large your table is,
+59:24 
+
+59:24 how many rows that your table has the
+59:27 
+
+59:27 indexes the size of the indexed data
+59:30 
+
+59:30 will also grow. So that is the cost
+59:33 
+
+59:33 factor. The second one is the more
+59:35 
+
+59:35 problematic one is that every index in
+59:39 
+
+59:39 our indexed data, our indexed collection
+59:41 
+
+59:41 here, it also has to be updated every
+59:44 
+
+59:44 time you do an insert or update or a
+59:48 
+
+59:48 delete row operation on your primary
+59:50 
+
+59:50 table. the table of whose column you
+59:52 
+
+59:52 have indexed. Every time you do an
+59:54 
+
+59:54 insert, update or delete operation on
+59:56 
+
+59:56 that table, your indexed data structure
+59:58 
+
+59:58 also has to be updated. Since it has to
+60:00 
+
+60:00 be in sync with all these operations so
+60:02 
+
+60:02 that when you run a select query, it can
+60:05 
+
+60:05 appropriately fetch the data without
+60:08 
+
+60:08 being out of sync with the current state
+60:10 
+
+60:10 of your table. So this is the second and
+60:13 
+
+60:13 more problematic factor of using
+60:16 
+
+60:16 indexes. So if to improve your
+60:19 
+
+60:19 performance what you did for every
+60:21 
+
+60:21 column of your table you went ahead and
+60:24 
+
+60:24 created an index for that and every time
+60:26 
+
+60:26 you do an insert update or delete
+60:28 
+
+60:28 operation on that table all the indexed
+60:31 
+
+60:31 data structure has to be updated and
+60:33 
+
+60:33 you'll see huge latency numbers all your
+60:36 
+
+60:36 right operations especially they will
+60:38 
+
+60:38 slow down significantly because every
+60:40 
+
+60:40 time they do a right operation they have
+60:42 
+
+60:42 to update all these index data
+60:44 
+
+60:44 structures one by one. So uh to find the
+60:47 
+
+60:47 solution for this as I had already
+60:49 
+
+60:49 explained in the database video instead
+60:51 
+
+60:51 of defining the indexes of course uh at
+60:54 
+
+60:54 the start of your migration when you're
+60:57 
+
+60:57 creating new tables you can go ahead and
+60:59 
+
+60:59 add one or two indexes for fields that
+61:02 
+
+61:02 you know that are going to be part of
+61:04 
+
+61:04 the query because by default the ID
+61:06 
+
+61:06 field the primary key of a table is
+61:10 
+
+61:10 already indexed by the database at least
+61:12 
+
+61:12 that is the case for posgress so you do
+61:14 
+
+61:14 not have to explicitly index the ID
+61:16 
+
+61:16 field. You search by ID then it is going
+61:19 
+
+61:19 to use the index to find that particular
+61:21 
+
+61:21 row. But if it is any other column,
+61:24 
+
+61:24 let's say we are talking about our books
+61:26 
+
+61:26 table, then the ID column of the books
+61:28 
+
+61:28 table is already indexed. But you have
+61:30 
+
+61:30 to manually index the author ID field,
+61:33 
+
+61:33 the authority column. And since we know
+61:36 
+
+61:36 that the author ID is such a useful
+61:40 
+
+61:40 column to search books by, we can go
+61:43 
+
+61:43 ahead and add an index for author ID
+61:45 
+
+61:45 while we are defining our table only uh
+61:47 
+
+61:47 before we even write our APIs because it
+61:50 
+
+61:50 is such a common use case searching all
+61:52 
+
+61:52 the books of an author. But some of the
+61:55 
+
+61:55 nonobvious use cases where we are not
+61:58 
+
+61:58 really sure whether a particular column
+62:01 
+
+62:01 is going to be part of many queries or
+62:04 
+
+62:04 is going to be part of many joins
+62:06 
+
+62:06 because in joins also uh indexes are
+62:09 
+
+62:09 used. So if we are not very confident,
+62:12 
+
+62:12 we are not very sure about that then we
+62:14 
+
+62:14 should wait. We should actually uh
+62:16 
+
+62:16 monitor our app. We should take a look
+62:19 
+
+62:19 at our logs at our traces and after we
+62:22 
+
+62:22 know for sure after we have the data
+62:23 
+
+62:23 that these particular API endpoints are
+62:26 
+
+62:26 being hit most frequently and using
+62:28 
+
+62:28 distributed tracing we find out that
+62:31 
+
+62:31 this particular database query is having
+62:34 
+
+62:34 this amount of latency because of the
+62:36 
+
+62:36 absence of uh an index on the ISBN
+62:40 
+
+62:40 number field that is the reason we have
+62:42 
+
+62:42 to index the ISBN number field ISBN
+62:45 
+
+62:45 number column. So this is how in a real
+62:47 
+
+62:47 production system we decide which
+62:50 
+
+62:50 columns exactly we should index unless
+62:53 
+
+62:53 they are very obvious like the authority
+62:54 
+
+62:54 columns because indexes have a huge
+62:58 
+
+62:58 overhead you should be very cautious and
+63:01 
+
+63:01 not be very generous when you are
+63:03 
+
+63:03 defining different indexes on your
+63:05 
+
+63:05 table. Two other things that also come
+63:07 
+
+63:07 here since we are talking about indexes
+63:10 
+
+63:10 is uh composite index and also covering
+63:15 
+
+63:15 index. It is important to understand the
+63:17 
+
+63:17 difference between these two whenever we
+63:19 
+
+63:19 are talking about database indexes. So
+63:21 
+
+63:21 I'll just mention it in brief. Composite
+63:23 
+
+63:23 index basically uh means that it covers
+63:26 
+
+63:26 multiple columns column one column two.
+63:29 
+
+63:29 So for example, if you frequently query
+63:32 
+
+63:32 by both user ID and the column created
+63:37 
+
+63:37 at created at then a composite index on
+63:41 
+
+63:41 a structure like this user ID, comma
+63:43 
+
+63:43 created at this will help you optimize
+63:48 
+
+63:48 that particular query better than
+63:50 
+
+63:50 creating indexes on these two
+63:52 
+
+63:52 separately. Of course the order of
+63:55 
+
+63:55 creating this index also matters. The
+63:57 
+
+63:57 user ID comes first then comes the
+63:59 
+
+63:59 created at. Because when you create a
+64:02 
+
+64:02 composite index like this with the order
+64:05 
+
+64:05 of user ID and created at, it anyway
+64:07 
+
+64:07 helps you with a query where both user
+64:10 
+
+64:10 ID and created at is used. But even if
+64:14 
+
+64:14 both are not used, if even if you are
+64:17 
+
+64:17 only querying by user ID, this index
+64:19 
+
+64:19 still applies because this is the order
+64:21 
+
+64:21 that you have applied it. But if you
+64:23 
+
+64:23 only query by created at this index will
+64:26 
+
+64:26 not be applied. So the ordering of
+64:28 
+
+64:28 defining or creating this index matters.
+64:31 
+
+64:31 So that's about composite index. Now
+64:34 
+
+64:34 what is covering index? Let's say we
+64:36 
+
+64:36 have a table called uh departments
+64:40 
+
+64:40 departments and our uh internal sales
+64:43 
+
+64:43 team frequently adds departments or
+64:46 
+
+64:46 updates department deletes department
+64:48 
+
+64:48 etc depending on the client
+64:49 
+
+64:49 requirements. Now the department's table
+64:52 
+
+64:52 has let's say a 100 different columns
+64:55 
+
+64:55 but the only column that we need is the
+64:58 
+
+64:58 name of the department which we show uh
+65:01 
+
+65:01 in our front end in our client app in
+65:03 
+
+65:03 our web app and also the ID of the
+65:05 
+
+65:05 department. Since we only need these two
+65:08 
+
+65:08 columns what we can do we can use a
+65:10 
+
+65:10 covering index to index the name column.
+65:13 
+
+65:13 And what happens when you use the
+65:15 
+
+65:15 covering index is whenever you make a
+65:17 
+
+65:17 query which only involves the name of
+65:20 
+
+65:20 the department the database can serve
+65:23 
+
+65:23 all the data that we need from the index
+65:26 
+
+65:26 does not have to go back to the actual
+65:28 
+
+65:28 table contents and fetch the data. All
+65:30 
+
+65:30 the data will be available in the index
+65:32 
+
+65:32 only and we can serve that from there.
+65:34 
+
+65:34 Same way you can add multiple columns
+65:36 
+
+65:36 but of course storing more data in the
+65:38 
+
+65:38 index makes the size of the index even
+65:40 
+
+65:40 bigger. You have to carefully analyze if
+65:42 
+
+65:42 this is worth it or not. But the
+65:44 
+
+65:44 question that you can ask in the end is
+65:47 
+
+65:47 how do you know how do you actually know
+65:49 
+
+65:49 uh which field to index at your database
+65:51 
+
+65:51 level. Let's say using distributed
+65:53 
+
+65:53 tracing you found out that this
+65:55 
+
+65:55 particular query select dash from dash
+65:59 
+
+65:59 join this these tables and with the
+66:01 
+
+66:01 group I having whatever your complex
+66:03 
+
+66:03 query this is this complex query. How do
+66:05 
+
+66:05 you exactly know uh which column in all
+66:08 
+
+66:08 this that you have to index? This is
+66:10 
+
+66:10 very simple. A lot of databases offer
+66:13 
+
+66:13 this very useful tool which is called
+66:15 
+
+66:15 analyze or explain analyze. Whenever you
+66:19 
+
+66:19 are running your query, if you add
+66:20 
+
+66:20 explain analyze before the start of this
+66:23 
+
+66:23 query, what happens? The database shows
+66:25 
+
+66:25 you how exactly the database was able to
+66:29 
+
+66:29 fetch all the data from uh which table
+66:32 
+
+66:32 it started, what table it joined with,
+66:35 
+
+66:35 what index it exactly used for fetching
+66:38 
+
+66:38 that particular piece of data and you'll
+66:39 
+
+66:39 find all the internal details of how the
+66:42 
+
+66:42 whole query plan was executed from start
+66:46 
+
+66:46 to end. And you can just take a look at
+66:49 
+
+66:49 that query plan and you can find out uh
+66:52 
+
+66:52 what are the columns for which we are
+66:55 
+
+66:55 doing a sequential scan or a full table
+66:57 
+
+66:57 scan. there are no indexes being used
+66:59 
+
+66:59 and uh you can guess that if the rows of
+67:03 
+
+67:03 this table are in thousands or millions
+67:06 
+
+67:06 then this might be the cause of latency
+67:08 
+
+67:08 and you can add an index here and even
+67:10 
+
+67:10 after adding an index you can run the
+67:12 
+
+67:12 same excellent analyze query the second
+67:14 
+
+67:14 time and you can check whether our
+67:16 
+
+67:16 database is able to use this particular
+67:19 
+
+67:19 index or not if it is able to use that
+67:22 
+
+67:22 particular index. So instead of showing
+67:24 
+
+67:24 full table scan or instead of showing
+67:26 
+
+67:26 sequential scan it will show you index
+67:28 
+
+67:28 scan and your query should naturally
+67:31 
+
+67:31 feel much faster. So by using this
+67:34 
+
+67:34 measuring techniques using distributed
+67:36 
+
+67:36 tracing to find out the exact database
+67:38 
+
+67:38 query and then using explain analyze to
+67:41 
+
+67:41 find the exact columns you can find out
+67:43 
+
+67:43 the key of your performance problems in
+67:46 
+
+67:46 your database. That's all about indexes
+67:49 
+
+67:49 when we talk about databases. Next
+67:52 
+
+67:52 overhead that comes is the cost of
+67:55 
+
+67:55 connections. One of the realizations
+67:57 
+
+67:57 that you'll have once you start scaling
+67:59 
+
+67:59 your back end is the realization that
+68:02 
+
+68:02 your database connections they are not
+68:05 
+
+68:05 as cheap as you thought because when we
+68:08 
+
+68:08 are working in local they are so cheap
+68:10 
+
+68:10 that we never even have to think about
+68:13 
+
+68:13 database connections or their relations
+68:15 
+
+68:15 to uh performance overhead. But
+68:18 
+
+68:18 [clears throat] when you start scaling
+68:19 
+
+68:19 you'll see that database connections
+68:22 
+
+68:22 they can get very expensive at scale. So
+68:25 
+
+68:25 in order to understand that let's talk a
+68:27 
+
+68:27 little bit about database connections.
+68:29 
+
+68:29 Let's say we have our server here. So
+68:32 
+
+68:32 our server and this is our database.
+68:37 
+
+68:37 What exactly happens when your
+68:39 
+
+68:39 application or your backend connects to
+68:41 
+
+68:41 your database? How does this whole
+68:42 
+
+68:42 connection work? To explain it simply,
+68:46 
+
+68:46 it establishes what we call as a TCP
+68:48 
+
+68:48 connection. Now TCP connection itself is
+68:51 
+
+68:51 a uh three-way handshake process. You
+68:54 
+
+68:54 send a SIM, there is an act, there is a
+68:55 
+
+68:55 SIN or whatever which goes into the
+68:58 
+
+68:58 network engineering domain. But just so
+68:60 
+
+68:60 you know, we establish what we call as a
+69:03 
+
+69:03 TCP connection and we uh use three-way
+69:06 
+
+69:06 handshake for that TCP connection. After
+69:08 
+
+69:08 it has established this TCP connection,
+69:11 
+
+69:11 it performs any kind of authentication
+69:14 
+
+69:14 if there are any necessary then it
+69:16 
+
+69:16 negotiates the encryption algorithms
+69:19 
+
+69:19 like private key, public key and all
+69:21 
+
+69:21 that infrastructure. Then it sets up a
+69:24 
+
+69:24 session state for the data access. Then
+69:27 
+
+69:27 the database actually allocates some
+69:30 
+
+69:30 amount of memory for this connection.
+69:32 
+
+69:32 Some megabytes or MBs for starting out.
+69:35 
+
+69:35 So this is all the things that happen
+69:38 
+
+69:38 each time your server establishes a new
+69:41 
+
+69:41 connection with your database. All these
+69:44 
+
+69:44 things happen one by one and of course
+69:46 
+
+69:46 all these things take time and
+69:49 
+
+69:49 resources. So the point that we are
+69:51 
+
+69:51 trying to make here is if your
+69:54 
+
+69:54 application if your back end establishes
+69:56 
+
+69:56 a new connection for every single
+69:59 
+
+69:59 database operation and instantly closes
+70:01 
+
+70:01 it once it is done with that particular
+70:04 
+
+70:04 single operation then this whole cost of
+70:07 
+
+70:07 setting up a database connection you'll
+70:10 
+
+70:10 keep paying it repeatedly again and
+70:12 
+
+70:12 again and here you are going to pay with
+70:15 
+
+70:15 the cost of latency latency of setting
+70:18 
+
+70:18 up a connection every time you get a new
+70:21 
+
+70:21 HTTP request, every time you have to
+70:23 
+
+70:23 make a new database query. The second
+70:24 
+
+70:24 thing is the databases limit because the
+70:28 
+
+70:28 database also has a limit for number of
+70:31 
+
+70:31 connections that you can establish with
+70:33 
+
+70:33 it. A typical Postgress database has a
+70:37 
+
+70:37 limit on let's say a fewund connections
+70:40 
+
+70:40 500 or 600 depending on how large of a
+70:43 
+
+70:43 memory how large of a CPU that you have
+70:46 
+
+70:46 configured for the database. But talking
+70:48 
+
+70:48 in general you have let's say around 500
+70:50 
+
+70:50 or 400 to 500 connections of limit. So
+70:54 
+
+70:54 if your application has a traffic spike
+70:57 
+
+70:57 or if it's a busy day some kind of sale
+70:59 
+
+70:59 happening then your back end can easily
+71:02 
+
+71:02 exhaust all the database connections
+71:04 
+
+71:04 since it is going to uh deal with all
+71:06 
+
+71:06 these different HTTP requests
+71:07 
+
+71:07 concurrently dealing with 500 or
+71:10 
+
+71:10 thousands or u 10 thousands of requests
+71:12 
+
+71:12 in a second or minute it will easily
+71:15 
+
+71:15 exhaust your databases connection limit
+71:17 
+
+71:17 and your database will crash. So in
+71:19 
+
+71:19 order to prevent this particular problem
+71:22 
+
+71:22 of exhausting the connection limit and
+71:25 
+
+71:25 the first one is the paying the cost
+71:27 
+
+71:27 factor every time we want to make a new
+71:29 
+
+71:29 database query creating a new database
+71:31 
+
+71:31 connection. To avoid those two issues
+71:34 
+
+71:34 what people have come up with is the
+71:37 
+
+71:37 concept of connection pooling. A very
+71:40 
+
+71:40 important concept when we are talking
+71:41 
+
+71:41 about performance and scaling. Now
+71:44 
+
+71:44 connection pooling solves both of these
+71:46 
+
+71:46 problems. the problem of having to
+71:48 
+
+71:48 establish a new connection with our
+71:49 
+
+71:49 database every time we want to uh make a
+71:52 
+
+71:52 new database and the second thing is the
+71:55 
+
+71:55 the danger the potential of exhausting
+71:58 
+
+71:58 our database connection limit and how
+72:00 
+
+72:00 does it help us. So instead of
+72:02 
+
+72:02 establishing a new connection with our
+72:04 
+
+72:04 database every time we want to make a
+72:06 
+
+72:06 new query what we do we interact with a
+72:09 
+
+72:09 middleman which we call as the database
+72:11 
+
+72:11 pool. This is our server. This is our
+72:13 
+
+72:13 database. And instead of uh directly
+72:16 
+
+72:16 interacting with our database, we
+72:18 
+
+72:18 interact with the pool. And what does
+72:20 
+
+72:20 this pool do? These connection pools,
+72:23 
+
+72:23 they in turn send our request to the
+72:26 
+
+72:26 database in a more optimized because
+72:28 
+
+72:28 what a pool does, it maintains a set of
+72:31 
+
+72:31 connections. Instead of repeatedly
+72:34 
+
+72:34 opening a new connection and closing it,
+72:36 
+
+72:36 it maintains a set of open connections,
+72:38 
+
+72:38 set of idle connections or whatever we
+72:40 
+
+72:40 call in the terminology of pools.
+72:42 
+
+72:42 Basically a set of connections it has
+72:45 
+
+72:45 readym made for us. So when our server
+72:48 
+
+72:48 when our back end needs to interact with
+72:50 
+
+72:50 our database what we do our server asks
+72:53 
+
+72:53 for a connection asks to borrow a single
+72:56 
+
+72:56 connection from our pool and it takes
+72:59 
+
+72:59 that connection and using that
+73:00 
+
+73:00 connection it makes the database query
+73:03 
+
+73:03 which is the result after it is done it
+73:05 
+
+73:05 gives the connection back to the pool.
+73:07 
+
+73:07 So after that instead of closing the
+73:10 
+
+73:10 connection after we are done with our
+73:11 
+
+73:11 query the pool keeps the connection open
+73:14 
+
+73:14 depending on your configuration uh it
+73:16 
+
+73:16 depends uh how long the pool will keep
+73:18 
+
+73:18 the connection open but it will keep the
+73:21 
+
+73:21 connection open for some time that you
+73:22 
+
+73:22 can assume so that the next time we want
+73:25 
+
+73:25 to make a new database query it will
+73:27 
+
+73:27 reuse the same connection instead of
+73:29 
+
+73:29 creating a new connection to our
+73:30 
+
+73:30 database. By using this pool
+73:32 
+
+73:32 architecture we got rid of those two
+73:34 
+
+73:34 problems. Even when we are talking about
+73:36 
+
+73:36 uh database pooling, there are two types
+73:39 
+
+73:39 of pooling patterns. One is using
+73:42 
+
+73:42 internal what is say and the second one
+73:44 
+
+73:44 is external pooling. Internal pooling
+73:47 
+
+73:47 just means uh usually these days all the
+73:50 
+
+73:50 modern database drivers. They provide
+73:53 
+
+73:53 pooling at your applications level. they
+73:56 
+
+73:56 the database driver itself maintains a
+73:58 
+
+73:58 pool of connections and you interact
+74:00 
+
+74:00 with that pool to uh make database
+74:03 
+
+74:03 queries and give it back and all. It is
+74:05 
+
+74:05 called internal because it is specific
+74:07 
+
+74:07 to your server and since in our modern
+74:11 
+
+74:11 uh web application structure we don't
+74:13 
+
+74:13 have a single server when we want to
+74:15 
+
+74:15 scale we add multiple servers. So for
+74:17 
+
+74:17 each of these servers since we are using
+74:20 
+
+74:20 internal pooling they will have a pool
+74:22 
+
+74:22 of connections. Now the problem with
+74:24 
+
+74:24 this is the way we configure our uh
+74:28 
+
+74:28 scaling the scaling of our server. This
+74:30 
+
+74:30 is called horizontal scaling. When you
+74:31 
+
+74:31 add more instances of our server when
+74:34 
+
+74:34 our traffic spikes, right? So the one
+74:37 
+
+74:37 scenario one problematic scenario here
+74:39 
+
+74:39 is let's say our traffic spikes at this
+74:42 
+
+74:42 point and uh our Kubernetes autoscaling
+74:46 
+
+74:46 infrastructure what it did it added two
+74:48 
+
+74:48 more instances. So each server maintains
+74:51 
+
+74:51 a pool of let's say uh 150 connections
+74:55 
+
+74:55 at a time and since we added three
+74:58 
+
+74:58 instances that is 150 150 150 which is
+75:02 
+
+75:02 around 450 connection atoms that you can
+75:04 
+
+75:04 assume or the 450 is the maximum amount
+75:07 
+
+75:07 of connection that we will be able to
+75:10 
+
+75:10 push to. Now the problem is our database
+75:13 
+
+75:13 can only handle 300 connections and now
+75:16 
+
+75:16 the moment the traffic spikes again and
+75:20 
+
+75:20 we push to let's say 400 connections
+75:23 
+
+75:23 between all these three instances of our
+75:25 
+
+75:25 back end of our server our database is
+75:27 
+
+75:27 going to crash because we exhausted the
+75:30 
+
+75:30 pool limit and that is the reason we
+75:32 
+
+75:32 have external poolers. So for Postgress
+75:35 
+
+75:35 a very popular external pooler is called
+75:37 
+
+75:37 PG bouncer. Take a look at PG bouncer. G
+75:41 
+
+75:41 bouncer a very lightweight connection
+75:43 
+
+75:43 pooler for posgress. It is also open
+75:46 
+
+75:46 source. You can take a look at this. But
+75:48 
+
+75:48 the whole idea of PG bouncer is let's
+75:51 
+
+75:51 say we explore the same scenario again.
+75:53 
+
+75:53 We have a traffic spike and our
+75:55 
+
+75:55 Kubernetes autoscaler added two more
+75:57 
+
+75:57 instances of servers. But this time
+76:00 
+
+76:00 instead of each server having its own
+76:03 
+
+76:03 internal pool of connections, what
+76:05 
+
+76:05 happens? We configure an external PG
+76:07 
+
+76:07 bouncer pooler which maintains a pool of
+76:10 
+
+76:10 let's say 250 or 300 connections and all
+76:14 
+
+76:14 the instances of our server they
+76:17 
+
+76:17 interact with this pooler. Since this is
+76:19 
+
+76:19 an external pooler, all of them have
+76:21 
+
+76:21 access to this using some kind of
+76:22 
+
+76:22 networking. And this in turn deals with
+76:25 
+
+76:25 our database. And now we will not be
+76:28 
+
+76:28 exhausting our database limit because
+76:29 
+
+76:29 since this single pool interacts with
+76:32 
+
+76:32 all the instances of our server, there
+76:34 
+
+76:34 will never be a scenario where we will
+76:36 
+
+76:36 exhaust our connection pool without
+76:39 
+
+76:39 realizing because a spike in our
+76:41 
+
+76:41 traffic. So that is the difference
+76:42 
+
+76:42 between internal pooling and external
+76:44 
+
+76:44 pooling. When we are scaling, when we go
+76:47 
+
+76:47 to production, we usually prefer
+76:49 
+
+76:49 configuring an external pooler,
+76:51 
+
+76:51 something like PG bouncer as compared to
+76:53 
+
+76:53 internal pooling, especially if we are
+76:55 
+
+76:55 aware of our uh traffic spike patterns
+76:58 
+
+76:58 and with that we have covered some of
+77:02 
+
+77:02 the important performance related
+77:04 
+
+77:04 concerns when we are talking about
+77:06 
+
+77:06 databases. The first one was N plus1
+77:08 
+
+77:08 query problem. The second one was the
+77:12 
+
+77:12 indexing strategy, what to do, what not
+77:14 
+
+77:14 to do. And the third one was the
+77:16 
+
+77:16 overhead of creating, establishing and
+77:18 
+
+77:18 destroying connections again and again
+77:20 
+
+77:20 and the importance of using pooling for
+77:23 
+
+77:23 performance. So by this point you have
+77:26 
+
+77:26 already optimized your queries, you have
+77:28 
+
+77:28 added all the appropriate indexes and
+77:31 
+
+77:31 you have configured your connection
+77:34 
+
+77:34 pool. But still your database is the
+77:37 
+
+77:37 bottleneck. Still you are seeing latency
+77:40 
+
+77:40 at your database level. Now at this
+77:42 
+
+77:42 point the obvious next step should be
+77:45 
+
+77:45 caching. Of course we have discussed a
+77:48 
+
+77:48 lot about caching in the caching video
+77:51 
+
+77:51 in this playlist. So we are not going to
+77:53 
+
+77:53 go too deep into the mechanics of
+77:57 
+
+77:57 caching. But we'll still have to discuss
+77:59 
+
+77:59 caching since we are talking about
+78:01 
+
+78:01 performance and scaling. We cannot do
+78:04 
+
+78:04 that without mentioning caching since
+78:07 
+
+78:07 that is such an integral part of our
+78:09 
+
+78:09 performance or our systems performance.
+78:12 
+
+78:12 The idea of caching is beautifully
+78:14 
+
+78:14 simple which is store the results of any
+78:18 
+
+78:18 expensive operation. Let's say in our
+78:20 
+
+78:20 case the expensive operation is the
+78:23 
+
+78:23 database layer. So whatever expensive
+78:25 
+
+78:25 operation whatever complex queries that
+78:27 
+
+78:27 we are running here we take the result
+78:29 
+
+78:29 of this and we store it in radius or any
+78:33 
+
+78:33 kind of caching solution that you use.
+78:35 
+
+78:35 So the next time a request comes instead
+78:37 
+
+78:37 of going through all these complex
+78:39 
+
+78:39 queries we do a detour here and we check
+78:42 
+
+78:42 if our caching layer already has the
+78:45 
+
+78:45 result of this particular complex query
+78:47 
+
+78:47 or not. If it has then we directly
+78:50 
+
+78:50 return that response instead of going
+78:52 
+
+78:52 through this path which let's say takes
+78:54 
+
+78:54 around 500 milliseconds or let's say 800
+78:57 
+
+78:57 millconds. But if we return the same
+78:60 
+
+78:60 response from our caching layer it takes
+79:02 
+
+79:02 around 50 mconds. So with just one move
+79:05 
+
+79:05 we were able to reduce the perceived
+79:08 
+
+79:08 latency from 800 mconds to 50 mconds.
+79:12 
+
+79:12 That's the part about caching that all
+79:15 
+
+79:15 of us all the engineers know this the
+79:18 
+
+79:18 very obvious use case of caching. But
+79:21 
+
+79:21 while we are discussing about caching,
+79:24 
+
+79:24 one of the most common disadvantages of
+79:27 
+
+79:27 using caching or one of the most
+79:29 
+
+79:29 problematic situation while using
+79:32 
+
+79:32 caching is cache invalidation. There is
+79:34 
+
+79:34 a famous code around here which is there
+79:37 
+
+79:37 are only two difficult problems in
+79:39 
+
+79:39 programming. One is naming things,
+79:41 
+
+79:41 naming your variables, naming your
+79:43 
+
+79:43 functions, naming your classes. And the
+79:45 
+
+79:45 second one is cache invalidation. And
+79:48 
+
+79:48 that is not an exaggeration. If you have
+79:51 
+
+79:51 personally implemented multi-layer
+79:53 
+
+79:53 caching in your system, cache
+79:55 
+
+79:55 invalidation is a very difficult problem
+79:58 
+
+79:58 because of the fact that it touches upon
+80:01 
+
+80:01 so many layers starting from your
+80:02 
+
+80:02 servers to CDNs, your client's browsers
+80:06 
+
+80:06 and whatever comes between that things
+80:08 
+
+80:08 like reverse proxy and all these things
+80:11 
+
+80:11 when the actual data for example in our
+80:14 
+
+80:14 case when the result of this particular
+80:17 
+
+80:17 complex query which we were running
+80:19 
+
+80:19 through SQL on top of our database. This
+80:22 
+
+80:22 data, this underlying data actually
+80:24 
+
+80:24 changes. We cannot serve the same old
+80:27 
+
+80:27 cached data anymore. We have to
+80:29 
+
+80:29 invalidate that cache somehow and
+80:32 
+
+80:32 keeping this cache data in sync with our
+80:35 
+
+80:35 original data which lives in our
+80:37 
+
+80:37 database. That is the difficult problem
+80:39 
+
+80:39 that we are talking about. So in order
+80:41 
+
+80:41 to deal with cache invalidation, we have
+80:44 
+
+80:44 primarily two techniques that we
+80:46 
+
+80:46 regularly use. The first one is
+80:48 
+
+80:48 timebased expiration and the second one
+80:51 
+
+80:51 is event based invalidation. First one
+80:54 
+
+80:54 is time based invalidation and second
+80:55 
+
+80:55 one is event based invalidation. Time
+80:58 
+
+80:58 based invalidation is pretty
+80:59 
+
+80:59 straightforward. We decide beforehand
+81:02 
+
+81:02 that we want to keep this cache valid
+81:06 
+
+81:06 for this amount of time. Let's say for 5
+81:08 
+
+81:08 minutes or 10 minutes. After this amount
+81:11 
+
+81:11 of time, this cache should expire and
+81:14 
+
+81:14 the next time a new request comes, we
+81:16 
+
+81:16 should consult with the original source
+81:18 
+
+81:18 of data instead of taking the cash data.
+81:20 
+
+81:20 That's what we mean by time based
+81:22 
+
+81:22 invalidation. But of course the problem
+81:25 
+
+81:25 here with time based invalidation is
+81:27 
+
+81:27 figuring out the optimal amount of time
+81:30 
+
+81:30 for our expiration for our automatic
+81:32 
+
+81:32 expiration which depends on our users
+81:35 
+
+81:35 access patterns the frequency with which
+81:38 
+
+81:38 our API is hit and that again differs
+81:41 
+
+81:41 from endpoint to endpoint and from
+81:43 
+
+81:43 service to service. So we have to take
+81:45 
+
+81:45 into account a lot of these things
+81:47 
+
+81:47 before deciding on the optimal amount of
+81:49 
+
+81:49 time for automatic cache invalidation.
+81:52 
+
+81:52 The second technique that we have is
+81:54 
+
+81:54 event based invalidation. This one is
+81:58 
+
+81:58 much more simpler. This basically means
+81:60 
+
+81:60 that every time we make a change to our
+82:03 
+
+82:03 original data, for example, let's say we
+82:05 
+
+82:05 were caching the result of a user's
+82:09 
+
+82:09 profile. So every time an update
+82:11 
+
+82:11 operation happens on top of this user's
+82:14 
+
+82:14 profile every time the user updates
+82:16 
+
+82:16 their name their email or any kind of
+82:19 
+
+82:19 preference in that same endpoint in that
+82:22 
+
+82:22 same handler code after updating the
+82:24 
+
+82:24 user's data in our database we go ahead
+82:27 
+
+82:27 and we invalidate this cache or we just
+82:30 
+
+82:30 delete this cache. So the next time we
+82:32 
+
+82:32 hit the get endpoint for getting our
+82:35 
+
+82:35 user profile, we'll check if there is a
+82:38 
+
+82:38 cache entry for this user's profile. And
+82:40 
+
+82:40 since we have already deleted this cache
+82:42 
+
+82:42 entry since there was an update
+82:44 
+
+82:44 operation on top of user's profile, we
+82:46 
+
+82:46 do not find a cached entry. And because
+82:48 
+
+82:48 of that, we consult our original source
+82:51 
+
+82:51 which is a database and we fetch the
+82:52 
+
+82:52 user's details from the database and
+82:54 
+
+82:54 return it in the response. And this way
+82:57 
+
+82:57 we do not have to guess. We do not have
+82:60 
+
+82:60 to predict the optimal amount of time
+83:02 
+
+83:02 for automatic invalidation and we know
+83:05 
+
+83:05 exactly at what point we need to
+83:07 
+
+83:07 invalidate the cache. But another small
+83:10 
+
+83:10 problem with this is at your at code
+83:12 
+
+83:12 level at every instance where you are
+83:16 
+
+83:16 updating your user's profile data you
+83:18 
+
+83:18 have to remember to also invalidate your
+83:21 
+
+83:21 cache since there is no automatic
+83:23 
+
+83:23 expiry. If you forget even one instance
+83:26 
+
+83:26 where you are not invalidating the cache
+83:29 
+
+83:29 then there is a risk of showing stale
+83:31 
+
+83:31 data to your user. So both of these
+83:33 
+
+83:33 methods have their pros and cons. That's
+83:36 
+
+83:36 about the problem of cache invalidation.
+83:39 
+
+83:39 Now talking about caching where does
+83:42 
+
+83:42 your cache actually live? What is the
+83:44 
+
+83:44 location of your cache? Now here there
+83:46 
+
+83:46 are two options. The first one is called
+83:49 
+
+83:49 local caching and the second one is
+83:52 
+
+83:52 distributed caching. Local caching
+83:54 
+
+83:54 basically means that instead of storing
+83:57 
+
+83:57 your cache in any external service, you
+84:00 
+
+84:00 create a data structure, something like
+84:02 
+
+84:02 a dictionary or a map and you cache
+84:05 
+
+84:05 whatever values that you want to cache
+84:07 
+
+84:07 inside that map and you keep that in
+84:09 
+
+84:09 your own server's memory. But the
+84:11 
+
+84:11 problem with that is if you have 10
+84:14 
+
+84:14 instances of your server, each server
+84:16 
+
+84:16 will hold a map which will maintain its
+84:19 
+
+84:19 own local cache. Now there are 10
+84:22 
+
+84:22 different server instances and for each
+84:24 
+
+84:24 server there is a copy of it own local
+84:27 
+
+84:27 cache. Now you have the problem of cache
+84:30 
+
+84:30 inconsistency between all these 10
+84:32 
+
+84:32 servers. When we say distributed
+84:35 
+
+84:35 caching, what do we mean by using an
+84:37 
+
+84:37 external service something like radius
+84:40 
+
+84:40 or memcached whatever external service
+84:42 
+
+84:42 that you typically use? There is also
+84:45 
+
+84:45 the modern option which is called Valky.
+84:47 
+
+84:47 The advantage of using a distributed
+84:50 
+
+84:50 caching service or an external caching
+84:53 
+
+84:53 services. Now even if you have 10
+84:55 
+
+84:55 instances of your server, all of them
+84:57 
+
+84:57 are communicating with the same caching
+84:60 
+
+84:60 server, right? So you don't have the
+85:03 
+
+85:03 problem of cache inconsistency anymore.
+85:05 
+
+85:05 But the con here is getting the value of
+85:10 
+
+85:10 cache now requires a network round. The
+85:12 
+
+85:12 distance between this and this can cause
+85:15 
+
+85:15 some amount of latency here. When it is
+85:17 
+
+85:17 in memory caching, it is almost instant.
+85:19 
+
+85:19 We are talking about 2 to 3 milliseconds
+85:22 
+
+85:22 of latency depending on how large your
+85:25 
+
+85:25 payload is and what kind of
+85:27 
+
+85:27 serialization that you use. But when
+85:29 
+
+85:29 there is a network roundtrip involved,
+85:31 
+
+85:31 even if it is an internal network, we
+85:33 
+
+85:33 are still talking about 50 mconds of
+85:35 
+
+85:35 latency at least. So what many systems
+85:38 
+
+85:38 use, they use what we call as tiered
+85:41 
+
+85:41 caching, a small local cache for the
+85:44 
+
+85:44 hottest data. And by hottest data we
+85:46 
+
+85:46 mean the data that is of course this
+85:49 
+
+85:49 will differ depending on what kind of
+85:51 
+
+85:51 caching algorithm that you're using
+85:53 
+
+85:53 whether you are taking into account the
+85:56 
+
+85:56 last used value or the most frequently
+85:58 
+
+85:58 used value as a but the hottest data is
+86:01 
+
+86:01 in the sense the data that is in demand
+86:03 
+
+86:03 the most that is kept in the local cache
+86:06 
+
+86:06 and as an upstream server to that we
+86:10 
+
+86:10 have our distributed cache something
+86:12 
+
+86:12 like radius. So when some function, some
+86:15 
+
+86:15 request needs some kind of data, it
+86:17 
+
+86:17 first goes to the local cache, checks if
+86:19 
+
+86:19 the local cache has it or not, and then
+86:22 
+
+86:22 it goes to the global cache or the
+86:24 
+
+86:24 external cache. And depending on the
+86:26 
+
+86:26 request configuration, depending on our
+86:28 
+
+86:28 algorithms configuration, after it
+86:31 
+
+86:31 fetches the cached item from our global
+86:34 
+
+86:34 cache, it can decide whether to store
+86:36 
+
+86:36 that value in our local cache or not
+86:39 
+
+86:39 depending on how hot that data is.
+86:41 
+
+86:41 Another important thing when talking
+86:43 
+
+86:43 about caching is the caching patterns.
+86:46 
+
+86:46 Primarily we use three kinds of
+86:48 
+
+86:48 patterns. Cash aside, right through then
+86:51 
+
+86:51 right behind. Caching pattern basically
+86:54 
+
+86:54 means that at what point do we actually
+86:57 
+
+86:57 go ahead and cache the data? How do we
+86:59 
+
+86:59 decide which pattern that we should use?
+87:02 
+
+87:02 And to answer that question over the
+87:04 
+
+87:04 time people have come up with different
+87:06 
+
+87:06 different techniques and depending on
+87:08 
+
+87:08 what kind of access pattern that your
+87:11 
+
+87:11 application has, what kind of access
+87:13 
+
+87:13 pattern that your users have and what
+87:16 
+
+87:16 kind of access pattern that that
+87:18 
+
+87:18 particular endpoint has, you will end up
+87:20 
+
+87:20 using either of these three or more
+87:23 
+
+87:23 caching patterns. Now the first one
+87:25 
+
+87:25 which is the cash aside pattern. This is
+87:28 
+
+87:28 the mostly used pattern. This is the
+87:31 
+
+87:31 pattern that we implement even if we
+87:33 
+
+87:33 don't know that this is the name of that
+87:35 
+
+87:35 pattern which is the cash aside pattern
+87:36 
+
+87:36 which basically means that let's say we
+87:39 
+
+87:39 have our database here there is a
+87:41 
+
+87:41 complex query that need to run for our
+87:44 
+
+87:44 endpoint which is / users/ user ids in
+87:48 
+
+87:48 this case two. So the request comes
+87:50 
+
+87:50 first it checks our caching layer let's
+87:52 
+
+87:52 say this is our caching layer. First, it
+87:55 
+
+87:55 checks if the result of this user's
+87:58 
+
+87:58 profile is inside our cache or not. If
+88:01 
+
+88:01 it is found inside the cache, then it is
+88:04 
+
+88:04 returned as a response immediately. If
+88:06 
+
+88:06 it does not find it in the cache, then
+88:08 
+
+88:08 it consults our database. It runs this
+88:11 
+
+88:11 complex query, finds the result, saves
+88:13 
+
+88:13 it in the cache, and then finally
+88:15 
+
+88:15 returns the response. Similarly, when
+88:17 
+
+88:17 some kind of update operation happens
+88:20 
+
+88:20 [clears throat] on this user, our
+88:22 
+
+88:22 application code explicitly goes ahead
+88:25 
+
+88:25 and deletes that particular cache entry
+88:27 
+
+88:27 or invalidates that particular cache
+88:29 
+
+88:29 entry so that the next time a new
+88:31 
+
+88:31 request comes for the get endpoint of
+88:34 
+
+88:34 our users, it does not find a cache
+88:36 
+
+88:36 entry so that it goes to the database
+88:38 
+
+88:38 and finds fresh data so that we never
+88:41 
+
+88:41 end up serving stale data to our users.
+88:44 
+
+88:44 This whole pattern is called the cache
+88:46 
+
+88:46 aside pattern or the lazy loading
+88:49 
+
+88:49 pattern is the mostly used pattern in
+88:52 
+
+88:52 backend engineering and also the most
+88:53 
+
+88:53 intuitive pattern. Same when we say
+88:56 
+
+88:56 write to it means that instead of
+88:59 
+
+88:59 invalidating or deleting the entry in
+89:01 
+
+89:01 our cache every time a user's
+89:03 
+
+89:03 information is updated in our database
+89:05 
+
+89:05 what happens every time a write
+89:07 
+
+89:07 operation is completed on our database
+89:10 
+
+89:10 what we do instead of just updating the
+89:12 
+
+89:12 database and invalidating our cache this
+89:15 
+
+89:15 pattern updates both the cache and the
+89:17 
+
+89:17 database at the same time. So instead of
+89:19 
+
+89:19 invalidating it just updates the cache
+89:21 
+
+89:21 entry and that's why we call it write
+89:24 
+
+89:24 through cache. The advantage of this is
+89:26 
+
+89:26 obviously there is never a cache miss.
+89:29 
+
+89:29 We are always going to find a cache
+89:32 
+
+89:32 entry for our users profile details. But
+89:35 
+
+89:35 the disadvantage for this is our write
+89:37 
+
+89:37 operation takes a few milliseconds more
+89:40 
+
+89:40 because we need to write to our database
+89:42 
+
+89:42 and to our caching layer at the same
+89:45 
+
+89:45 time before we can return a successful
+89:47 
+
+89:47 response. And finally we have write
+89:50 
+
+89:50 behind. This takes a clever approach
+89:52 
+
+89:52 since in the earlier approach there was
+89:55 
+
+89:55 the problem of latency because we had to
+89:57 
+
+89:57 write both to our database layer and our
+89:59 
+
+89:59 caching layer before we returned a
+90:01 
+
+90:01 successful response. What happens in the
+90:03 
+
+90:03 write behind pattern is whenever there
+90:06 
+
+90:06 is an update operation in this case
+90:07 
+
+90:07 let's say we are updating the name of
+90:09 
+
+90:09 the user. So instead of updating both
+90:12 
+
+90:12 the database and our caching layer, what
+90:14 
+
+90:14 we do? We update our caching layer.
+90:16 
+
+90:16 Since updating any kind of operation on
+90:18 
+
+90:18 our caching layer is extremely fast, we
+90:21 
+
+90:21 finish this operation and return a
+90:23 
+
+90:23 successful response and asynchronously
+90:25 
+
+90:25 update the value in our database. Now
+90:28 
+
+90:28 with this pattern, we can mitigate the
+90:31 
+
+90:31 risk of latency of updating both the
+90:33 
+
+90:33 database and the caching layer. But the
+90:35 
+
+90:35 problem with this is if for some reason
+90:37 
+
+90:37 our database operation fails. Now our
+90:40 
+
+90:40 caching layer and our database layer are
+90:42 
+
+90:42 in inconsistent state. So those are a
+90:45 
+
+90:45 few caching patterns that you should be
+90:48 
+
+90:48 aware of while thinking about scaling
+90:50 
+
+90:50 and performance. One last topic that we
+90:54 
+
+90:54 should cover under the caching section
+90:56 
+
+90:56 is the number which we call as cash hit
+90:60 
+
+90:60 rate. This particular metric basically
+91:03 
+
+91:03 says that what percentage of your
+91:06 
+
+91:06 requests are successfully able to get
+91:09 
+
+91:09 the information that they want from our
+91:11 
+
+91:11 caching layer and how many of them are
+91:14 
+
+91:14 not able to get that information and
+91:16 
+
+91:16 they have to consult the original
+91:17 
+
+91:17 source. If you say you have 90% cache it
+91:21 
+
+91:21 rate, it means that 90% of your requests
+91:24 
+
+91:24 are able to successfully get a response
+91:27 
+
+91:27 from the caching layer and only 10% of
+91:30 
+
+91:30 the requests have to get to the original
+91:33 
+
+91:33 source which is our database since they
+91:35 
+
+91:35 did not find the response that they were
+91:37 
+
+91:37 looking for from the caching layer. Of
+91:39 
+
+91:39 course, 90% is a very good cach rate for
+91:42 
+
+91:42 a system. If you have very low cash
+91:44 
+
+91:44 rate, if you have cash rate of something
+91:47 
+
+91:47 like 20%. It means that even though you
+91:50 
+
+91:50 have implemented a caching layer, but
+91:52 
+
+91:52 your caching algorithm or your caching
+91:55 
+
+91:55 pattern, there is an issue somewhere
+91:56 
+
+91:56 that you need to find and fix. So what
+91:59 
+
+91:59 are the factors that actually affect our
+92:01 
+
+92:01 cached ratio? Some of the important ones
+92:04 
+
+92:04 are first is your TTL, the automatic
+92:07 
+
+92:07 expiry property that we set on our cash
+92:10 
+
+92:10 entries. If you have a very large TTL
+92:14 
+
+92:14 then that will in turn affect your cash
+92:16 
+
+92:16 at leio because since a lot of items are
+92:20 
+
+92:20 living in your cash for a long time
+92:22 
+
+92:22 there is a good chance that they will
+92:25 
+
+92:25 get a hit sometime in the future. But
+92:27 
+
+92:27 with a large TTL there is also the risk
+92:29 
+
+92:29 of stailness. If you set a very large
+92:32 
+
+92:32 TTL let's say something like 7 days then
+92:34 
+
+92:34 that completely defeats the purpose of
+92:36 
+
+92:36 setting a TTL in the first place. Now
+92:38 
+
+92:38 you have to actively fight the problem
+92:40 
+
+92:40 of stailness. The second factor for your
+92:43 
+
+92:43 cache it rate is the cache size. This
+92:46 
+
+92:46 matters because the larger your memory
+92:49 
+
+92:49 is the larger your caches size is the
+92:52 
+
+92:52 more amount of data that it can hold and
+92:54 
+
+92:54 the more amount of hit that it can take
+92:56 
+
+92:56 right it is pretty obvious. Third is
+92:59 
+
+92:59 your data access patterns. If you don't
+93:02 
+
+93:02 understand which endpoints of your
+93:05 
+
+93:05 application of your back end are
+93:06 
+
+93:06 frequently accessed and at what time
+93:09 
+
+93:09 these endpoints are frequently accessed
+93:11 
+
+93:11 basically if you don't understand your
+93:14 
+
+93:14 users behavior then your caching
+93:17 
+
+93:17 algorithm your caching patterns your
+93:19 
+
+93:19 caching strategy is not going to work
+93:21 
+
+93:21 and you will not see a very good cash
+93:24 
+
+93:24 hit ratio something like 80% or 70%.
+93:26 
+
+93:26 Since you don't understand your users
+93:28 
+
+93:28 and the cash hit ratio directly depends
+93:31 
+
+93:31 on how deeply you understand the
+93:33 
+
+93:33 behavior of your platform at least the
+93:35 
+
+93:35 behavior of your users or their access
+93:38 
+
+93:38 patterns. So that is another factor that
+93:40 
+
+93:40 affects your cachid ratio and that's all
+93:43 
+
+93:43 about caching. Now moving on, let's talk
+93:46 
+
+93:46 a little bit about scaling directly
+93:48 
+
+93:48 instead of all the factors that affect
+93:51 
+
+93:51 scaling. Let's talk directly about
+93:53 
+
+93:53 scaling a little bit. Since this is a
+93:56 
+
+93:56 video about scaling and performance
+93:58 
+
+93:58 literally we have to talk about the the
+94:02 
+
+94:02 obvious parts the standard textbook
+94:05 
+
+94:05 answers of scaling which is vertical
+94:07 
+
+94:07 scaling and horizontal scaling. Now to
+94:10 
+
+94:10 reach there the primary question that
+94:12 
+
+94:12 leads us there is your application runs
+94:16 
+
+94:16 on top of servers and as your traffic
+94:20 
+
+94:20 grows as your user base grows those
+94:23 
+
+94:23 servers and the resources that these
+94:25 
+
+94:25 servers have they start becoming
+94:27 
+
+94:27 insufficient and over the time you'll
+94:30 
+
+94:30 need more and more and more capacity. So
+94:32 
+
+94:32 how do you actually get it? To answer
+94:34 
+
+94:34 this particular question, how do you get
+94:36 
+
+94:36 more and more capacity? That's where we
+94:38 
+
+94:38 have come up with these two broad
+94:40 
+
+94:40 categories of scaling. So there are two
+94:43 
+
+94:43 fundamental approaches of scaling. The
+94:45 
+
+94:45 first one is vertical scaling. Second
+94:48 
+
+94:48 one is horizontal scaling. Now vertical
+94:52 
+
+94:52 scaling, this is also called as scaling
+94:56 
+
+94:56 up. So you can imagine it as scaling up
+94:59 
+
+94:59 in the sense increasing the height of
+95:01 
+
+95:01 your server or making your server more
+95:03 
+
+95:03 and more powerful. So that is one
+95:05 
+
+95:05 intuitive way of imagining vertical
+95:08 
+
+95:08 scaling which basically means that you
+95:10 
+
+95:10 take your old server and in order to
+95:12 
+
+95:12 make that a little more powerful you
+95:15 
+
+95:15 replace that with a bigger server with a
+95:17 
+
+95:17 little more powerful server literally.
+95:19 
+
+95:19 And how do you do that? using a couple
+95:21 
+
+95:21 of obvious hardware upgrades. First,
+95:24 
+
+95:24 CPU. You can go ahead and add more and
+95:26 
+
+95:26 more cores 2 4 8 etc. Second, memory,
+95:31 
+
+95:31 which means your random access memory
+95:33 
+
+95:33 and your primary memory, whatever you
+95:35 
+
+95:35 call it, the fastest kind of memory. You
+95:38 
+
+95:38 go ahead and add more and more memory to
+95:40 
+
+95:40 it. So, initially, if it was 2 GB, you
+95:43 
+
+95:43 make it 4 GB, then 8 GB, then 16, then
+95:46 
+
+95:46 28, 32, whatever your server's needs
+95:48 
+
+95:48 are. Third, you can also scale it up by
+95:51 
+
+95:51 storage. If previously you had 30 GB of
+95:54 
+
+95:54 storage, you make it 300 GB, then 1 DB
+95:58 
+
+95:58 and so on. Fourth is the network card.
+96:00 
+
+96:00 Of course, in storage, you can also go
+96:02 
+
+96:02 ahead with SSDs, NVM SSDs, etc., which
+96:06 
+
+96:06 offer a much faster access time with
+96:08 
+
+96:08 modern technologies. And lastly, the
+96:11 
+
+96:11 network card, the modern network cards
+96:13 
+
+96:13 which offer 10 Gbps and all which will
+96:16 
+
+96:16 offer you more capability to handle
+96:19 
+
+96:19 internet traffic. Now the beauty of
+96:23 
+
+96:23 vertical scaling or just adding more and
+96:25 
+
+96:25 more power to your server is its
+96:28 
+
+96:28 simplicity and the intuitiveness. Your
+96:31 
+
+96:31 architecture, your systems architecture,
+96:33 
+
+96:33 your your backends architecture, it does
+96:36 
+
+96:36 not change at all. You don't have to
+96:38 
+
+96:38 think about statelessness and all this
+96:40 
+
+96:40 different code level stuff. Just go
+96:42 
+
+96:42 ahead and upgrade your machine. As
+96:44 
+
+96:44 simple as that. Your code does not
+96:46 
+
+96:46 change. And a server with twice as many
+96:49 
+
+96:49 CPUs as compared to before can handle
+96:52 
+
+96:52 roughly twice as many requests. Right?
+96:54 
+
+96:54 That's just simple math. Same for the
+96:56 
+
+96:56 memory. A server with twice as much RAM
+96:59 
+
+96:59 can cache in local twice as much data.
+97:02 
+
+97:02 Right? everything you can just go ahead
+97:04 
+
+97:04 and multiply with two. Your capacity is
+97:06 
+
+97:06 literally multiplied by two depending on
+97:09 
+
+97:09 how you are upgrading. If you are if you
+97:11 
+
+97:11 had 16 GB of RAM and you made it 32GB,
+97:14 
+
+97:14 now we can say your caching capacity has
+97:17 
+
+97:17 been increased the multiple of two. And
+97:19 
+
+97:19 for this simplicity and the
+97:23 
+
+97:23 intuitiveness for a lot of applications,
+97:25 
+
+97:25 vertical scaling makes a lot of sense.
+97:27 
+
+97:27 And even if you take a look at it
+97:30 
+
+97:30 economically, a server with twice as
+97:33 
+
+97:33 much power typically costs less than two
+97:36 
+
+97:36 servers of half of its size. And on top
+97:39 
+
+97:39 of that, you also avoid the operational
+97:42 
+
+97:42 overhead of managing multiple machines
+97:45 
+
+97:45 with things like security, backup and
+97:47 
+
+97:47 maintenance, configuring load balancers
+97:49 
+
+97:49 and handling distributed state. There is
+97:51 
+
+97:51 a lot of complexity when we are going to
+97:54 
+
+97:54 talk about horizontal scaling or adding
+97:56 
+
+97:56 more instances to your server. Now the
+97:58 
+
+97:58 question is if vertical scaling is so
+98:01 
+
+98:01 simple and it is so intuitive why is not
+98:04 
+
+98:04 every company doing this? Why is not
+98:06 
+
+98:06 every single engineer is doing it? And
+98:09 
+
+98:09 the answer to that is vertical scaling
+98:11 
+
+98:11 has hard limits. What kind of limits?
+98:15 
+
+98:15 limits because no matter how much money
+98:18 
+
+98:18 that you spend there is always going to
+98:20 
+
+98:20 be a ceiling on how powerful a machine
+98:24 
+
+98:24 can be and that ceiling is at the
+98:27 
+
+98:27 hardware level because cloud providers
+98:29 
+
+98:29 even if you take a look at GCP or
+98:32 
+
+98:32 digital ocean whatever that you're using
+98:35 
+
+98:35 they do offer very large instances
+98:37 
+
+98:37 depending on your use case but at some
+98:40 
+
+98:40 point you are going to reach the biggest
+98:43 
+
+98:43 machine that they offer with let's say
+98:45 
+
+98:45 32 cores or whatever the biggest machine
+98:48 
+
+98:48 of Aless is and what do you do after
+98:50 
+
+98:50 that if you need more capacity if you're
+98:53 
+
+98:53 getting more user traffic if you're
+98:55 
+
+98:55 getting more requirements to scale even
+98:57 
+
+98:57 after that what do you do you cannot
+98:59 
+
+98:59 scale vertically any further there is a
+99:02 
+
+99:02 hard limit and you have already hit that
+99:04 
+
+99:04 limit the second thing the first thing
+99:06 
+
+99:06 is the hard limit the second thing is
+99:09 
+
+99:09 the single point of failure which means
+99:13 
+
+99:13 that if one very powerful server with 32
+99:16 
+
+99:16 cores with 96 GB of RAM you have a very
+99:21 
+
+99:21 powerful a beast of a machine but if
+99:23 
+
+99:23 your server crashes for some reason
+99:26 
+
+99:26 maybe it is a a dependency related issue
+99:28 
+
+99:28 or some kind of issue servers crash
+99:31 
+
+99:31 every day for a lot of reasons so let's
+99:33 
+
+99:33 say this vertical server that you have
+99:35 
+
+99:35 which is very powerful in itself but it
+99:38 
+
+99:38 crashes for some reason and for that
+99:41 
+
+99:41 whole window let's say your application
+99:43 
+
+99:43 crashed for 2 hours when you are not
+99:46 
+
+99:46 available. For those 2 hours, your
+99:49 
+
+99:49 application, your platform is completely
+99:51 
+
+99:51 unavailable. Your service is completely
+99:53 
+
+99:53 unavailable. Of course, you can mitigate
+99:56 
+
+99:56 this particular risk of unavailability
+99:58 
+
+99:58 with things like standby servers or
+100:01 
+
+100:01 automatic failovers. But still the fact
+100:04 
+
+100:04 remains that one single server does not
+100:07 
+
+100:07 matter how powerful, it creates this
+100:09 
+
+100:09 risk of single point of failure. And the
+100:12 
+
+100:12 last thing is no geoic
+100:15 
+
+100:15 distribution which means that even
+100:17 
+
+100:17 though your server has 32 cores 96 GB of
+100:20 
+
+100:20 RAM but let's say your server resides in
+100:22 
+
+100:22 USA and 40% of your user base is in
+100:26 
+
+100:26 India what happens then 40% of your user
+100:30 
+
+100:30 base they experience increased amount of
+100:33 
+
+100:33 latency as compared to the 60% of your
+100:35 
+
+100:35 user base. Even though this is one of
+100:37 
+
+100:37 the major chunks of your user base,
+100:40 
+
+100:40 since you have a single server which is
+100:42 
+
+100:42 a vertical server, even though a very
+100:44 
+
+100:44 powerful server, you cannot do anything
+100:46 
+
+100:46 to decrease this latency that your users
+100:50 
+
+100:50 regularly experience. Because of all
+100:52 
+
+100:52 these things, even though vertical
+100:53 
+
+100:53 scaling makes a lot of sense, vertical
+100:55 
+
+100:55 scaling is very intuitive and it is very
+100:58 
+
+100:58 simple. does not require any kind of
+101:00 
+
+101:00 programming complexity, core level
+101:02 
+
+101:02 complexity or management maintenance
+101:04 
+
+101:04 level complexity. There are major
+101:07 
+
+101:07 disadvantages here. That's why the
+101:09 
+
+101:09 majority of the tech community or
+101:12 
+
+101:12 companies have moved towards the other
+101:15 
+
+101:15 solution of scaling which is horizontal
+101:18 
+
+101:18 scaling which takes the completely
+101:20 
+
+101:20 different approach. Instead of taking
+101:22 
+
+101:22 one machine and adding more and more and
+101:25 
+
+101:25 more powerful to that machine, making it
+101:27 
+
+101:27 scale vertically, what horizontal
+101:29 
+
+101:29 scaling does, instead of instead of
+101:31 
+
+101:31 adding more and more powerful servers by
+101:34 
+
+101:34 replacing the existing servers, we just
+101:36 
+
+101:36 add more instances, more counts of that
+101:40 
+
+101:40 same server horizontally, which means
+101:42 
+
+101:42 all these servers work together to cater
+101:45 
+
+101:45 to our growing user traffic. Instead of
+101:47 
+
+101:47 one powerful machine serving all your
+101:50 
+
+101:50 user base, you have multiple mediumsized
+101:53 
+
+101:53 medium powerful machine serving your
+101:55 
+
+101:55 whole user base. There are also some
+101:57 
+
+101:57 very clear theoretical advantages here.
+101:60 
+
+101:60 And I say theoretical for a reason.
+102:02 
+
+102:02 We'll come back to this. One of the
+102:03 
+
+102:03 theoretical advantage, the mathematical
+102:05 
+
+102:05 advantage is if one server can take,000
+102:09 
+
+102:09 requests per second, then if you have
+102:11 
+
+102:11 five servers, then you have the
+102:13 
+
+102:13 capability to take 5,000 requests per
+102:15 
+
+102:15 second. one of the clear wins, one of
+102:17 
+
+102:17 the clear advantages of horizontal
+102:19 
+
+102:19 scaling. Same way if suddenly you have a
+102:22 
+
+102:22 big campaign coming, then the only thing
+102:25 
+
+102:25 that you have to do is add more number
+102:27 
+
+102:27 of servers or more number of instances.
+102:29 
+
+102:29 If you need more, just keep adding, keep
+102:31 
+
+102:31 adding, keep adding. You can just keep
+102:33 
+
+102:33 scaling horizontally as much as
+102:35 
+
+102:35 possible. You never ever hit a hard
+102:38 
+
+102:38 limit because there is no limit on how
+102:41 
+
+102:41 many servers that you can configure to
+102:44 
+
+102:44 work together to serve your user base or
+102:47 
+
+102:47 your user traffic. The other advantage
+102:49 
+
+102:49 is the redundancy which means that if
+102:52 
+
+102:52 one of your server fails then it has no
+102:55 
+
+102:55 effect on your user traffic. Your
+102:57 
+
+102:57 services do not stop because whatever
+102:60 
+
+102:60 user traffic that you have at that
+103:02 
+
+103:02 moment they get equally distributed
+103:04 
+
+103:04 among all the other service all the
+103:06 
+
+103:06 other instances that are available. Even
+103:08 
+
+103:08 though one of your instance go down
+103:11 
+
+103:11 there are other instances to take its
+103:13 
+
+103:13 place to serve to your traffic. Third
+103:16 
+
+103:16 thing which was one of the major
+103:17 
+
+103:17 disadvantage of vertical scaling was
+103:20 
+
+103:20 again geographic distribution. Since you
+103:24 
+
+103:24 are just adding more and more servers to
+103:26 
+
+103:26 your stack horizontally, what you can
+103:28 
+
+103:28 do, you can add all these instances from
+103:31 
+
+103:31 different different geographic locations
+103:33 
+
+103:33 and they can together form a network and
+103:35 
+
+103:35 using some technology something like a
+103:38 
+
+103:38 load balancer which we'll talk about in
+103:40 
+
+103:40 a little bit which will take a request
+103:42 
+
+103:42 and depending on the user's location it
+103:45 
+
+103:45 will pass that request to the nearest
+103:47 
+
+103:47 server. And because of this setup, you
+103:50 
+
+103:50 can have minimum amount of latency in
+103:54 
+
+103:54 serving your users. That is another
+103:56 
+
+103:56 clear win for horizontal scaling. Now
+103:58 
+
+103:58 coming to the disadvantages. Of course,
+104:01 
+
+104:01 there cannot be only pros and pros of
+104:04 
+
+104:04 horizontal scaling. If that was the
+104:06 
+
+104:06 case, then we wouldn't have even
+104:08 
+
+104:08 mentioned the existence of vertical
+104:11 
+
+104:11 scaling, right? Everyone would have just
+104:13 
+
+104:13 gone and implemented horizontal scaling.
+104:15 
+
+104:15 Now the disadvantages of horizontal
+104:17 
+
+104:17 scaling lies in its complexity. The same
+104:21 
+
+104:21 complexity that vertical scaling
+104:23 
+
+104:23 completely avoids. One of the primary
+104:25 
+
+104:25 question the one of the first questions
+104:27 
+
+104:27 that you have the moment you start
+104:30 
+
+104:30 adding one more instance of your server
+104:32 
+
+104:32 or two more instant or 10 more instance
+104:34 
+
+104:34 is how do you distribute the requests
+104:37 
+
+104:37 among all your servers. What you need?
+104:39 
+
+104:39 You need some kind of a load balancer.
+104:42 
+
+104:42 Now that is introduction of a completely
+104:45 
+
+104:45 new component, a completely new element
+104:48 
+
+104:48 in your stack, in your network stack, in
+104:50 
+
+104:50 your infrastructure stack. And the
+104:52 
+
+104:52 addition of a new element means that
+104:54 
+
+104:54 addition of more complexity in your
+104:57 
+
+104:57 infrastructure. So by using a load
+104:59 
+
+104:59 balancer, you can distribute the traffic
+105:01 
+
+105:01 among all your servers. Now that you
+105:03 
+
+105:03 have a load balancer, you also need to
+105:05 
+
+105:05 choose what kind of load balancing
+105:07 
+
+105:07 algorithm that you want to go with,
+105:10 
+
+105:10 right? Another decision that you have to
+105:12 
+
+105:12 make, another choice that you have to
+105:13 
+
+105:13 make. Then the next question is how do
+105:16 
+
+105:16 you keep all your servers in sync? For
+105:18 
+
+105:18 example, if the user updates, the user
+105:21 
+
+105:21 goes ahead and updates its name in
+105:24 
+
+105:24 server one, then how does the server two
+105:27 
+
+105:27 know that there was an update for the
+105:30 
+
+105:30 user in server one? Next question is
+105:33 
+
+105:33 what happens when the network the
+105:35 
+
+105:35 network that keeps all these servers
+105:37 
+
+105:37 connected that enables all these servers
+105:39 
+
+105:39 to communicate with each other. What
+105:42 
+
+105:42 happens when this network fails? How do
+105:44 
+
+105:44 these servers communicate with each
+105:46 
+
+105:46 other? And in turn, what if they start
+105:48 
+
+105:48 making conflicting decisions? Since this
+105:51 
+
+105:51 communication medium failed, they will
+105:53 
+
+105:53 start making decisions which might be
+105:55 
+
+105:55 redundant with the other server or it
+105:57 
+
+105:57 might be conflicting with the other
+105:58 
+
+105:58 server. or what happens when you have
+106:02 
+
+106:02 let's say three server instances and one
+106:04 
+
+106:04 of the server instances dies. How do you
+106:06 
+
+106:06 know that this particular server is not
+106:09 
+
+106:09 available anymore and how do you pick
+106:11 
+
+106:11 that particular incident and how do you
+106:14 
+
+106:14 decide at what point we need to route
+106:16 
+
+106:16 the request to these two servers and
+106:18 
+
+106:18 stop routing the request to this server
+106:20 
+
+106:20 and how do you decide at what point we
+106:23 
+
+106:23 need to start routing the request back
+106:25 
+
+106:25 to this server the moment it starts
+106:27 
+
+106:27 coming online. That is another question
+106:29 
+
+106:29 that you might ask. Of course, all these
+106:31 
+
+106:31 questions that I mentioned here, all of
+106:34 
+
+106:34 them have answers. We have already
+106:36 
+
+106:36 figured out the answers to all these
+106:38 
+
+106:38 questions. But all these answers are
+106:40 
+
+106:40 complex and they involve some amount of
+106:44 
+
+106:44 tradeoff because we are talking about
+106:46 
+
+106:46 distributed computing here. We are
+106:48 
+
+106:48 talking about distributed systems and
+106:51 
+
+106:51 distributed systems they do not really
+106:54 
+
+106:54 get rid of problems for us. they just
+106:56 
+
+106:56 transform one set of problem to a
+106:59 
+
+106:59 completely different set of problems by
+107:01 
+
+107:01 making a certain amount of trade-off and
+107:03 
+
+107:03 sometimes these new set of problems are
+107:06 
+
+107:06 more favorable to us as compared to the
+107:09 
+
+107:09 original set of problems and that's why
+107:11 
+
+107:11 original set of problems and sometimes
+107:13 
+
+107:13 the original set of problems are more
+107:16 
+
+107:16 solvable as compared to the new set of
+107:18 
+
+107:18 problems and using this comparison of
+107:22 
+
+107:22 which set of problems that you want to
+107:24 
+
+107:24 deal with which set of questions that
+107:26 
+
+107:26 you want to answer.

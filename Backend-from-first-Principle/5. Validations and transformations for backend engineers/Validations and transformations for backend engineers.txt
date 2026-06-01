@@ -1,0 +1,917 @@
+00:00 validations and transformation this
+00:03 video is just about keeping a set of
+00:06 things a set of rules or guidelines in
+00:10 mind while you are designing your apis
+00:13 these are mostly related to data
+00:15 integrity and security that's where
+00:18 validations and Transformations come
+00:19 into play so let's understand where
+00:23 exactly do we use it this we have
+00:25 already discussed in a typical backend
+00:28 architecture we have different different
+00:30 layers of execution so the bottom layer
+00:34 is mostly called the repository layer
+00:38 which mostly deals with database
+00:39 connections and database uh query
+00:42 executions and insertions deletions and
+00:44 everything uh related to data it could
+00:47 be a traditional relational database or
+00:51 it could be redis or any other kind of
+00:53 database a some kind of persistent
+00:56 storage and above that we have our
+00:59 service layer service layer and this
+01:02 layer typically deals with executing
+01:05 your business logic different different
+01:07 things that you might do in a typical
+01:09 API execution right so it could be
+01:14 calling one or two repository methods
+01:17 and sending a notification to different
+01:20 different devices and sending an email
+01:23 to users and storing data and making a
+01:29 web hook call etc etc service basically
+01:33 defines all the functionality that an
+01:35 API call usually has a typical service
+01:37 method calls one or more methods from
+01:41 repository layer to interact with the
+01:44 databases above that we have our we have
+01:48 controller layers okay and in this layer
+01:52 uh it calls whatever the method that is
+01:55 defined in the service layer which
+01:57 executes all the business logic it calls
+01:59 the itory methods uh and it sends email
+02:03 notifications whatever everything that
+02:05 an API is expected to do and all the
+02:08 data that the API is expected to return
+02:10 so all of that responsibility falls upon
+02:14 the service layer and the controller
+02:16 layer calls the service layer whatever
+02:20 method that is associated with that
+02:21 particular API it calls that method and
+02:25 whatever data is returned from that
+02:27 service method is returned to the user
+02:31 in that HTTP connection the reason we
+02:34 separate out controller layer and the
+02:37 service layer is because we want to keep
+02:39 the HTTP related stuff in a different
+02:42 layer HTTP related stuff as in uh what
+02:46 error code to return or what uh success
+02:49 code to return to the client and what
+02:52 what format the data is expected to be
+02:55 returned in that API and what are the
+02:58 validations that we need to do that
+03:00 we'll see soon and all this data related
+03:03 stuff and all the HTTP logic related
+03:06 stuff we want to separate out into a
+03:09 different layer that's why we keep the
+03:11 controller layer it deals with all the
+03:14 data that comes from clients and all the
+03:17 data that goes out to the client and
+03:21 internally it calls the service layer
+03:23 and service layer internally might call
+03:25 the repository layer and it might not
+03:27 depending on the requirements and that's
+03:29 how a typical API call looks like it it
+03:33 reaches the controller layer and
+03:35 controller layer interacts with the
+03:36 service layer service layer interact
+03:38 with the repository layer and whatever
+03:41 data is returned from the service layer
+03:43 is returned to the user whoever is
+03:46 making the API call this is a very
+03:48 simplified execution call now where
+03:51 exactly do we have validations and
+03:53 transformation ideally validations and
+03:57 Transformations happen somewhere here at
+03:59 this point point the the point where the
+04:04 data that is sent by the client it is
+04:08 typically a Json payload and the point
+04:12 where the data reaches the server which
+04:15 is the control erer it first it goes to
+04:19 the route matching algorithm whatever
+04:22 route is matched it calls the respective
+04:25 controller method of that route whatever
+04:28 controller method is assigned to to that
+04:30 route matching pattern now after the
+04:34 route is matched and before we start
+04:36 executing whatever business logic we
+04:39 have in the controller layer the first
+04:41 step that we do is the validations and
+04:44 Transformations at this point at exactly
+04:46 this point before any significant logic
+04:49 is run or executed in the controller
+04:52 layer before calling the service methods
+04:55 or before executing the business logic
+04:57 this is where we do validations and
+04:59 transformations what is the idea behind
+05:02 validations and transformation why are
+05:04 we talking about it so imagine this is
+05:07 our server and we have different
+05:10 different clients all over the world
+05:12 different different users and all of
+05:15 them make API calls they make HTTP
+05:19 connections and they make API calls to
+05:21 the server now the idea behind
+05:24 validations and transformation is
+05:27 whatever data whatever Json payload
+05:30 these clients are sending whatever query
+05:32 parameters whatever query parameters
+05:35 these clients are sending or whatever
+05:36 path parameters also any kind of data it
+05:40 can be Json payload it can be query
+05:41 parameters it can be path parameters it
+05:43 can be headers whatever all these kinds
+05:46 of data before they enter into our
+05:50 server the first entry point which uh as
+05:53 you know after the route is matched and
+05:56 it calls the associated controller
+05:59 method before before that happens we
+06:01 want to make sure all this data the Json
+06:04 the query parameters the path parameters
+06:06 all these data are in the expected
+06:10 format they are in the expected format
+06:12 which means we want to make sure that
+06:14 whatever data this particular API needs
+06:17 the user is sending that data in the
+06:20 exact format that the API expects in
+06:24 which means let's say it's a Json
+06:26 payload and we want a field called name
+06:29 we want to field call named and we have
+06:32 this requirement for this API we are
+06:36 expecting one Json payload in the
+06:38 request body and inside the Json we are
+06:40 expecting a field called name which is a
+06:43 string and there could be other
+06:46 restrictions also we want a string whose
+06:49 length is between five characters to 100
+06:52 characters and it we can be as specific
+06:55 as possible but that's the basic idea
+06:59 now if if we have an API that has a
+07:01 requirement like this we want to make
+07:03 sure that when the data reaches and
+07:06 before we start executing before we go
+07:08 into the service layer before we start
+07:11 calling the database methods we before
+07:13 we do anything significant we want to
+07:15 make sure that the structure of the data
+07:18 is in the exact format that we expect so
+07:22 when the Json reaches at this entry
+07:25 point we execute our validation and
+07:27 transformation pipeline so which is
+07:29 basically basically a middleware
+07:31 function or some kind of utility
+07:33 function that we use that we reuse in
+07:36 every API and we provided a a particular
+07:39 schema that we want to validate against
+07:42 which makes sure it goes through all the
+07:45 fields of that Json so we are saying we
+07:47 are expecting field call name so it
+07:50 checks whether there is a field call
+07:52 name in that Json payload then it sends
+07:54 an error right away to the client that
+07:57 the name field is required which is not
+07:59 provided in the Json payload in the same
+08:01 way if the name field is present then it
+08:05 goes one level deep it checks the value
+08:07 of the name it checks whether the name
+08:09 field is a string or not whether we are
+08:11 sending an array uh in the name field
+08:14 when the AP is expecting a string then
+08:17 it checks the type of the data if the
+08:19 data is string or not if it is string
+08:22 then it continues if it is not a string
+08:24 then it sends an error message to the
+08:26 client that they're expecting a string
+08:28 but you are sending an error you are
+08:30 sending a bullion whatever the data the
+08:32 client is sending out then if that value
+08:35 of that name field is string then it
+08:38 goes inside it checks the length of the
+08:40 field uh the length of the value so our
+08:44 requirement our the Restriction that we
+08:46 have put on this field is the length
+08:49 should be five characters to 100
+08:51 characters and if the condition does not
+08:54 satisfy if the client is sending a huge
+08:56 field if it is sending a whole paragraph
+08:59 then we immediately send an error that
+09:01 the length is too long similarly if the
+09:04 client is sending a two character string
+09:06 then we also send an error that the
+09:10 expected length is not matched whatever
+09:13 the customized error message is now the
+09:15 whole idea is with this example we just
+09:18 made sure that this payload this data
+09:22 structure that this API needs to do
+09:25 whatever uh database operation it needs
+09:27 to do to execute what whatever business
+09:30 logic it uh needs to execute we just
+09:33 made sure that the data is at least in
+09:36 the expected format and the reason we do
+09:38 it at the entry point is because we
+09:41 don't have any unexpected state or our
+09:44 system does not break under unexpected
+09:48 circumstances and by unexpected I mean
+09:51 let's imagine we did not have this
+09:53 validation Pipeline and the client sent
+09:56 this payload we the client sent this
+09:59 Json
+10:00 with name as value zero instead of a
+10:04 string it send the value name as zero
+10:07 now what happened as in our previous
+10:10 demo as you know here we are doing
+10:13 validations let's say we did not do
+10:15 validations here so the data reached
+10:18 here the Json with this value name as
+10:22 zero the data reached here in the
+10:25 controller layer and since we are not
+10:27 doing validations the controller layer
+10:28 in turn call a service layer and It
+10:31 executes Whatever the business logic is
+10:33 and the service layer in turn calls a
+10:35 repository method we are uh creating a
+10:38 new document we are creating a new row
+10:40 in the database for some kind of entity
+10:43 let's say it's a book name so we are
+10:45 expecting the name of the book and
+10:47 depending on that we are creating a new
+10:49 row in the database now because we did
+10:53 not do validation at the entry point of
+10:55 our server now what happens is the data
+10:58 reaches here up to the repository method
+11:01 and the repository method executes the
+11:03 database query it's some kind of insert
+11:05 query and it inserts this name into the
+11:09 new books table because we are creating
+11:12 a new book with the name that the user
+11:15 has provided with now usually in
+11:18 relational databases we have data type
+11:20 constraints when we are creating a table
+11:23 we usually tell the database what the
+11:27 type of the data is going to be for that
+11:29 field now when creating the books table
+11:32 we must have done something like this we
+11:35 created a column and the name of the
+11:38 column is name it's a bit confusing but
+11:40 for the sake of this example the name of
+11:42 the column is the string name and the
+11:44 data type for this is let's imagine it's
+11:46 a postgress uh database we can say the
+11:51 data type is text and it is not null
+11:54 okay and since this is the database
+11:56 level constraint for the data type which
+11:59 is a expecting a string in the postgress
+12:02 nomenclature it is expecting a text data
+12:05 type now since we are inserting a number
+12:09 data type since the client provided us
+12:11 with a number value we executed this
+12:15 insertion operation with the value zero
+12:19 now what happens the database call fails
+12:22 of course postgress uh validates all the
+12:25 data types before doing any kind of
+12:27 operation and the database called fails
+12:30 depending on the error handling
+12:32 situation of the server the client will
+12:35 get a 500 which means internal server
+12:38 error which basically says something
+12:41 went wrong in the server something
+12:43 unexpected happened in the server now
+12:45 that is a very poor user experience to
+12:49 have in a basic form API now this is why
+12:52 we want to make sure whatever data that
+12:56 the API needs that the service method
+12:58 needs we want to make sure at the entry
+13:01 point that it is of the exact same
+13:04 structure of the exact same restrictions
+13:08 that our business logic needs before we
+13:11 do anything significant with it so that
+13:14 if the data does not satisfy those
+13:16 constraints we can send an error code of
+13:19 400 which means bad request by the
+13:23 client we can say the data that you have
+13:25 sent does not satisfy our constraint so
+13:29 you have to read try with the
+13:30 appropriate data formats that is the
+13:32 need of validations to show a simple
+13:35 example of how validations look like we
+13:40 have a server running in this address in
+13:43 Local Host and we are making an API call
+13:47 this is insomnia we can use this tool to
+13:51 make API requests and we are making a
+13:54 post request to this endpoint / API /
+13:59 valid SL syntactic and in the body we
+14:04 are sending a empty Json payload now if
+14:07 we execute this we get this error which
+14:11 are a set of values in an array it says
+14:15 it the API is expecting three Fields one
+14:18 email one phone and one date and all of
+14:21 them are required and since we are
+14:23 sending an empty Json payload the API is
+14:26 throwing as an error right away that
+14:28 these three fields are required and you
+14:29 are not providing them now if let's go
+14:33 ahead and provide these fields so we
+14:37 write email let's provide some random
+14:41 string for the email part and then we
+14:45 have phone the phone also let's do some
+14:49 number random number and then we have a
+14:53 date the date let's provide a date let's
+14:56 say a date 2025
+15:01 11
+15:03 5 01 11 and if we execute this we get
+15:08 two errors that the email is invalid
+15:12 invalid email format and in the phone
+15:15 field it's saying it's expecting a
+15:18 string but it received a number okay so
+15:21 let's go ahead and satisfy these
+15:23 constraints for the email structure we
+15:24 can just do
+15:26 test.com let's go ahead and now the
+15:29 email field is satisfied it just says
+15:32 for the phone now for the phone let's
+15:34 make this string and if we run this the
+15:39 success code is 200 now there are
+15:41 different types of validations and these
+15:44 are not strictly the types there could
+15:47 be of course more number of types
+15:49 depending on the requirement but
+15:52 overally these are the three types that
+15:54 you will encounter most of the times the
+15:56 first one is syntactic what is syntactic
+15:59 IC validation in here we have
+16:03 validations like validating whether a
+16:05 provided string is an email or not which
+16:08 means the validation algorithm whatever
+16:11 depending on the whatever language you
+16:13 using whatever library that you are
+16:15 using that validation logic that
+16:17 validation algorithm will check whether
+16:20 the provided string satisfies this
+16:23 particular structure emails have this
+16:26 particular structure that there is this
+16:28 initial value
+16:30 let's say this called First and there is
+16:32 this character special character which
+16:35 is at the rate and there is a domain
+16:38 which typically follows some name
+16:41 followed by some top level domain which
+16:44 can be Orco doin anything there are like
+16:50 thousands of different types of domain
+16:51 name the email follows a typical
+16:54 structure like this so This validation
+16:56 algorithm will check whether this
+16:58 provider string for follows this
+16:59 structure or not if it doesn't it throws
+17:02 an error similarly validating phone
+17:04 numbers also follow into syntactic
+17:07 validation because that also has to
+17:08 follow a particular structure it can be
+17:12 the country code followed by a 10
+17:16 digigit number and it can be any country
+17:20 codes a list of country codes all over
+17:22 the world and depending on the country
+17:24 code how many digits follow the country
+17:27 code those types of valid they fall
+17:30 under syntactic validation in the same
+17:32 way we have let's say dates dates also
+17:35 have a particular structure and they
+17:38 also fall under syntactic validation
+17:40 whether a provided string falls into
+17:43 this structure whatever structure that
+17:45 AP is expecting let's say it expects in
+17:48 this format the year then month then day
+17:53 so whether this string follows this
+17:54 structure or not these are the some
+17:56 examples of syntactic validation then we
+17:59 have semantic validation semantic
+18:01 validation basically means whether the
+18:03 provider data makes sense or not for
+18:06 example let's say we have a form for
+18:09 data birth in the front end and the user
+18:14 can provide it the data worth and the
+18:17 back end will save that in database
+18:19 through the API call now we want to make
+18:22 sure that whatever data that user
+18:24 provides whatever date the user provides
+18:28 it makes sense in a semantic way which
+18:30 means user cannot provide a date which
+18:33 is in the future let's say today's date
+18:36 is
+18:38 111
+18:39 2025 and if the user provides a date is
+18:43 like
+18:44 1301
+18:45 2025 which does not make sense right
+18:48 your date of birth cannot be in future
+18:51 so validating these kinds of patterns in
+18:54 data falls under semantic validation we
+18:57 want to make sure that the data
+18:60 whatever the data is provided by the
+19:02 user makes sense in a semantic way in
+19:05 the same way if we have a field called
+19:08 age which takes the age of the user and
+19:12 if the user provides an age let's say
+19:16 called 365 so our validation pipeline
+19:19 should reject this because an age 365
+19:23 does not make sense at least not yet it
+19:26 might in the future but as of now this a
+19:29 does not make sense in a semantic way so
+19:32 these kinds of validations follow under
+19:34 semantic validation now the third type
+19:36 is type validation type validation is
+19:39 our basic validation of validating
+19:42 whether the data type match or not so
+19:45 whether the particular field is a string
+19:47 or not whether it is a number or it is a
+19:51 bullion or it is an array or a custom
+19:56 Json payload and that Json can have
+19:59 other primary data types like string
+20:01 number bullion array etc etc so these
+20:05 kinds of validations are called type
+20:07 validation so overall these are the
+20:09 different different kinds of validation
+20:11 that you will encounter uh while you are
+20:13 designing apis and as I said these are
+20:17 not things that you should that you need
+20:19 to understand or you need to remember
+20:22 these are the things that you just have
+20:25 to keep in your mind while you're
+20:26 designing your apis like how strict you
+20:29 want to be with your data
+20:32 and how strict you want to be with your
+20:35 validation Pipeline and how specific you
+20:37 want to be and since the title of the
+20:39 video also contains the term
+20:41 transformation let's talk about
+20:43 transformation now as I said before
+20:46 reaching before reaching our controller
+20:50 layer whatever data that is coming from
+20:54 the user needs to go through this
+20:57 pipeline is called the validation and
+21:01 transformation pipeline now validation
+21:05 we have already understood which
+21:07 basically means uh confirming whatever
+21:10 data that the a is expecting the user
+21:13 data satisfies that structure and
+21:16 validations can be as specific as
+21:18 possible and as lose as possible
+21:19 depending on the requirement now that is
+21:21 validation now transformation means we
+21:25 want to execute some operations on the
+21:28 data that is provided by the user
+21:30 depending on the success or failure of
+21:32 the validation pipeline or any other
+21:35 default executions now that is a little
+21:38 complicated to get our heads around so
+21:41 let's see an example so in a typical
+21:44 pated API we send different different
+21:47 query parameters in the API in the query
+21:50 string so we have this API the end point
+21:52 is let's say slash bookmarks is slash
+21:56 bookmarks and we want to send parameters
+21:60 these ones page as two and limit as
+22:04 let's say 20 these are called query
+22:07 parameters and since in the start of the
+22:10 video we talked about we should validate
+22:15 everything that is coming from the
+22:17 client before it reaches our service
+22:20 layer before we execute any significant
+22:22 logic now we have to validate our query
+22:25 parameters so this is how we can Define
+22:28 our validation logic we want to say that
+22:32 page is a field uh which will be coming
+22:35 in the query parameter which is a number
+22:38 which is a number which should be
+22:40 greater than zero and smaller than
+22:42 depending on your requirement let's say
+22:44 for in this case it can be should be
+22:46 smaller than 500 same way limit limit
+22:50 can should be uh greater than zero and
+22:53 it should be smaller than say 10,000 at
+22:57 a time only 10,000 data can be returned
+22:60 from the server these are our
+23:02 requirements now coming back we are
+23:04 saying page is a number which has to
+23:07 satisfy this constraint same way limit
+23:09 is a number which has to satisfy this
+23:11 constant but we already know that page
+23:15 and limit are query parameters and all
+23:18 the query parameters are strings by
+23:20 default when they reach our server from
+23:23 the users browser or from any client
+23:27 they are strings back by default because
+23:30 query parameter all the values in the
+23:32 query parameters are strings they don't
+23:35 have any other data type by default they
+23:38 can satisfy the structure of any other
+23:40 data type but their value will always be
+23:44 string when they reach our server in
+23:46 this case what happens this is how we
+23:49 receive our data receive page as the
+23:53 string to and limit as the string 20
+23:58 from this now because of our validation
+24:01 requirements this fails this fails
+24:03 because we are seeing we are expecting a
+24:06 number the first requirement is it
+24:08 should be number then we check the value
+24:11 whether it is greater than zero whether
+24:12 it is smaller than 500 etc etc but it
+24:15 fails on the first requirement because
+24:17 it is a string and the API fails and the
+24:19 user will get an error that page should
+24:22 be a string uh page should be a number
+24:25 but we are receiving a string something
+24:27 like that depending on your error
+24:29 message syntax now in this case there
+24:33 was no error from the client because it
+24:35 is a query parameter of course all the
+24:38 fields all the values of the fields will
+24:40 be in string format by default it is the
+24:44 server responsibility to transform this
+24:48 data into a into our expected type you
+24:53 can also say it is the service
+24:55 responsibility to cast the data type
+24:58 cast basically means forcing one data
+25:01 type to get converted into another data
+25:04 type so in this example we we have to
+25:07 cast a string data type into a number
+25:11 and then we can execute our validation
+25:14 requirements so this phase is called a
+25:17 transformation because the data that we
+25:21 are getting from the client has to go
+25:24 through some kind of changes before we
+25:26 can execute our validations it can be
+25:29 other way also after validation we can
+25:31 execute some operations to transform
+25:33 that data into a structure which is
+25:36 expected by the server okay so this
+25:39 process of converting data into a
+25:42 desirable format is called
+25:44 transformation and usually we pair
+25:47 validations and transformation in a
+25:49 single pipeline so that the data layer
+25:51 the input data layer all the logic in
+25:54 the input data layer stays in the same
+25:56 place and we don't have to look in
+25:59 different different places to find out
+26:02 what all the requirements are and what
+26:05 are the operations that we are executing
+26:07 on the data before doing any business
+26:10 logic all the requirements of our
+26:12 validations and all the operations that
+26:14 we are doing through transformation
+26:16 stays in one place which is called the
+26:18 validation and transformation pipeline
+26:21 now let's look at a few apis to get the
+26:25 idea of different different flavors of
+26:27 validations and transformation that we
+26:29 just talked about we have already seen
+26:32 the syntactic validation in the demo
+26:34 that we saw earlier in this video we
+26:38 executed this API with different
+26:39 different values and we got errors and
+26:42 we kept fixing those errors and we got a
+26:44 successful response of 200 basically we
+26:47 had to provide a string which satisfies
+26:52 an email structure we had to provide a
+26:55 phone number and we had to provide a
+26:57 date which has this this structure a
+26:59 valid date structure and after that the
+27:02 API was successful and this is an
+27:05 example of syntactic validation because
+27:06 we had to stick to particular structures
+27:09 of data it was email phone and date in
+27:12 this case it can be different different
+27:15 other kinds of data in the same way
+27:17 let's see what is semantic validations
+27:20 so let's execute this so we are getting
+27:23 this validation error and validations
+27:25 also have this uh advantage that even if
+27:29 the client hits this API without any
+27:32 value they can get some kind of
+27:35 documentation with the errors that these
+27:37 are the fields that are expected in this
+27:39 API which the client is not providing so
+27:42 that is a very nice way of figuring it
+27:44 out if the API documentation is not
+27:47 available in the false place the error
+27:50 messages the validations error messages
+27:52 are a very nice way to figure out what
+27:55 are the expected fields and what are the
+27:58 expected values in those fields that the
+28:00 API is demanding from you okay in this
+28:04 case we sent an empty payload and we got
+28:06 these errors so the API is expecting two
+28:09 Fields one as date of birth which says
+28:12 is required and the second one is age it
+28:16 says expected number is none okay now
+28:22 let's provide these values to this API
+28:25 so the first field is date of worth and
+28:30 for this let's provide a date
+28:35 1995 the month is June and some random
+28:39 date is 12 let's execute this and the
+28:42 date of birth was satisfied and now it
+28:45 says age is required so let's also
+28:48 provide an age age is let's say 43 and
+28:52 when we send this the API is successful
+28:55 and we are getting the same value that
+28:58 we have sent now since this demo is
+29:01 about semantic validation let's change
+29:04 these values instead of
+29:06 1995 let's make it the year
+29:10 2026 as the date of birth and send this
+29:14 now we get this error that date of birth
+29:17 cannot be in the future this is what uh
+29:20 we had talked about earlier the semantic
+29:23 validation checks that whether the value
+29:26 of a field makes sense or not in a
+29:29 semantic way since the date of birth of
+29:31 a person cannot be in the future we are
+29:33 throwing this error for this field that
+29:36 date of birth cannot be in the future in
+29:39 the same way let's revert this and let's
+29:43 make the age 430 instead instead of 43
+29:46 let's make it 430 and then we get this
+29:50 that number must be less than or equal
+29:52 to 120 logical age for a person at this
+29:56 times is from 1 to to 120 even though a
+30:00 oneyear old uh won't be hitting our APA
+30:03 but still they're accepting ages from 1
+30:06 to1 that's why it's called semantic
+30:08 validation we are checking whether the
+30:11 values provided in different different
+30:13 fields make sense in a semantic way or
+30:15 not okay in this one let's hit this this
+30:18 API is expecting three Fields one
+30:21 password another is password
+30:24 confirmation and the third one is
+30:26 married or not okay now let's provide
+30:30 these values password system called
+30:34 random and passord
+30:38 information another string and for merit
+30:44 mared say false and this let's hit this
+30:48 now this is another kind of validation
+30:51 check that we usually do so in most of
+30:55 the platforms we have a password fi and
+30:58 a confirm password field just for
+31:01 security regions and to check the
+31:03 Integrity of the data whether the user
+31:06 uh has provided valid data or not so the
+31:10 requirement is always that the password
+31:13 confirmation value should always match
+31:16 the password value right and since we
+31:19 are sending different different strings
+31:21 in these two Fields that's why the API
+31:23 is returning the error that passwords
+31:25 don't match for this field password
+31:28 confirmation for the password field it
+31:31 is returning an error that string must
+31:33 contain at least eight characters that
+31:35 is the requirement of the password now
+31:37 let's fix this to satisfy the
+31:40 constraints we have six characters let's
+31:43 add one more and let's copy this and
+31:47 paste this here so that these two Fields
+31:49 match and when we run this now it is
+31:53 true the IP is successful now what
+31:56 happens if we do m as true run this we
+31:60 get another error that the API is
+32:02 expecting another field called partner
+32:05 if the field married is true it says
+32:07 partner name is required when married is
+32:09 true so if we provide the value is true
+32:13 we also have to provide a name in the
+32:15 field partner because the user saying it
+32:17 is married let's provide another field
+32:20 just called partner and some let run
+32:24 this and we get a successful response
+32:28 with all the fields that we have
+32:30 provided and in this particular example
+32:33 it is called complex because uh
+32:36 depending on the requirements of the
+32:38 service layer we can Define our
+32:41 validation constraints in the first one
+32:43 we are saying that two Fields should
+32:45 have the same value that's what this
+32:48 constraint was about in the second one
+32:51 we are seeing the partner field is
+32:54 optional when married is false but if
+32:57 the married field is true
+32:58 the user also have to provide another
+33:00 field called partner with the name of
+33:02 the partner so we can also do these
+33:05 complex pipelines inside our validation
+33:08 pipeline when dealing with users data
+33:11 okay now moving on to our transformation
+33:14 example let's run this and it says email
+33:18 phone date it requires three Fields so
+33:21 let's provide three Fields let's just
+33:23 copy this one from our earlier demo and
+33:28 and write it here let me send this okay
+33:32 and in order to see how the
+33:33 transformation Works in this particular
+33:36 API let's make this email change the
+33:40 cases of this email let's
+33:42 see a and in the and then when we run
+33:47 this we are getting this value now what
+33:50 I want to show here is the user is
+33:52 sending data in an unexpected format in
+33:55 a particular structure the structure is
+33:58 of an email but inside that it has lower
+34:02 case and it has upper case and in the
+34:04 phone number also it is it does not
+34:07 provide the character plus before the
+34:09 phone number and and the date it
+34:12 provides this particular date structure
+34:14 and when we send this to server the
+34:17 server does some transformation it
+34:19 changes the data according to the
+34:20 requirements of the service layer and
+34:24 because of that even though we sent the
+34:28 value of the email with different
+34:29 different cases lower case and upper
+34:30 case when we got the value back it was
+34:34 in all lower case because the server in
+34:36 the validation pipeline it transformed
+34:38 the value into lower case before doing
+34:40 any kind of executions on the data now
+34:43 that's the reason we got this email
+34:45 which is in all lower case in the same
+34:47 way for the phone field whatever value
+34:50 we sent in this field it added this
+34:53 character plus before the value and it
+34:56 sent it back to us same with the field
+34:58 it calculated in a different format and
+35:01 send it back this is some example of
+35:03 transformation uh after the client send
+35:06 some data in the payload the server can
+35:09 do some kind of operations on the data
+35:11 to transform it into a different format
+35:13 for the convenience of the service layer
+35:17 or for the requirements of the service
+35:19 layer before performing any kind of
+35:21 executions on it in the same way let's
+35:23 run the example of type validations and
+35:26 when you run this we get
+35:28 we the IPA is expecting four Fields one
+35:32 is string field one is number field one
+35:34 is arror field and one is Will so let's
+35:36 first provide all these uh values then
+35:40 we'll see what are the validation errors
+35:43 first one let's say string field string
+35:46 field and the string is something and
+35:50 let's just copy this and paste it this
+35:53 is a number field and this is an array
+35:57 field and this is a bullan field and
+36:00 let's hit this API now this error is
+36:03 gone now the number field is saying
+36:06 expected number received string the
+36:08 array field is saying expected array
+36:10 received string same for the bullan
+36:11 field now this is an example of type
+36:13 validation that's why because we're
+36:16 showing a demo of how the server can
+36:18 enforce different different data types
+36:20 from the client so in order to fix these
+36:23 errors we make this some valid number
+36:27 let's say 10 and when you hit this that
+36:29 is gone we have an array and bullan
+36:32 errors this we can send an error we can
+36:35 send an array with value one and two and
+36:39 for the Boolean field we can send false
+36:43 and now when we run this we are getting
+36:46 more errors which says inside the array
+36:49 field the element zero it is expected to
+36:52 be a string but we are sending numbers
+36:55 now to fix this let's make this strings
+36:58 string now when we run this we are
+37:00 getting all the values that we had
+37:03 provided the string field has string
+37:05 value the number field has number value
+37:07 the array field has array value but for
+37:10 each element of the array we can also
+37:13 enforce different validation constants
+37:16 which in this case was each element
+37:17 should be of type string and in the last
+37:19 one it is a bullan type okay either true
+37:22 or false and the last thing that I want
+37:25 to bring into attention is this concept
+37:29 sometimes there are confusions and
+37:31 people sometimes do this mistake of
+37:34 replacing front end validation with
+37:37 backend validation okay this mistake
+37:39 happens because usually in a typical
+37:43 platform we have forms and inside forms
+37:46 we do some kind of validation for
+37:49 example let's say we have this form we
+37:52 have this form and there is a field
+37:54 called name and it's an input box and
+37:56 the user has to type some name
+37:58 and if it's valid if the name satisfies
+38:03 whatever requirements that we have
+38:06 either the minimum or maximum number of
+38:08 characters or the data type matching
+38:10 whatever else it is if it is successful
+38:14 then when the user clicks on the submit
+38:16 button we call the AP if the validation
+38:20 is not successful we show some errors in
+38:23 the form itself that this data type is
+38:25 does not satisfy our constraints and
+38:28 when it does satisfy the constraints we
+38:30 call the AP and the back end does
+38:33 whatever stuff that it needs to do right
+38:36 now the thing to keep in mind is for all
+38:40 interactions for all apis we need both
+38:44 the front end validation and the server
+38:45 side validation our backend validation
+38:47 because front end validation the reason
+38:51 we use frontend validation is for ux
+38:54 which means user experience frontend
+38:56 validation is not for security or data
+38:60 Integrity it is for user experience we
+39:02 want to give some immediate feedback to
+39:05 the user that something is wrong with
+39:07 the data and the data that we are
+39:10 expecting does not match the data that
+39:12 you have provided it is not about
+39:16 security backend validation which we do
+39:20 that is for security and data integrity
+39:26 that's the reason it does not matter
+39:28 what kind of validations your front end
+39:30 does whether it does or whether it
+39:33 doesn't because a typical server can
+39:37 have different different clients it can
+39:38 have a uh very convenient web app which
+39:41 can do different different types of
+39:42 validation but as we saw it can also
+39:46 have a API client based interface for
+39:49 example something like Postman or
+39:50 something like insomnia right there
+39:53 there is no concept of validation right
+39:55 because we are directly interacting with
+39:56 our apis there is no front-end interface
+39:60 that acts as a proxy to our API which
+40:03 acts as a user interface right in that
+40:05 case there is no front- end validation
+40:07 at all so if the backend depends on the
+40:10 front end validation for security
+40:13 purpose or for the data Integrity
+40:15 purpose our server will break when the
+40:18 client changes that's why this is a very
+40:21 important concept when we are talking
+40:24 about validation and transformation it
+40:25 does not matter what the client is when
+40:28 you're designing your apis you have to
+40:31 be as strict and as specific as possible
+40:34 in your server side validation logic
+40:37 without thinking of what the client
+40:40 validation will look like because as I
+40:42 said client validation is for the user
+40:44 experience but server validation is for
+40:46 security and data Integrity now for all
+40:49 the API examples that we saw earlier in
+40:52 the API client insomnia we also have a
+40:55 we also have a complimentary front end
+40:57 interface to deal with those apis for
+40:59 all the different different types
+41:01 syntactic semantic type uh
+41:03 transformation and complex now let's see
+41:06 how front end and backend validations
+41:08 work together now inside this let's
+41:11 provide some email let's say some email
+41:16 let's provide wrong values first then we
+41:18 can see whether it works or not the
+41:21 phone number also let's provide some 1 2
+41:24 3 4 5 and date we already have a date
+41:27 set Lector so we can choose any date now
+41:31 let's do submit in this case we did not
+41:34 make any API calls yet because the front
+41:36 end detected that there is something
+41:38 wrong with this field and it is a front
+41:40 end side validation it is the client
+41:42 side validation now to satisfy this we
+41:44 have to make this a proper email we can
+41:48 WR this
+41:50 gmail.com and then when we do submit we
+41:53 do a proper API call and when we see the
+41:56 payload it is sending the this and in
+41:59 the preview it is getting this and it is
+42:00 a getting a 200 response is a success
+42:04 response this is how client side
+42:06 validation and server side validation
+42:08 work together the client side validation
+42:11 provides a proper user experience
+42:13 provides immediate feedback to the
+42:15 client to the user and the server side
+42:19 validation performs different different
+42:21 Security checks and it is a mandatory
+42:23 validation which has the purpose of
+42:26 security and data Integrity but the
+42:29 front endend validation has the purpose
+42:30 of user experience and providing
+42:32 immediate feedbacks now that's pretty
+42:34 much all there is to talk about
+42:36 validations and transformation it's not
+42:38 a very complex topic or a very large
+42:41 topic just a set of rules and guidelines
+42:44 to follow when you are designing your
+42:46 apas

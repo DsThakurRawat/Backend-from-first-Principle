@@ -1,0 +1,660 @@
+00:00 In the world of back-end development, errors are not just problems to solve.
+00:06 They are a normal part of building applications. And every developer needs
+00:13 to understand that errors will happen. And the key is to being ready for them,
+00:19 being ready to detect them, being ready to fix them. And here is a reality. Your
+00:26 database queries, they will sometimes fail. your external APIs, they will sometimes time out and your users will
+00:34 sometimes send bad data which will break your APIs if you're not ready for them or if you are not expecting them and
+00:42 your business logic will hit unexpected edge cases sometimes. So the question is
+00:48 not whether errors will happen but how you will handle them when they actually
+00:53 do. So in this video there are no tools that I want to talk about. There are no
+00:58 frameworks, there are no examples, code snippets, nothing. It is a mindset. When
+01:04 you are a backend engineer, when you're responsible for executing your core business logic, when you're responsible
+01:11 for making sure every single transaction, every single user activity
+01:17 goes seamlessly. Then you need a particular mindset, a fault tolerant
+01:23 mindset so that you are prepared for the worst and you know how worse it can get
+01:31 and there are some things that you need to keep your eyes on and there are some
+01:37 tips on how to detect them and how to prevent them. What are the best practices people usually implement?
+01:44 whether it's a startup, whether it's a big enterprise or open-source
+01:49 repositories, etc., etc. Let's start with what are the different types of
+01:55 errors that you might encounter in your day-to-day life as a backend engineer.
+02:01 The first type, I think this is the most common type, which logic errors. Logic
+02:06 errors. Now, these are the sneaky ones. It's not always very easy to detect them
+02:13 or to fix them. Logic errors are probably in my experience the most
+02:18 dangerous type because they don't crash your application as such but they just
+02:23 make it do the wrong thing. Your code which you have written it runs fine but
+02:29 the results are incorrect. The results are unexpected. So to take an example
+02:35 let's say we have an e-commerce store. you are a back end engineer in a
+02:41 e-commerce kind of SAS application and this store that accidentally applies a
+02:47 discount twice and that gives customers negative shipping costs. The app does
+02:53 not really crash in this particular scenario. But now your uh platform, the
+02:59 platform that you are working for as an engineer, your platform is losing money
+03:04 and it is losing money on every single order because of this one logic issue.
+03:09 Now these errors can go unnoticed for weeks and even months while quietly
+03:15 causing problems if you don't you're not monitoring them or if your users are not
+03:20 reporting them and your platum is just facing more and more loss every single
+03:26 week. So when do they actually happen and why do they happen? Some of the common scenarios are for example if you
+03:34 let's say misunderstand requirements or you implement algorithms
+03:40 incorrectly or if you just don't think about edge cases. So these are some of
+03:47 the usual scenarios when logic errors occur. The first thing is
+03:53 misunderstanding requirements. Let's say your typical sprint cycle follows by
+03:58 having a one-on-one discussion with your client or with your product managers and
+04:04 during those discussions some of the points came across a little confusing and you noted down the requirements
+04:11 which were not the intended ones. So you went ahead and implemented those and
+04:17 that went straight to production and with lack of testing it also went to the users and it started causing problems.
+04:24 So misunderstanding requirements is a pretty common one. Then you might have
+04:29 uh let's say it's a very complicated algorithm depending on the user's behavior and depending on the user's
+04:36 past purchase history. You are issuing different different discount codes and different different discount workflows.
+04:42 And in those complicated algorithms you made uh one slight miscalculation and
+04:47 that in turn caused all this discount related loss in your platform. Or it
+04:53 might be that you did not expect a particular user activity, a particular user behavior in a payment workflow in a
+05:01 discount based workflow and that caused some issue. So these are some of the
+05:07 scenarios where logic related errors might occur and they are pretty dangerous ones. If we are talking about
+05:13 payments or monies or uh security in that aspect, they can corrupt data and
+05:18 they can produce wrong business results over time without getting detected. So
+05:24 that's all about logic errors. Second type is database errors. Now database
+05:30 errors can bring your entire system down since most backend apps they rely
+05:35 heavily on their database. And these errors range from a simple connection problem to complex issues like deadlocks
+05:44 and transaction related issues. And connection errors happen when your app
+05:49 cannot talk to your database. Your back end throws a couple of 500 errors and your front end just shows empty screen
+05:55 everywhere. Or it can also be because the network is down and the database
+06:00 server is overloaded. Or you have run out of connection pools. We you make use
+06:06 of this concept called connection pools so that your back end can hold a couple
+06:12 of open connections to your database server open TCP connections so that it
+06:18 does not have to do the whole process of TCP handshake and all every time a new request comes. So database pooling is
+06:24 kind of an optimization to prevent uh TCP connection based setup costs. So in
+06:30 a pooling based setup that can also cause an error and when these errors
+06:36 happen your app basically cannot really function because your back end needs to
+06:41 interact with the source of the data to send something to the front end to and
+06:47 the front end needs something to show right. So if your database is down if your database is throwing error then
+06:53 your whole platform your whole app cannot really function properly. That's about the first kind of database errors
+07:00 which I just mentioned are connection errors. Connection errors. Second thing can be about constraint violation. Now
+07:08 this is something which is not very apparent. By constraint violation I mean that you are trying to perform some kind
+07:15 of operation which breaks the database rules. For example, you might try to
+07:20 create a user with an email that already exists. In that case, your database just throws a unique constraint error. And if
+07:28 we'll come back to that in the later part of the video, but if you are not properly handling that error, the unique
+07:35 constraint error and you're not sending a properly formatted message to your user to your front end, then that error
+07:42 might bubble up to your to your main process and it might throw a 500 error
+07:48 to your front end. So that is one kind of constraint violation, the unique constraint violation. If you're trying
+07:53 to create a user with the same email or it can also be that you are trying to reference a customer that does not
+07:60 really exist in another table. For example, you have two tables. One is
+08:06 customers and second is orders. So in the orders table you have a field called
+08:12 customer ID and this is a foreign key to this table and this is let's say not
+08:19 nullable and you are trying to insert a new record into the orders table with a
+08:25 customer ID which does not really exist in the customer table and since it is a foreign key and you are referencing the
+08:33 customers table the database throws an error if it cannot find a associated
+08:38 entry in the customer's table. So that can also be a cause of constraint
+08:44 violation. And the reason for these kinds of violation, the constraint violation is usually lies in your
+08:52 validation layer. If you're not properly handling all the edge cases both in your front end and your back end, then these
+08:58 kinds of constraint violation error might occur. So that is something to keep in your mind in order to avoid the
+09:06 database constraint violation related errors. Then you have to make your validation layer stronger. But of course
+09:12 the constraint violation errors like unique key errors they cannot be avoided. Only the database knows whether
+09:19 a new entry a new email is unique or not. So for those use cases of course you have to focus on your error
+09:24 formatting. How to send a properly a user-friendly message to your front end so that your front end can show a proper
+09:31 message that try a different email this email already exists something like that. And then in the database we have
+09:38 another kind of error which is called query errors. Query errors basically happen when your SQL is malformed. For
+09:46 example, you are trying to access tables that don't exist because you made a typo
+09:51 in your SQL query. Let's say you wrote a query something like select star from
+09:57 customers. This is a proper query. But instead of writing this, you ended up writing something like you made a typo
+10:04 and that caused an error that this table that you are trying to query from this does not really exist. So that is a
+10:12 error which happened because of a typo a malformed SQL query or it can also happen when your queries are too complex
+10:19 and they time out etc. deadlocks. Deadlocks are another reason. Deadlocks
+10:24 are particularly tricky and they occur when multiple database operations are
+10:30 waiting for each other and they create kind of a circular dependency. Now
+10:35 that's where we have a dreadlock kind of situation. So that's also something you have to be worry about. Next we have
+10:42 external service errors. uh most of the modern apps that we have uh these days
+10:49 SAS applications mostly that we are talking about they depend on a lot of external services external services like
+10:56 uh payment processors or email providers or let's say cloud storage stoages like
+11:01 object storage like S3 or radius or let's say you are using a external
+11:08 provider something like oz0ero or clerk for your authentication system so that
+11:13 is also an external dependent dependency and each one of these external dependencies is a point of failure that
+11:18 you don't really have any control over and that is a big problem and you cannot
+11:24 really avoid that. It's not like you can abandon using any external dependency that's not possible because you have to
+11:30 build a lot of systems from scratch a lot of complex systems that people have spent years of effort on. So that is not
+11:37 really something that is practical. So you have to expect that all these external services might fail and you
+11:44 have to be prepared that when they fail these are the things that we are going to do to make it up for our users and
+11:51 couple of reasons why these external services might fail. First thing is of course network. This is how we from our
+11:58 backend application connect to an external services either through HTTP or through TCP or through websocket any
+12:06 other kind of connection. But the backbone the medium is of course the network the internet and the internet is
+12:14 not really perfect. So you'll have to deal with things like connection timeouts and DNS failures and network
+12:24 partitions. This is affected by your routing etc. Partitions right and you
+12:30 need to expect this and you need to plan for them. For example, let's say you are
+12:36 using a authentication provider something like clerk or something like ozero. Another thing to keep in mind
+12:43 when you're using an external provider is authentication errors happen when external services like clock or ozero
+12:51 they reject request due to either because bad credentials the username password is not correct the email is not
+12:58 correct or expired tokens or insufficient permissions etc. So just because you're using an external
+13:05 services for your authentication is not secure enough in itself because you are
+13:10 using them as an integration you still have your own back end they are not standalone and in your own back end you
+13:17 can cause security issues security issues like you might expose sensitive
+13:22 user informations in your logs etc. So that is something that you have to keep in your mind since we are talking about
+13:29 external dependencies authentication etc. I just thought of mentioning this point. Now, next thing is rate limiting.
+13:37 When you are using external services, let's say you are integrating some kind of AI functionality and you are using an
+13:44 open AI key or you are using something like resend for your emails etc. And
+13:51 these external services they pretty much all of them have this functionality called rate limiting. And rate limiting
+13:59 exists so that their users so our external services let's say an email
+14:04 provider like resend and we are their users business users but still users we
+14:10 cannot abuse them. They prevent malicious users who send abnormal amount
+14:15 of request in a particular time frame and they have mechanisms rate limiting
+14:20 mechanisms implemented so that they can prevent uh users like us and users with
+14:26 bad intentions and for some reason let's say your platform because of some kind
+14:32 of user activity in your platform or let's say some kind of logic errors you ended up hitting their API a abnormal
+14:40 amount of times. and it started failing because and their rate limiting algorithm triggered and they started
+14:47 blocking you or sending you 4 to 9. So we get the response code 4 to9 when we
+14:54 make too many requests. It means too many requests and you started getting this error code 429. So in these kinds
+15:01 of scenarios you have to expect them from beforehand and you have to be ready for them. And by be ready for them, I
+15:08 mean you have to implement strategies. Strategies like let's say exponential
+15:14 backoff. Exponential backup is a pretty common strategy that we usually implement in case of rate limiting
+15:21 related errors. For example, once we start getting 4 to9 requests. So we have
+15:26 a condition in our error handling logic that if we start getting 4 to 9 then
+15:32 wait for a minute wait for 2 minutes then try again. If you still get 4 to 9
+15:37 then wait for double that amount of time. If we previously waited for 2 minutes now we'll wait for 4 minutes and
+15:43 we'll try again and until we start getting successful responses we'll keep
+15:48 doing this. That's why it's called an exponential backup strategy. So in order to deal with rate limiting errors you
+15:55 have to implement these strategies. Strategies like exponential backoff. And the last one when you are dealing with
+16:01 external dependency the most inevitable one is service outage or service going
+16:09 down. Now this we see pretty much happening every once in a while. Let's
+16:14 say some major cloud provider something like GCP or something like some services of AWS face some kind of issue some kind
+16:21 of incident and they go down and when they go down a lot of their clients go down and we have this u chaos in the
+16:28 internet in the Twitter that this service is down these users are complaining etc. So external services
+16:35 going down is something we as software engineers don't really have a lot of
+16:41 control over. They are inevitable and sometimes they go down because of
+16:46 unexpected incidents or sometimes they go down because of maintenance and your app your back end needs to handle these
+16:54 kinds of errors also gracefully either with fallbacks you have to have let's
+16:59 say your radius service goes down then you should have a second layer of backup
+17:07 something like in-memory caching or a second radius node etc like some kind of
+17:13 fallback so that your app can handle that gracefully and without affecting
+17:18 any kind of major user functionality like payments or something like order processing etc. In the next category we
+17:24 have and this is a famous one input validation errors and these are
+17:30 something which happen because of users in our platform because of the consumers
+17:36 of our platform. Input validation errors happen. They happen because users uh
+17:41 send bad data that does not really meet our requirements, meet our system requirements, meet our rules and the
+17:49 validation layer which throws these errors. This is our first line of defense against any kind of bad data or
+17:56 malicious inputs since we are detecting at the entry point in our backend application and we are just throwing
+18:01 errors if something does not meet our requirements. And there are different types of rules that we usually enforce.
+18:08 If you watch the validation video in this playlist, then you'll have a much
+18:14 deeper understanding about the different kinds of validation that we like to do. But usually it's something like format
+18:20 validation where we check if let's say an email is an appropriate email format or not, whether a phone number looks
+18:28 like a phone number or not, or a date is an appropriate date or not, etc., etc.
+18:33 And you need to be clear even if it's some kind of custom data we need to be clear what exact format that we are
+18:40 expecting and we should only accept that format for the sake of security for the
+18:46 sake of fall tolerance. We also have range validations that handles numeric inputs whether the maximum amount is too
+18:53 high or the minimum amount is too low etc or if the string is too long or if
+18:59 it is too short. If the array has at least three items or if the array has more than 100 items, things like this
+19:06 are called range based errors. We also have required field validation and this
+19:11 check if a particular field which is mandatory for a particular operation to
+19:18 happen is present or not. If they are not present then we throw an error and usually in these kinds of errors we
+19:24 throw a 4handed which is a bad request error from back end and these kinds of
+19:31 errors are the easiest ones to expect and the easiest ones to handle because
+19:36 we already know the requirements of our data and we just enforce those rules at
+19:42 the entry point of our backend application and if anything seems off we just throw an error right unlike the
+19:48 other kinds kinds of errors that we saw above which are external dependency which we don't really have any control
+19:55 over logic errors which are hard to detect. It's a validation errors are the
+20:00 easiest ones to handle. So make sure you have a very robust validation layer.
+20:06 Does not matter what kind of backend app that you are building. Next up we also have configuration errors. What does
+20:14 this mean? Configuration errors can prevent your app from starting if you
+20:19 have that kind of setup in your app, which you should have. And they also can
+20:25 make your production environment behave unexpectedly. And these kinds of errors, configuration errors, they usually show
+20:31 up when you are moving between your development, your staging and your production environment. For example,
+20:38 while development, you added a particular environment variable. Let's say something like open AI API key. You
+20:46 added this in your env file and you raised APR and it is merged and you
+20:54 forgot to add this particular variable in whatever your production environment
+20:60 variable flow is whether it is manual or whether it is coming coming from AWS parameter store etc etc and you just
+21:06 forgot to add that there and the deployment went successful from this point. If you forgot to add that two
+21:13 things can happen. If you are checking at the start of your application, you're
+21:19 validating the presence of all the required environment variables. If you have that kind of setup in your back
+21:24 end, then your app fails to start. And I think this is the best case scenario.
+21:30 That's why if you are building a backend app, make sure your environment variable or your configuration settings whatever
+21:38 that you are reading either from environment variables or from remote stores whatever all these variables
+21:43 which are required for your app to function properly which are not optional. Make sure you validate them at
+21:50 the first step before your server starts. And if any of them are missing, if any of them are corrupt, then fail
+21:57 your app there. So that when you make a new deployment and since most of the deployments have kind of a setup like
+22:04 blue green deployment where unless the new deployment is successfully starts,
+22:09 the previous deployment does not really stop. So if you push something and a new
+22:15 deployment starts and it fails, your previous deployment is still running and
+22:20 uh your app is not really down. As compared to another scenario where you're not doing this kind of setup
+22:26 setup where at the start of your app you're checking all the required environment variables, the configuration
+22:33 variables are present or not and you're not throwing any kind of error. You're not stopping your app. But because of
+22:39 this kind of setup, what happens in your API handlers? API handlers which make
+22:45 use of this new OpenAI service to make an API call to the OpenAI servers to
+22:51 let's say generate some kind of image or something. So when that API is finally
+22:57 hit by some user then uh this service is triggered and since that service tries
+23:04 to access this particular configuration variable which is open a API key and it cannot find it and it errors out and
+23:11 your users get a 500 errors fails during runtime and this is the worst case
+23:18 scenario. We always prefer to crash our app at the start before it it starts to
+23:24 serve real users as compared to this. This is a bad scenario is something
+23:30 which should not happen. So that's all about configuration errors. It happens
+23:35 when we are moving between development, staging, production and it is pretty common. So in order to prevent these
+23:41 kinds of errors, make sure you have this kind of setup where before you start your app, you are validating all your
+23:46 required configuration variables. In the next video in the series, we are talking about configuration management of
+23:52 backend apps. So there we'll do a deep dive on what kind of configuration that we need, where to store them etc etc.
+23:58 But just to give a high level advice that make sure you validate your configuration variables before your
+24:04 server starts so that you can avoid these sneaky kind of errors while your
+24:10 application is running your while your back end is running. Now let's talk about prevention. Since we discussed
+24:16 what are the different kinds of errors that might happen and what are the things that you have to keep an eye on
+24:22 have to make a note of. Let's see what we actually can do. So in my opinion one
+24:29 of the best strategy is finding errors before they spread. This is the best
+24:34 strategy does not matter what environment that we're talking about whether we are talking about front end backend infrastructure does not matter.
+24:41 Finding errors the moment they happen before they cause any actual damage that
+24:46 is the best strategy a any kind of system can have the best kind of error
+24:51 handling. So this is the key point in this video which is the best error
+24:57 handling starts before error happens. This is your key strategy and it should
+25:05 be the best kind of error handling. It starts before errors happen. So health
+25:11 checks are fundamental in this. They continuously monitor your system. We
+25:16 typically have if you are talking about monitoring your servers HTTP servers then we expose a endpoint something like
+25:24 health or something like status in an endpoint which will return some kind of
+25:30 generic response that it is okay. The key thing is not the response it returns
+25:35 the response code is important. As long as it returns a 200 response code it
+25:40 means that it's running. If it's returning something like 400 or something like 500 then something is
+25:47 wrong. So that's why you make use of health checks so that any external service any external tool can keep
+25:54 pinging keep hitting this particular endpoint to make sure that it is active.
+25:59 It is error-free. But this only checks whether they are running or not your services and your servers are running or
+26:07 not. But that is in itself not enough. You should not just check if the
+26:13 services are running. You should also check and you should also verify that they are really doing their job. And
+26:19 when we are talking about that, first thing that comes to mind is databases. To make sure that your back end is doing
+26:25 its job, the primary component that comes to mind is databases. And for that we also have database based health
+26:32 checks. and database based health checks they test connectivity whether we are
+26:38 whether we can successfully connect to our databases or not and things like query performance if some of the queries
+26:45 which used to take let's say 500 millconds they have suddenly started taking 4 seconds or 5 seconds then there
+26:52 is something wrong or the data integrity things like that a simple ping or a
+26:58 simple health check endpoint which only checks that our server is running or not
+27:04 that in itself is not enough. Running a representative query and checking the
+27:09 results how much time it took and how much time it takes on average etc etc.
+27:15 And the second thing in our pack is of course the external services. Now we
+27:20 should also implement some kind of health check kind of functionality for
+27:25 our external services to make sure that we can successfully connect to them and they are functioning as they are
+27:32 supposed to function. For example, for payment processors, you can implement
+27:37 test transactions so that when an actual transaction happens from a user side, we
+27:44 already know that since the last test transaction 5 minutes back was successful, then we are good to go. when
+27:50 it comes to real transactions with real users. Same way for email services, send
+27:56 test messages to your internal email addresses to make sure that the emails are delivering and your connectivity can
+28:04 be established with the external service etc etc. Same way for authentication services, you can generate test tokens.
+28:11 You can test those tokens against validation endpoints that your authentication service exposes. And that
+28:18 way you can verify that your authentication service is functional. And the last thing is core
+28:23 functionality. These tests basically involves that your configuration. As I mentioned just before this point that at
+28:31 the start of the app we should make sure that all the required configuration variables are present. If they're not
+28:36 present then we are stopping at that point and showing a meaningful message so that whichever operator the wagon
+28:42 operator the infrastructure operator they can appropriately configure those variables and start the service again
+28:48 successfully. So making sure that the configuration is properly loaded. The caches some of the default caches the
+28:55 caches which are necessary to run on production workload they are populated
+29:01 and some of the internal data structure whether it's about configuration or about external service etc etc they are
+29:09 consistent. So these are called some of the core functionality. So we should also keep an eye on these things. So all
+29:16 of this combined we can say that these are proactive error detection ahead of
+29:22 time making sure we are already prepared for all these worst case scenarios and
+29:28 we have methodologies to prevent them and if they occur to fix them. So that's
+29:34 why we call all of these as proactive error detection. Then one of the major
+29:40 components especially when we are talking about error handling and fault tolerant systems then this is something
+29:48 which will always show up which is monitoring and observability. Now this
+29:54 is a huge topic logging monitoring and observability and we have I think the
+30:00 next to next video in this series is going to be about logging monitoring and observability that's why I don't want to
+30:06 spend much time here in this video which is all about the mindset that we need to
+30:12 deal with errors right it's nothing concrete just a scope to touch base upon
+30:18 that's why we are not going to talk much about monitoring and observability in this video but The whole idea about
+30:24 monitoring is it detects errors quickly and while they are happening and it
+30:29 provides enough context for us to debug those errors. One point to keep in mind
+30:36 in that area is don't just track if for people who are already familiar with
+30:42 practices of monitoring and observability. One of the advices is to don't just track error rates. Also
+30:49 monitor performance metrics that might indicate problems before they cause failures. One of the early telltale
+30:56 signs before a system is going to break is the performance implications. If you
+31:02 are seeing the degradation of performance in some of your services, then it might mean that they are going
+31:08 to fail soon. So by monitoring performance we can successfully avoid
+31:14 some of the failures. Uh your monitoring setup should track different types of errors across different parts of your
+31:21 application including uh HTTP errors, database errors, external service
+31:26 failures, business logic errors. It should cover everything your monitoring setup whatever service that you are
+31:32 using for monitoring or whatever methodology that you are implementing in your back end. It should try to cover as
+31:39 many sources of errors as possible. And when we are talking about performance metrics or performance monitoring, it
+31:47 should track things like response times or resource usage and throughput, your
+31:54 business metrics monitoring. It should keep track of performance indicators, things like a sudden drop in successful
+32:01 transactions, assuming you are running some kind of e-commerce uh back end. Then in a scenario like where the rate
+32:09 of successful transaction suddenly drops and you're seeing a lot of failed transactions then it might indicate some
+32:15 kind of technical problem even though the error rates are normal. That's why tracking business metrics metrics like
+32:22 transactions successful authentications etc etc that's also important. Then
+32:27 logging good practices they provide information you need to understand and debug errors. You should implement
+32:33 things like structural logging formats like JSON logs which can be easily passed and more metadata can be added to
+32:40 it and tools like Graphana or Loki. These external tools which are meant to
+32:47 be log aggregation tools they can take those logs the JSON logs and they can
+32:52 appropriately parse them and you can explore your error rates in a visual dashboard kind of setup. You can search
+32:59 through them, you can store them in external storage etc etc. So that's pretty much all about monitoring and
+33:05 observability on a very high level. We are going to dive deep into that the
+33:10 tools that are usually used etc etc in a future video but for now when it comes
+33:16 to error rates and a fall tolerant system monitoring and observability is a
+33:21 key part to that. That's why we had to mention it here. And next up I want to talk about some of the philosophies that
+33:28 have always helped me especially in the scenario of error handling or building robust systems. First thing is immediate
+33:35 error response. Now when an error happens your immediate response that
+33:42 determines whether it becomes a minor issue or a major failure and the
+33:48 strategy depends on the error type and the context of that error. For example,
+33:54 for recoverable errors, things that we already talked about the email sending
+33:60 workflow. Let's say you have in an external service something like resend or sending an email and that service
+34:08 failed. Now you are in a situation of error handling. And if you think about it, it is a recoverable error. Sending
+34:15 an email is not something that has to happen uh under milliseconds. We can afford some kind of delay. So in
+34:22 scenarios like these for recoverable errors, retry mechanisms or exponential
+34:28 backup strategies they are a good solution and they work well for network
+34:34 errors or temporary resources or let's say we have run out of database
+34:40 connections in our database. So in these kinds of network errors or resource
+34:45 utilization kind of errors in these kinds of errors retry mechanisms exponential backup strategies they work
+34:52 quite well from my own experience but something that you have to be careful about is not to overwhelm already
+34:60 stressed systems. So should keep the error handling logic, whatever retrying
+35:05 logic, whatever exponential backoff logic that you're implementing, the resource overutilization logic that you
+35:12 have implemented, they should not add more stress to your system since your system is already under stress. That is
+35:18 something that you have to keep an eye on. And the second is nonreoverable
+35:23 errors. The first one is that we talked about sending an email or running out of database connections in our pool. So
+35:30 those are called recoverable errors. But talking about non-reoverable errors, the
+35:35 strategy that works best is containment and graceful degradation. Containment
+35:42 and graceful. In this we usually do solutions like
+35:49 switching to cast data or disabling non-essential features or providing
+35:56 alternative functionality providing some kind of backup as a fallback and
+36:02 containing the scope of that damage. So that is a key strategy that we try to
+36:08 implement in the cases of non-reoverable errors. So that's about immediate error
+36:14 responses. How should you react to two different kinds of errors. One is recoverable errors and the second is
+36:21 non-reoverable errors. The second thought or the second key idea is error
+36:26 recovery strategies. Now this depends of course on the error nature and the
+36:32 functionality criticality. But automatic recovery can handle many errors without
+36:38 human interventions. For example, if a service has failed and it is in a state
+36:44 of not responding to any kind of requests etc etc then restarting that
+36:50 service automatically having some kind of tool or some kind of setup in our workflow for restarting that service or
+36:58 that particular process works pretty much all the time. Then implementing
+37:03 cleanup functionality like cleaning up corrupted caches. If we have problem
+37:09 related to caches or switching to a backup systems that also works most of
+37:14 the time but you should design these things carefully because some of the times these things might make the
+37:21 problems worse. You have to adopt a trial and error based strategy. Try these things. Try to reach that error
+37:29 threshold ahead of the time and see what works for you. What kind of error
+37:34 recovery strategy works for what kind of service. Now for some other kinds of
+37:40 services, manual recovery is pretty much necessary because it requires human
+37:45 judgment and human decision making. So for these kinds of errors which needs a
+37:52 manual intervention, I should plan to document these processes. So that all
+37:57 your team members and your new hires are aware of these kinds of workflows. What
+38:04 to do in a situation of incident or any kind of uh service failure and you
+38:09 should test them so that you are already prepared. you know that they are definitely going to work when the
+38:15 situation arises and they can be executed quickly especially in a stressful situation where taking
+38:21 decisions quickly is the key to providing a better user experience to
+38:26 your user base and in scenarios like these one of the key things to keep in mind is not to corrupt your data. So
+38:34 data recovery strategies data is the most important part in your application because all the other things are
+38:40 basically the code that is running the services that are running but the only tangible thing is the data that you hold
+38:47 the data of your user the data of all your transaction of your orders or whatever kind of platform that you are
+38:54 building. So data integrity should be one of your number one priorities. So this should involve taking backups at
+39:01 the key moments and restoring from backups, replaying transaction logs using specialized recovery tools. Third
+39:09 thing is propagation control. Not all errors should be
+39:14 handled exactly the moment they occur. Sometimes errors need to propagate up to
+39:20 higher levels when there is more context to the error. And we also use the word
+39:25 stack trace in scenarios like these. But you should have this kind of setup where
+39:31 you are intentionally bubbling up your errors to a particular process, the primary process or the secondary
+39:37 process. But you should have the whole bubbling workflow in your control. Otherwise, this might spread to other
+39:45 services or it might shut down your main service. We have this concept called
+39:50 exception handling in most programming languages. whether we are dealing with JavaScript or Python where we have this
+39:56 exception based workflow we we handle errors using try catch. So these
+40:02 exception handling hierarchies provide the structure for error propagation. So
+40:08 catching lower level exceptions and wrapping them with enough context and bubbling them up to higher level
+40:15 exceptions so that we have more business context so that we have enough
+40:21 information in our hands so that we can log the appropriate data. We can send a meaningful error to our front end or if
+40:30 we need to we can trigger some kind of recovery strategy at that point. So
+40:36 planning this whole thing bubbling up the low-level error up to our highle
+40:41 process with enough context that is something which is pretty common that we
+40:47 implement in pretty much all our backend applications. We also have a different name for this which is called global
+40:53 error handling and we'll come back to that in the next point. So error boundaries these boundaries where the
+40:59 last point where we stop the errors from propagating further these error
+41:04 boundaries in service architecture especially they prevent errors in one
+41:10 service from affecting others. So that's the reason we should aim to use separate
+41:15 processes and implement timeouts things like timeouts which protect service level boundaries and use things like
+41:23 message cues to decouple different different services instead of having them in the same process. uh we should
+41:29 implement things like rabbit MQ different other kinds of message Q- based architecture so that we have a
+41:36 asynchronous communication between two different services so that a bug in one
+41:41 service does not cause the failure of another service now coming back what I
+41:46 like to call as the final safety net global error handling final safety net
+41:54 is one of my favorite error handling mechanisms something which I pay a lot
+41:60 of attention to in pretty much every backend app that I have built with is
+42:05 because this is one of those modules which you spend a lot of time initially when you're setting your whole platform
+42:12 up when you are getting to know the features that you might need the services that you are using etc etc but
+42:19 from that point on you only make slight tweaks or add more conditions to check
+42:25 etc etc but this is a one-time effort And this is a single effort which pays a
+42:31 lot in the future, not even in the distant future, the immediate future
+42:36 because this is the most important error handling strategy you can implement in a
+42:43 backend app. A global error handling workflow. So this is how it typically works. I want to explain this global
+42:50 error handling workflow using real life workflows that we typically use in backend apps. So from our earlier videos
+42:58 that we already know in a very common backend architecture we usually have the
+43:04 first entry point is of course the routing layer. From there we reach the
+43:11 handler. The routing layer decides which handler is going to take care of a
+43:16 particular request. And the handler deals with taking or extracting whatever
+43:22 data from that payload that we're receiving the performing operations like
+43:27 des serialization and validation and binding etc etc. And once it has all the
+43:33 appropriate data it calls a particular service method we call it service
+43:38 because in a typical service method we might make use of one or more repository
+43:44 methods. So service method is basically an orchestrator for different repository
+43:49 methods. Now what do we mean by repository method? These are the leaf nodes in a backend function which
+43:56 usually do one thing and usually that is running a database query. So we might
+44:04 have functions like get user by id that is a repository method and a service
+44:10 might fetch a particular user by its ID and then it might do additional
+44:15 operations like it can fetch all the users posts in the same service method
+44:20 by calling a different repository method. So one service which returns a user and all its posts can call two
+44:28 repository method. That's why we have made this separation so that repository methods are unit level. We try to keep
+44:36 their scope limited to one single kind of database operation and we let the
+44:44 service the concerned service decide what repository method and how many
+44:49 repository method that it wants to call etc. So in this architecture that most
+44:56 back end apps follow when we are talking about error handling let's say in the repository layer so the route that we
+45:03 are talking about let's say we we have a a good readads kind of platform which is
+45:10 a to oversimplify it a book management book management platform and in a
+45:16 typical endpoint of a book management platform that we are trying to create a
+45:22 new book. That's what we want to do. It is a endpoint, an API endpoint. To
+45:28 create a new book and to create a new book, we want a couple of fields in our
+45:34 payload. The first thing is name. Then name of the book, which is a mandatory field that we need to insert into the
+45:41 database or let's say some optional field called description. So these are the two fields that we need to create a
+45:48 new book. So there are different types of errors that can happen in this particular API. So first thing is let's
+45:55 say so let's say in the entry point at this point in our handler since the handler performs operations like
+46:02 validation etc then validation etc and we have a business rule that the name of
+46:09 the book cannot exceed more than 500 characters. We have this rule in our violation layer and the user has sent a
+46:17 new book name which is around 700 characters. So the data the payload
+46:23 reaches our handler and in our handler when the validation fails you want to of
+46:28 course error out and return a meaningful error to the user. So that is one kind
+46:34 of error that can happen. Now going inside we let's say passed the service
+46:39 layer and we finally reached the repository layer and in the repository layer we have created a function a
+46:46 function called insert new book and in that function we are running this insert
+46:51 query using SQL we are using posgress imagining and we try to insert this new
+46:57 book but we get a database error which is a unique constraint violation error
+47:03 which says that a book with this particular name already exists in our table in our books table that's why this
+47:10 operation cannot be performed and we get a database level error so that is a different kind of error that we might
+47:16 get so these are the two different kinds of errors we might get in a single API endpoint but the whole point of global
+47:23 error handling is there are a couple of advantages to it but the pattern usually works by does not matter in what level
+47:32 we uh get a new error or what kind of error that is. Usually what we try to we
+47:38 try to bubble that error up up to our global error handler middleware. Usually
+47:44 we try to keep our global error handling in a middleware layer so that it has
+47:50 access to all the incoming requests and all the outgoing responses. So the aim
+47:56 is to does not matter at what layer we get a particular type of error. We try
+48:02 to bubble that error up. So if it is a exception handler kind of language let's
+48:08 say something like JavaScript or Python we just throw that error and we catch that error in our middleware in our
+48:15 final error handler or if it's a language like Go where we return the
+48:20 error then we keep returning the error from our repository to our service to
+48:25 our handler until it reaches our middleware layer and the plan is to from
+48:30 all these different places that a error can arise and an error can be thrown
+48:36 from for example from our repository layer we might throw database errors
+48:42 from our service layer we might throw our internal errors and from our handler
+48:48 layer we might throw validation related errors and in every single programming language we have this ability to create
+48:55 custom errors. So in our final global error handler middleware what we try to
+49:02 do we read the error and depending on what kind of error that is we perform different different kinds of operation
+49:08 and we return a particular kind of an error response back to the user assuming
+49:14 it's an userfacing backend application. For example, if it is a validation error, we return an error response back
+49:21 to the user with the response code of 400 and whatever validation error messages they need to fix their data. So
+49:29 the first kind can be a 400 error. We return a new HTTP message with the
+49:36 response code of 400 which means bad request. And we attach all the form
+49:41 field related errors or any kind of business logic error etc. and we let the user fix them that came from the handler
+49:49 layer. Second thing, the other scenario that we talked about where the name of the book already exists in our books
+49:56 table that's why our database threw us a unique constraint violation error and
+50:02 for that in the global error handler middleware we got a new error which is a
+50:09 database error. Now even for a database error we'll have different different
+50:15 ways to deal with them and different different kinds of message formats to
+50:20 send to the user. For example, for this use case for a unique constraint
+50:25 violation kind of error the ideal response since it is an error which was
+50:32 thrown because of some data sent by the user. So ideally we can send something
+50:38 like a HTTP error with a response code of 400 which is for bad request. We are
+50:44 saying that this payload is a bad request and because in the message we
+50:49 can say that this is for the code HTTP code and in the message field in HTTP
+50:55 error we'll have an structure. So some of the usual fields in an HTTP error structure is a code the HTTP status code
+51:04 which is 400 in this case a message or any other form field related error data
+51:09 which we usually send in a array in an array of dictionaries or array of objects or an array of JSONs. So in the
+51:16 message field we can say that this this book already book already exists in our
+51:23 database or just book already exists and this we did for a unique constraint
+51:30 violation error. Same way let's say there is a different API endpoint for
+51:35 fetching the details of a single book. So there is a URL in the front end a
+51:41 user can go to this particular books and in the book 1 2 3 when this is our front
+51:48 end domain and when they navigate to this particular route what we want to do
+51:54 we in the front end we want to show the details of the book and for the front end to be able to show the details of
+52:00 the book it has to call an API and our back end serves that API uh in a similar route in the back end also we have this
+52:07 particular route And the front end makes a request to this particular route the books route with the path parameter of 1
+52:14 2 3. So it reaches the handler uh it goes through there is no particular validation that we want to do for this
+52:19 particular request since there is no body and the ID is a number and that
+52:25 passes the validation layer. It passes the service layer and it finally reaches the repository layer. In the repository
+52:31 layer what we do? We run a select query. So we do select star from books where
+52:38 the ID of the book is 1 2 3. Right? You can add a valid SQL query here. But for
+52:44 the sake of this example, this is what you want to do. You want to select a particular book from the books table
+52:50 whose ID is 1 2 3. Now assuming that because of some malformed link or
+52:55 someone trying to scam our user for any kind of reason the front end the user in
+53:00 the front end reach this particular route but this book with this ID does
+53:06 not really exist in our platform and the front end made a request with this particular ID and we reached our
+53:12 repository layer and we ran this particular query and because the book
+53:18 does not exist the database through us a no rows. So most of the drivers database
+53:25 drivers especially in the relational database field has this particular common error which is no rows. If for a
+53:32 particular SQL query especially for a select query there are no rows for those
+53:37 conditions the driver will throw an error right there are no rows and what we did we just bubbled it up so that our
+53:46 global error handler can deal with it. So that's why we reached here. So the first kind of error that we talked about
+53:52 that the global error handling middleware has to deal with is unique constraint violation error and same way
+53:58 the second kind of error that we just talked about is no rows error. So the
+54:03 global error handling middle sees that it is a database error and it is not a uni constraint violation error. It is a
+54:09 no rows returned kind of error. So for this use case the data the error
+54:16 handling middleware can see that it is a route where a particular resource with a
+54:21 particular ID was requested but the database through error response and
+54:27 because of this it can finally deduce that this particular resource does not really exist in our database and for
+54:34 that kind of scenario we have an appropriate error code which is the 404. We use the 404 response code in HTTP
+54:43 errors when we are trying to request a particular resource but that resource does not really exist. At this point the
+54:51 error handling middle finally throws an error with the code 404 and the message
+54:56 that the book with ID 123 does not exist. That is the second kind of database error. Another different kind
+55:03 of database error that comes to mind is a foreign key violation error. So let's
+55:09 take a scenario where we are talking about a book management platform. So in a particular endpoint we are creating a
+55:15 new book with a new author and for that endpoint for that API to work
+55:21 successfully there has to be an existing author and we have to pass the author ID in the post payload in our body. So we
+55:30 send a payload with the book name, the book description which is optional and an author ID. It passes our validation
+55:37 layer and it finally reaches our repository layer. And in our repository layer, we are inserting we are running
+55:44 an insert query. Insert into books name, description, author ID with values
+55:50 whatever the values the user has passed. But for some reason the user or the
+55:55 front end has passed an author ID which does not really exist in our database. And since in our database the books
+56:03 table for the author id field for the author ID column the constraint is it is
+56:09 a foreign key which references a row particular row in our authors table and
+56:15 since there are no authors with that particular author ID our database throw us an error. This particular query
+56:21 breaches the foreign key reference violation error whatever. So that can be another kind of database error that our
+56:28 global error handling middleware has to deal with. So for that scenario, what can we do? If you think about it, the
+56:35 front end passed a ID which does not exist. The resource does not exist in
+56:41 our database. So we can throw a 404 saying that this author ID does not
+56:47 really exist. That's all about global error handling middle. This is a final
+56:54 safety net that I like to call it where we can come up with and define different
+56:59 different kinds of error that our platform has to face throughout its life
+57:04 cycle and we define all these rules about how to deal with those errors and
+57:10 what kind of responses to return to our users. So it has two major advantages.
+57:16 The first one is of course more robust and secure because it does not matter
+57:22 where in which layer an error occurs. We are handling it in our final gateway in
+57:28 our final middleware. It is considered more robust since there is no way we'll
+57:34 forget some kind of condition because if let's say for a unique constraint
+57:39 violation error if we did not have a global error handling middleware and we let the layers where the error actually
+57:45 occurred to send a meaningful error message to our users in that kind of scenario. Let's say in our repository
+57:51 layer unique constraint violation error occurs. So it is the responsibility of the repository layer to send a bad
+57:60 request error to our user saying that this book already exists in our database. But for a particular
+58:06 repository method, let's say we forgot to add that condition and the database function through an error. And since in
+58:13 most of the backend setups if a particular error is not appropriately handled or appropriately identified and
+58:20 dealt with what we do we convert that error into a 500 error which basically says that internal server error we don't
+58:27 really know what happened something just went wrong so try again sometimes later. So the user instead of getting a
+58:34 meaningful error message like the book already exists in our database it will get a 500 internal server error
+58:39 something went wrong. So that is the problem uh with not having a global error handler and not having all your
+58:44 error handling logic in a single place that sometimes we forget to add all the conditions. So in scenarios like those
+58:52 having a final safety net which catches all the different kinds of errors that has a possibility to arise. The second
+58:59 thing is connected to the same point only which is reducing redundancy. If we
+59:05 don't have a central point of error handling logic, then all these different kinds of error handling logic that we
+59:12 have in a single file or a single function, we have to spread them out in
+59:18 all different layers and we have to let that particular layer to handle those
+59:25 kinds of error. For example, let's say we discuss three different kinds of database error that might occur in a
+59:32 particular SQL query. So if we did not have a centralized error handling logic
+59:37 then for each repository method in every place where we are executing an SQL
+59:42 query we have to call a particular function or we have to add all these conditions that this is not a unique
+59:49 constant violation error. This is not a foreign key violation error etc. And if it is that error then deal with it that
+59:55 way. So that significantly increases the redundancy of our code and it is also
+60:01 prone to more bugs. Those are the two major advantages of having a global
+60:07 error handling logic in a single place. Since we are talking about error handling, the last two things that I
+60:14 want to bring up is which is mostly related to the security aspect of error
+60:20 handling. So first thing that you have to keep in mind is you have to be very mindful about what kind of error
+60:26 messages that you are exposing to your users to your consumers. What kind of
+60:32 details are leaving your backend app which might compromise the security of
+60:38 your application which might expose information about some of your users which can fall into wrong hands and they
+60:46 can perform or compromise the security of your users which are equally bad. Whether it is compromising the security
+60:52 of your platform or compromising the security of your users, it is equally bad. In fact, compromising the security
+60:58 of your users is worse than your platform because that harms your
+61:03 goodwill, your trust in the market, etc., etc. Now, it can happen in a
+61:09 couple of places. The first one is you have to make sure that whatever default
+61:14 error handling mechanism in your back end is whether it is in the global error handler or whatever place you are
+61:20 keeping it in it is not leaking any kind of internal details back to the consumer. For example, let's say you
+61:28 your database threw some kind of unique constraint violation error or some kind of database error which has some details
+61:35 about the table names or the indexes or the constraint etc etc the internal
+61:42 details of your database. So in your global error handling middleware, if you're just taking whatever error that
+61:49 has bubbled up from your lower layers, for example, in this case, the repository layer and you're sending that
+61:55 message back to the user in the message field of your error structure, then that can cause severe damage to your
+62:02 platform. Because for advanced users, for malicious users, they can take details like your table names, your
+62:09 constraint names, etc., etc. from your database internal details and they can try more advanced attacks, more advanced
+62:16 forms of SQL injection. They can just make your platform a target and they can
+62:21 actively come up with more and more strategies to bypass your security and
+62:26 it will be harder for you to prevent those kinds of attacks. So that is the reason in all the error messages try to
+62:34 have as much control as you can over the messages. So try to understand what kind
+62:40 of error is being thrown from whatever layer it is being thrown from and generate a message which is meant for a
+62:48 user. For example, as I talked about in your default error handling logic instead of throwing a 500 and attaching
+62:55 whatever message that bubbles up from your lower layers add 500 and in the message just say something went wrong.
+63:02 Since if you have reached 500 which is a default error handling mechanism which
+63:07 means that in the previously you have tried to check whether it is a validation layer whether it is a uniconent validation error whether it is
+63:14 a business error etc etc you have checked all the different kinds of errors and finally you have reached this
+63:20 stage where you don't really know what kind of error that is. So for that kind
+63:25 of situation you don't really want your user to know what kind of error was thrown. So it most probably has some
+63:32 kind of internal details in the error message and that is why in the default error handling logic you always want to
+63:39 have a generic message something like something went wrong or the default
+63:45 error message in most library which is internal server error that is one aspect
+63:51 the second aspect is let's say we are dealing with a authentication or authorization module let's say it is a
+63:58 login endpoint you are expecting expecting an email and password and after you get the email and password
+64:04 from the post request body you'll take that you'll check from the email whether a user exists or not if the user does
+64:11 not exist you'll send an error and then if the user exists you proceed you check
+64:17 whether the password is correct or not if the password is correct you'll throw an error etc etc that's what comes to our mind when we think about a login
+64:24 endpoint but here also when we are talking about error handling Something
+64:30 that you have to keep in mind is authentication is one of the most targeted modules in most of the apps
+64:36 that attackers malicious users usually like to target. So in this case you have
+64:42 to follow some of the security practices. This particular resource which is called OAS cheat sheet. This
+64:49 resource has good practices and advices for a lot of different kinds of
+64:54 workflows. For example, authentication, you'll get these different different advices that don't do this, don't do
+65:00 this, this will compromise your platform in this way, this will compromise your users in this way, etc. So, you can
+65:06 follow some of the security practices whatever is relevant to your use case from a a resource like this. But uh the
+65:13 whole idea is let's say we are talking about a sign-in endpoint or a login endpoint and in the first step you took
+65:20 the email which was provided in the body and you checked that whether a user with this particular email exists or not. So
+65:28 if the user does not exist with that email instead of saying a user with this email does not exist you should return
+65:35 an error response which says that invalid username or password invalid email or password so that we can avoid
+65:43 scenarios scenarios like let's say you have a malicious user who is trying to bypass some of the accounts of our legit
+65:50 users or harmless users. So what strategy they are trying to come up
+65:55 with? So they are trying different different email addresses and with various passwords. If you are returning
+66:04 very detailed error messages like a user with this email does not exist or your
+66:10 password is incorrect then what they can do they can implement a step-by-step approach for this attack. And what they
+66:17 can do first they will try different different emails with a single password
+66:22 and for each email they'll keep getting this message that a user with this email does not exist a user with this email
+66:28 does not exist and finally when they hit an email for which a user exists since
+66:35 we are naively returning error messages they will get an error message saying that your password is incorrect since
+66:42 they are able to find an email for which a user already exists in our platform.
+66:49 Now they are getting an error message which says that your password is incorrect and now they have an email
+66:56 which they know that a particular user exist with this email. Now they can try different different passwords uh common
+67:03 passwords which have better chances of getting a hit and with that they are
+67:09 able to compromise the security of our platform. So just using error messages just using the weakness in our error
+67:17 handling mechanism attackers malicious users can compromise our security and
+67:22 the security of our users. So that is the reason try to follow security best practices when it comes to error
+67:28 messages. And the second thing which comes to mind is especially in the aspect of security is logs. On a very
+67:35 high level, the idea is try to not expose the sensitive information like
+67:42 user's email, users passwords, their API keys or their credit card numbers, etc.,
+67:48 etc. in your logs, logs which you think are limited to your own servers, your
+67:54 own infrastructure, which are not getting leaked to any kind of external
+67:59 malicious user. But that's not how it always works. In most of the major data
+68:05 breaches, what happens since major companies use external services, multiple services to manage their logs
+68:12 because for a particular company which has a fair amount of user traffic, they
+68:17 generate hundreds of GBs of logs every day, right? And they have to use multiple services, storage services,
+68:23 analysis services, observability services, different kinds of services to manage their logs efficiently. So what
+68:30 happens in these major data breaches the company's logs gets leaked and from
+68:35 these logs if they are not following best security practices like not logging users credit card numbers not logging
+68:42 users emails not logging users passwords API keys etc etc that detail gets leaked
+68:48 and hundreds of malicious users have access to them in case of errors let's say authentication error occurs you
+68:54 should not log any sensitive information about the user always log user's ID ID
+68:59 instead of their email and only correlation ID so that you have enough context. That's pretty much all I have
+69:06 to say about error handling and creating fall tolerant systems. This is mostly theory just a couple of ways of looking
+69:14 at systems and making the systems more robust and keeping our mind open for
+69:21 different kinds of errors and different kinds of error handling mechanisms.

@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Validations &amp; Transformations · The Backend Lens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,400;1,9..144,600;1,9..144,900&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f1ebdc;--paper:#ece4d1;--paper-2:#e7ddc6;--ink:#1d1812;--ink-soft:#4d453a;--ink-faint:#6f665a;
+  --red:#c43d2b;--red-deep:#a52f20;--rule:#d6ccb4;--rule-soft:#e0d7c2;--code-bg:#e7dec9;--code-ink:#b03f2c;
+  --shadow:0 1px 0 rgba(0,0,0,.04),0 18px 40px -28px rgba(60,40,20,.45);
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Newsreader",Georgia,serif;font-size:18px;line-height:1.62;-webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(196,61,43,.04), transparent 40%),radial-gradient(circle at 88% 40%, rgba(120,90,40,.045), transparent 45%);}
+::selection{background:var(--red);color:#fff;}
+#progress{position:fixed;top:0;left:0;height:3px;width:0;background:var(--red);z-index:200;transition:width .1s linear;}
+.shell{display:flex;max-width:1680px;margin:0 auto;}
+.sidebar{width:330px;flex:0 0 330px;border-right:1px solid var(--rule);padding:42px 30px 60px 40px;position:sticky;top:0;align-self:flex-start;height:100vh;overflow-y:auto;background:linear-gradient(180deg,rgba(236,228,209,.55),rgba(236,228,209,.15));}
+.sidebar::-webkit-scrollbar{width:7px;}
+.sidebar::-webkit-scrollbar-thumb{background:var(--rule);border-radius:10px;}
+.main{flex:1;min-width:0;padding:42px clamp(28px,5vw,96px) 140px;max-width:1180px;}
+.brand{font-family:"Fraunces";font-weight:900;font-size:25px;letter-spacing:-.01em;line-height:1.08;}
+.brand .slash{color:var(--red);font-style:italic;}
+.brand .lens{font-style:italic;font-weight:600;}
+.brand-sub{font-family:"JetBrains Mono";font-size:10.5px;letter-spacing:.34em;text-transform:uppercase;color:var(--ink-faint);margin-top:9px;}
+.toc{margin-top:38px;list-style:none;padding:0;}
+.toc a{display:flex;gap:14px;align-items:baseline;text-decoration:none;color:var(--ink-soft);font-size:15.5px;padding:7px 0;line-height:1.3;border-bottom:1px solid transparent;transition:color .18s,transform .18s;}
+.toc a .num{font-family:"JetBrains Mono";font-size:11px;font-weight:700;color:var(--red);flex:0 0 22px;letter-spacing:.02em;padding-top:2px;}
+.toc a:hover{color:var(--ink);transform:translateX(3px);}
+.toc a.active{color:var(--red);font-weight:600;}
+.toc a.active .num{color:var(--ink);}
+.toc-group{font-family:"JetBrains Mono";font-size:9.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-faint);margin:24px 0 6px 36px;}
+.toc-group:first-of-type{margin-top:0;}
+.kicker{font-family:"JetBrains Mono";font-size:12px;letter-spacing:.36em;text-transform:uppercase;color:var(--red);font-weight:700;}
+h1.title{font-family:"Fraunces";font-weight:900;font-size:clamp(46px,6.6vw,92px);line-height:.96;letter-spacing:-.025em;margin:18px 0 0;}
+h1.title em{font-style:italic;color:var(--red);font-weight:900;}
+.lede{font-size:clamp(19px,1.5vw,23px);line-height:1.5;color:var(--ink-soft);max-width:760px;margin:30px 0 0;}
+.lede em{font-style:italic;color:var(--ink);}
+.pills{display:flex;flex-wrap:wrap;gap:12px;margin:34px 0 0;}
+.pill{font-family:"JetBrains Mono";font-size:12.5px;color:var(--ink-soft);border:1px solid var(--rule);border-radius:30px;padding:8px 16px;background:rgba(255,255,255,.22);}
+.hero-rule{height:3px;width:118px;background:var(--red);margin:42px 0 0;}
+.part-label{font-family:"JetBrains Mono";font-size:11.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--red);font-weight:700;margin:96px 0 16px;display:flex;align-items:center;gap:16px;}
+.part-label::after{content:"";flex:1;height:1px;background:var(--rule);}
+.sec-head{display:flex;align-items:center;gap:20px;margin:14px 0 8px;scroll-margin-top:30px;}
+.sec-num{font-family:"JetBrains Mono";font-weight:700;font-size:16px;color:#fff;background:var(--red);width:42px;height:34px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;box-shadow:0 4px 10px -4px rgba(196,61,43,.6);}
+.sec-head h2{font-family:"Fraunces";font-weight:700;font-size:clamp(30px,3.6vw,44px);letter-spacing:-.02em;margin:0;line-height:1.04;}
+.sec-divider{height:1px;background:var(--rule);margin:18px 0 30px;}
+h3{font-family:"Fraunces";font-weight:600;font-size:25px;letter-spacing:-.01em;margin:42px 0 10px;}
+h4{font-family:"JetBrains Mono";font-weight:700;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--red-deep);margin:30px 0 8px;}
+p{margin:14px 0;}
+.main strong{font-weight:600;color:var(--ink);}
+em{font-style:italic;}
+code{font-family:"JetBrains Mono";font-size:.82em;background:var(--code-bg);color:var(--code-ink);padding:2px 7px;border-radius:5px;border:1px solid rgba(0,0,0,.04);}
+.note{border-left:3px solid var(--red);background:rgba(196,61,43,.05);padding:16px 22px;border-radius:0 8px 8px 0;margin:24px 0;font-size:16.5px;}
+.note .tag{font-family:"JetBrains Mono";font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--red-deep);font-weight:700;display:block;margin-bottom:5px;}
+.note.dark{border-left-color:var(--ink);background:rgba(29,24,18,.045);}
+.note.dark .tag{color:var(--ink);}
+.defs{margin:22px 0;border-top:1px solid var(--rule);}
+.defs .row{display:flex;gap:24px;padding:16px 0;border-bottom:1px solid var(--rule-soft);align-items:baseline;}
+.defs .term{flex:0 0 200px;font-family:"Fraunces";font-weight:600;font-size:19px;}
+.defs .term small{display:block;font-family:"JetBrains Mono";font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--red);font-weight:700;margin-bottom:3px;}
+.defs .desc{flex:1;color:var(--ink-soft);font-size:16.5px;}
+
+/* ---- code: BOTH languages always shown, side by side ---- */
+.codeduo{margin:26px 0;display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.codeduo.solo{grid-template-columns:1fr;}
+.codecard{border:1px solid var(--rule);border-radius:12px;overflow:hidden;background:#211b14;box-shadow:var(--shadow);display:flex;flex-direction:column;}
+.codebar{display:flex;align-items:center;gap:9px;background:#2c2419;padding:10px 15px;border-bottom:1px solid #3a3022;}
+.codebar .dot{width:10px;height:10px;border-radius:50%;background:#4a3f2e;}
+.codebar .fname{font-family:"JetBrains Mono";font-size:11.5px;color:#c9bda6;margin-left:4px;}
+.langtag{margin-left:auto;font-family:"JetBrains Mono";font-size:10px;letter-spacing:.14em;text-transform:uppercase;padding:4px 11px;border-radius:20px;font-weight:700;}
+.langtag.go{background:#163d3a;color:#5dd6c4;}
+.langtag.py{background:#2c2a44;color:#9b91ff;}
+.langtag.sql{background:#3a2c16;color:#e3c97a;}
+.codecard pre{margin:0;padding:18px 18px;overflow-x:auto;font-family:"JetBrains Mono";font-size:12.6px;line-height:1.68;color:#e4dcca;flex:1;}
+.codecard pre::-webkit-scrollbar{height:8px;}
+.codecard pre::-webkit-scrollbar-thumb{background:#4a3f2e;border-radius:10px;}
+.kw{color:#e0826d;}.fn{color:#7cc7ff;}.str{color:#b5d99c;}.cm{color:#857a64;font-style:italic;}.num2{color:#d9b08c;}.ty{color:#5dd6c4;}.pp{color:#e3c97a;}
+.codenote{font-family:"JetBrains Mono";font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin:-12px 0 8px;}
+
+figure{margin:34px 0;}
+.fig-frame{border:1px solid var(--rule);border-radius:13px;background:rgba(255,255,255,.34);padding:26px 22px 18px;box-shadow:var(--shadow);}
+.fig-frame svg{width:100%;height:auto;display:block;}
+figcaption{font-family:"JetBrains Mono";font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin-top:14px;text-align:center;}
+figcaption b{color:var(--red);font-weight:700;}
+.demo{border:1px solid var(--rule);border-radius:11px;overflow:hidden;margin:24px 0;background:rgba(255,255,255,.3);}
+.demo .dhead{font-family:"JetBrains Mono";font-size:12px;letter-spacing:.06em;background:var(--paper-2);padding:11px 18px;border-bottom:1px solid var(--rule);display:flex;gap:10px;align-items:center;}
+.method{font-weight:700;color:#fff;background:var(--red);border-radius:5px;padding:2px 9px;font-size:11px;}
+.demo .dbody{padding:4px 18px 14px;}
+.req,.res{margin:13px 0;}
+.req .lbl,.res .lbl{font-family:"JetBrains Mono";font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;}
+.req pre,.res pre{font-family:"JetBrains Mono";font-size:12.8px;line-height:1.6;background:var(--code-bg);border:1px solid var(--rule);border-radius:7px;padding:12px 14px;overflow-x:auto;margin:6px 0 0;color:var(--ink);}
+.status{font-family:"JetBrains Mono";font-weight:700;font-size:12px;padding:2px 9px;border-radius:5px;}
+.s400{background:#f3d9d2;color:#a52f20;}
+.s200{background:#d9ecd2;color:#3c6e2e;}
+.s500{background:#3a2018;color:#f0c8be;}
+ol.steps{counter-reset:s;list-style:none;padding:0;margin:22px 0;}
+ol.steps li{position:relative;padding:14px 0 14px 56px;border-bottom:1px solid var(--rule-soft);}
+ol.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:13px;width:34px;height:34px;border-radius:8px;background:var(--paper-2);border:1px solid var(--rule);font-family:"JetBrains Mono";font-weight:700;color:var(--red);display:flex;align-items:center;justify-content:center;font-size:14px;}
+ol.steps li b{font-family:"Fraunces";font-weight:600;font-size:18px;}
+.reveal{opacity:0;transform:translateY(16px);transition:opacity .7s ease,transform .7s ease;}
+.reveal.in{opacity:1;transform:none;}
+.hero-stagger>*{opacity:0;transform:translateY(14px);animation:rise .8s cubic-bezier(.2,.7,.2,1) forwards;}
+.hero-stagger>*:nth-child(1){animation-delay:.05s}.hero-stagger>*:nth-child(2){animation-delay:.14s}.hero-stagger>*:nth-child(3){animation-delay:.24s}.hero-stagger>*:nth-child(4){animation-delay:.34s}.hero-stagger>*:nth-child(5){animation-delay:.44s}
+@keyframes rise{to{opacity:1;transform:none;}}
+footer.end{margin-top:120px;border-top:1px solid var(--rule);padding-top:28px;font-family:"JetBrains Mono";font-size:12px;letter-spacing:.06em;color:var(--ink-faint);display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;}
+@media(max-width:1100px){.codeduo{grid-template-columns:1fr;}}
+@media(max-width:1020px){.sidebar{display:none;}.main{padding:30px 22px 110px;}}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">VALID <span class="slash">/</span> <span class="lens">the backend lens</span></div>
+    <div class="brand-sub">Field Manual · Validations &amp; Transformations</div>
+    <div class="toc-group">Part I · Mental Model</div>
+    <ul class="toc">
+      <li><a href="#s1"><span class="num">01</span> What &amp; Why</a></li>
+      <li><a href="#s2"><span class="num">02</span> The Three Layers</a></li>
+      <li><a href="#s3"><span class="num">03</span> The Request Lifecycle</a></li>
+      <li><a href="#s4"><span class="num">04</span> The Execution Point</a></li>
+      <li><a href="#s5"><span class="num">05</span> Why It Is Critical: 500 vs 400</a></li>
+      <li><a href="#s6"><span class="num">06</span> Inside the Pipeline</a></li>
+    </ul>
+    <div class="toc-group">Part II · Types of Validation</div>
+    <ul class="toc">
+      <li><a href="#s7"><span class="num">07</span> Type Validation</a></li>
+      <li><a href="#s8"><span class="num">08</span> Syntactic Validation</a></li>
+      <li><a href="#s9"><span class="num">09</span> Semantic Validation</a></li>
+      <li><a href="#s10"><span class="num">10</span> Complex / Dependent</a></li>
+    </ul>
+    <div class="toc-group">Part III · Transformation</div>
+    <ul class="toc">
+      <li><a href="#s11"><span class="num">11</span> Type Casting</a></li>
+      <li><a href="#s12"><span class="num">12</span> Normalization</a></li>
+      <li><a href="#s13"><span class="num">13</span> One Combined Pipeline</a></li>
+    </ul>
+    <div class="toc-group">Part IV · The Golden Rule</div>
+    <ul class="toc">
+      <li><a href="#s14"><span class="num">14</span> Frontend vs Backend</a></li>
+      <li><a href="#s15"><span class="num">15</span> Full Annotated Controller</a></li>
+    </ul>
+  </aside>
+
+  <main class="main">
+    <div class="hero-stagger">
+      <div class="kicker">A Detailed Backend Reference</div>
+      <h1 class="title">Validations &amp; <em>Transformations.</em></h1>
+      <p class="lede">A first-principles walkthrough of the rules and guidelines you keep in mind while designing APIs — the gate every piece of client data passes through <em>before</em> any business logic runs. Why it exists, where it lives, how it works underneath, with complete implementations in Go and Python shown side by side.</p>
+      <div class="pills">
+        <span class="pill">Data Integrity</span><span class="pill">Security</span><span class="pill">Controller Entry Point</span><span class="pill">Go + Python · full code</span><span class="pill">15 sections</span>
+      </div>
+      <div class="hero-rule"></div>
+    </div>
+
+    <!-- ===================== PART I ===================== -->
+    <div class="part-label reveal">Part I · The Mental Model</div>
+
+    <div class="sec-head reveal" id="s1"><div class="sec-num">01</div><h2>What They Are &amp; Why They Exist</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">Validations and transformations are not a single feature you install. They are <strong>a set of rules and guidelines you keep in mind while designing your APIs</strong>. Almost everything about them traces back to two goals, and those two goals are the lens through which every later decision is made:</p>
+    <div class="defs reveal">
+      <div class="row"><div class="term"><small>Goal 01</small>Data Integrity</div><div class="desc">Whatever data finally reaches your business logic and your database is in the <em>exact</em> shape your application expects — correct fields, correct types, correct ranges, correct meaning.</div></div>
+      <div class="row"><div class="term"><small>Goal 02</small>Security</div><div class="desc">Untrusted input from the outside world is never allowed to drive your system into an unexpected, unhandled state. The server stays defensive about everything that crosses its boundary.</div></div>
+    </div>
+    <h4 class="reveal">What counts as "incoming client data"</h4>
+    <p class="reveal">The validation boundary covers <strong>every</strong> kind of data a client can push at the server, not just the request body. All of the following must be treated as untrusted until proven otherwise:</p>
+    <ul class="reveal">
+      <li><strong>JSON payloads</strong> — the body of a <code>POST</code> / <code>PUT</code> / <code>PATCH</code> request.</li>
+      <li><strong>Query parameters</strong> — e.g. <code>?page=2&amp;limit=20</code>.</li>
+      <li><strong>Path parameters</strong> — e.g. the <code>5</code> in <code>/users/5</code>.</li>
+      <li><strong>Headers</strong> — anything the client sets on the request.</li>
+    </ul>
+    <div class="note reveal"><span class="tag">The one-sentence definition</span> Validation answers <em>"is this data in the exact format my API expects?"</em> Transformation answers <em>"how do I reshape this data into the format my service layer wants?"</em> They run together, at the front door, before anything important happens.</div>
+
+    <div class="sec-head reveal" id="s2"><div class="sec-num">02</div><h2>Where It Lives: The Three Layers</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">To pinpoint <em>where</em> validation happens you first need the standard mental model of a backend: three stacked layers, each with one job. A request travels down the stack and the response travels back up.</p>
+    <div class="defs reveal">
+      <div class="row"><div class="term"><small>Bottom</small>Repository Layer</div><div class="desc">Deals only with the database — connections, queries, inserts, updates, deletes. It does not care <em>why</em> a row is being written, only that it is. Works against a relational DB (Postgres), Redis, or any other persistent store.</div></div>
+      <div class="row"><div class="term"><small>Middle</small>Service Layer</div><div class="desc">The <em>business logic</em>. A single service method may call one or more repository methods, send push notifications, email users, store data, fire a webhook — everything an API is expected to actually <em>do</em>.</div></div>
+      <div class="row"><div class="term"><small>Top</small>Controller Layer</div><div class="desc">The HTTP-facing entry point. It owns everything <em>HTTP</em>: which status code to return, the response format, and — crucially — the validations. It receives client data, calls the matching service method, and returns whatever that method gives back.</div></div>
+    </div>
+    <p class="reveal">The reason controller and service are <strong>deliberately separated</strong> is to keep HTTP concerns (error codes, success codes, response shape, validation) in one place, and pure business logic in another. The controller calls the service; the service may or may not call the repository, depending on what the request needs.</p>
+
+    <figure class="reveal">
+      <div class="fig-frame">
+        <svg viewBox="0 0 760 430" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono">
+          <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#c43d2b"/></marker></defs>
+          <rect x="40" y="30" width="170" height="56" rx="10" fill="#fff" stroke="#d6ccb4"/>
+          <text x="125" y="56" text-anchor="middle" font-size="14" font-weight="700" fill="#1d1812">CLIENT</text>
+          <text x="125" y="74" text-anchor="middle" font-size="10" fill="#6f665a">JSON · query · path · headers</text>
+          <rect x="270" y="20" width="450" height="92" rx="12" fill="#f7d9d1" stroke="#c43d2b" stroke-width="1.5"/>
+          <text x="495" y="46" text-anchor="middle" font-size="15" font-weight="700" fill="#a52f20">CONTROLLER LAYER</text>
+          <text x="495" y="66" text-anchor="middle" font-size="10.5" fill="#7a4135">HTTP concerns · status codes · response shape</text>
+          <text x="495" y="84" text-anchor="middle" font-size="10.5" font-weight="700" fill="#a52f20">▸ VALIDATION &amp; TRANSFORMATION live here ◂</text>
+          <text x="495" y="100" text-anchor="middle" font-size="9.5" fill="#7a4135">the only layer that touches raw client data</text>
+          <rect x="270" y="160" width="450" height="78" rx="12" fill="#fff" stroke="#d6ccb4"/>
+          <text x="495" y="188" text-anchor="middle" font-size="15" font-weight="700" fill="#1d1812">SERVICE LAYER</text>
+          <text x="495" y="208" text-anchor="middle" font-size="10.5" fill="#6f665a">business logic · email · notifications</text>
+          <text x="495" y="224" text-anchor="middle" font-size="10.5" fill="#6f665a">webhooks · orchestration</text>
+          <rect x="270" y="286" width="450" height="74" rx="12" fill="#fff" stroke="#d6ccb4"/>
+          <text x="495" y="314" text-anchor="middle" font-size="15" font-weight="700" fill="#1d1812">REPOSITORY LAYER</text>
+          <text x="495" y="334" text-anchor="middle" font-size="10.5" fill="#6f665a">DB connections · queries · insert / update / delete</text>
+          <ellipse cx="495" cy="392" rx="60" ry="14" fill="#ece4d1" stroke="#d6ccb4"/>
+          <text x="495" y="397" text-anchor="middle" font-size="11" font-weight="700" fill="#4d453a">Postgres · Redis</text>
+          <line x1="210" y1="62" x2="264" y2="64" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar)"/>
+          <line x1="495" y1="112" x2="495" y2="154" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar)"/>
+          <line x1="495" y1="238" x2="495" y2="280" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar)"/>
+          <line x1="495" y1="360" x2="495" y2="376" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar)"/>
+          <text x="520" y="138" font-size="9.5" fill="#6f665a">calls service method</text>
+          <text x="520" y="264" font-size="9.5" fill="#6f665a">may call repository</text>
+        </svg>
+      </div>
+      <figcaption>The standard stack — validation is pinned to the <b>top of the controller</b></figcaption>
+    </figure>
+
+    <div class="sec-head reveal" id="s3"><div class="sec-num">03</div><h2>The Request Lifecycle</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">A request does not magically appear inside your controller method. It arrives, gets <strong>route-matched</strong>, and only then is the controller method assigned to that route invoked. That ordering is the key to placing validation correctly.</p>
+    <ol class="steps reveal">
+      <li><b>Data arrives.</b> A client opens an HTTP connection and sends a request — typically a JSON payload, plus query and path parameters and headers.</li>
+      <li><b>Route matching runs.</b> The router compares the incoming path against its patterns and selects the controller method registered for the matched route.</li>
+      <li><b>Validation &amp; transformation pipeline fires.</b> Before <em>any</em> significant logic runs, the matched controller passes the raw data through the pipeline.</li>
+      <li><b>Business logic runs.</b> Only if the data passed does the controller call the service method.</li>
+      <li><b>Service → repository.</b> The service executes logic, optionally calling repository methods that hit the database.</li>
+      <li><b>Response travels back up.</b> Whatever the service returns is handed to the controller, which returns it to the caller over the HTTP connection.</li>
+    </ol>
+    <figure class="reveal">
+      <div class="fig-frame">
+        <svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono">
+          <defs><marker id="ar2" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#c43d2b"/></marker></defs>
+          <g font-size="11" font-weight="700">
+            <rect x="14" y="80" width="110" height="58" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="69" y="106" text-anchor="middle" fill="#1d1812">CLIENT</text><text x="69" y="122" text-anchor="middle" font-size="9" font-weight="400" fill="#6f665a">sends request</text>
+            <rect x="158" y="80" width="120" height="58" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="218" y="102" text-anchor="middle" fill="#1d1812">ROUTE</text><text x="218" y="118" text-anchor="middle" fill="#1d1812">MATCHING</text>
+            <rect x="312" y="64" width="186" height="92" rx="11" fill="#f7d9d1" stroke="#c43d2b" stroke-width="1.6"/><text x="405" y="92" text-anchor="middle" fill="#a52f20">VALIDATION &amp;</text><text x="405" y="108" text-anchor="middle" fill="#a52f20">TRANSFORMATION</text><text x="405" y="128" text-anchor="middle" font-size="9" font-weight="400" fill="#7a4135">the gate — runs first</text>
+            <rect x="532" y="80" width="120" height="58" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="592" y="102" text-anchor="middle" fill="#1d1812">CONTROLLER</text><text x="592" y="118" text-anchor="middle" font-size="9" font-weight="400" fill="#6f665a">business path</text>
+            <rect x="686" y="80" width="100" height="58" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="736" y="106" text-anchor="middle" fill="#1d1812">SERVICE</text><text x="736" y="122" text-anchor="middle" font-size="9" font-weight="400" fill="#6f665a">→ repository</text>
+            <line x1="124" y1="109" x2="154" y2="109" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar2)"/>
+            <line x1="278" y1="109" x2="308" y2="109" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar2)"/>
+            <line x1="498" y1="109" x2="528" y2="109" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar2)"/>
+            <line x1="652" y1="109" x2="682" y2="109" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar2)"/>
+            <path d="M405 156 q0 30 -150 30 L150 186" fill="none" stroke="#a52f20" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar2)"/>
+            <text x="250" y="205" font-size="9.5" font-weight="700" fill="#a52f20">on failure → 400 Bad Request, never reaches service</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>The gate sits between <b>route matching</b> and any <b>business logic</b></figcaption>
+    </figure>
+
+    <div class="sec-head reveal" id="s4"><div class="sec-num">04</div><h2>The Execution Point</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">Validation and transformation happen at <strong>exactly one point</strong>: inside the controller layer, immediately <em>after</em> the route is matched and <em>before</em> any service method is called or any business logic runs. Concretely it is implemented as a reusable <strong>middleware or utility function</strong> that you hand a <strong>schema</strong> — the description of what the data should look like — and it walks every field of the incoming payload against that schema.</p>
+    <div class="note dark reveal"><span class="tag">Why the front door, specifically</span> Validating at the entry point guarantees the system never carries an <em>unexpected state</em> any deeper than the front door. Bad data is rejected while it is still cheap to reject — before database connections open, before emails queue, before any side effect fires.</div>
+
+    <div class="sec-head reveal" id="s5"><div class="sec-num">05</div><h2>Why It Is Critical — The 500 vs 400 Story</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">The clearest way to feel the need for validation is to watch what happens <em>without</em> it. Imagine a "create book" API that expects a JSON body with a <code>name</code> field that should be a string. A client instead sends the <strong>number</strong> <code>0</code>:</p>
+    <div class="demo reveal">
+      <div class="dhead"><span class="method">POST</span> /api/books</div>
+      <div class="dbody"><div class="req"><span class="lbl">Request body (malformed)</span><pre>{ "name": 0 }</pre></div></div>
+    </div>
+    <p class="reveal">In your Postgres schema the column was almost certainly declared like this — a string column that cannot be null:</p>
+    <div class="codeduo solo reveal">
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">schema.sql</span><span class="langtag sql">SQL</span></div>
+        <pre><span class="kw">CREATE TABLE</span> books (
+  id    <span class="ty">SERIAL</span> <span class="kw">PRIMARY KEY</span>,
+  name  <span class="ty">TEXT</span> <span class="kw">NOT NULL</span>   <span class="cm">-- expects text, refuses an integer</span>
+);</pre>
+      </div>
+    </div>
+    <p class="reveal">With <strong>no validation</strong>, that <code>0</code> sails through the controller, through the service, down into the repository, and becomes an <code>INSERT</code>. Postgres checks the column type, sees a number where it demanded <code>TEXT</code>, and <strong>rejects the operation</strong>. The database call fails, and the client receives:</p>
+    <div class="demo reveal">
+      <div class="dhead">Response without validation <span class="status s500" style="margin-left:auto">500 INTERNAL SERVER ERROR</span></div>
+      <div class="dbody"><div class="res"><span class="lbl">"Something went wrong on the server"</span><pre>{ "error": "Internal Server Error" }</pre></div></div>
+    </div>
+    <p class="reveal">That is a <strong>poor user experience</strong>. A 500 says "something unexpected broke inside us" when in reality the <em>client</em> sent bad input, and gives them nothing to fix. With a validation pipeline at the entry point, the server catches the mistake instantly, the database is never touched, and the client gets an actionable <strong>400 Bad Request</strong>:</p>
+    <div class="demo reveal">
+      <div class="dhead">Response with validation <span class="status s400" style="margin-left:auto">400 BAD REQUEST</span></div>
+      <div class="dbody"><div class="res"><span class="lbl">Actionable, returned before any DB call</span><pre>{ "errors": [ "name: expected a string, received a number" ] }</pre></div></div>
+    </div>
+    <figure class="reveal">
+      <div class="fig-frame">
+        <svg viewBox="0 0 880 270" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono">
+          <defs><marker id="ar3" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#9a8f78"/></marker><marker id="ar3r" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#c43d2b"/></marker></defs>
+          <text x="20" y="28" font-size="12" font-weight="700" fill="#7a4135">PATH A · NO VALIDATION</text>
+          <g font-size="10" font-weight="700">
+            <rect x="20" y="44" width="92" height="44" rx="8" fill="#fff" stroke="#d6ccb4"/><text x="66" y="70" text-anchor="middle" fill="#1d1812">{name:0}</text>
+            <rect x="150" y="44" width="92" height="44" rx="8" fill="#fff" stroke="#d6ccb4"/><text x="196" y="70" text-anchor="middle" fill="#1d1812">controller</text>
+            <rect x="280" y="44" width="92" height="44" rx="8" fill="#fff" stroke="#d6ccb4"/><text x="326" y="70" text-anchor="middle" fill="#1d1812">service</text>
+            <rect x="410" y="44" width="92" height="44" rx="8" fill="#fff" stroke="#d6ccb4"/><text x="456" y="70" text-anchor="middle" fill="#1d1812">repository</text>
+            <rect x="540" y="44" width="100" height="44" rx="8" fill="#2c1a14" stroke="#2c1a14"/><text x="590" y="64" text-anchor="middle" fill="#f0c8be">DB REJECTS</text><text x="590" y="79" text-anchor="middle" font-size="8.5" font-weight="400" fill="#d9a99c">type mismatch</text>
+            <rect x="678" y="44" width="178" height="44" rx="8" fill="#3a2018" stroke="#3a2018"/><text x="767" y="64" text-anchor="middle" fill="#f0c8be">500 to client</text><text x="767" y="79" text-anchor="middle" font-size="8.5" font-weight="400" fill="#d9a99c">"something broke" · unhelpful</text>
+            <line x1="112" y1="66" x2="146" y2="66" stroke="#9a8f78" stroke-width="2" marker-end="url(#ar3)"/>
+            <line x1="242" y1="66" x2="276" y2="66" stroke="#9a8f78" stroke-width="2" marker-end="url(#ar3)"/>
+            <line x1="372" y1="66" x2="406" y2="66" stroke="#9a8f78" stroke-width="2" marker-end="url(#ar3)"/>
+            <line x1="502" y1="66" x2="536" y2="66" stroke="#9a8f78" stroke-width="2" marker-end="url(#ar3)"/>
+            <line x1="640" y1="66" x2="674" y2="66" stroke="#9a8f78" stroke-width="2" marker-end="url(#ar3)"/>
+          </g>
+          <line x1="20" y1="120" x2="860" y2="120" stroke="#d6ccb4" stroke-dasharray="3 4"/>
+          <text x="20" y="158" font-size="12" font-weight="700" fill="#a52f20">PATH B · WITH VALIDATION AT THE GATE</text>
+          <g font-size="10" font-weight="700">
+            <rect x="20" y="174" width="92" height="44" rx="8" fill="#fff" stroke="#d6ccb4"/><text x="66" y="200" text-anchor="middle" fill="#1d1812">{name:0}</text>
+            <rect x="150" y="166" width="150" height="60" rx="9" fill="#f7d9d1" stroke="#c43d2b" stroke-width="1.5"/><text x="225" y="192" text-anchor="middle" fill="#a52f20">VALIDATION</text><text x="225" y="208" text-anchor="middle" font-size="8.5" font-weight="400" fill="#7a4135">expected string, got number</text>
+            <rect x="360" y="174" width="200" height="44" rx="8" fill="#f3d9d2" stroke="#c43d2b"/><text x="460" y="194" text-anchor="middle" fill="#a52f20">400 to client (instant)</text><text x="460" y="209" text-anchor="middle" font-size="8.5" font-weight="400" fill="#7a4135">exactly what to fix</text>
+            <rect x="600" y="174" width="170" height="44" rx="8" fill="#fff" stroke="#d6ccb4" stroke-dasharray="4 4"/><text x="685" y="194" text-anchor="middle" fill="#9a8f78">service · DB</text><text x="685" y="209" text-anchor="middle" font-size="8.5" font-weight="400" fill="#9a8f78">never touched</text>
+            <line x1="112" y1="196" x2="146" y2="196" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar3r)"/>
+            <line x1="300" y1="196" x2="356" y2="196" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar3r)"/>
+          </g>
+        </svg>
+      </div>
+      <figcaption>Same bad input, two outcomes — <b>500 disaster</b> vs a clean <b>400</b> that never wakes the database</figcaption>
+    </figure>
+
+    <div class="sec-head reveal" id="s6"><div class="sec-num">06</div><h2>Inside the Pipeline — Step by Step</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">A robust pipeline processes a field in <strong>layers</strong>, and the order matters: each check only runs if the previous one passed. Take a single field, <code>name</code>, required to be a string of length 5–100:</p>
+    <ol class="steps reveal">
+      <li><b>Existence check.</b> Does <code>name</code> exist in the payload at all? If not → <code>"name is required"</code>, stop.</li>
+      <li><b>Type check.</b> It exists — is it a string, or did the client send an array / boolean / number? If wrong type → <code>"expected a string"</code>, stop.</li>
+      <li><b>Constraint check.</b> It is a string — does it satisfy the restrictions? Length 5–100. A 2-character string or a whole paragraph both fail with a tailored message.</li>
+    </ol>
+    <figure class="reveal">
+      <div class="fig-frame">
+        <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono">
+          <defs><marker id="ar4" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1d1812"/></marker><marker id="ar4r" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#c43d2b"/></marker></defs>
+          <g font-size="11" font-weight="700">
+            <rect x="270" y="14" width="180" height="40" rx="9" fill="#ece4d1" stroke="#d6ccb4"/><text x="360" y="39" text-anchor="middle" fill="#1d1812">incoming field "name"</text>
+            <rect x="250" y="74" width="220" height="42" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="360" y="100" text-anchor="middle" fill="#1d1812">1 · EXISTENCE CHECK</text>
+            <rect x="250" y="134" width="220" height="42" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="360" y="160" text-anchor="middle" fill="#1d1812">2 · TYPE CHECK</text>
+            <rect x="250" y="194" width="220" height="42" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="360" y="220" text-anchor="middle" fill="#1d1812">3 · CONSTRAINT CHECK</text>
+            <line x1="360" y1="54" x2="360" y2="70" stroke="#1d1812" stroke-width="2" marker-end="url(#ar4)"/>
+            <line x1="360" y1="116" x2="360" y2="130" stroke="#1d1812" stroke-width="2" marker-end="url(#ar4)"/>
+            <line x1="360" y1="176" x2="360" y2="190" stroke="#1d1812" stroke-width="2" marker-end="url(#ar4)"/>
+            <rect x="540" y="194" width="160" height="42" rx="9" fill="#d9ecd2" stroke="#3c6e2e"/><text x="620" y="220" text-anchor="middle" fill="#3c6e2e" font-size="11">✓ PASS → controller</text>
+            <line x1="470" y1="215" x2="536" y2="215" stroke="#1d1812" stroke-width="2" marker-end="url(#ar4)"/>
+            <rect x="20" y="74" width="200" height="42" rx="9" fill="#f3d9d2" stroke="#c43d2b"/><text x="120" y="95" text-anchor="middle" fill="#a52f20" font-size="9.5">"name is required"</text><text x="120" y="109" text-anchor="middle" font-size="8" font-weight="400" fill="#7a4135">400</text>
+            <rect x="20" y="134" width="200" height="42" rx="9" fill="#f3d9d2" stroke="#c43d2b"/><text x="120" y="155" text-anchor="middle" fill="#a52f20" font-size="9.5">"expected a string"</text><text x="120" y="169" text-anchor="middle" font-size="8" font-weight="400" fill="#7a4135">400</text>
+            <rect x="20" y="194" width="200" height="42" rx="9" fill="#f3d9d2" stroke="#c43d2b"/><text x="120" y="211" text-anchor="middle" fill="#a52f20" font-size="9">"length must be 5–100"</text><text x="120" y="225" text-anchor="middle" font-size="8" font-weight="400" fill="#7a4135">400</text>
+            <line x1="248" y1="95" x2="224" y2="95" stroke="#c43d2b" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#ar4r)"/>
+            <line x1="248" y1="155" x2="224" y2="155" stroke="#c43d2b" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#ar4r)"/>
+            <line x1="248" y1="215" x2="224" y2="215" stroke="#c43d2b" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#ar4r)"/>
+          </g>
+        </svg>
+      </div>
+      <figcaption>Each gate only opens if the previous one passed — failure <b>short-circuits</b> to a 400</figcaption>
+    </figure>
+    <p class="reveal">In code, libraries express this as a declarative schema. Go commonly uses struct tags with <code>go-playground/validator</code>; Python uses Pydantic, where the same model both validates <em>and</em> transforms. Here is a <strong>complete, runnable</strong> version of the pipeline in each:</p>
+    <div class="codenote reveal">▾ Go (left) · Python (right) — both shown in full, no toggle</div>
+    <div class="codeduo reveal">
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">pipeline.go</span><span class="langtag go">Go</span></div>
+        <pre><span class="kw">package</span> books
+
+<span class="kw">import</span> (
+    <span class="str">"encoding/json"</span>
+    <span class="str">"fmt"</span>
+    <span class="str">"net/http"</span>
+    <span class="str">"strings"</span>
+
+    <span class="str">"github.com/go-playground/validator/v10"</span>
+)
+
+<span class="cm">// one shared, reusable validator (the pipeline engine)</span>
+<span class="kw">var</span> validate = validator.<span class="fn">New</span>()
+
+<span class="cm">// CreateBook is the SCHEMA. The tags declare every rule:</span>
+<span class="cm">//   required      -&gt; existence check</span>
+<span class="cm">//   the Go type   -&gt; type check (string)</span>
+<span class="cm">//   min=5,max=100 -&gt; constraint check</span>
+<span class="kw">type</span> CreateBook <span class="kw">struct</span> {
+    Name <span class="ty">string</span> <span class="str">`json:"name" validate:"required,min=5,max=100"`</span>
+}
+
+<span class="cm">// runPipeline decodes then validates; returns 400-ready messages.</span>
+<span class="kw">func</span> <span class="fn">runPipeline</span>(r *http.Request) (*CreateBook, []<span class="ty">string</span>) {
+    <span class="kw">var</span> body CreateBook
+
+    <span class="cm">// 1. TYPE CHECK during decode: a JSON number for `name`</span>
+    <span class="cm">//    cannot unmarshal into a Go string -&gt; caught here.</span>
+    <span class="kw">if</span> err := json.<span class="fn">NewDecoder</span>(r.Body).<span class="fn">Decode</span>(&amp;body); err != <span class="kw">nil</span> {
+        <span class="kw">return nil</span>, []<span class="ty">string</span>{<span class="str">"name: expected a string"</span>}
+    }
+    <span class="cm">// 2. EXISTENCE + CONSTRAINT checks in one pass.</span>
+    <span class="kw">if</span> err := validate.<span class="fn">Struct</span>(body); err != <span class="kw">nil</span> {
+        <span class="kw">return nil</span>, <span class="fn">formatErrors</span>(err)
+    }
+    <span class="kw">return</span> &amp;body, <span class="kw">nil</span>
+}
+
+<span class="cm">// formatErrors turns validator output into human messages.</span>
+<span class="kw">func</span> <span class="fn">formatErrors</span>(err <span class="ty">error</span>) []<span class="ty">string</span> {
+    <span class="kw">var</span> msgs []<span class="ty">string</span>
+    <span class="kw">for</span> _, e := <span class="kw">range</span> err.(validator.ValidationErrors) {
+        f := strings.<span class="fn">ToLower</span>(e.<span class="fn">Field</span>())
+        <span class="kw">switch</span> e.<span class="fn">Tag</span>() {
+        <span class="kw">case</span> <span class="str">"required"</span>:
+            msgs = <span class="fn">append</span>(msgs, fmt.<span class="fn">Sprintf</span>(<span class="str">"%s: is required"</span>, f))
+        <span class="kw">case</span> <span class="str">"min"</span>:
+            msgs = <span class="fn">append</span>(msgs, fmt.<span class="fn">Sprintf</span>(<span class="str">"%s: min %s chars"</span>, f, e.<span class="fn">Param</span>()))
+        <span class="kw">case</span> <span class="str">"max"</span>:
+            msgs = <span class="fn">append</span>(msgs, fmt.<span class="fn">Sprintf</span>(<span class="str">"%s: max %s chars"</span>, f, e.<span class="fn">Param</span>()))
+        <span class="kw">default</span>:
+            msgs = <span class="fn">append</span>(msgs, fmt.<span class="fn">Sprintf</span>(<span class="str">"%s: failed %s"</span>, f, e.<span class="fn">Tag</span>()))
+        }
+    }
+    <span class="kw">return</span> msgs
+}</pre>
+      </div>
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">pipeline.py</span><span class="langtag py">Python</span></div>
+        <pre><span class="kw">from</span> fastapi <span class="kw">import</span> HTTPException
+<span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel, Field, ValidationError
+
+
+<span class="cm"># CreateBook is the SCHEMA. Each annotation = one rule:</span>
+<span class="cm">#   no default      -&gt; existence check (required)</span>
+<span class="cm">#   : str           -&gt; type check</span>
+<span class="cm">#   min/max_length  -&gt; constraint check</span>
+<span class="kw">class</span> <span class="ty">CreateBook</span>(BaseModel):
+    name: <span class="ty">str</span> = <span class="fn">Field</span>(min_length=<span class="num2">5</span>, max_length=<span class="num2">100</span>)
+
+
+<span class="kw">def</span> <span class="fn">run_pipeline</span>(raw: <span class="ty">dict</span>) -&gt; CreateBook:
+    <span class="str">"""Decode + validate in one call.
+    Raises a 400-ready error on failure."""</span>
+    <span class="kw">try</span>:
+        <span class="cm"># constructing the model runs all three layers</span>
+        <span class="cm"># in order: existence -&gt; type -&gt; constraint</span>
+        <span class="kw">return</span> CreateBook(**raw)
+    <span class="kw">except</span> ValidationError <span class="kw">as</span> e:
+        <span class="cm"># reshape pydantic errors into clean strings</span>
+        messages = [
+            <span class="str">f"{err['loc'][0]}: {err['msg']}"</span>
+            <span class="kw">for</span> err <span class="kw">in</span> e.<span class="fn">errors</span>()
+        ]
+        <span class="kw">raise</span> <span class="fn">HTTPException</span>(status_code=<span class="num2">400</span>, detail=messages)
+
+
+<span class="cm"># run_pipeline({})            -&gt; 400 ["name: Field required"]</span>
+<span class="cm"># run_pipeline({"name": 0})   -&gt; 400 ["name: Input should be</span>
+<span class="cm">#                                      a valid string"]</span>
+<span class="cm"># run_pipeline({"name": "ab"})-&gt; 400 ["name: String should</span>
+<span class="cm">#                                      have at least 5 chars"]</span>
+<span class="cm"># run_pipeline({"name": "Dune"}) ... still &lt;5 -&gt; 400</span>
+<span class="cm"># run_pipeline({"name": "The Hobbit"}) -&gt; OK</span></pre>
+      </div>
+    </div>
+
+    <!-- ===================== PART II ===================== -->
+    <div class="part-label reveal">Part II · The Four Types of Validation</div>
+    <p class="reveal">These are not a fixed taxonomy you must memorize — there can be more depending on requirements — but in practice four flavors cover almost everything you will meet while designing APIs. The real takeaway is a question you keep asking yourself: <em>how strict and how specific do I want to be with this data?</em></p>
+
+    <div class="sec-head reveal" id="s7"><div class="sec-num">07</div><h2>Type Validation</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">The most basic flavor: does the field match the <strong>data type</strong> the API expects? Is it a string, a number, a boolean, an array, or a nested JSON object — and not something else? It can also apply <strong>recursively</strong>: an array field may require that <em>every element</em> is a string, so element <code>0</code> being a number is itself a type error.</p>
+    <div class="demo reveal">
+      <div class="dhead"><span class="method">POST</span> /api/valid/type</div>
+      <div class="dbody">
+        <div class="req"><span class="lbl">Wrong types sent</span><pre>{ "stringField":"x", "numberField":"x", "arrayField":"x", "boolField":"x" }</pre></div>
+        <div class="res"><span class="lbl">Response <span class="status s400">400</span></span><pre>numberField: expected number, received string
+arrayField:  expected array,  received string
+boolField:   expected boolean, received string</pre></div>
+        <div class="req"><span class="lbl">Then an array of numbers where strings are required</span><pre>{ "arrayField": [1, 2] }  →  arrayField[0]: expected string, received number</pre></div>
+        <div class="res"><span class="lbl">Fully corrected → <span class="status s200">200</span></span><pre>{ "stringField":"something", "numberField":10, "arrayField":["one","two"], "boolField":false }</pre></div>
+      </div>
+    </div>
+    <div class="codeduo reveal">
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">type_validation.go</span><span class="langtag go">Go</span></div>
+        <pre><span class="kw">package</span> validate
+
+<span class="kw">import</span> (
+    <span class="str">"encoding/json"</span>
+    <span class="str">"errors"</span>
+    <span class="str">"net/http"</span>
+)
+
+<span class="cm">// *bool so we can tell "false" apart from "missing".</span>
+<span class="kw">type</span> TypePayload <span class="kw">struct</span> {
+    StringField <span class="ty">string</span>   <span class="str">`json:"stringField" validate:"required"`</span>
+    NumberField <span class="ty">float64</span>  <span class="str">`json:"numberField" validate:"required"`</span>
+    <span class="cm">// dive = recurse INTO the slice; each element required</span>
+    ArrayField  []<span class="ty">string</span> <span class="str">`json:"arrayField" validate:"required,dive,required"`</span>
+    BoolField   *<span class="ty">bool</span>    <span class="str">`json:"boolField" validate:"required"`</span>
+}
+
+<span class="kw">func</span> <span class="fn">parseTypes</span>(r *http.Request) (*TypePayload, <span class="ty">error</span>) {
+    <span class="kw">var</span> p TypePayload
+    dec := json.<span class="fn">NewDecoder</span>(r.Body)
+    dec.<span class="fn">DisallowUnknownFields</span>() <span class="cm">// reject stray keys</span>
+
+    <span class="cm">// json.Decode enforces the BASE types: a string for</span>
+    <span class="cm">// numberField / arrayField / boolField fails to unmarshal.</span>
+    <span class="kw">if</span> err := dec.<span class="fn">Decode</span>(&amp;p); err != <span class="kw">nil</span> {
+        <span class="kw">return nil</span>, errors.<span class="fn">New</span>(<span class="str">"a field has the wrong data type"</span>)
+    }
+    <span class="cm">// existence + recursive element check</span>
+    <span class="kw">if</span> err := validate.<span class="fn">Struct</span>(p); err != <span class="kw">nil</span> {
+        <span class="kw">return nil</span>, err
+    }
+    <span class="kw">return</span> &amp;p, <span class="kw">nil</span>
+}
+
+<span class="cm">// {"numberField":"x"} -&gt; expected number, received string</span>
+<span class="cm">// {"arrayField":[1,2]} -&gt; arrayField[0]: expected string</span></pre>
+      </div>
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">type_validation.py</span><span class="langtag py">Python</span></div>
+        <pre><span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel
+<span class="kw">from</span> typing <span class="kw">import</span> List
+
+
+<span class="kw">class</span> <span class="ty">TypePayload</span>(BaseModel):
+    stringField: <span class="ty">str</span>
+    numberField: <span class="ty">float</span>
+    arrayField:  List[<span class="ty">str</span>]   <span class="cm"># recursive: EVERY element a string</span>
+    boolField:   <span class="ty">bool</span>
+
+
+<span class="cm"># Strict, explicit type errors:</span>
+<span class="cm">#</span>
+<span class="cm"># TypePayload(stringField="x", numberField="x",</span>
+<span class="cm">#             arrayField="x", boolField="x")</span>
+<span class="cm">#   -&gt; numberField: Input should be a valid number</span>
+<span class="cm">#   -&gt; arrayField:  Input should be a valid list</span>
+<span class="cm">#   -&gt; boolField:   Input should be a valid boolean</span>
+<span class="cm">#</span>
+<span class="cm"># TypePayload(..., arrayField=[1, 2], ...)</span>
+<span class="cm">#   -&gt; arrayField.0: Input should be a valid string</span>
+<span class="cm">#   -&gt; arrayField.1: Input should be a valid string</span>
+<span class="cm">#</span>
+<span class="cm"># TypePayload(stringField="something", numberField=10,</span>
+<span class="cm">#             arrayField=["one","two"], boolField=False) -&gt; OK</span></pre>
+      </div>
+    </div>
+
+    <div class="sec-head reveal" id="s8"><div class="sec-num">08</div><h2>Syntactic Validation</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">Here the type is already correct (a string) but the string must follow a <strong>specific structural pattern</strong>. The validation algorithm checks the <em>shape</em> of the value:</p>
+    <ul class="reveal">
+      <li><strong>Email</strong> — a local part, then the <code>@</code> character, then a domain made of a name plus a top-level domain (<code>.com</code>, <code>.co.in</code>, <code>.org</code>, …). There are thousands of valid TLDs; the structure is what gets checked.</li>
+      <li><strong>Phone number</strong> — a country code followed by the right number of digits for that country (e.g. a country code then a 10-digit number).</li>
+      <li><strong>Date</strong> — must match the expected structure, e.g. <code>YYYY-MM-DD</code> (year, then month, then day).</li>
+    </ul>
+    <div class="demo reveal">
+      <div class="dhead"><span class="method">POST</span> /api/valid/syntactic</div>
+      <div class="dbody">
+        <div class="req"><span class="lbl">Empty body</span><pre>{ }</pre></div>
+        <div class="res"><span class="lbl">Response <span class="status s400">400</span> — the errors double as live documentation</span><pre>email: required   phone: required   date: required</pre></div>
+        <div class="req"><span class="lbl">Bad values</span><pre>{ "email":"randomstring", "phone":1234567, "date":"2025-11-05" }</pre></div>
+        <div class="res"><span class="lbl">Response <span class="status s400">400</span></span><pre>email: invalid email format
+phone: expected a string, received a number</pre></div>
+        <div class="req"><span class="lbl">Corrected</span><pre>{ "email":"test@test.com", "phone":"1234567", "date":"2025-11-05" }  →  <span style="color:#3c6e2e">200</span></pre></div>
+      </div>
+    </div>
+    <div class="note reveal"><span class="tag">A free benefit</span> Even a client that hits the API blind, with an empty payload, gets back the list of required fields and their expected shapes. When the API docs are missing or out of date, the validation error messages themselves are a perfectly good way to discover what the endpoint demands.</div>
+    <div class="codeduo reveal">
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">syntactic.go</span><span class="langtag go">Go</span></div>
+        <pre><span class="kw">package</span> validate
+
+<span class="kw">import</span> (
+    <span class="str">"errors"</span>
+    <span class="str">"regexp"</span>
+)
+
+<span class="cm">// optional + then 7-15 digits (country code + national no.)</span>
+<span class="kw">var</span> phoneRe = regexp.<span class="fn">MustCompile</span>(<span class="str">`^\+?[0-9]{7,15}$`</span>)
+
+<span class="kw">type</span> Contact <span class="kw">struct</span> {
+    Email <span class="ty">string</span> <span class="str">`validate:"required,email"`</span>            <span class="cm">// local @ domain.tld</span>
+    Phone <span class="ty">string</span> <span class="str">`validate:"required"`</span>                  <span class="cm">// checked below</span>
+    Date  <span class="ty">string</span> <span class="str">`validate:"required,datetime=2006-01-02"`</span> <span class="cm">// YYYY-MM-DD</span>
+}
+
+<span class="cm">// checkSyntax handles the phone pattern (validator's</span>
+<span class="cm">// built-ins cover email + date structure already).</span>
+<span class="kw">func</span> (c Contact) <span class="fn">checkSyntax</span>() <span class="ty">error</span> {
+    <span class="kw">if</span> !phoneRe.<span class="fn">MatchString</span>(c.Phone) {
+        <span class="kw">return</span> errors.<span class="fn">New</span>(<span class="str">"phone: invalid phone number format"</span>)
+    }
+    <span class="kw">return nil</span>
+}
+
+<span class="cm">// "randomstring"            -&gt; email: invalid email format</span>
+<span class="cm">// phone sent as JSON number -&gt; received a number, want string</span>
+<span class="cm">// "2025-13-40"              -&gt; date: does not match YYYY-MM-DD</span></pre>
+      </div>
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">syntactic.py</span><span class="langtag py">Python</span></div>
+        <pre><span class="kw">from</span> datetime <span class="kw">import</span> date
+<span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel, EmailStr, Field
+
+
+<span class="kw">class</span> <span class="ty">Contact</span>(BaseModel):
+    email: EmailStr                       <span class="cm"># local @ domain.tld</span>
+    <span class="cm"># country code + 7-15 digits</span>
+    phone: <span class="ty">str</span> = <span class="fn">Field</span>(pattern=<span class="str">r"^\+?[0-9]{7,15}$"</span>)
+    date:  date                           <span class="cm"># only accepts YYYY-MM-DD</span>
+
+
+<span class="cm"># Contact(email="randomstring", phone=1234567,</span>
+<span class="cm">#         date="2025-11-05")</span>
+<span class="cm">#   -&gt; email: value is not a valid email address</span>
+<span class="cm">#   -&gt; phone: Input should be a valid string</span>
+<span class="cm">#</span>
+<span class="cm"># Contact(email="bad@", ...)</span>
+<span class="cm">#   -&gt; email: there must be something after the @-sign</span>
+<span class="cm">#</span>
+<span class="cm"># Contact(email="test@test.com", phone="1234567",</span>
+<span class="cm">#         date="2025-11-05")  -&gt; OK</span></pre>
+      </div>
+    </div>
+
+    <div class="sec-head reveal" id="s9"><div class="sec-num">09</div><h2>Semantic Validation</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">The type is right and the syntax is right, but does the value <strong>make sense in the real world?</strong> Semantic checks encode domain logic:</p>
+    <ul class="reveal">
+      <li>A <strong>date of birth</strong> cannot be in the future — if today is <code>2025-01-11</code>, a DOB of <code>2025-01-13</code> is nonsense even though it is a perfectly valid date.</li>
+      <li>An <strong>age</strong> of <code>365</code> (or <code>430</code>) does not make sense — at least not yet. A reasonable human age range is roughly <code>1</code> to <code>120</code>.</li>
+    </ul>
+    <div class="demo reveal">
+      <div class="dhead"><span class="method">POST</span> /api/valid/semantic</div>
+      <div class="dbody">
+        <div class="req"><span class="lbl">Future DOB</span><pre>{ "dateOfBirth":"2026-06-12", "age":43 }</pre></div>
+        <div class="res"><span class="lbl">Response <span class="status s400">400</span></span><pre>dateOfBirth: date of birth cannot be in the future</pre></div>
+        <div class="req"><span class="lbl">Impossible age</span><pre>{ "dateOfBirth":"1995-06-12", "age":430 }</pre></div>
+        <div class="res"><span class="lbl">Response <span class="status s400">400</span></span><pre>age: number must be less than or equal to 120</pre></div>
+        <div class="req"><span class="lbl">Sensible</span><pre>{ "dateOfBirth":"1995-06-12", "age":43 }  →  <span style="color:#3c6e2e">200</span></pre></div>
+      </div>
+    </div>
+    <div class="codeduo reveal">
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">semantic.go</span><span class="langtag go">Go</span></div>
+        <pre><span class="kw">package</span> validate
+
+<span class="kw">import</span> (
+    <span class="str">"errors"</span>
+    <span class="str">"time"</span>
+)
+
+<span class="kw">type</span> Profile <span class="kw">struct</span> {
+    DateOfBirth <span class="ty">string</span> <span class="str">`validate:"required,datetime=2006-01-02"`</span>
+    <span class="cm">// gte/lte cover the "430 is impossible" semantic bound</span>
+    Age <span class="ty">int</span> <span class="str">`validate:"required,gte=1,lte=120"`</span>
+}
+
+<span class="cm">// Type &amp; syntax can't express "not in the future" —</span>
+<span class="cm">// semantics need real logic against the real clock.</span>
+<span class="kw">func</span> (p Profile) <span class="fn">checkSemantics</span>() <span class="ty">error</span> {
+    dob, err := time.<span class="fn">Parse</span>(<span class="str">"2006-01-02"</span>, p.DateOfBirth)
+    <span class="kw">if</span> err != <span class="kw">nil</span> {
+        <span class="kw">return</span> errors.<span class="fn">New</span>(<span class="str">"dateOfBirth: invalid date"</span>)
+    }
+    <span class="kw">if</span> dob.<span class="fn">After</span>(time.<span class="fn">Now</span>()) {
+        <span class="kw">return</span> errors.<span class="fn">New</span>(
+            <span class="str">"dateOfBirth: date of birth cannot be in the future"</span>)
+    }
+    <span class="kw">return nil</span>
+}
+
+<span class="cm">// {"dateOfBirth":"2026-06-12"} -&gt; cannot be in the future</span>
+<span class="cm">// {"age":430}                  -&gt; age: must be 120 or less</span></pre>
+      </div>
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">semantic.py</span><span class="langtag py">Python</span></div>
+        <pre><span class="kw">from</span> datetime <span class="kw">import</span> date
+<span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel, Field, field_validator
+
+
+<span class="kw">class</span> <span class="ty">Profile</span>(BaseModel):
+    dateOfBirth: date
+    age: <span class="ty">int</span> = <span class="fn">Field</span>(ge=<span class="num2">1</span>, le=<span class="num2">120</span>)   <span class="cm"># 430 -&gt; must be &lt;= 120</span>
+
+    <span class="pp">@field_validator</span>(<span class="str">"dateOfBirth"</span>)
+    <span class="pp">@classmethod</span>
+    <span class="kw">def</span> <span class="fn">not_in_future</span>(cls, v: date) -&gt; date:
+        <span class="kw">if</span> v &gt; date.<span class="fn">today</span>():
+            <span class="kw">raise</span> <span class="fn">ValueError</span>(
+                <span class="str">"date of birth cannot be in the future"</span>)
+        <span class="kw">return</span> v
+
+
+<span class="cm"># Profile(dateOfBirth="2026-06-12", age=43)</span>
+<span class="cm">#   -&gt; dateOfBirth: date of birth cannot be in the future</span>
+<span class="cm"># Profile(dateOfBirth="1995-06-12", age=430)</span>
+<span class="cm">#   -&gt; age: Input should be less than or equal to 120</span>
+<span class="cm"># Profile(dateOfBirth="1995-06-12", age=43) -&gt; OK</span></pre>
+      </div>
+    </div>
+
+    <div class="sec-head reveal" id="s10"><div class="sec-num">10</div><h2>Complex / Dependent Validation</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">The most powerful flavor: a field's rules depend on <strong>other fields</strong>. The pipeline can encode arbitrary cross-field logic:</p>
+    <ul class="reveal">
+      <li><strong>Password confirmation</strong> — <code>passwordConfirmation</code> must exactly match <code>password</code>; and <code>password</code> must be at least 8 characters. Two different strings yield <em>"passwords don't match"</em>; a 6-character password yields <em>"string must contain at least 8 characters"</em>.</li>
+      <li><strong>Conditional requirement</strong> — <code>partner</code> is optional when <code>married</code> is <code>false</code>, but the moment <code>married</code> is <code>true</code> the <code>partner</code> name becomes required: <em>"partner name is required when married is true"</em>.</li>
+    </ul>
+    <div class="demo reveal">
+      <div class="dhead"><span class="method">POST</span> /api/valid/complex</div>
+      <div class="dbody">
+        <div class="req"><span class="lbl">Mismatched + short password</span><pre>{ "password":"random", "passwordConfirmation":"another", "married":false }</pre></div>
+        <div class="res"><span class="lbl">Response <span class="status s400">400</span></span><pre>password: string must contain at least 8 characters
+passwordConfirmation: passwords don't match</pre></div>
+        <div class="req"><span class="lbl">married=true but no partner</span><pre>{ "password":"random12", "passwordConfirmation":"random12", "married":true }</pre></div>
+        <div class="res"><span class="lbl">Response <span class="status s400">400</span></span><pre>partner: partner name is required when married is true</pre></div>
+        <div class="req"><span class="lbl">Complete</span><pre>{ "password":"random12", "passwordConfirmation":"random12", "married":true, "partner":"Sam" }  →  <span style="color:#3c6e2e">200</span></pre></div>
+      </div>
+    </div>
+    <div class="codeduo reveal">
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">complex.go</span><span class="langtag go">Go</span></div>
+        <pre><span class="kw">package</span> validate
+
+<span class="kw">type</span> Signup <span class="kw">struct</span> {
+    Password <span class="ty">string</span> <span class="str">`json:"password" validate:"required,min=8"`</span>
+    <span class="cm">// eqfield: must equal another field on the struct</span>
+    PasswordConf <span class="ty">string</span> <span class="str">`json:"passwordConfirmation" \</span>
+<span class="str">        validate:"required,eqfield=Password"`</span>
+    Married *<span class="ty">bool</span> <span class="str">`json:"married" validate:"required"`</span>
+    <span class="cm">// required_if: partner required only if married == true</span>
+    Partner <span class="ty">string</span> <span class="str">`json:"partner" \</span>
+<span class="str">        validate:"required_if=Married true"`</span>
+}
+
+<span class="cm">// {password:"random", passwordConfirmation:"another",</span>
+<span class="cm">//  married:false}</span>
+<span class="cm">//   -&gt; password: must be at least 8 characters</span>
+<span class="cm">//   -&gt; passwordConfirmation: passwords don't match</span>
+<span class="cm">//</span>
+<span class="cm">// {password:"random12", passwordConfirmation:"random12",</span>
+<span class="cm">//  married:true}</span>
+<span class="cm">//   -&gt; partner: required when married is true</span></pre>
+      </div>
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">complex.py</span><span class="langtag py">Python</span></div>
+        <pre><span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel, Field, model_validator
+
+
+<span class="kw">class</span> <span class="ty">Signup</span>(BaseModel):
+    password: <span class="ty">str</span> = <span class="fn">Field</span>(min_length=<span class="num2">8</span>)
+    passwordConfirmation: <span class="ty">str</span>
+    married: <span class="ty">bool</span>
+    partner: <span class="ty">str</span> | <span class="kw">None</span> = <span class="kw">None</span>
+
+    <span class="cm"># mode="after": runs once all fields are parsed,</span>
+    <span class="cm"># so it can compare them against each other.</span>
+    <span class="pp">@model_validator</span>(mode=<span class="str">"after"</span>)
+    <span class="kw">def</span> <span class="fn">cross_field_rules</span>(self):
+        <span class="kw">if</span> self.password != self.passwordConfirmation:
+            <span class="kw">raise</span> <span class="fn">ValueError</span>(<span class="str">"passwords don't match"</span>)
+        <span class="kw">if</span> self.married <span class="kw">and not</span> self.partner:
+            <span class="kw">raise</span> <span class="fn">ValueError</span>(
+                <span class="str">"partner name is required when married is true"</span>)
+        <span class="kw">return</span> self
+
+
+<span class="cm"># Signup(password="random", passwordConfirmation="another",</span>
+<span class="cm">#        married=False)</span>
+<span class="cm">#   -&gt; password: String should have at least 8 characters</span>
+<span class="cm">#   -&gt; Value error, passwords don't match</span></pre>
+      </div>
+    </div>
+    <figure class="reveal">
+      <div class="fig-frame">
+        <svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono">
+          <text x="360" y="26" text-anchor="middle" font-size="12" font-weight="700" fill="#a52f20">THE FOUR FLAVORS — INCREASING STRICTNESS &amp; CONTEXT →</text>
+          <g font-size="11" font-weight="700">
+            <rect x="20" y="56" width="160" height="140" rx="11" fill="#fff" stroke="#d6ccb4"/><text x="100" y="84" text-anchor="middle" fill="#c43d2b">TYPE</text><text x="100" y="112" text-anchor="middle" font-size="9" font-weight="400" fill="#6f665a">is it the right</text><text x="100" y="126" text-anchor="middle" font-size="9" font-weight="400" fill="#6f665a">data type?</text><text x="100" y="160" text-anchor="middle" font-size="8.5" font-weight="400" fill="#9a8f78">string · number</text><text x="100" y="173" text-anchor="middle" font-size="8.5" font-weight="400" fill="#9a8f78">bool · array</text>
+            <rect x="195" y="56" width="160" height="140" rx="11" fill="#fff" stroke="#d6ccb4"/><text x="275" y="84" text-anchor="middle" fill="#c43d2b">SYNTACTIC</text><text x="275" y="112" text-anchor="middle" font-size="9" font-weight="400" fill="#6f665a">right structural</text><text x="275" y="126" text-anchor="middle" font-size="9" font-weight="400" fill="#6f665a">pattern?</text><text x="275" y="160" text-anchor="middle" font-size="8.5" font-weight="400" fill="#9a8f78">email · phone</text><text x="275" y="173" text-anchor="middle" font-size="8.5" font-weight="400" fill="#9a8f78">date format</text>
+            <rect x="370" y="56" width="160" height="140" rx="11" fill="#fff" stroke="#d6ccb4"/><text x="450" y="84" text-anchor="middle" fill="#c43d2b">SEMANTIC</text><text x="450" y="112" text-anchor="middle" font-size="9" font-weight="400" fill="#6f665a">does the value</text><text x="450" y="126" text-anchor="middle" font-size="9" font-weight="400" fill="#6f665a">make sense?</text><text x="450" y="160" text-anchor="middle" font-size="8.5" font-weight="400" fill="#9a8f78">DOB not future</text><text x="450" y="173" text-anchor="middle" font-size="8.5" font-weight="400" fill="#9a8f78">age ≤ 120</text>
+            <rect x="545" y="56" width="160" height="140" rx="11" fill="#f7d9d1" stroke="#c43d2b" stroke-width="1.5"/><text x="625" y="84" text-anchor="middle" fill="#a52f20">COMPLEX</text><text x="625" y="112" text-anchor="middle" font-size="9" font-weight="400" fill="#7a4135">depends on</text><text x="625" y="126" text-anchor="middle" font-size="9" font-weight="400" fill="#7a4135">other fields?</text><text x="625" y="160" text-anchor="middle" font-size="8.5" font-weight="400" fill="#a06054">password match</text><text x="625" y="173" text-anchor="middle" font-size="8.5" font-weight="400" fill="#a06054">married→partner</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>From "right type" to "right relationship" — pick how strict the endpoint needs to be</figcaption>
+    </figure>
+
+    <!-- ===================== PART III ===================== -->
+    <div class="part-label reveal">Part III · Transformation</div>
+
+    <div class="sec-head reveal" id="s11"><div class="sec-num">11</div><h2>Transformation as Type Casting</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal"><strong>Transformation</strong> means executing operations on the incoming data to convert it into a desirable format — either before validation (so it <em>can</em> pass) or after it (to ready it for the service layer). The textbook case is <strong>pagination query parameters</strong>.</p>
+    <p class="reveal">Consider <code>GET /bookmarks?page=2&amp;limit=20</code> with these requirements:</p>
+    <ul class="reveal">
+      <li><code>page</code> — a number, greater than 0 and less than 500.</li>
+      <li><code>limit</code> — a number, greater than 0 and less than 10,000 (at most 10,000 records returned at a time).</li>
+    </ul>
+    <div class="note dark reveal"><span class="tag">The catch</span> Query parameters are <strong>always strings by default.</strong> Every value in the query string arrives at your server as a string — they have no other native type. So <code>page</code> arrives as the string <code>"2"</code>, not the number <code>2</code>. Validation that demands a <em>number</em> fails on its very first check, even though the client did nothing wrong — strings are simply how query params work.</div>
+    <p class="reveal">The fix is not to error. It is the <strong>server's responsibility</strong> to <em>cast</em> the string into a number first. "Casting" is forcing one data type to become another. Cast <code>"2"</code> → <code>2</code>, then run the numeric validations. That casting step is the transformation.</p>
+    <figure class="reveal">
+      <div class="fig-frame">
+        <svg viewBox="0 0 760 150" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono">
+          <defs><marker id="ar5" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#c43d2b"/></marker></defs>
+          <g font-size="11" font-weight="700">
+            <rect x="20" y="50" width="150" height="56" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="95" y="74" text-anchor="middle" fill="#1d1812">?page="2"</text><text x="95" y="92" text-anchor="middle" font-size="9" font-weight="400" fill="#6f665a">arrives as STRING</text>
+            <rect x="225" y="42" width="170" height="72" rx="10" fill="#f7d9d1" stroke="#c43d2b" stroke-width="1.5"/><text x="310" y="72" text-anchor="middle" fill="#a52f20">TRANSFORM</text><text x="310" y="90" text-anchor="middle" font-size="9" font-weight="400" fill="#7a4135">cast "2" → 2</text><text x="310" y="104" text-anchor="middle" font-size="9" font-weight="400" fill="#7a4135">(force the type)</text>
+            <rect x="450" y="50" width="150" height="56" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="525" y="74" text-anchor="middle" fill="#1d1812">page = 2</text><text x="525" y="92" text-anchor="middle" font-size="9" font-weight="400" fill="#6f665a">now a NUMBER</text>
+            <rect x="630" y="50" width="110" height="56" rx="9" fill="#d9ecd2" stroke="#3c6e2e"/><text x="685" y="74" text-anchor="middle" fill="#3c6e2e" font-size="10">VALIDATE</text><text x="685" y="92" text-anchor="middle" font-size="8.5" font-weight="400" fill="#3c6e2e">0 &lt; n &lt; 500</text>
+            <line x1="170" y1="78" x2="221" y2="78" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar5)"/>
+            <line x1="395" y1="78" x2="446" y2="78" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar5)"/>
+            <line x1="600" y1="78" x2="626" y2="78" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar5)"/>
+          </g>
+        </svg>
+      </div>
+      <figcaption>Transformation runs <b>before</b> validation here — cast the string, then the numeric rules can even apply</figcaption>
+    </figure>
+    <div class="codeduo reveal">
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">pagination.go</span><span class="langtag go">Go</span></div>
+        <pre><span class="kw">package</span> validate
+
+<span class="kw">import</span> (
+    <span class="str">"errors"</span>
+    <span class="str">"net/url"</span>
+    <span class="str">"strconv"</span>
+)
+
+<span class="kw">type</span> Pagination <span class="kw">struct</span> {
+    Page  <span class="ty">int</span>
+    Limit <span class="ty">int</span>
+}
+
+<span class="cm">// Query params are ALWAYS strings, so we must CAST</span>
+<span class="cm">// (transform) before we can VALIDATE the numbers.</span>
+<span class="kw">func</span> <span class="fn">parsePagination</span>(q url.Values) (*Pagination, <span class="ty">error</span>) {
+    <span class="cm">// TRANSFORM: force the string "2" into the int 2</span>
+    page, err := strconv.<span class="fn">Atoi</span>(q.<span class="fn">Get</span>(<span class="str">"page"</span>))
+    <span class="kw">if</span> err != <span class="kw">nil</span> {
+        <span class="kw">return nil</span>, errors.<span class="fn">New</span>(<span class="str">"page: must be a number"</span>)
+    }
+    limit, err := strconv.<span class="fn">Atoi</span>(q.<span class="fn">Get</span>(<span class="str">"limit"</span>))
+    <span class="kw">if</span> err != <span class="kw">nil</span> {
+        <span class="kw">return nil</span>, errors.<span class="fn">New</span>(<span class="str">"limit: must be a number"</span>)
+    }
+
+    <span class="cm">// VALIDATE the now-numeric values</span>
+    <span class="kw">if</span> page &lt;= 0 || page &gt;= 500 {
+        <span class="kw">return nil</span>, errors.<span class="fn">New</span>(<span class="str">"page: must be 1..499"</span>)
+    }
+    <span class="kw">if</span> limit &lt;= 0 || limit &gt;= 10000 {
+        <span class="kw">return nil</span>, errors.<span class="fn">New</span>(<span class="str">"limit: must be 1..9999"</span>)
+    }
+    <span class="kw">return</span> &amp;Pagination{Page: page, Limit: limit}, <span class="kw">nil</span>
+}</pre>
+      </div>
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">pagination.py</span><span class="langtag py">Python</span></div>
+        <pre><span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel, Field
+
+
+<span class="kw">class</span> <span class="ty">Pagination</span>(BaseModel):
+    <span class="cm"># Pydantic AUTO-CASTS the incoming string "2" into</span>
+    <span class="cm"># int 2 (transform), THEN enforces gt/lt (validate)</span>
+    <span class="cm"># -- both steps in one schema, in the right order.</span>
+    page:  <span class="ty">int</span> = <span class="fn">Field</span>(gt=<span class="num2">0</span>, lt=<span class="num2">500</span>)
+    limit: <span class="ty">int</span> = <span class="fn">Field</span>(gt=<span class="num2">0</span>, lt=<span class="num2">10_000</span>)
+
+
+<span class="cm"># request: /bookmarks?page=2&amp;limit=20</span>
+<span class="cm"># (both values arrive as strings)</span>
+<span class="cm">#</span>
+<span class="cm"># Pagination(page="2", limit="20")</span>
+<span class="cm">#   -&gt; Pagination(page=2, limit=20)   # real ints</span>
+<span class="cm">#</span>
+<span class="cm"># Pagination(page="0", limit="20")</span>
+<span class="cm">#   -&gt; page: Input should be greater than 0</span>
+<span class="cm">#</span>
+<span class="cm"># Pagination(page="abc", limit="20")</span>
+<span class="cm">#   -&gt; page: Input should be a valid integer</span></pre>
+      </div>
+    </div>
+
+    <div class="sec-head reveal" id="s12"><div class="sec-num">12</div><h2>Transformation as Normalization</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">Transformation also <em>cleans up</em> data after it validates, reshaping it into what the service layer prefers. The server quietly normalizes the payload before doing anything with it:</p>
+    <ul class="reveal">
+      <li>An <strong>email</strong> sent with mixed case — <code>Test@TEST.com</code> — comes back stored as all-lowercase <code>test@test.com</code>.</li>
+      <li>A <strong>phone</strong> string gets a <code>+</code> prefix injected before it.</li>
+      <li>A <strong>date</strong> gets recomputed into the canonical format the backend expects.</li>
+    </ul>
+    <div class="demo reveal">
+      <div class="dhead"><span class="method">POST</span> /api/valid/transform</div>
+      <div class="dbody">
+        <div class="req"><span class="lbl">What the client sent</span><pre>{ "email":"Test@TEST.com", "phone":"1234567", "date":"2025-11-05" }</pre></div>
+        <div class="res"><span class="lbl">What the server returns <span class="status s200">200</span> — normalized</span><pre>{ "email":"test@test.com", "phone":"+1234567", "date":"2025-11-05" }</pre></div>
+      </div>
+    </div>
+    <div class="codeduo reveal">
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">normalize.go</span><span class="langtag go">Go</span></div>
+        <pre><span class="kw">package</span> validate
+
+<span class="kw">import</span> <span class="str">"strings"</span>
+
+<span class="cm">// normalize runs AFTER validation passes and BEFORE</span>
+<span class="cm">// the data is handed to the service layer.</span>
+<span class="kw">func</span> (c *Contact) <span class="fn">normalize</span>() {
+    <span class="cm">// lowercase + trim the email</span>
+    c.Email = strings.<span class="fn">ToLower</span>(strings.<span class="fn">TrimSpace</span>(c.Email))
+
+    <span class="cm">// inject the leading + if it is missing</span>
+    c.Phone = strings.<span class="fn">TrimSpace</span>(c.Phone)
+    <span class="kw">if</span> !strings.<span class="fn">HasPrefix</span>(c.Phone, <span class="str">"+"</span>) {
+        c.Phone = <span class="str">"+"</span> + c.Phone
+    }
+}
+
+<span class="cm">// "Test@TEST.com" -&gt; "test@test.com"</span>
+<span class="cm">// "1234567"       -&gt; "+1234567"</span></pre>
+      </div>
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">normalize.py</span><span class="langtag py">Python</span></div>
+        <pre><span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel, EmailStr, field_validator
+
+
+<span class="kw">class</span> <span class="ty">Contact</span>(BaseModel):
+    email: EmailStr
+    phone: <span class="ty">str</span>
+
+    <span class="cm"># field_validators double as transformers: whatever</span>
+    <span class="cm"># they return REPLACES the incoming value.</span>
+    <span class="pp">@field_validator</span>(<span class="str">"email"</span>)
+    <span class="pp">@classmethod</span>
+    <span class="kw">def</span> <span class="fn">lower_email</span>(cls, v: <span class="ty">str</span>) -&gt; <span class="ty">str</span>:
+        <span class="kw">return</span> v.<span class="fn">strip</span>().<span class="fn">lower</span>()       <span class="cm"># normalize case</span>
+
+    <span class="pp">@field_validator</span>(<span class="str">"phone"</span>)
+    <span class="pp">@classmethod</span>
+    <span class="kw">def</span> <span class="fn">add_plus</span>(cls, v: <span class="ty">str</span>) -&gt; <span class="ty">str</span>:
+        v = v.<span class="fn">strip</span>()
+        <span class="kw">return</span> v <span class="kw">if</span> v.<span class="fn">startswith</span>(<span class="str">"+"</span>) <span class="kw">else</span> <span class="str">"+"</span> + v
+
+
+<span class="cm"># Contact(email="Test@TEST.com", phone="1234567")</span>
+<span class="cm">#   -&gt; email="test@test.com", phone="+1234567"</span></pre>
+      </div>
+    </div>
+
+    <div class="sec-head reveal" id="s13"><div class="sec-num">13</div><h2>One Combined Pipeline</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">In practice validations and transformations are <strong>paired into a single pipeline</strong>. The reason is locality: the entire "input data layer" — every requirement <em>and</em> every operation performed on incoming data before any business logic runs — lives in <strong>one place</strong>. You never have to hunt across files to discover what an endpoint expects or what it quietly does to the data. The pipeline can transform → validate, or validate → transform, in either order, as the requirements demand.</p>
+    <figure class="reveal">
+      <div class="fig-frame">
+        <svg viewBox="0 0 760 160" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono">
+          <defs><marker id="ar6" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#c43d2b"/></marker></defs>
+          <rect x="120" y="40" width="520" height="80" rx="14" fill="#f7d9d1" stroke="#c43d2b" stroke-width="1.6"/>
+          <text x="380" y="32" text-anchor="middle" font-size="11" font-weight="700" fill="#a52f20">VALIDATION &amp; TRANSFORMATION PIPELINE — one place</text>
+          <g font-size="10.5" font-weight="700">
+            <rect x="150" y="62" width="120" height="38" rx="8" fill="#fff" stroke="#c43d2b"/><text x="210" y="86" text-anchor="middle" fill="#a52f20">transform</text>
+            <rect x="320" y="62" width="120" height="38" rx="8" fill="#fff" stroke="#c43d2b"/><text x="380" y="86" text-anchor="middle" fill="#a52f20">validate</text>
+            <rect x="490" y="62" width="120" height="38" rx="8" fill="#fff" stroke="#c43d2b"/><text x="550" y="86" text-anchor="middle" fill="#a52f20">transform</text>
+            <line x1="270" y1="81" x2="316" y2="81" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar6)"/>
+            <line x1="440" y1="81" x2="486" y2="81" stroke="#c43d2b" stroke-width="2" marker-end="url(#ar6)"/>
+          </g>
+          <text x="210" y="135" text-anchor="middle" font-size="8.5" fill="#7a4135">cast query strings</text>
+          <text x="380" y="135" text-anchor="middle" font-size="8.5" fill="#7a4135">type · syntax · semantic · complex</text>
+          <text x="550" y="135" text-anchor="middle" font-size="8.5" fill="#7a4135">lowercase · prefix · reformat</text>
+        </svg>
+      </div>
+      <figcaption>All input-layer logic — requirements and operations — collected in <b>a single reusable middleware</b></figcaption>
+    </figure>
+
+    <!-- ===================== PART IV ===================== -->
+    <div class="part-label reveal">Part IV · The Golden Rule</div>
+
+    <div class="sec-head reveal" id="s14"><div class="sec-num">14</div><h2>Frontend vs Backend Validation</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">A common and dangerous mistake is treating frontend validation as a <strong>replacement</strong> for backend validation. They are not interchangeable — they serve different purposes, and you need <strong>both</strong> for every API.</p>
+    <div class="defs reveal">
+      <div class="row"><div class="term"><small>Frontend</small>For UX</div><div class="desc">A web form validates as the user types and on submit, giving <strong>immediate, friendly feedback</strong> ("that doesn't look like an email") before any API call is made. Its entire job is user experience. It is <em>not</em> about security or data integrity.</div></div>
+      <div class="row"><div class="term"><small>Backend</small>For Security</div><div class="desc">Server-side validation is <strong>mandatory</strong> and exists for security and data integrity. It does not matter what the client is or whether the client validated at all — the server must be as strict and specific as possible on its own.</div></div>
+    </div>
+    <p class="reveal">Why can't the backend trust the frontend? Because a server can have <strong>many different clients.</strong> A polished web app might validate beautifully — but the same API can also be hit directly through an API client like <strong>Postman or Insomnia</strong>, where there is no frontend acting as a proxy and therefore no frontend validation at all. If the backend ever depended on the frontend for security or integrity, the server would break the moment the client changed.</p>
+    <figure class="reveal">
+      <div class="fig-frame">
+        <svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono">
+          <defs><marker id="ar7" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#c43d2b"/></marker></defs>
+          <g font-size="10.5" font-weight="700">
+            <rect x="30" y="22" width="190" height="56" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="125" y="44" text-anchor="middle" fill="#1d1812">WEB APP</text><text x="125" y="62" text-anchor="middle" font-size="8.5" font-weight="400" fill="#3c6e2e">has FE validation (UX)</text>
+            <rect x="30" y="112" width="190" height="56" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="125" y="134" text-anchor="middle" fill="#1d1812">POSTMAN / INSOMNIA</text><text x="125" y="152" text-anchor="middle" font-size="8.5" font-weight="400" fill="#a52f20">NO FE validation at all</text>
+            <rect x="30" y="202" width="190" height="56" rx="9" fill="#fff" stroke="#d6ccb4"/><text x="125" y="224" text-anchor="middle" fill="#1d1812">MOBILE / 3RD PARTY</text><text x="125" y="242" text-anchor="middle" font-size="8.5" font-weight="400" fill="#9a8f78">validation unknown</text>
+            <rect x="430" y="80" width="300" height="120" rx="14" fill="#f7d9d1" stroke="#c43d2b" stroke-width="1.8"/><text x="580" y="116" text-anchor="middle" font-size="13" fill="#a52f20">SERVER</text><text x="580" y="142" text-anchor="middle" font-size="10" fill="#a52f20">BACKEND VALIDATION</text><text x="580" y="160" text-anchor="middle" font-size="8.5" font-weight="400" fill="#7a4135">strict · specific · mandatory</text><text x="580" y="176" text-anchor="middle" font-size="8.5" font-weight="400" fill="#7a4135">security &amp; data integrity — for ALL clients</text>
+            <line x1="220" y1="50" x2="426" y2="110" stroke="#c43d2b" stroke-width="1.8" marker-end="url(#ar7)"/>
+            <line x1="220" y1="140" x2="426" y2="140" stroke="#c43d2b" stroke-width="1.8" marker-end="url(#ar7)"/>
+            <line x1="220" y1="230" x2="426" y2="170" stroke="#c43d2b" stroke-width="1.8" marker-end="url(#ar7)"/>
+          </g>
+        </svg>
+      </div>
+      <figcaption>One server, many clients — only the <b>backend</b> gate is guaranteed to run, so it must never be skippable</figcaption>
+    </figure>
+    <p class="reveal">When the two are wired up correctly they complement each other: in a web form, an invalid email blocks the submit and shows an inline error — <strong>no API call is even made</strong>. Fix it to a real address and the submit fires a proper request; the payload is sent, the server validates again, and returns <code>200</code>. The frontend delivered instant feedback; the backend delivered the guarantee.</p>
+    <div class="note reveal"><span class="tag">The rule, stated plainly</span> Design your server-side validation to be as strict and specific as possible <em>without ever thinking about</em> what the client validation looks like. Frontend validation is for user experience; backend validation is for security and data integrity. You always need both.</div>
+
+    <div class="sec-head reveal" id="s15"><div class="sec-num">15</div><h2>Full Annotated Controller</h2></div>
+    <div class="sec-divider reveal"></div>
+    <p class="reveal">Putting the whole picture together: a complete controller that route-matches, runs the combined pipeline (transform → validate → normalize) <em>before</em> any business logic, returns a clean <code>400</code> on failure, and only then calls the service layer — which calls the repository. Both ends shown in full.</p>
+    <div class="codeduo reveal">
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">main.go</span><span class="langtag go">Go</span></div>
+        <pre><span class="kw">package</span> main
+
+<span class="kw">import</span> (
+    <span class="str">"context"</span>
+    <span class="str">"encoding/json"</span>
+    <span class="str">"net/http"</span>
+    <span class="str">"strings"</span>
+
+    <span class="str">"github.com/go-playground/validator/v10"</span>
+)
+
+<span class="kw">var</span> validate = validator.<span class="fn">New</span>()
+
+<span class="cm">// ---- schema (the gate) ----</span>
+<span class="kw">type</span> CreateBook <span class="kw">struct</span> {
+    Name <span class="ty">string</span> <span class="str">`json:"name" validate:"required,min=5,max=100"`</span>
+}
+
+<span class="kw">type</span> Book <span class="kw">struct</span> {
+    ID   <span class="ty">int</span>    <span class="str">`json:"id"`</span>
+    Name <span class="ty">string</span> <span class="str">`json:"name"`</span>
+}
+
+<span class="cm">// ---- helper ----</span>
+<span class="kw">func</span> <span class="fn">writeJSON</span>(w http.ResponseWriter, status <span class="ty">int</span>, b <span class="kw">any</span>) {
+    w.<span class="fn">Header</span>().<span class="fn">Set</span>(<span class="str">"Content-Type"</span>, <span class="str">"application/json"</span>)
+    w.<span class="fn">WriteHeader</span>(status)
+    json.<span class="fn">NewEncoder</span>(w).<span class="fn">Encode</span>(b)
+}
+
+<span class="cm">// ---- CONTROLLER: owns HTTP + the validation gate ----</span>
+<span class="kw">func</span> <span class="fn">createBookHandler</span>(w http.ResponseWriter, r *http.Request) {
+    <span class="kw">var</span> body CreateBook
+
+    <span class="cm">// === GATE — runs before ANY business logic ===</span>
+    <span class="kw">if</span> err := json.<span class="fn">NewDecoder</span>(r.Body).<span class="fn">Decode</span>(&amp;body); err != <span class="kw">nil</span> {
+        <span class="fn">writeJSON</span>(w, 400, map[<span class="ty">string</span>]<span class="ty">string</span>{
+            <span class="str">"error"</span>: <span class="str">"name: expected a string"</span>})
+        <span class="kw">return</span> <span class="cm">// 400 — the DB is never touched</span>
+    }
+    body.Name = strings.<span class="fn">TrimSpace</span>(body.Name) <span class="cm">// transform</span>
+    <span class="kw">if</span> err := validate.<span class="fn">Struct</span>(body); err != <span class="kw">nil</span> {
+        <span class="fn">writeJSON</span>(w, 400, map[<span class="ty">string</span>]<span class="ty">string</span>{
+            <span class="str">"error"</span>: err.<span class="fn">Error</span>()})
+        <span class="kw">return</span> <span class="cm">// 400 Bad Request, not a confusing 500</span>
+    }
+
+    <span class="cm">// === only now: business logic (service → repo) ===</span>
+    book, err := <span class="fn">createBook</span>(r.<span class="fn">Context</span>(), body.Name)
+    <span class="kw">if</span> err != <span class="kw">nil</span> {
+        <span class="fn">writeJSON</span>(w, 500, map[<span class="ty">string</span>]<span class="ty">string</span>{
+            <span class="str">"error"</span>: <span class="str">"could not create book"</span>})
+        <span class="kw">return</span>
+    }
+    <span class="fn">writeJSON</span>(w, 201, book)
+}
+
+<span class="cm">// ---- service + repository (sketched) ----</span>
+<span class="kw">func</span> <span class="fn">createBook</span>(ctx context.Context, name <span class="ty">string</span>) (*Book, <span class="ty">error</span>) {
+    <span class="cm">// service logic … repository INSERT … then:</span>
+    <span class="kw">return</span> &amp;Book{ID: 1, Name: name}, <span class="kw">nil</span>
+}
+
+<span class="kw">func</span> <span class="fn">main</span>() {
+    http.<span class="fn">HandleFunc</span>(<span class="str">"/api/books"</span>, createBookHandler)
+    http.<span class="fn">ListenAndServe</span>(<span class="str">":8080"</span>, <span class="kw">nil</span>)
+}</pre>
+      </div>
+      <div class="codecard">
+        <div class="codebar"><span class="dot"></span><span class="fname">main.py</span><span class="langtag py">Python</span></div>
+        <pre><span class="kw">from</span> fastapi <span class="kw">import</span> FastAPI, HTTPException
+<span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel, Field, field_validator
+
+app = <span class="fn">FastAPI</span>()
+
+
+<span class="cm"># ---- schema (the gate) ----</span>
+<span class="kw">class</span> <span class="ty">CreateBook</span>(BaseModel):
+    name: <span class="ty">str</span> = <span class="fn">Field</span>(min_length=<span class="num2">5</span>, max_length=<span class="num2">100</span>)
+
+    <span class="pp">@field_validator</span>(<span class="str">"name"</span>)
+    <span class="pp">@classmethod</span>
+    <span class="kw">def</span> <span class="fn">trim</span>(cls, v: <span class="ty">str</span>) -&gt; <span class="ty">str</span>:
+        <span class="kw">return</span> v.<span class="fn">strip</span>()          <span class="cm"># transform / normalize</span>
+
+
+<span class="kw">class</span> <span class="ty">Book</span>(BaseModel):
+    id: <span class="ty">int</span>
+    name: <span class="ty">str</span>
+
+
+<span class="cm"># ---- service + repository (sketched) ----</span>
+<span class="kw">def</span> <span class="fn">create_book</span>(name: <span class="ty">str</span>) -&gt; Book:
+    <span class="cm"># service logic … repository INSERT … then:</span>
+    <span class="kw">return</span> <span class="fn">Book</span>(id=<span class="num2">1</span>, name=name)
+
+
+<span class="cm"># ---- CONTROLLER ----</span>
+<span class="cm"># FastAPI runs the CreateBook schema (the GATE) BEFORE</span>
+<span class="cm"># this function body. A bad payload never enters the</span>
+<span class="cm"># function — the client gets an automatic 422/400, so</span>
+<span class="cm"># the DB is never touched and no client mistake leaks</span>
+<span class="cm"># out as a confusing 500.</span>
+<span class="pp">@app.post</span>(<span class="str">"/api/books"</span>, status_code=<span class="num2">201</span>)
+<span class="kw">def</span> <span class="fn">create_book_endpoint</span>(body: CreateBook) -&gt; Book:
+    <span class="cm"># validation already passed — straight to logic</span>
+    <span class="kw">try</span>:
+        <span class="kw">return</span> <span class="fn">create_book</span>(body.name)  <span class="cm"># service → repo</span>
+    <span class="kw">except</span> Exception:
+        <span class="kw">raise</span> <span class="fn">HTTPException</span>(
+            status_code=<span class="num2">500</span>, detail=<span class="str">"could not create book"</span>)
+
+
+<span class="cm"># run:  uvicorn main:app --reload</span></pre>
+      </div>
+    </div>
+
+    <div class="note dark reveal"><span class="tag">The whole topic, in one breath</span> Validations and transformations are a small set of rules you keep in mind while designing APIs. They live at the entry point of the controller, run before any business logic, reject bad data with a clear <code>400</code> instead of a confusing <code>500</code>, come in four flavors (type, syntactic, semantic, complex), pair with transformations (casting and normalization) into one pipeline, and on the backend are mandatory for security and data integrity — no matter what the client does.</div>
+
+    <footer class="end">
+      <span>VALID · THE BACKEND LENS — Field Manual</span>
+      <span>Validations &amp; Transformations · Go + Python (both shown in full)</span>
+    </footer>
+  </main>
+</div>
+
+<script>
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  document.getElementById('progress').style.width = (h.scrollTop)/(h.scrollHeight-h.clientHeight)*100 + '%';
+});
+const io = new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:0.06,rootMargin:'0px 0px -40px 0px'});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+const links=[...document.querySelectorAll('.toc a')], secs=links.map(a=>document.querySelector(a.getAttribute('href')));
+const spy=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){const id='#'+e.target.id;links.forEach(a=>a.classList.toggle('active',a.getAttribute('href')===id));}});},{rootMargin:'-20% 0px -70% 0px'});
+secs.forEach(s=>s&&spy.observe(s));
+</script>
+</body>
+</html>

@@ -1,0 +1,10345 @@
+00:00 In the previous video, we were talking
+00:02 
+
+00:02 about different types of scaling and the
+00:05 
+
+00:05 last thing that we discussed was
+00:07 
+
+00:07 horizontal scaling and this is the
+00:09 
+
+00:09 continuation of that video. So if you
+00:12 
+
+00:12 are watching this video the first time,
+00:14 
+
+00:14 so please watch the first part of the
+00:16 
+
+00:16 video to have better context. We'll just
+00:19 
+
+00:19 jump ahead and continue from where we
+00:22 
+
+00:22 left off. I divided this video into two
+00:24 
+
+00:24 parts because of some frame corruption
+00:26 
+
+00:26 issue in my recording software. Dividing
+00:29 
+
+00:29 videos into part one, part two is not my
+00:31 
+
+00:31 intention, but I had to do it for this
+00:34 
+
+00:34 one. Anyway, continuing from where we
+00:36 
+
+00:36 left, a very important property when we
+00:39 
+
+00:39 are talking about horizontal scaling is
+00:43 
+
+00:43 statelessness. The key enabler or the
+00:47 
+
+00:47 key property that makes horizontal
+00:50 
+
+00:50 scaling possible is this property which
+00:52 
+
+00:52 is statelessness. And what do we mean by
+00:55 
+
+00:55 statelessness? If we have our backend
+00:58 
+
+00:58 applications and we have multiple
+00:60 
+
+00:60 instances of our backend application
+01:02 
+
+01:02 that is what we mean by horizontal
+01:04 
+
+01:04 scaling if you remember which is adding
+01:06 
+
+01:06 different machines of the same capacity
+01:08 
+
+01:08 instead of increasing the capacity of a
+01:11 
+
+01:11 single machine. That's what we mean by
+01:13 
+
+01:13 horizontal scaling. So for horizontal
+01:16 
+
+01:16 scaling we add multiple instances of our
+01:19 
+
+01:19 back end which means multiple servers
+01:21 
+
+01:21 which is which are running the same
+01:23 
+
+01:23 code. And when we finally deploy our
+01:27 
+
+01:27 application which is multiple instances
+01:29 
+
+01:29 of our application over the internet and
+01:32 
+
+01:32 the internet traffic comes our users
+01:35 
+
+01:35 start making request to our back end or
+01:38 
+
+01:38 they use our front end which in turn
+01:40 
+
+01:40 makes request to our back end. All these
+01:42 
+
+01:42 requests from our client is distributed
+01:45 
+
+01:45 among all these instances. But before
+01:48 
+
+01:48 that we are discussing about
+01:49 
+
+01:49 statelessness. Now the only reason
+01:52 
+
+01:52 horizontal scaling is possible because
+01:54 
+
+01:54 of this property which is called
+01:56 
+
+01:56 statelessness which means this is
+01:58 
+
+01:58 possible because one server one instance
+02:01 
+
+02:01 one machine in this chain does not
+02:04 
+
+02:04 contain any kind of data which is
+02:06 
+
+02:06 exclusive to this server. That is what
+02:09 
+
+02:09 we mean by being stateful. When we say
+02:12 
+
+02:12 stateful we mean that our server holds
+02:15 
+
+02:15 some kind of information, some kind of
+02:17 
+
+02:17 data which is exclusive to that server.
+02:19 
+
+02:19 It remembers some kind of information
+02:21 
+
+02:21 about the client, about the user and it
+02:24 
+
+02:24 stores that information in the server.
+02:25 
+
+02:25 And if something like that happens, if
+02:28 
+
+02:28 let's say this is instance A, B, C and
+02:31 
+
+02:31 D. If the instance D holds some amount
+02:34 
+
+02:34 of data which the instance C or the
+02:36 
+
+02:36 instance A does not have access to and
+02:38 
+
+02:38 it is exclusive to this instance only
+02:41 
+
+02:41 then our horizontal scaling will not
+02:43 
+
+02:43 work as expected and we will see weird
+02:47 
+
+02:47 errors pop up in our entire stack. So
+02:49 
+
+02:49 this is what we meant in the initial
+02:52 
+
+02:52 part of the discussion when we said
+02:54 
+
+02:54 horizontal scaling requires planning
+02:56 
+
+02:56 your entire stack from ground up. It
+02:59 
+
+02:59 requires changes in our code as compared
+03:01 
+
+03:01 to vertical scaling which only means we
+03:04 
+
+03:04 go to our infrastructure management
+03:06 
+
+03:06 dashboard and we just add more capacity
+03:09 
+
+03:09 and more CPU cores and more memory to
+03:11 
+
+03:11 our instance as compared to horizontal
+03:13 
+
+03:13 scaling where we have to plan from the
+03:15 
+
+03:15 ground up. It will affect our code, it
+03:17 
+
+03:17 will affect our infrastructure and it
+03:19 
+
+03:19 will affect our entire stack. In
+03:21 
+
+03:21 horizontal scaling, we have to ensure
+03:23 
+
+03:23 statelessness which means that it does
+03:26 
+
+03:26 not matter which server the request goes
+03:29 
+
+03:29 to. Let's say this is our internet and
+03:32 
+
+03:32 our users communicate via their browser
+03:35 
+
+03:35 and through internet our servers get the
+03:38 
+
+03:38 requests. And what we are saying is it
+03:40 
+
+03:40 does not matter what server ends up
+03:43 
+
+03:43 getting a particular request. The result
+03:46 
+
+03:46 should always be the same. Which means
+03:48 
+
+03:48 even if one of these servers get
+03:50 
+
+03:50 deleted. Let's say we get rid of B. Even
+03:53 
+
+03:53 in that case A combined with C and D
+03:56 
+
+03:56 should have the exact same behavior.
+03:58 
+
+03:58 That's what we mean by statelessness. No
+04:01 
+
+04:01 instance of our server should hold any
+04:04 
+
+04:04 piece of information which is not
+04:06 
+
+04:06 accessible by all the instances. Which
+04:08 
+
+04:08 means that any kind of data if we need
+04:11 
+
+04:11 to persist any kind of data then that
+04:13 
+
+04:13 should live somewhere here outside of
+04:16 
+
+04:16 all our servers which can be accessed by
+04:19 
+
+04:19 any instance of our server. Okay, that's
+04:22 
+
+04:22 pretty much what we mean by
+04:23 
+
+04:23 statelessness. And a couple of examples
+04:26 
+
+04:26 of where we exactly use this
+04:28 
+
+04:28 statelessness property. One is sessions.
+04:32 
+
+04:32 In our typical authentication flow, when
+04:34 
+
+04:34 a user comes, they enter their password,
+04:37 
+
+04:37 they enter their email and our server
+04:39 
+
+04:39 gets that request, it checks whatever
+04:42 
+
+04:42 authentication procedure and finally it
+04:44 
+
+04:44 has successfully authenticated the user.
+04:47 
+
+04:47 It creates a session for that user and
+04:49 
+
+04:49 it saves the session ID in the user's
+04:52 
+
+04:52 browser cookie and also it saves the
+04:55 
+
+04:55 session somewhere in the server so that
+04:57 
+
+04:57 the next time a new request comes with
+04:59 
+
+04:59 the session ID cookie it can check the
+05:02 
+
+05:02 stored session and it can match with the
+05:04 
+
+05:04 ID and it can verify the user's
+05:07 
+
+05:07 identity. That's how a typical state
+05:09 
+
+05:09 full authentication works. Now if let's
+05:12 
+
+05:12 say for our horizontal scaling scenario
+05:14 
+
+05:14 we have three instances of our server A
+05:17 
+
+05:17 B and C and the user while
+05:20 
+
+05:20 authenticating it communicated with the
+05:22 
+
+05:22 instance A of our server and instance A
+05:24 
+
+05:24 created a session stored the cookie in
+05:27 
+
+05:27 the user's browser and created a session
+05:29 
+
+05:29 variable or the session session instance
+05:32 
+
+05:32 but what it did it stored the session
+05:34 
+
+05:34 information inside the memory which
+05:36 
+
+05:36 means it had something like an array and
+05:39 
+
+05:39 it stored the users information here
+05:41 
+
+05:41 along with other users information but
+05:43 
+
+05:43 the instance B and instance C since this
+05:46 
+
+05:46 is an in-memory data structure they
+05:49 
+
+05:49 don't have access to this and in turn
+05:51 
+
+05:51 what happens because we have a
+05:53 
+
+05:53 horizontal scaling setup and we have not
+05:55 
+
+05:55 discussed the load balancer part but
+05:57 
+
+05:57 next time the user requests the request
+06:00 
+
+06:00 ends up with the instance B now B does
+06:03 
+
+06:03 not have access to the session
+06:05 
+
+06:05 information of this user since the user
+06:07 
+
+06:07 authenticated with instance A and
+06:09 
+
+06:09 instance say stored information inside
+06:12 
+
+06:12 its own memory. Now what happens? B
+06:14 
+
+06:14 throws a 401 error and it says that you
+06:17 
+
+06:17 have to authenticate first which creates
+06:19 
+
+06:19 a very confusing a very frustrating user
+06:22 
+
+06:22 experience for our user. So for any kind
+06:25 
+
+06:25 of session related information that is a
+06:27 
+
+06:27 clear use case of the property of
+06:29 
+
+06:29 statelessness. So instead of storing it
+06:32 
+
+06:32 inside its memory what instance A should
+06:34 
+
+06:34 have done it should have stored it in a
+06:37 
+
+06:37 inmemory database storage but but it
+06:39 
+
+06:39 should use something like radius and
+06:41 
+
+06:41 this radius instance should be
+06:43 
+
+06:43 accessible by all the instances so that
+06:46 
+
+06:46 the next time a new request comes to
+06:50 
+
+06:50 instance B what B can do it can check in
+06:53 
+
+06:53 the radius instance since the instance A
+06:56 
+
+06:56 after authenticating the user saved the
+06:58 
+
+06:58 session information inside radius and
+07:00 
+
+07:00 since the radius instance is accessible
+07:02 
+
+07:02 to all the instances B can make sure
+07:04 
+
+07:04 that B can verify that the user is
+07:07 
+
+07:07 already authenticated and it will be
+07:09 
+
+07:09 successfully able to process that
+07:11 
+
+07:11 request and this is how statelessness
+07:13 
+
+07:13 property helps with session related use
+07:16 
+
+07:16 cases similarly if we let's say talk
+07:18 
+
+07:18 about file storage same use case user A
+07:21 
+
+07:21 uploaded a file and because of our
+07:24 
+
+07:24 horizontal scaling setup the first
+07:26 
+
+07:26 request ended up with instance A what
+07:29 
+
+07:29 instance A did it took the file and it
+07:32 
+
+07:32 saved it in its own storage SSD or
+07:36 
+
+07:36 whatever storage it has it just saved
+07:38 
+
+07:38 that file inside its own storage and
+07:40 
+
+07:40 because of that the next request when it
+07:42 
+
+07:42 landed on instance C this C did not have
+07:46 
+
+07:46 access to that and it threw an error. In
+07:48 
+
+07:48 this case again to support our
+07:50 
+
+07:50 horizontal scaling architecture instead
+07:53 
+
+07:53 of storing it inside the file storage of
+07:57 
+
+07:57 instance A it should upload it to some
+07:59 
+
+07:59 kind of object storage something like S3
+08:02 
+
+08:02 or cloudflare R2 or maybe their onremise
+08:06 
+
+08:06 menu instance whatever but storage and
+08:10 
+
+08:10 object storage ideally which is
+08:12 
+
+08:12 accessible by all the instances. So this
+08:14 
+
+08:14 kind of pattern will keep repeating but
+08:16 
+
+08:16 the intuition is very clear. Once you
+08:19 
+
+08:19 have decided that you are going with
+08:21 
+
+08:21 horizontal scaling you have to make sure
+08:23 
+
+08:23 that at every point of time at your code
+08:26 
+
+08:26 level you have to make sure that no
+08:28 
+
+08:28 piece of information no piece of file
+08:30 
+
+08:30 nothing should be saved inside a
+08:34 
+
+08:34 particular instance. Everything should
+08:36 
+
+08:36 be centralized. So for in-memory
+08:39 
+
+08:39 database you should use something like
+08:41 
+
+08:41 radius. for file uploads S3 or any kind
+08:44 
+
+08:44 of blob storage. Same way for databases
+08:47 
+
+08:47 instead of using something like SQLite
+08:50 
+
+08:50 and saving the DB file in your own
+08:52 
+
+08:52 server you should use something like
+08:54 
+
+08:54 centralized SQLite or posgress or RDS
+08:58 
+
+08:58 whatever that is the thumb rule
+08:59 
+
+08:59 basically if you're using horizontal
+09:01 
+
+09:01 scaling make sure that no piece of
+09:03 
+
+09:03 information it's stored in a single
+09:05 
+
+09:05 instance and always think about the
+09:09 
+
+09:09 statelessness property of your whole
+09:11 
+
+09:11 architecture. Okay. Now let's talk about
+09:13 
+
+09:13 load balancer. We have been delaying it
+09:15 
+
+09:15 for too long even though we have
+09:17 
+
+09:17 mentioned it so many times. Load
+09:20 
+
+09:20 balancers are one of the very important
+09:23 
+
+09:23 and one of the mandatory components of a
+09:26 
+
+09:26 horizontal scaling architecture and
+09:28 
+
+09:28 we'll see why without a load balancer
+09:31 
+
+09:31 the setup of horizontal scaling is
+09:33 
+
+09:33 almost impossible. In fact, it starts by
+09:36 
+
+09:36 thinking about a load balancer by
+09:38 
+
+09:38 setting up a load balancer. The
+09:40 
+
+09:40 intuition is very simple if you think
+09:42 
+
+09:42 about it. So we have already said that
+09:44 
+
+09:44 in horizontal scaling we have multiple
+09:47 
+
+09:47 instances of our server again repeating
+09:49 
+
+09:49 the same thing and let's say these are
+09:52 
+
+09:52 our users who want to communicate and
+09:56 
+
+09:56 they are each communicating through a
+09:58 
+
+09:58 web browser and this is the internet
+10:02 
+
+10:02 internet and these browsers are making
+10:05 
+
+10:05 requests through the internet. Now at
+10:07 
+
+10:07 this point if you think about it if we
+10:10 
+
+10:10 have multiple instances of our server at
+10:12 
+
+10:12 what point in our whole stack do we
+10:15 
+
+10:15 decide that when a user makes a
+10:18 
+
+10:18 particular request which instance do we
+10:20 
+
+10:20 send that request to how do we decide
+10:22 
+
+10:22 and more importantly where exactly do we
+10:25 
+
+10:25 decide where exactly do we make that
+10:27 
+
+10:27 decision and that's exactly where the
+10:29 
+
+10:29 role of load balancers come in. So you
+10:32 
+
+10:32 can imagine a load balancer at somewhere
+10:35 
+
+10:35 around this point. In short form we call
+10:37 
+
+10:37 it LB a load balancer. So again the
+10:40 
+
+10:40 solution is pretty simple. All the
+10:42 
+
+10:42 requests that are coming from all the
+10:44 
+
+10:44 clients from all our users they all go
+10:47 
+
+10:47 to our load balancer instead of going to
+10:49 
+
+10:49 our servers directly. They all go to the
+10:52 
+
+10:52 load balancer. Now load balancer what it
+10:55 
+
+10:55 does takes all those requests and there
+10:57 
+
+10:57 is some amount of logic here where it
+11:00 
+
+11:00 decides which instance should it forward
+11:03 
+
+11:03 this particular request to and we'll
+11:05 
+
+11:05 talk about this particular logic but
+11:07 
+
+11:07 after it decides which instance it
+11:09 
+
+11:09 should send this particular request to
+11:11 
+
+11:11 it just redirects those requests using a
+11:14 
+
+11:14 piece of logic using a using a few
+11:17 
+
+11:17 algorithms and the server instance takes
+11:20 
+
+11:20 the request they process it and return
+11:24 
+
+11:24 the response in whatever form that we
+11:26 
+
+11:26 are sending and the load balancer again
+11:28 
+
+11:28 takes that and returns in the same HTTP
+11:31 
+
+11:31 connection. That part is pretty
+11:33 
+
+11:33 straightforward. The load balancer is
+11:36 
+
+11:36 pretty much a middleman which takes the
+11:38 
+
+11:38 requests from the internet and forwards
+11:41 
+
+11:41 them to our server instances, takes the
+11:43 
+
+11:43 responses back and sends them back. The
+11:45 
+
+11:45 important part is this the piece of
+11:48 
+
+11:48 logic where it decides to which instance
+11:52 
+
+11:52 exactly should we forward this
+11:54 
+
+11:54 particular request. That's what we call
+11:56 
+
+11:56 as the load balancer algorithm. The idea
+11:59 
+
+11:59 is simple here. Our load balancer wants
+12:02 
+
+12:02 to decide which server it should send
+12:05 
+
+12:05 the request to. The first and the
+12:07 
+
+12:07 simplest kind of algorithm that we have
+12:09 
+
+12:09 is the roundroin. Round dropping which
+12:11 
+
+12:11 works in a way. Let's say this is our
+12:14 
+
+12:14 load balancer and these are our servers.
+12:17 
+
+12:17 So for roundroin algorithm it sends the
+12:20 
+
+12:20 requests in a rotating order. What that
+12:22 
+
+12:22 means is let's say the first request
+12:24 
+
+12:24 comes this is the internet and this is
+12:26 
+
+12:26 getting all the requests here. The first
+12:28 
+
+12:28 request comes and it sends that to
+12:31 
+
+12:31 server one. Second one to server B and
+12:34 
+
+12:34 third one to server C. These are A, B,
+12:37 
+
+12:37 C. Okay. And the fourth one comes again
+12:39 
+
+12:39 it goes to server A, B and C for the
+12:42 
+
+12:42 sixth one and the cycle continues.
+12:44 
+
+12:44 That's why we call it a roundroin
+12:46 
+
+12:46 fashion or a rotating order of sending
+12:49 
+
+12:49 requests. And this kind of algorithm the
+12:51 
+
+12:51 roundrobin algorithm works best in a
+12:54 
+
+12:54 setup where the requests that are being
+12:57 
+
+12:57 received by the load balancer they are
+12:59 
+
+12:59 similar kind in the sense the the the
+13:02 
+
+13:02 cost of those requests the kind of
+13:04 
+
+13:04 operations that we are performing the
+13:06 
+
+13:06 server is performing like database
+13:07 
+
+13:07 operations or Q operations whatever they
+13:10 
+
+13:10 are roughly the same kind and the
+13:13 
+
+13:13 servers hold the same amount of capacity
+13:16 
+
+13:16 each have let's say 4 GB of RAM and
+13:19 
+
+13:19 let's say two cores of CPU. If we have
+13:22 
+
+13:22 this kind of setup, then a very simple
+13:25 
+
+13:25 roundroin algorithm for our load
+13:27 
+
+13:27 balancer works like we can get through a
+13:30 
+
+13:30 lot of traffic with a simple algorithm.
+13:32 
+
+13:32 But consider we have two kinds of
+13:34 
+
+13:34 requests. Let's say request one and in
+13:38 
+
+13:38 red we have also request two. request
+13:41 
+
+13:41 one what it does it does a very simple
+13:44 
+
+13:44 database read operation select operation
+13:46 
+
+13:46 some kind of select star from users etc
+13:49 
+
+13:49 right let's say fetching the user
+13:51 
+
+13:51 profile which performs roughly depending
+13:53 
+
+13:53 on which region your database in where
+13:56 
+
+13:56 are your users but on an average you can
+13:58 
+
+13:58 say takes around 200 to 300 millconds
+14:02 
+
+14:02 but then we have our request two type
+14:05 
+
+14:05 which is a which we consider as an
+14:08 
+
+14:08 expensive request and what do we mean by
+14:10 
+
+14:10 expensive request. Let's say after
+14:12 
+
+14:12 getting the request, it has to make an
+14:15 
+
+14:15 HTTP call to an external server. Let's
+14:18 
+
+14:18 say something like elastic search or
+14:20 
+
+14:20 you're sending an email some kind of
+14:22 
+
+14:22 external server which is not our own
+14:24 
+
+14:24 server. It has to make a call to an
+14:26 
+
+14:26 external server. After getting the
+14:28 
+
+14:28 response, it has to make a database
+14:30 
+
+14:30 write operation. The right operation
+14:32 
+
+14:32 happens on a very big table which has a
+14:34 
+
+14:34 lot of rows and a lot of indices. Also
+14:37 
+
+14:37 as we already know indices even though
+14:39 
+
+14:39 they help speed up select operations
+14:41 
+
+14:41 help speed up our join operations but
+14:43 
+
+14:43 every time we do a write operation any
+14:46 
+
+14:46 kind of modification like update or
+14:48 
+
+14:48 inserting a new row it has to update all
+14:50 
+
+14:50 the indices of our databases. So let's
+14:52 
+
+14:52 say we have a couple of indices here and
+14:55 
+
+14:55 every write operation is expensive
+14:57 
+
+14:57 because of that. So all in all this
+14:59 
+
+14:59 whole API call with the external service
+15:02 
+
+15:02 call the database write operation and
+15:04 
+
+15:04 everything it takes around 2 seconds to
+15:06 
+
+15:06 respond. Now our load balancer since it
+15:09 
+
+15:09 is using a simple roundroin algorithm it
+15:12 
+
+15:12 sends the request in a pretty mindless
+15:15 
+
+15:15 way. Let's say it got the request in
+15:18 
+
+15:18 this order. The first request was of
+15:20 
+
+15:20 request type one. The second one was of
+15:22 
+
+15:22 request type two. The third one again
+15:25 
+
+15:25 request type two. The fourth one was
+15:27 
+
+15:27 again request type one. And since the
+15:29 
+
+15:29 load balancer has no idea what kind of
+15:31 
+
+15:31 request that we are dealing with or any
+15:33 
+
+15:33 kind of intelligent logic to route the
+15:36 
+
+15:36 request, it will keep sending without
+15:38 
+
+15:38 realizing all the expensive requests to
+15:40 
+
+15:40 a single server and there is a chance
+15:43 
+
+15:43 that this particular server will
+15:45 
+
+15:45 eventually crash if a skew like this
+15:47 
+
+15:47 happens in our request traffic. So there
+15:50 
+
+15:50 is a different variation of the round
+15:52 
+
+15:52 robin algorithm. Let's say this is again
+15:54 
+
+15:54 our load balancer. We have our servers
+15:56 
+
+15:56 here A, B and C. And the load balancer
+15:60 
+
+16:00 is sending the requests in a roundrobin
+16:02 
+
+16:02 fashion. But there is a variation which
+16:04 
+
+16:04 is called weighted weighted roundroin
+16:07 
+
+16:07 which means that let's say our server A
+16:10 
+
+16:10 has 8 GB of RAM and four cores of CPU
+16:13 
+
+16:13 and server B has again 4 GB of RAM, two
+16:16 
+
+16:16 core CPU. C also has 4 GB of RAM, two
+16:18 
+
+16:18 core CP. If we have a setup like this,
+16:21 
+
+16:21 what we can do? We can configure our
+16:23 
+
+16:23 load balancer in a weighted roundrod
+16:25 
+
+16:25 robin fashion so that it sends twice as
+16:28 
+
+16:28 many requests to server A as compared to
+16:31 
+
+16:31 the other servers. So if it gets a
+16:34 
+
+16:34 request burst eight requests first it
+16:36 
+
+16:36 will send two requests to server A then
+16:39 
+
+16:39 one request to server B then one request
+16:41 
+
+16:41 to server C then again two requests to
+16:43 
+
+16:43 server A and so on. So server A will
+16:46 
+
+16:46 always receive twice as many requests.
+16:49 
+
+16:49 Since server A has more amount of
+16:51 
+
+16:51 capacity to deal with the request to
+16:53 
+
+16:53 process those requests. But even if you
+16:55 
+
+16:55 have this kind of setup, the load
+16:57 
+
+16:57 balancer still cannot decide
+16:59 
+
+16:59 intelligently what kind of request
+17:02 
+
+17:02 should be sent to which server. So we
+17:04 
+
+17:04 have a different algorithm for our load
+17:07 
+
+17:07 balancer which we can consider a little
+17:09 
+
+17:09 smarter than the roundroin algorithm
+17:11 
+
+17:11 which is called leash connections. And
+17:13 
+
+17:13 the way it works is again we have a load
+17:16 
+
+17:16 balancer and three servers instances A,
+17:20 
+
+17:20 B and C. And again we have all the three
+17:24 
+
+17:24 servers with the same amount of capacity
+17:26 
+
+17:26 4 GB RAM and two CPU codes. And we are
+17:29 
+
+17:29 getting all the requests here. But the
+17:31 
+
+17:31 way this particular algorithm works is
+17:33 
+
+17:33 instead of sending the request
+17:35 
+
+17:35 mindlessly in a rotating order, what the
+17:37 
+
+17:37 load balancer does, it checks which
+17:39 
+
+17:39 server currently holds the least number
+17:42 
+
+17:42 of active connections and depending on
+17:44 
+
+17:44 that it will send requests to the other
+17:47 
+
+17:47 server. And since you already know that
+17:50 
+
+17:50 the HTTP protocol, the one which we
+17:52 
+
+17:52 typically use in our backend front end
+17:54 
+
+17:54 connections, it works on a request and
+17:57 
+
+17:57 response cycle. The client sends a
+17:60 
+
+17:60 request and the server sends a response
+18:02 
+
+18:02 back with a code something like 200 400
+18:04 
+
+18:04 or whatever and the client the browser
+18:08 
+
+18:08 it sends the request and waits for the
+18:09 
+
+18:09 response and while it waits for that
+18:12 
+
+18:12 response we call that as an active
+18:15 
+
+18:15 connection. the HTTP connection and
+18:17 
+
+18:17 behind the scenes the TCP connection is
+18:19 
+
+18:19 active while the server is processing
+18:21 
+
+18:21 while the server is making that external
+18:23 
+
+18:23 API call while the server is uh doing
+18:25 
+
+18:25 that database write operation and
+18:27 
+
+18:27 whatever heavy operations that the
+18:29 
+
+18:29 server is performing at that point the
+18:31 
+
+18:31 connection is still waiting for the
+18:34 
+
+18:34 server's response and after the server
+18:36 
+
+18:36 is done it sends a response back and the
+18:38 
+
+18:38 connection is closed and depending on
+18:40 
+
+18:40 whether you are using HTTP2 HTTP 3 the
+18:43 
+
+18:43 connection closing the connection
+18:44 
+
+18:44 multiplexing those logic will be
+18:47 
+
+18:47 different but in a very simple manner if
+18:49 
+
+18:49 you are talking about HTTP 1.1 the
+18:52 
+
+18:52 server will send the response back and
+18:53 
+
+18:53 the connection will be closed. So for
+18:56 
+
+18:56 the least connections algorithm how it
+18:58 
+
+18:58 works is for expensive operations the
+19:01 
+
+19:01 connection will stay active for a longer
+19:04 
+
+19:04 amount of time. So let's say we again
+19:06 
+
+19:06 have two types of requests the request
+19:08 
+
+19:08 one which is a very lightweight request
+19:11 
+
+19:11 type and the request two which is a
+19:13 
+
+19:13 heavy request type. So let's imagine the
+19:15 
+
+19:15 first request that the load balancer
+19:18 
+
+19:18 sends is the server A. Since when all
+19:21 
+
+19:21 the servers are started, none of the
+19:23 
+
+19:23 servers have any amount of active
+19:25 
+
+19:25 connections at that point. The load
+19:27 
+
+19:27 balancer can choose any servers in a
+19:29 
+
+19:29 random order. So for the first request,
+19:31 
+
+19:31 it chooses the server instance A and the
+19:35 
+
+19:35 request type is obviously the request
+19:37 
+
+19:37 type two which takes 2 seconds. Then
+19:40 
+
+19:40 comes the next request which is of the
+19:43 
+
+19:43 request type one. And then the load
+19:45 
+
+19:45 balancer checks the server instance B
+19:48 
+
+19:48 and the server instance C are empty and
+19:50 
+
+19:50 they have zero number of active
+19:52 
+
+19:52 connections. So the second request which
+19:54 
+
+19:54 is the request type one goes to server
+19:56 
+
+19:56 instance B. And if there is a third
+19:59 
+
+19:59 request which is again the request type
+20:01 
+
+20:01 one, it goes to server C. Then comes the
+20:04 
+
+20:04 fourth request. And by the time the
+20:06 
+
+20:06 fourth request comes and since we
+20:08 
+
+20:08 already know that the request type one
+20:10 
+
+20:10 is a lightweight request which resolves
+20:13 
+
+20:13 in let's say around 200 millconds. So by
+20:15 
+
+20:15 the time the next request comes the
+20:18 
+
+20:18 server A is still serving the request
+20:20 
+
+20:20 type two since it is a heavy API call
+20:23 
+
+20:23 and the connection is still active. But
+20:26 
+
+20:26 by the time the next request arrived
+20:27 
+
+20:27 which is the request number four either
+20:30 
+
+20:30 server B or server C were done with the
+20:32 
+
+20:32 initial request and their connection
+20:34 
+
+20:34 went to zero. So the next request will
+20:36 
+
+20:36 go to either server B or server C. And
+20:38 
+
+20:38 since server A is already dealing with a
+20:42 
+
+20:42 heavy API call it will not be sent more
+20:44 
+
+20:44 request to process. So by tweaking our
+20:48 
+
+20:48 algorithm to consider the active
+20:50 
+
+20:50 connections, we can make it decide
+20:52 
+
+20:52 intelligently which server should get
+20:55 
+
+20:55 the next request which performs a little
+20:57 
+
+20:57 better than just using the roundrobin
+20:59 
+
+20:59 algorithm which just sends the request
+21:01 
+
+21:01 in a rotating order. There is also a
+21:03 
+
+21:03 variation on top of the list connections
+21:05 
+
+21:05 algorithm the weighted version of it
+21:07 
+
+21:07 which means that we'll use the same
+21:09 
+
+21:09 algorithm but again the server
+21:11 
+
+21:11 capacities will change. Instead of all
+21:13 
+
+21:13 of the server instances having the same
+21:15 
+
+21:15 capacity, let's say server A has 8 GB
+21:18 
+
+21:18 RAM, four core CPU and B and C has 4 GB
+21:21 
+
+21:21 RAM and two core CPU. So it will use the
+21:24 
+
+21:24 same algorithm but the server A the
+21:26 
+
+21:26 instance A will receive twice as many
+21:29 
+
+21:29 requests by using the same algorithm.
+21:30 
+
+21:30 And similarly we have other load
+21:33 
+
+21:33 balancer algorithms. Algorithms like
+21:35 
+
+21:35 least response time which means that the
+21:39 
+
+21:39 load balancer will check which servers
+21:41 
+
+21:41 or which server instances are returning
+21:44 
+
+21:44 responses much faster and they will try
+21:47 
+
+21:47 to send more requests to those servers
+21:49 
+
+21:49 and in turn the servers which are
+21:51 
+
+21:51 sending slower responses which are
+21:54 
+
+21:54 already struggling with the resources
+21:55 
+
+21:55 they will get less number of resources.
+21:57 
+
+21:57 Same way we also have resource-based
+21:60 
+
+21:60 algorithms which will check which server
+22:02 
+
+22:02 has currently high amount of CPU or high
+22:06 
+
+22:06 amount of memory or RAM usage and the
+22:09 
+
+22:09 servers which have less amount of
+22:11 
+
+22:11 resource usage the CPU or RAM they will
+22:13 
+
+22:13 receive more number of requests right
+22:16 
+
+22:16 similarly there are other algorithms but
+22:18 
+
+22:18 the idea is always the same the load
+22:20 
+
+22:20 balancer depending on some piece of
+22:23 
+
+22:23 logic it decides which server instance
+22:26 
+
+22:26 it should send The next response to the
+22:28 
+
+22:28 next interesting question that you might
+22:30 
+
+22:30 ask is let's say here we have a load
+22:33 
+
+22:33 balancer and three server instances A B
+22:37 
+
+22:37 and C and let's say the load balancer
+22:39 
+
+22:39 was following the roundroin algorithm or
+22:42 
+
+22:42 least connections algorithm whatever
+22:44 
+
+22:44 whichever you want to take and for some
+22:46 
+
+22:46 reason our server A crashed it got more
+22:50 
+
+22:50 amount of request because of our simpler
+22:52 
+
+22:52 roundroin algorithm or maybe some kind
+22:54 
+
+22:54 of infrastructure misconfiguration
+22:56 
+
+22:56 happened and server A crashed while
+22:58 
+
+22:58 using the list connections algorithm and
+23:00 
+
+23:00 it is not able to respond to any more
+23:03 
+
+23:03 requests since this machine is
+23:05 
+
+23:05 completely stopped. It is not working.
+23:07 
+
+23:07 Now if the load balancer is using
+23:10 
+
+23:10 roundroin algorithm or if the load
+23:12 
+
+23:12 balancer is using list connections or
+23:14 
+
+23:14 any other algorithm what will happen if
+23:16 
+
+23:16 it is using the roundroin algorithm it
+23:18 
+
+23:18 will keep sending the request in
+23:19 
+
+23:19 rotating order. Let's say first A second
+23:22 
+
+23:22 B second C then A then B then C. So
+23:25 
+
+23:25 every request that goes to the server A
+23:28 
+
+23:28 or the server instance A the request
+23:30 
+
+23:30 will obviously fail. The client will get
+23:33 
+
+23:33 something like 502 or 503 and those
+23:36 
+
+23:36 clients those users will keep getting
+23:38 
+
+23:38 these errors and the other users they
+23:41 
+
+23:41 will not get any errors because their
+23:43 
+
+23:43 requests are going to server instance B
+23:46 
+
+23:46 or server instance C. But again since
+23:48 
+
+23:48 this is roundroin the next request of
+23:50 
+
+23:50 the user whose request was previously
+23:53 
+
+23:53 served by server instance B the next
+23:55 
+
+23:55 time it might go to server A and they
+23:57 
+
+23:57 might also face the same errors which
+23:59 
+
+23:59 can quickly become a very frustrating
+24:01 
+
+24:01 user experience. So how do we actually
+24:03 
+
+24:03 solve this problem? How do load
+24:05 
+
+24:05 balancers they solve this problem of a
+24:08 
+
+24:08 particular server instance going dead or
+24:10 
+
+24:10 a particular server instance not being
+24:12 
+
+24:12 able to serve any more requests. So
+24:15 
+
+24:15 that's where we have this concept called
+24:18 
+
+24:18 L checks which is a very simple but
+24:20 
+
+24:20 effective technique. What happens we
+24:22 
+
+24:22 have our load balancer here servers here
+24:25 
+
+24:25 and these are the typical requests that
+24:28 
+
+24:28 are coming from our users that the load
+24:30 
+
+24:30 balancer is forwarding to the server and
+24:33 
+
+24:33 returning the responses back to our
+24:35 
+
+24:35 users. While that is happening, what the
+24:38 
+
+24:38 load balancer does, it keeps sending its
+24:40 
+
+24:40 own request, test request, a very
+24:43 
+
+24:43 simple, let's say a get endpoint to all
+24:46 
+
+24:46 the servers. Let's say every second,
+24:48 
+
+24:48 every second. While sending these actual
+24:51 
+
+24:51 requests, the requests that are coming
+24:53 
+
+24:53 from our users, it also sends a test
+24:55 
+
+24:55 request every second to all the server
+24:58 
+
+24:58 instances. It keeps sending us. And in
+24:60 
+
+24:60 the response, it expects a success
+25:02 
+
+25:02 response, which means something like 200
+25:05 
+
+25:05 201. But of course the practice is to
+25:07 
+
+25:07 send a 200 response. So if the server is
+25:10 
+
+25:10 online, if the server is currently
+25:13 
+
+25:13 processing request, it will obviously
+25:15 
+
+25:15 get that test request and it will send
+25:17 
+
+25:17 200 response back immediately because
+25:19 
+
+25:19 usually it's just a test request. No
+25:22 
+
+25:22 kind of heavy operation happens here. So
+25:24 
+
+25:24 it does not really cause any kind of
+25:26 
+
+25:26 load on our instances because of us
+25:30 
+
+25:30 sending this test request every second.
+25:32 
+
+25:32 But the moment let's say server A the
+25:35 
+
+25:35 instance A went down and the next second
+25:37 
+
+25:37 when the load balancer sent a test
+25:40 
+
+25:40 request to the server A it did not send
+25:43 
+
+25:43 a 20 response and by default the server
+25:45 
+
+25:45 the load balancer got something like 502
+25:48 
+
+25:48 response from the HTTP client and the
+25:51 
+
+25:51 moment it gets a error response or any
+25:54 
+
+25:54 kind of response which is not the 200
+25:57 
+
+25:57 series responses it will immediately put
+25:60 
+
+25:60 this server under blacklist. list or
+26:02 
+
+26:02 some kind of list which means that we
+26:05 
+
+26:05 will not be sending any kind of user
+26:07 
+
+26:07 requests which are the requests that are
+26:09 
+
+26:09 marked in blue here that are coming from
+26:11 
+
+26:11 our actual users. Those requests will
+26:14 
+
+26:14 not be sent to this particular instance
+26:16 
+
+26:16 from now on. So all the user requests
+26:19 
+
+26:19 they will go to either server B or
+26:21 
+
+26:21 server C depending on whatever algorithm
+26:23 
+
+26:23 that you are using round robin list
+26:24 
+
+26:24 connections or whatever but meanwhile it
+26:27 
+
+26:27 will keep sending this test request to
+26:30 
+
+26:30 this server instance otherwise how will
+26:31 
+
+26:31 it know that this server instance has
+26:34 
+
+26:34 come back online it is able to serve
+26:37 
+
+26:37 responses now so these test requests
+26:40 
+
+26:40 they will keep going here and after it
+26:43 
+
+26:43 gets a successful response something
+26:45 
+
+26:45 like 200 then it will remove that
+26:47 
+
+26:47 instance from blacklist and from the
+26:49 
+
+26:49 next request onwards it will also send
+26:52 
+
+26:52 these blue requests the requests that
+26:54 
+
+26:54 are coming from our users to server A.
+26:56 
+
+26:56 So using this simple technique called
+26:58 
+
+26:58 health checks our load balancer can
+27:00 
+
+27:00 decide whether a server is healthy or a
+27:04 
+
+27:04 server is able to cater to our users
+27:06 
+
+27:06 requests. So that's pretty much all
+27:09 
+
+27:09 about load balancers and horizontal
+27:11 
+
+27:11 scaling that I wanted to talk about. Of
+27:13 
+
+27:13 course, it's not comprehensive in any
+27:16 
+
+27:16 way, but it's good to know what are the
+27:19 
+
+27:19 components that play an important role
+27:21 
+
+27:21 while you are thinking about scaling
+27:24 
+
+27:24 your backends and load balancers are a
+27:26 
+
+27:26 very big part of scaling your backends.
+27:29 
+
+27:29 That's a very brief introduction but
+27:31 
+
+27:31 enough so that you can continue your own
+27:34 
+
+27:34 reading on load balancers. Okay, next
+27:37 
+
+27:37 let's talk about database scaling. Now
+27:40 
+
+27:40 scaling our application, our back end,
+27:42 
+
+27:42 whatever code that we write our
+27:44 
+
+27:44 application, scaling that part is or
+27:48 
+
+27:48 becomes straightforward once you
+27:50 
+
+27:50 externalize state. That's what we
+27:52 
+
+27:52 learned, right? Because the clear winner
+27:54 
+
+27:54 was obviously horizontal scaling, not
+27:57 
+
+27:57 vertical scaling. And the key to
+27:59 
+
+27:59 horizontal scaling was externalizing
+28:01 
+
+28:01 your state. Instead of limiting any kind
+28:03 
+
+28:03 of information, any kind of state or any
+28:05 
+
+28:05 kind of connections, any kind of state
+28:07 
+
+28:07 to a particular instance of the server,
+28:09 
+
+28:09 you externalize it. Which means you do
+28:12 
+
+28:12 not keep any kind of cache limited to a
+28:14 
+
+28:14 particular server. You do not keep any
+28:16 
+
+28:16 kind of files limited to a server
+28:19 
+
+28:19 instance. You do not keep any kind of
+28:22 
+
+28:22 session data or any kind of information
+28:24 
+
+28:24 that you can think of. You externalize
+28:27 
+
+28:27 everything. You use radius. You use
+28:29 
+
+28:29 databases for all the session related
+28:32 
+
+28:32 information and use a object file
+28:35 
+
+28:35 storage like S3 for storing your files
+28:37 
+
+28:37 instead of keeping in your own local
+28:39 
+
+28:39 instance. Right? All the stuff that we
+28:41 
+
+28:41 discussed. Once you externalize your
+28:43 
+
+28:43 state, you add more servers behind your
+28:45 
+
+28:45 load balancers and your capacity will
+28:48 
+
+28:48 increase linearly the more number of
+28:51 
+
+28:51 servers that you can add that you can
+28:53 
+
+28:53 afford. But while you're doing that, the
+28:56 
+
+28:56 part that becomes a little difficult to
+28:58 
+
+28:58 scale or a little tricky to scale is
+29:00 
+
+29:00 your database, which is a stateful part
+29:03 
+
+29:03 of your architecture. Because your
+29:06 
+
+29:06 database, they cannot be duplicated the
+29:08 
+
+29:08 way you just duplicated your server.
+29:11 
+
+29:11 Each database they hold some amount of
+29:13 
+
+29:13 data, a lot of data in their files, in
+29:16 
+
+29:16 their local storage. And that data again
+29:20 
+
+29:20 must be consistent. Which means if you
+29:22 
+
+29:22 have multiple database instances, when a
+29:25 
+
+29:25 request arrives and that particular
+29:27 
+
+29:27 database instance receives that request,
+29:29 
+
+29:29 the data it sends back, that should be
+29:32 
+
+29:32 exactly the same as the other instance
+29:35 
+
+29:35 of the database sending the data back
+29:37 
+
+29:37 and making this coordination work.
+29:40 
+
+29:40 That's what makes scaling databases a
+29:42 
+
+29:42 very tricky part of scaling your overall
+29:45 
+
+29:45 backend architecture. So of course we
+29:48 
+
+29:48 already have a couple of solutions, a
+29:50 
+
+29:50 couple of tried and tested solutions in
+29:53 
+
+29:53 our industry for scaling our database
+29:55 
+
+29:55 component. The stateful component of our
+29:58 
+
+29:58 backend architecture. The first one and
+30:00 
+
+30:00 the obvious one in most of the use cases
+30:03 
+
+30:03 is called read replicas. Now read
+30:05 
+
+30:05 replicas it's a very simple and an
+30:08 
+
+30:08 intuitive architecture of scaling
+30:10 
+
+30:10 databases. So here is our single
+30:13 
+
+30:13 database instance and since the number
+30:17 
+
+30:17 of servers since going with horizontal
+30:19 
+
+30:19 scaling they are growing because we want
+30:21 
+
+30:21 to cater to millions and billions of
+30:24 
+
+30:24 user traffic. So all these servers they
+30:27 
+
+30:27 are still dealing with the same database
+30:29 
+
+30:29 instance right we were able to scale our
+30:32 
+
+30:32 application code our processing logic
+30:34 
+
+30:34 but our storage logic which is the
+30:36 
+
+30:36 database component which we interact
+30:38 
+
+30:38 with to store and retrieve data that is
+30:41 
+
+30:41 still a single instance and eventually
+30:44 
+
+30:44 this particular database which is again
+30:47 
+
+30:47 a server let's say it has 4 GB or RAM
+30:50 
+
+30:50 and four cores of CPU this is still a
+30:52 
+
+30:52 server and eventually it will run lot of
+30:55 
+
+30:55 resource to cater to all these requests
+30:58 
+
+30:58 that your back end is demanding from
+31:00 
+
+31:00 your database. So we also have to figure
+31:03 
+
+31:03 out some way of scaling our database.
+31:05 
+
+31:05 Read replicas are one way to do that to
+31:08 
+
+31:08 scale your database operations across
+31:11 
+
+31:11 multiple instances. And since database
+31:14 
+
+31:14 are a stateful component in our
+31:16 
+
+31:16 architecture, we cannot just add more
+31:18 
+
+31:18 instances, right? They will have all
+31:20 
+
+31:20 this problem of data consistency. So one
+31:23 
+
+31:23 popular architecture that we have is the
+31:25 
+
+31:25 read replica and this is how it works.
+31:27 
+
+31:27 We have one database instance which we
+31:30 
+
+31:30 call as primary or parent whatever or
+31:33 
+
+31:33 master. There are multiple terminologies
+31:35 
+
+31:35 here. You can call it primary or master
+31:38 
+
+31:38 instance whatever. This one is the
+31:40 
+
+31:40 primary database instance and we have
+31:43 
+
+31:43 three replicas which are secondary
+31:46 
+
+31:46 instances or child instance or slave
+31:48 
+
+31:48 instances. Again depends on the
+31:50 
+
+31:50 terminology but the idea is all these
+31:53 
+
+31:53 instances of our database they will hold
+31:56 
+
+31:56 the data but these instances they will
+31:59 
+
+31:59 only cater to read requests which means
+32:02 
+
+32:02 select ones. You can only read data from
+32:05 
+
+32:05 these instances. You cannot write data
+32:07 
+
+32:07 back to these instances. So that is the
+32:09 
+
+32:09 number one rule. And typically what we
+32:12 
+
+32:12 do we create these replicas or instances
+32:15 
+
+32:15 of our database which holds all the data
+32:18 
+
+32:18 that the primary holds and we spread it
+32:21 
+
+32:21 across the world. So if you have users
+32:24 
+
+32:24 in India and US and China then you can
+32:28 
+
+32:28 have one primary instance the primary
+32:32 
+
+32:32 database in US and you can have three
+32:35 
+
+32:35 read replicas one in India one in China
+32:37 
+
+32:37 and one in Japan etc. So users that are
+32:41 
+
+32:41 sending request from those countries of
+32:43 
+
+32:43 course assuming that you also have your
+32:46 
+
+32:46 backends spread across these countries
+32:48 
+
+32:48 then those backend instances combined
+32:51 
+
+32:51 with those database instances will be
+32:53 
+
+32:53 able to cater to the users of those
+32:56 
+
+32:56 countries and in turn the requests and
+32:58 
+
+32:58 the responses will be faster as compared
+33:00 
+
+33:00 to all the requests coming to a single
+33:03 
+
+33:03 instance of US. So that is there there
+33:05 
+
+33:05 are two benefits of reader replicas. One
+33:08 
+
+33:08 is low usage or less amount of load that
+33:12 
+
+33:12 your primary database instance has to
+33:14 
+
+33:14 take up and the second one is latency.
+33:16 
+
+33:16 Your back end will experience less
+33:18 
+
+33:18 amount of latency. So read replicas are
+33:21 
+
+33:21 obviously a very good solution. all your
+33:23 
+
+33:23 read queries and if we take a look at
+33:26 
+
+33:26 most of the applications at least SAS
+33:29 
+
+33:29 applications where the context of
+33:31 
+
+33:31 backend comes primarily 90 or let's say
+33:35 
+
+33:35 even if you are being conservative 70%
+33:38 
+
+33:38 of the requests that we receive are read
+33:40 
+
+33:40 requests the back end mostly does select
+33:44 
+
+33:44 requests to our database right those are
+33:46 
+
+33:46 read requests and all those 70% of the
+33:49 
+
+33:49 requests will be served by these
+33:51 
+
+33:51 replicas read replicas And the rest of
+33:54 
+
+33:54 the 30% of the requests that are things
+33:56 
+
+33:56 like insert or update or delete all
+33:60 
+
+33:60 these requests any kind of a write
+34:02 
+
+34:02 operations based request they will go to
+34:04 
+
+34:04 our primary instance. So initially our
+34:07 
+
+34:07 database had to deal with 100% of the
+34:10 
+
+34:10 requests. Now it came down to only 30%.
+34:13 
+
+34:13 So the resource utilization will be much
+34:16 
+
+34:16 lower. the resource load will be much
+34:19 
+
+34:19 lower and we were able to scale our
+34:21 
+
+34:21 databases linearly. Now, of course, it
+34:24 
+
+34:24 does not come without its trade-offs or
+34:26 
+
+34:26 problems. The problem is consistency.
+34:29 
+
+34:29 And what do we mean by consistency?
+34:31 
+
+34:31 Let's take an example. Let's say we have
+34:34 
+
+34:34 a user here. We have a user here from
+34:37 
+
+34:37 their browser. They just updated their
+34:40 
+
+34:40 name in their user profile page. And
+34:42 
+
+34:42 since it is a write operation, that
+34:45 
+
+34:45 particular request by the back end,
+34:47 
+
+34:47 let's say there is a back end here, back
+34:49 
+
+34:49 end instance, that particular request
+34:51 
+
+34:51 went to our primary database instance or
+34:54 
+
+34:54 our primary replica which handles any
+34:56 
+
+34:56 kind of write operation, right? And the
+34:58 
+
+34:58 moment they updated their name, they
+35:02 
+
+35:02 refreshed the page. And since page
+35:04 
+
+35:04 refreshing means fetching the user
+35:07 
+
+35:07 profile data back from our database and
+35:10 
+
+35:10 sending it to the client to the browser
+35:12 
+
+35:12 the request type is a read request. It
+35:15 
+
+35:15 is not a write request and that
+35:16 
+
+35:16 immediately after let's say only a few
+35:19 
+
+35:19 milliseconds 200 millconds the request
+35:21 
+
+35:21 obviously went to a read replica. Now
+35:24 
+
+35:24 let's assume that this interaction
+35:26 
+
+35:26 happened from India and the primary
+35:30 
+
+35:30 database instance that is in US. So the
+35:33 
+
+35:33 write operation happened in our primary
+35:36 
+
+35:36 database instance. So this particular
+35:38 
+
+35:38 database instance currently holds the
+35:40 
+
+35:40 updated data the updated name of the
+35:42 
+
+35:42 user. So let's say the user changed the
+35:44 
+
+35:44 name from A to A. Now at this point of
+35:48 
+
+35:48 time at this particular 10 milliseconds
+35:51 
+
+35:51 range only this primary database holds
+35:54 
+
+35:54 the updated data. Of course if we have
+35:56 
+
+35:56 this read replica based architecture
+35:59 
+
+35:59 there will obviously be some kind of
+36:01 
+
+36:01 replication algorithm right we cannot go
+36:04 
+
+36:04 into the depths of the replication
+36:06 
+
+36:06 algorithm and all but most of the modern
+36:08 
+
+36:08 databases posgress MySQL SQLite on all
+36:12 
+
+36:12 these databases they have native
+36:15 
+
+36:15 features to support replication right so
+36:18 
+
+36:18 you can imagine there is some algorithm
+36:20 
+
+36:20 some kind of setup happening here using
+36:22 
+
+36:22 which the data from our primary database
+36:26 
+
+36:26 flows back to the read replicas, right?
+36:28 
+
+36:28 It makes sense intuitively if you have
+36:30 
+
+36:30 this kind of architecture. If these
+36:32 
+
+36:32 replicas are a copy of our primary
+36:35 
+
+36:35 databases, then there has to be some
+36:37 
+
+36:37 kind of mechanism when any kind of
+36:40 
+
+36:40 updated data flows back to all these
+36:42 
+
+36:42 read replicas. But even if that
+36:45 
+
+36:45 mechanism is in place, we still have to
+36:48 
+
+36:48 consider physics. The distance between
+36:50 
+
+36:50 these two servers, these two physical
+36:53 
+
+36:53 servers from US to India, there is some
+36:57 
+
+36:57 amount of latency there. let's say 200
+36:59 
+
+36:59 milliseconds or 300 milliseconds because
+37:02 
+
+37:02 at the end of the day our data travels
+37:05 
+
+37:05 through optic fiber cables from under
+37:07 
+
+37:07 the sea or any kind of medium so that
+37:10 
+
+37:10 one server can send some data to another
+37:13 
+
+37:13 server and the physical distance between
+37:16 
+
+37:16 two servers have the largest role to
+37:18 
+
+37:18 play when it comes to latency. We cannot
+37:20 
+
+37:20 beat that. We cannot beat physics. So
+37:22 
+
+37:22 the distance between US and India
+37:25 
+
+37:25 assuming the fastest medium assuming the
+37:28 
+
+37:28 latency is 200 millconds. So the
+37:31 
+
+37:31 replication lag what we call the
+37:33 
+
+37:33 technological term for this is called
+37:35 
+
+37:35 replication lag which is 200
+37:37 
+
+37:37 milliseconds. But this particular
+37:39 
+
+37:39 interaction usually in our client apps
+37:42 
+
+37:42 what happens usually in our form fields
+37:45 
+
+37:45 especially in our form fields we make an
+37:48 
+
+37:48 update to that particular field and we
+37:50 
+
+37:50 click on the save button and the moment
+37:53 
+
+37:53 we click on the save button the request
+37:56 
+
+37:56 goes to our server. Our server does the
+37:58 
+
+37:58 write operation and it sends something
+38:01 
+
+38:01 like a successful response either 20 0
+38:03 
+
+38:03 or 201 if it created a resource. Now the
+38:06 
+
+38:06 moment it receives a successful response
+38:09 
+
+38:09 if we are talking about SP single page
+38:11 
+
+38:11 applications or server rendered pages
+38:14 
+
+38:14 here the client framework it issues a
+38:17 
+
+38:17 get request which means we want to fetch
+38:20 
+
+38:20 the latest form field data for this user
+38:23 
+
+38:23 profile. So the moment we get a
+38:25 
+
+38:25 successful response in that millisecond
+38:27 
+
+38:27 only we fire another get request and
+38:29 
+
+38:29 since this is a read request it goes to
+38:31 
+
+38:31 the read replica and since it has not
+38:34 
+
+38:34 been 200 milliseconds so the replication
+38:36 
+
+38:36 is not complete. This particular read
+38:38 
+
+38:38 replica does not have the updated user
+38:40 
+
+38:40 data the updated user's name which is
+38:42 
+
+38:42 AB. So even though our client said that
+38:46 
+
+38:46 your username has been updated, your
+38:48 
+
+38:48 name has been updated from A to A but in
+38:51 
+
+38:51 the next moment the read replica will
+38:53 
+
+38:53 send an outdated response which is A. So
+38:56 
+
+38:56 that particular user interaction will
+38:59 
+
+38:59 become a very confusing or if it is a
+39:03 
+
+39:03 more sensitive operation something like
+39:06 
+
+39:06 payment related operation or invoice
+39:07 
+
+39:07 related operation it can also cause a
+39:09 
+
+39:09 lot of damage to our application. So
+39:12 
+
+39:12 this problem of consistency is the
+39:15 
+
+39:15 biggest challenge when we are talking
+39:16 
+
+39:16 about read replica based architecture
+39:18 
+
+39:18 for database scaling. Of course over the
+39:21 
+
+39:21 time there has been a lot of proposed
+39:23 
+
+39:23 solutions and a lot of implemented
+39:25 
+
+39:25 solutions to deal with this problem of
+39:28 
+
+39:28 consistency in a read replica based
+39:30 
+
+39:30 architecture. A couple of them are if
+39:33 
+
+39:33 some kind of write operation happens. So
+39:36 
+
+39:36 that will go to our primary database
+39:38 
+
+39:38 instance right and the right operation
+39:40 
+
+39:40 happened on the user profile entity the
+39:44 
+
+39:44 user profile model the user profile
+39:46 
+
+39:46 database table whatever. So one solution
+39:49 
+
+39:49 that we can do is since users table was
+39:52 
+
+39:52 updated for this particular interaction
+39:55 
+
+39:55 whatever read query that comes after
+39:57 
+
+39:57 that particular write query we route it
+40:00 
+
+40:00 to our primary instance instead of
+40:02 
+
+40:02 routing it to our read replicas we route
+40:05 
+
+40:05 it to our primary instance. That is one
+40:08 
+
+40:08 solution that you can implement routing
+40:10 
+
+40:10 requests intelligently. Another thing
+40:13 
+
+40:13 that you can do is you can track this
+40:15 
+
+40:15 replication lag that we talked about
+40:17 
+
+40:17 which is like 200 milliseconds to copy
+40:20 
+
+40:20 updated data from our primary instance
+40:22 
+
+40:22 to our read replicas. That latency is
+40:25 
+
+40:25 called the replication lag. So you can
+40:27 
+
+40:27 keep tracking this replication lag. So
+40:30 
+
+40:30 average something like 200 250
+40:32 
+
+40:32 milliseconds. And while that is
+40:34 
+
+40:34 happening you can block all your read
+40:37 
+
+40:37 queries or you can make all your read
+40:39 
+
+40:39 queries wait until the replication is
+40:41 
+
+40:41 complete and only after the replication
+40:43 
+
+40:43 is complete you send the updated data
+40:45 
+
+40:45 back in the response. So that is another
+40:47 
+
+40:47 solution that you can implement. Apart
+40:49 
+
+40:49 from that you can also architect your
+40:52 
+
+40:52 front end in a way that the updated data
+40:55 
+
+40:55 is not fetched that instant only. there
+40:58 
+
+40:58 is some amount of planned latency there
+41:01 
+
+41:01 after let's say 300 milliseconds you
+41:04 
+
+41:04 fire the next get request. So all these
+41:07 
+
+41:07 different kinds of solutions that we
+41:09 
+
+41:09 need to implement and the kind of
+41:12 
+
+41:12 solution that you will implement depends
+41:14 
+
+41:14 on what kind of tradeoff that you are
+41:16 
+
+41:16 willing to do. Every time you are
+41:18 
+
+41:18 talking about distributed systems the
+41:20 
+
+41:20 one that we talked about here the read
+41:23 
+
+41:23 replica based architecture which is a
+41:25 
+
+41:25 distributed system concept. So every
+41:27 
+
+41:27 time you are talking about a distributed
+41:30 
+
+41:30 systembased solution, you always have to
+41:33 
+
+41:33 make some amount of trade-off and most
+41:35 
+
+41:35 of the time it is about consistency. How
+41:37 
+
+41:37 do you make sure that all of your
+41:40 
+
+41:40 instances have the updated information
+41:43 
+
+41:43 about your server or your users? But
+41:46 
+
+41:46 anyway, all these modern database
+41:49 
+
+41:49 providers like let's RDS, Google Cloud,
+41:52 
+
+41:52 SQL and these manage database providers,
+41:55 
+
+41:55 they make it very easy to implement read
+41:58 
+
+41:58 replicas and to implement read replicas
+42:00 
+
+42:00 in particular regions. It just takes a
+42:03 
+
+42:03 few configuration flags or a couple of
+42:05 
+
+42:05 toggles in UI and your read replicas
+42:07 
+
+42:07 will be ready. And they also have a lot
+42:10 
+
+42:10 of tried and tested robust solutions to
+42:13 
+
+42:13 deal with all these different kind of
+42:15 
+
+42:15 consistency based problems for read
+42:17 
+
+42:17 replicas. You as a backend engineer will
+42:19 
+
+42:19 not have to worry about these deep
+42:21 
+
+42:21 infralevel problems. But it is still
+42:24 
+
+42:24 nice to know that these kinds of
+42:26 
+
+42:26 trade-offs always happen in your
+42:28 
+
+42:28 infrastructure based setups especially
+42:30 
+
+42:30 when you're talking about database
+42:32 
+
+42:32 scaling. Now moving on, another famous
+42:34 
+
+42:34 technique that will keep coming up
+42:37 
+
+42:37 whenever we are talking about database
+42:39 
+
+42:39 scaling is sharding also known as
+42:41 
+
+42:41 partitioning. Okay, sharding basically
+42:44 
+
+42:44 means that let's say you have a orders
+42:47 
+
+42:47 table. you are an e-commerce based
+42:50 
+
+42:50 application something like Amazon,
+42:52 
+
+42:52 Flipkart or whatever and you have a
+42:54 
+
+42:54 database table where you store orders
+42:56 
+
+42:56 information and of course for an
+42:58 
+
+42:58 e-commerce based application you get
+43:01 
+
+43:01 thousands of orders millions of orders
+43:03 
+
+43:03 every day. So your orders table
+43:05 
+
+43:05 eventually becomes billions of rows. And
+43:09 
+
+43:09 whenever you want to fetch some data
+43:12 
+
+43:12 from this orders table, you run
+43:14 
+
+43:14 something like select star from orders
+43:18 
+
+43:18 where user id equals to five. Right? If
+43:22 
+
+43:22 you want to fetch all the orders of a
+43:24 
+
+43:24 particular user, user went to their
+43:26 
+
+43:26 orders page and you want to fetch all
+43:28 
+
+43:28 the orders of that user. So you'll run a
+43:30 
+
+43:30 query like this. But running a
+43:32 
+
+43:32 particular query like this on a table
+43:35 
+
+43:35 which has billions and hundreds of
+43:38 
+
+43:38 billions of rows, it can take a long
+43:40 
+
+43:40 amount of time and even though you have
+43:43 
+
+43:43 index implemented for let's say the user
+43:45 
+
+43:45 ID column, it will still take a lot of
+43:48 
+
+43:48 time because the volume of rows billions
+43:51 
+
+43:51 and hundreds and thousands of billions
+43:53 
+
+43:53 of row that we're talking about if you
+43:55 
+
+43:55 are a very famous e-commerce based
+43:57 
+
+43:57 company. to deal with query latency.
+44:01 
+
+44:01 That is the first problem that we have.
+44:03 
+
+44:03 The second is obviously we are talking
+44:05 
+
+44:05 about database scaling and database
+44:07 
+
+44:07 scaling in the context of scaling so
+44:10 
+
+44:10 that our databases can handle a large
+44:13 
+
+44:13 amount of requests in a short time which
+44:15 
+
+44:15 means more resource which more resource
+44:18 
+
+44:18 means more instances of our database
+44:21 
+
+44:21 right. So scaling instances that is the
+44:24 
+
+44:24 second problem. So sharding solves both
+44:27 
+
+44:27 of these problems. And how does it
+44:29 
+
+44:29 solve? So let's take the orders table.
+44:32 
+
+44:32 And what do we do? We shard this table.
+44:35 
+
+44:35 We partition this table. Which means we
+44:37 
+
+44:37 divide this table. Say this is the whole
+44:40 
+
+44:40 table. And instead of billions, let's
+44:42 
+
+44:42 imagine just to understand this concept.
+44:45 
+
+44:45 It has 10 rows, right? And if you
+44:48 
+
+44:48 imagine one row as a representation of 1
+44:52 
+
+44:52 billion rows. So it has 10 million rows
+44:54 
+
+44:54 but we are talking in the context of 1
+44:56 
+
+44:56 to 10. So it has 10 rows and what we do
+44:60 
+
+44:60 and what we did we divided this into two
+45:03 
+
+45:03 parts. Two parts and this is one
+45:06 
+
+45:06 database instance and 6 to 10. This is
+45:10 
+
+45:10 the second database instance. So we took
+45:12 
+
+45:12 the orders table and we divided the
+45:15 
+
+45:15 table in a way that they are physically
+45:17 
+
+45:17 in two separate database instances.
+45:19 
+
+45:19 Right? And how did we divide it? So
+45:22 
+
+45:22 every time you think about sharding one
+45:24 
+
+45:24 of the very tricky problems is figuring
+45:27 
+
+45:27 out what should be the sharding key
+45:30 
+
+45:30 which means that what should be the
+45:32 
+
+45:32 parameter according to which you can
+45:34 
+
+45:34 divide this table. How do you actually
+45:37 
+
+45:37 decide that this particular data should
+45:40 
+
+45:40 live in this instance and this
+45:42 
+
+45:42 particular amount of data this should
+45:44 
+
+45:44 live in this instance. You have to come
+45:45 
+
+45:45 up with some kind of criteria that we
+45:47 
+
+45:47 will divide according to dash. Now in
+45:50 
+
+45:50 this instance what you can do is in
+45:53 
+
+45:53 first database instance for first
+45:55 
+
+45:55 physical database you will only hold the
+45:59 
+
+45:59 orders of January to June and in the
+46:03 
+
+46:03 second database instance you will hold
+46:05 
+
+46:05 the orders from June to December. Right
+46:08 
+
+46:08 now this order date has become your
+46:10 
+
+46:10 starting key. Now what is the benefit?
+46:12 
+
+46:12 You have two database instance, two
+46:14 
+
+46:14 physical database instance which has the
+46:16 
+
+46:16 clear benefit that two database instance
+46:19 
+
+46:19 can serve more amount of requests per
+46:21 
+
+46:21 second. Right? If this is our internet,
+46:24 
+
+46:24 this is our server instances. Then since
+46:27 
+
+46:27 we have two databases now, they can
+46:29 
+
+46:29 handle more amount of requests. So that
+46:31 
+
+46:31 solves second problem. Now the first
+46:33 
+
+46:33 problem which was query latency since
+46:36 
+
+46:36 instead of dealing with 10 rows instead
+46:38 
+
+46:38 of dealing with 10 billion rows this
+46:40 
+
+46:40 particular database instance only has to
+46:42 
+
+46:42 now deal with 5 billion rows or five
+46:45 
+
+46:45 rows. So query latency also in turn
+46:47 
+
+46:47 becomes less because the amount of rows
+46:50 
+
+46:50 become less. Now of course this was a
+46:52 
+
+46:52 very simple example to show the concept
+46:55 
+
+46:55 but depending on your volume you can
+46:57 
+
+46:57 also shard this by month also. For
+46:60 
+
+46:60 January, you can keep one instance. For
+47:03 
+
+47:03 February, you can keep another shard.
+47:05 
+
+47:05 For March, you can keep another shard.
+47:06 
+
+47:06 Right? So, in your back end or in some
+47:10 
+
+47:10 place in the your in your routing layer,
+47:12 
+
+47:12 in your backend in your database routing
+47:14 
+
+47:14 layer, you can decide and here before
+47:17 
+
+47:17 making the request, you decide at this
+47:19 
+
+47:19 point that which particular shard holds
+47:22 
+
+47:22 this data and you send the request to
+47:24 
+
+47:24 that particular shard and it sends the
+47:27 
+
+47:27 response back and you return it back to
+47:29 
+
+47:29 the user. So that's pretty much what
+47:31 
+
+47:31 sharding is which is basically means
+47:33 
+
+47:33 dividing your data into multiple
+47:35 
+
+47:35 physical database instances instead of
+47:37 
+
+47:37 keeping all the data in one table you
+47:40 
+
+47:40 divide the table physically right so
+47:43 
+
+47:43 those are two important concepts that
+47:44 
+
+47:44 you will keep hearing replication and
+47:46 
+
+47:46 sharding read replicas and database
+47:49 
+
+47:49 shards of course there are a lot of
+47:50 
+
+47:50 technical complexities behind the scenes
+47:52 
+
+47:52 of how to interact with them how to
+47:54 
+
+47:54 create the charts but now we are just
+47:56 
+
+47:56 focusing on the concepts the things that
+47:58 
+
+47:58 you should know about but to actually
+48:01 
+
+48:01 learn them how to implement them how to
+48:04 
+
+48:04 understand them in a deep technical way
+48:06 
+
+48:06 you can do your own reading now moving
+48:08 
+
+48:08 on talking about current times which is
+48:11 
+
+48:11 current time in the sense right now it's
+48:13 
+
+48:13 2025 December the current trend when it
+48:16 
+
+48:16 comes to scaling databases are
+48:19 
+
+48:19 distributed databases right some of the
+48:22 
+
+48:22 famous examples are planet scale which
+48:25 
+
+48:25 uses pus behind the scenes which is
+48:28 
+
+48:28 primarily MISQL
+48:30 
+
+48:30 based database. We also have neon when
+48:32 
+
+48:32 we are talking about posgress. Neon is
+48:35 
+
+48:35 purely written in rust and it is
+48:38 
+
+48:38 considered as a serverless database.
+48:40 
+
+48:40 Similarly, we also have cockroach DB. We
+48:44 
+
+48:44 also have Yugabyte, right? A lot of
+48:46 
+
+48:46 distributed databases which handle all
+48:49 
+
+48:49 these problems. the problem of sharding,
+48:51 
+
+48:51 the problem of replication, the problem
+48:53 
+
+48:53 of distributed transactions and
+48:56 
+
+48:56 everything all the complexities that
+48:59 
+
+48:59 arise when we talk about database
+49:01 
+
+49:01 scaling they automatically handle that.
+49:03 
+
+49:03 So talking in a realistic scenario if
+49:06 
+
+49:06 you are a backend engineer you just go
+49:08 
+
+49:08 ahead whatever database provider that
+49:10 
+
+49:10 you want to use with whether it is RDS
+49:12 
+
+49:12 or whether it is neon planet scale
+49:15 
+
+49:15 whatever database that you want to use
+49:16 
+
+49:16 obviously it is never recommended
+49:18 
+
+49:18 especially when you're starting out
+49:20 
+
+49:20 especially if you don't have very deep
+49:22 
+
+49:22 expertise in databases and database
+49:24 
+
+49:24 administration or database scaling then
+49:26 
+
+49:26 you should not roll out your own
+49:28 
+
+49:28 database infrastructure because as we
+49:30 
+
+49:30 have already talked about the
+49:32 
+
+49:32 replication sharding and the database
+49:35 
+
+49:35 backup is another problem. How do you
+49:37 
+
+49:37 keep your users data safe and in
+49:39 
+
+49:39 multiple places? So there are a lot of
+49:41 
+
+49:41 complexities when it comes to databases
+49:43 
+
+49:43 and obviously it is not recommended that
+49:45 
+
+49:45 you roll out your own database
+49:46 
+
+49:46 infrastructure even though the fact that
+49:49 
+
+49:49 you know all these concepts is good and
+49:51 
+
+49:51 it is advised but should not roll out
+49:54 
+
+49:54 your own database infrastructure unless
+49:56 
+
+49:56 you know what you're doing exactly. So
+49:59 
+
+49:59 realistically you will just choose
+50:01 
+
+50:01 whatever database provider that you want
+50:03 
+
+50:03 to go with depending on their features
+50:04 
+
+50:04 depending on the pricing depending on
+50:07 
+
+50:07 your team's preference AWS neon plan
+50:10 
+
+50:10 whatever and you'll just sign up create
+50:13 
+
+50:13 a database and you'll get a URL of the
+50:16 
+
+50:16 database username password whatever
+50:18 
+
+50:18 credentials the database has you just
+50:20 
+
+50:20 plug it in in your database in your back
+50:23 
+
+50:23 end and you'll start interacting with it
+50:25 
+
+50:25 right you do not have to think about
+50:27 
+
+50:27 replication you do not have to think
+50:28 
+
+50:28 about sharding and anything. But you
+50:30 
+
+50:30 have to know this concept so that you
+50:32 
+
+50:32 can go into your database console, your
+50:35 
+
+50:35 database provider console and you can
+50:37 
+
+50:37 configure things. You can configure that
+50:40 
+
+50:40 how frequently you want to take database
+50:41 
+
+50:41 backups in what regions of the world
+50:44 
+
+50:44 that you want to keep read replicas and
+50:47 
+
+50:47 how do you want to plan your sharding.
+50:49 
+
+50:49 The actual activity of replication, the
+50:52 
+
+50:52 actual activity of sharding, the actual
+50:53 
+
+50:53 activity of distributing your replicas
+50:56 
+
+50:56 that you don't have to do. But you still
+50:58 
+
+50:58 have to understand what all these terms
+51:01 
+
+51:01 mean, what all these concepts, what all
+51:03 
+
+51:03 these techniques do so that you can
+51:05 
+
+51:05 express how do you want to configure
+51:07 
+
+51:07 your database. That's why it was
+51:09 
+
+51:09 important that we talked about database
+51:11 
+
+51:11 scaling. Even though in a realistic
+51:13 
+
+51:13 scenario, you will not actually have to
+51:14 
+
+51:14 do any of this as long as you understand
+51:17 
+
+51:17 what all these terms mean. So far we
+51:19 
+
+51:19 have discussed caching within your data
+51:23 
+
+51:23 centers. But there is another layer of
+51:26 
+
+51:26 caching that we have not discussed yet
+51:29 
+
+51:29 and that layer operates on the global
+51:31 
+
+51:31 level. We think about geography when we
+51:34 
+
+51:34 think about this layer of caching and we
+51:37 
+
+51:37 call that cydians content delivery
+51:41 
+
+51:41 networks. And to understand why CDNs
+51:45 
+
+51:45 matter, I actually have a video about
+51:49 
+
+51:49 CDNs in depth, which is of course in a
+51:51 
+
+51:51 different context. I was talking about
+51:54 
+
+51:54 how serverless platforms like Versel
+51:57 
+
+51:57 work. But if you want to learn more
+52:00 
+
+52:00 about Cydians, if you want to understand
+52:02 
+
+52:02 cydians in a much more technically
+52:05 
+
+52:05 deeper way, then please watch that
+52:07 
+
+52:07 video. We'll also talk about cydians in
+52:10 
+
+52:10 this video but not in that much depth
+52:12 
+
+52:12 since that video was completely about
+52:14 
+
+52:14 cydians. Okay. To understand why cydians
+52:17 
+
+52:17 matter, why do we need cydians in the
+52:19 
+
+52:19 first place, you have to understand one
+52:22 
+
+52:22 fundamental constraint or one limitation
+52:26 
+
+52:26 of our world or physics per se which is
+52:30 
+
+52:30 the speed of light. Now light travels at
+52:34 
+
+52:34 around 200,000
+52:39 
+
+52:39 kilometer per second through fiber optic
+52:42 
+
+52:42 cables. We are not talking about lights
+52:44 
+
+52:44 speed in space but in fiber optic cables
+52:48 
+
+52:48 which are at the end of the day the
+52:50 
+
+52:50 speed of our internet. We cannot cross
+52:53 
+
+52:53 this speed ever because whatever data
+52:57 
+
+52:57 that is transmitted from one country to
+52:59 
+
+52:59 another from one part of the world to
+53:01 
+
+53:01 another end of the day it is all going
+53:03 
+
+53:03 through under sea cables and that
+53:06 
+
+53:06 happens at this speed. This is our cap
+53:09 
+
+53:09 200,000 km/s.
+53:11 
+
+53:11 So if a request is going from Tokyo to a
+53:16 
+
+53:16 server which is in Virginia or North
+53:19 
+
+53:19 Virginia is the region US East one where
+53:22 
+
+53:22 you'll find most of our commercial
+53:25 
+
+53:25 applications most of your famous servers
+53:28 
+
+53:28 are hosted in they have instances there
+53:31 
+
+53:31 is US east one which is north Virginia
+53:33 
+
+53:33 for this request to make a round trip
+53:35 
+
+53:35 roundrip in the sense to send a request
+53:37 
+
+53:37 from the browser and getting the
+53:39 
+
+53:39 response back from the server. to make
+53:41 
+
+53:41 this whole round trip which is roughly
+53:44 
+
+53:44 around 20,000
+53:46 
+
+53:46 km and at the speed of light in optical
+53:50 
+
+53:50 fiber cables that's roughly around 100
+53:52 
+
+53:52 milliseconds and this is our cap this is
+53:56 
+
+53:56 our physics cap which means no amount of
+53:59 
+
+53:59 optimization no amount of technology at
+54:02 
+
+54:02 least the kind of technology that we
+54:04 
+
+54:04 have access to these days it cannot beat
+54:06 
+
+54:06 this for making a roundtrip the minimum
+54:08 
+
+54:08 amount of latency that the user is going
+54:11 
+
+54:11 to face for a request response sound
+54:13 
+
+54:13 trip is going to be 100 millconds for a
+54:16 
+
+54:16 user based in Tokyo. And 100
+54:18 
+
+54:18 milliseconds honestly does not sound
+54:20 
+
+54:20 much but this we are talking about only
+54:24 
+
+54:24 the round trip of sending the request
+54:26 
+
+54:26 and getting the response back. There is
+54:28 
+
+54:28 still stuff happening after getting the
+54:30 
+
+54:30 request. The first thing obviously is
+54:33 
+
+54:33 the routing layer and the routing layer
+54:35 
+
+54:35 is pretty fast if you think about it.
+54:38 
+
+54:38 Mostly it's a regular expression based
+54:39 
+
+54:39 routing depending on which resource the
+54:42 
+
+54:42 user has sent a request to and depending
+54:45 
+
+54:45 on that the respective handler picks it
+54:47 
+
+54:47 up but after the handler whichever
+54:50 
+
+54:50 function that is supposed to deal with
+54:51 
+
+54:51 this particular request picks it up the
+54:53 
+
+54:53 first step that happens is a des
+54:55 
+
+54:55 serialization process which means taking
+54:57 
+
+54:57 the HTTP message and deserializing it
+55:01 
+
+55:01 into the data structure of that pro
+55:03 
+
+55:03 programming language. If it is something
+55:05 
+
+55:05 like NodeJS, it'll become a JavaScript
+55:07 
+
+55:07 object from the JSON. And same for if
+55:11 
+
+55:11 it's a go programming based back end, it
+55:14 
+
+55:14 will become a strct etc. Right? And
+55:16 
+
+55:16 usually this des serialization process
+55:18 
+
+55:18 of JSON takes some time depending on how
+55:21 
+
+55:21 large the payload is, right? And that is
+55:23 
+
+55:23 still not the largest cause of latency.
+55:26 
+
+55:26 That is just the entry point. After
+55:28 
+
+55:28 that, we have our service layer. We run
+55:32 
+
+55:32 any some amount of business logic and
+55:34 
+
+55:34 that typically involves dealing with our
+55:37 
+
+55:37 database and databases again depending
+55:40 
+
+55:40 on what is the distance between your
+55:43 
+
+55:43 server and your database and assuming
+55:45 
+
+55:45 the best case scenario. So server and
+55:47 
+
+55:47 database are in the same region in the
+55:50 
+
+55:50 same data center or similar kind of
+55:52 
+
+55:52 setup. Still for a midlevel to complex
+55:55 
+
+55:55 query it might take somewhere around 50
+55:58 
+
+55:58 milliseconds to 100 milliseconds. On top
+56:01 
+
+56:01 of that if there are any external API
+56:03 
+
+56:03 calls for that particular API then again
+56:06 
+
+56:06 that might cause another 200
+56:08 
+
+56:08 milliseconds. If you combine all that
+56:10 
+
+56:10 that 100 milliseconds which is the
+56:12 
+
+56:12 minimum amount of latency that a user
+56:14 
+
+56:14 from Tokyo was about to face that
+56:17 
+
+56:17 quickly becomes somewhere close to 500
+56:19 
+
+56:19 to 800 millconds right so even if you
+56:22 
+
+56:22 forget about all this which we already
+56:25 
+
+56:25 discussed what kind of optimization that
+56:27 
+
+56:27 we can do on database level what kind of
+56:29 
+
+56:29 automation that we can do on the caching
+56:32 
+
+56:32 level using things like inmemory caches
+56:33 
+
+56:33 like radius etc etc the last cause of
+56:36 
+
+56:36 latency it all still boils boils down to
+56:38 
+
+56:38 the physical distance between your user
+56:40 
+
+56:40 and your server the geographical gap and
+56:44 
+
+56:44 this is exactly the problem that CDNs
+56:47 
+
+56:47 are supposed to solve. So what we do
+56:49 
+
+56:49 instead of the requests that originated
+56:51 
+
+56:51 from Tokyo instead of going to US
+56:54 
+
+56:54 instead of going to the US server what
+56:56 
+
+56:56 it does we place the CDN edge locations
+57:00 
+
+57:00 or also called as pops points of
+57:03 
+
+57:03 presence in the same region let's say in
+57:05 
+
+57:05 Tokyo. So instead of traveling all the
+57:07 
+
+57:07 way to 20,000 km for the whole round
+57:11 
+
+57:11 trip, this will come down to something
+57:14 
+
+57:14 like 100 to 200 km and the latency will
+57:18 
+
+57:18 come down from 100 millconds to
+57:20 
+
+57:20 something like 2 to 3 millconds. That is
+57:23 
+
+57:23 a huge performance win. Even though from
+57:25 
+
+57:25 human perceived time 100 millconds in 2
+57:28 
+
+57:28 3 mconds does not make a lot of
+57:30 
+
+57:30 difference but since we are talking
+57:31 
+
+57:31 about scaling and performance this is a
+57:34 
+
+57:34 huge difference coming from 100 to 2
+57:36 
+
+57:36 millconds. So that is one advantage of
+57:38 
+
+57:38 CDNs. We take a particular piece of
+57:41 
+
+57:41 content and we cache it at CDN and we
+57:44 
+
+57:44 place that particular server that
+57:46 
+
+57:46 particular node which is going to serve
+57:48 
+
+57:48 the content which is going to send the
+57:49 
+
+57:49 content back to the user close to the
+57:51 
+
+57:51 users. Right? So one obvious win of
+57:54 
+
+57:54 using CDNs is the latency latency.
+57:56 
+
+57:56 Second is the load and since we are
+57:59 
+
+57:59 placing all these CDN nodes these points
+58:01 
+
+58:01 of presence closer to users one node in
+58:04 
+
+58:04 Tokyo one node in let's say Mumbai
+58:08 
+
+58:08 another in Singapore and depending on
+58:10 
+
+58:10 where the user's request is coming from
+58:12 
+
+58:12 that particular CDN node is going to
+58:14 
+
+58:14 send the content. Of course, there is
+58:16 
+
+58:16 another layer of logic where we decide
+58:19 
+
+58:19 what particular piece of content are we
+58:22 
+
+58:22 going to cache in CDN. That is a
+58:24 
+
+58:24 different discussion which you can find
+58:25 
+
+58:25 in the CDN video. But assuming that we
+58:28 
+
+58:28 have already done that, we have already
+58:30 
+
+58:30 place this particular piece of content
+58:32 
+
+58:32 in CDN. Then the user just requests for
+58:35 
+
+58:35 that content and the CDN sends it back.
+58:38 
+
+58:38 And because of that our primary server
+58:40 
+
+58:40 which is in US let's say it does not get
+58:43 
+
+58:43 as much amount of traffic. So the
+58:46 
+
+58:46 traffic gets distributed across all the
+58:49 
+
+58:49 CDN nodes and it gets 50% less amount of
+58:52 
+
+58:52 traffic roughly speaking. So that is
+58:54 
+
+58:54 another win of using CDN. Your primary
+58:57 
+
+58:57 server is not going to use a lot of
+58:60 
+
+58:60 resources. you don't have to worry about
+59:02 
+
+59:02 horizontal scaling as frequently if
+59:04 
+
+59:04 you're using CDNs and if you are
+59:05 
+
+59:05 prioritizing caching your content across
+59:08 
+
+59:08 CDN nodes. So the obvious next question
+59:11 
+
+59:11 is what can you put in your CDN content
+59:14 
+
+59:14 and what kind of content that we usually
+59:16 
+
+59:16 put in our CDNs and one obvious starting
+59:19 
+
+59:19 point is static content. What do you
+59:21 
+
+59:21 mean by static content? things like our
+59:23 
+
+59:23 JavaScript bundles or CSS bundles, HTML
+59:26 
+
+59:26 files and images and videos, fonts,
+59:30 
+
+59:30 right? These kinds of contents, they
+59:32 
+
+59:32 don't change as often. Usually when we
+59:35 
+
+59:35 deploy our front-end application, that
+59:37 
+
+59:37 becomes a bundle of JavaScript, CSS, and
+59:40 
+
+59:40 HTML. Assuming that it is a SPA, single
+59:42 
+
+59:42 page application, something like React.
+59:44 
+
+59:44 We take that bundle and we cache it
+59:47 
+
+59:47 across CDN nodes. So when a user
+59:50 
+
+59:50 requests for our front-end application
+59:52 
+
+59:52 instead of going to the primary server
+59:54 
+
+59:54 where uh it gets the request it sends a
+59:57 
+
+59:57 request to something like an S3 bucket
+59:59 
+
+59:59 and serves it back that particular
+60:02 
+
+60:02 request will go to the CDN and since the
+60:04 
+
+60:04 CDN is closer to the users that response
+60:07 
+
+60:07 will be faster. So that is the idea
+60:08 
+
+60:08 since static content does not change as
+60:11 
+
+60:11 often caching it in CDN make a lot of
+60:13 
+
+60:13 sense and this is typically how we
+60:16 
+
+60:16 deploy our SPS single page applications
+60:18 
+
+60:18 or static site application like blogs it
+60:20 
+
+60:20 etc and also the images fonts etc. These
+60:24 
+
+60:24 are also called static content and a
+60:26 
+
+60:26 very good candidates for caching in
+60:28 
+
+60:28 CDNs. But apart from that, we can also
+60:31 
+
+60:31 cache a few API responses. For example,
+60:34 
+
+60:34 if you have an e-commerce page and you
+60:37 
+
+60:37 have a product catalog and you know that
+60:40 
+
+60:40 this catalog is not going to change
+60:43 
+
+60:43 anytime soon or as often or as
+60:45 
+
+60:45 frequently. Of course when we are using
+60:47 
+
+60:47 CDN there are also techniques for
+60:50 
+
+60:50 invalidating the cache or in CDN
+60:52 
+
+60:52 terminology purging the cache we have
+60:54 
+
+60:54 used cloudflare CDN which is one of the
+60:57 
+
+60:57 largest CDN providers they have a lot of
+60:59 
+
+60:59 mechanisms using you can provide tags to
+61:02 
+
+61:02 your CDN content and depending on a
+61:05 
+
+61:05 particular condition let's say some data
+61:07 
+
+61:07 change or a user uploaded a new blog
+61:10 
+
+61:10 then you can take a tag let's say a tag
+61:13 
+
+61:13 which had the user ID and all the blogs
+61:15 
+
+61:15 of that user. You can take that tag and
+61:18 
+
+61:18 you can say that let's purge all the
+61:19 
+
+61:19 cache which means delete all the cached
+61:22 
+
+61:22 content of this particular user all the
+61:24 
+
+61:24 blocks of this user and fetch new data
+61:27 
+
+61:27 from our primary server and cach it
+61:29 
+
+61:29 again in the CDN. So depending on all
+61:32 
+
+61:32 these conditions you can of course
+61:33 
+
+61:33 decide when do you remove stuff from
+61:36 
+
+61:36 your CDN cache and when do you load new
+61:38 
+
+61:38 data. So those conditions are there you
+61:40 
+
+61:40 don't have to worry about serving old
+61:42 
+
+61:42 content etc etc. That's a different
+61:44 
+
+61:44 strategy of how to manage CDN content.
+61:46 
+
+61:46 So API responses are also cached
+61:49 
+
+61:49 depending on our use cases. A third use
+61:52 
+
+61:52 case of CDNs especially the cloud flares
+61:56 
+
+61:56 USB when they are selling their CDN is
+61:58 
+
+61:58 the security perspective. One of the
+62:00 
+
+62:00 famous modern-day attacks are DOS
+62:03 
+
+62:03 attacks, which means that an attacker
+62:06 
+
+62:06 has control over a lot of computers,
+62:09 
+
+62:09 over the internet, a lot of bots using
+62:12 
+
+62:12 some kind of malware. And the attacker
+62:15 
+
+62:15 uses all these bots spread across the
+62:17 
+
+62:17 whole world. Let's say it has control
+62:19 
+
+62:19 over around 20,000 bots using some kind
+62:22 
+
+62:22 of malware. So what it does if it wants
+62:24 
+
+62:24 to target your server, it will write
+62:27 
+
+62:27 some kind of script. So that let's say
+62:29 
+
+62:29 this is your server and computers nodes
+62:32 
+
+62:32 from all over the world will start
+62:34 
+
+62:34 sending traffic to your server and since
+62:37 
+
+62:37 our servers have a particular limit on
+62:40 
+
+62:40 the amount of resources eventually those
+62:43 
+
+62:43 limits will be crossed and either our
+62:46 
+
+62:46 server is going to crash if there are
+62:48 
+
+62:48 some hard limits or if we have
+62:50 
+
+62:50 configured horizontal scaling all the
+62:52 
+
+62:52 advanced scaling techniques then what
+62:55 
+
+62:55 our servers will do it will keep
+62:57 
+
+62:57 spinning up new instances to deal with
+62:58 
+
+62:58 all that traffic and in turn will incur
+63:01 
+
+63:01 a heavy amount of charge. So you will
+63:04 
+
+63:04 like $50,000 for one day because all
+63:07 
+
+63:07 these new instances were spun up and it
+63:10 
+
+63:10 catered to a large amount of traffic. So
+63:12 
+
+63:12 you will either face damage in the sense
+63:16 
+
+63:16 your server will crash or financial
+63:18 
+
+63:18 damage. So DOS is still very relevant.
+63:21 
+
+63:21 You every other day you read in the news
+63:23 
+
+63:23 that this particular server was attacked
+63:25 
+
+63:25 with the DOS etc. So Cloudflare CDN one
+63:27 
+
+63:27 of its offerings is you have your server
+63:30 
+
+63:30 and you place the Cloudflare CDN in
+63:33 
+
+63:33 front of your servers. So all the
+63:36 
+
+63:36 traffic goes through Cloudflare and then
+63:38 
+
+63:38 it goes to your server. If there is some
+63:40 
+
+63:40 cache content it returns from this point
+63:42 
+
+63:42 otherwise it sends to your server. And
+63:44 
+
+63:44 this cloudfare CDN layer it also works
+63:47 
+
+63:47 as a security layer in the sense if in a
+63:50 
+
+63:50 very short time span it gets a lot of
+63:52 
+
+63:52 traffic they have a very advanced
+63:54 
+
+63:54 methodologies to detect these kinds of
+63:57 
+
+63:57 attacks because they've been working on
+63:58 
+
+63:58 this for years. So the moment they
+64:01 
+
+64:01 detect this attack there are certain
+64:03 
+
+64:03 number of steps that they trigger things
+64:05 
+
+64:05 like asking all your users to captures
+64:08 
+
+64:08 right all the suspicious users etc etc
+64:11 
+
+64:11 and on top of that all this traffic it
+64:14 
+
+64:14 cannot really do any damage to your
+64:16 
+
+64:16 servers because there is another
+64:17 
+
+64:17 additional layer in front of your
+64:19 
+
+64:19 servers and since Cloudflare CDN is one
+64:22 
+
+64:22 of the largest CDN providers in the
+64:24 
+
+64:24 whole world all this traffic gets
+64:25 
+
+64:25 distributed across their nodes so no
+64:28 
+
+64:28 serious damage can be done even though
+64:31 
+
+64:31 the traffic is in terabytes terabytes or
+64:34 
+
+64:34 pabytes of data because Cloudflare's CDN
+64:37 
+
+64:37 network is so large. So that is the
+64:40 
+
+64:40 third advantage of using CDN. Another
+64:42 
+
+64:42 interesting thing that keeps coming up
+64:45 
+
+64:45 while we are talking about CDN is edge
+64:48 
+
+64:48 computing. Now traditionally the word
+64:50 
+
+64:50 edge used to mean that so we have our
+64:52 
+
+64:52 CDNs we have our users in Tokyo, India,
+64:57 
+
+64:57 Singapore and we have our CDN nodes for
+65:00 
+
+65:00 all these regions and these nodes are
+65:03 
+
+65:03 usually called edge nodes because they
+65:05 
+
+65:05 are at the edge of the network right
+65:07 
+
+65:07 because we interact with our internet
+65:09 
+
+65:09 service providers ISPs and usually CDNs
+65:13 
+
+65:13 are strategically placed in
+65:15 
+
+65:15 collaboration with our ISPs so that when
+65:17 
+
+65:17 a user request triggers at the edge of
+65:19 
+
+65:19 the network. At the first point of
+65:21 
+
+65:21 interaction of the network, we place our
+65:24 
+
+65:24 CDN nodes and that is the reason the CDN
+65:26 
+
+65:26 responses are very fast. They are
+65:27 
+
+65:27 strategically placed at the edge of the
+65:29 
+
+65:29 network, the first point of the network.
+65:32 
+
+65:32 That was the initial use case of this
+65:34 
+
+65:34 word in the context of CDNs, the edge
+65:36 
+
+65:36 nodes. Now in the modern times, a
+65:39 
+
+65:39 different term, a similar sounding term
+65:41 
+
+65:41 which causes a lot of confusion is edge
+65:43 
+
+65:43 computing. Now edge computing is also in
+65:46 
+
+65:46 the context of CDNs. But when we say
+65:48 
+
+65:48 edge computing what it means?
+65:50 
+
+65:50 Traditionally CDNs have always been used
+65:53 
+
+65:53 as a layer for sending static contents
+65:56 
+
+65:56 like JavaScript or images or videos etc.
+66:01 
+
+66:01 All the static content. So a user from
+66:03 
+
+66:03 Tokyo they request a particular video or
+66:07 
+
+66:07 they request a front-end application
+66:09 
+
+66:09 with bundle of JavaScript CS and HTML.
+66:12 
+
+66:12 Your CDN gets that request and
+66:14 
+
+66:14 immediately finds the file, sends it
+66:16 
+
+66:16 back. There is no processing layer
+66:18 
+
+66:18 happening here. There is no complex
+66:20 
+
+66:20 processing happening here. You request
+66:22 
+
+66:22 the exact file, the name of the file and
+66:24 
+
+66:24 the CDN sends it back. It does not think
+66:26 
+
+66:26 about it at all. Now what edge computing
+66:29 
+
+66:29 means, you send a request and there is
+66:31 
+
+66:31 some additional processing happening
+66:33 
+
+66:33 here. Then it sends whatever response
+66:35 
+
+66:35 that you're expecting. Now this
+66:37 
+
+66:37 processing that happens at the CDN layer
+66:40 
+
+66:40 at the edge node layer is called edge
+66:43 
+
+66:43 computing and since our traditional
+66:45 
+
+66:45 servers they are placed in primary data
+66:48 
+
+66:48 centers like US east and all the big
+66:51 
+
+66:51 regions that we have available in or GCP
+66:54 
+
+66:54 these edge nodes or CDN nodes the number
+66:56 
+
+66:56 of CDN nodes are and always will be
+66:59 
+
+66:59 greater than the number of primary data
+67:01 
+
+67:01 centers because primary data centers
+67:03 
+
+67:03 they require a lot of resources they
+67:05 
+
+67:05 require a lot of geographic
+67:07 
+
+67:07 strategy and a lot of investment both
+67:09 
+
+67:09 financially and operationally. But since
+67:12 
+
+67:12 CDN nodes are placed and created in
+67:15 
+
+67:15 collaboration with your ISPs, so ISPs
+67:17 
+
+67:17 are primary infrastructure for placing
+67:19 
+
+67:19 your CDNs. Even though there are these
+67:21 
+
+67:21 big players like Cloudflare and Aless
+67:23 
+
+67:23 they have their own CDN infrastructure
+67:26 
+
+67:26 in collaboration with ISP but
+67:28 
+
+67:28 traditionally speaking CDNs have always
+67:30 
+
+67:30 been an infrastructure primarily based
+67:32 
+
+67:32 on ISP's infrastructure your internet
+67:35 
+
+67:35 service providers and since there are
+67:37 
+
+67:37 more number of these CDN edge nodes and
+67:39 
+
+67:39 they are very close to users you send a
+67:41 
+
+67:41 request to this edge node the processing
+67:43 
+
+67:43 happens very quickly even though the
+67:45 
+
+67:45 processing itself might take the same
+67:48 
+
+67:48 amount of time that our primary data
+67:50 
+
+67:50 center or primary service would take.
+67:52 
+
+67:52 But since the request and response
+67:54 
+
+67:54 roundtrip latency is less, it feels like
+67:56 
+
+67:56 our edge computing whatever edge
+67:58 
+
+67:58 computing level responses are faster
+68:00 
+
+68:00 than our traditional server based
+68:02 
+
+68:02 responses and for good reasons. One
+68:05 
+
+68:05 solid example of one of the most used
+68:07 
+
+68:07 use cases of edge computing is
+68:09 
+
+68:09 authentication. So again take the same
+68:11 
+
+68:11 example of an us user in Tokyo and our
+68:14 
+
+68:14 primary data center in US and for
+68:17 
+
+68:17 authentication if we are going stateful
+68:19 
+
+68:19 authentication we send whatever session
+68:21 
+
+68:21 information that we have using cookies
+68:23 
+
+68:23 etc. So the user sends a cookie to the
+68:25 
+
+68:25 server. The server checks using the
+68:27 
+
+68:27 session ID from the cookie. It checks
+68:28 
+
+68:28 from database or radius whether the
+68:30 
+
+68:30 cookie is valid or not. The session is
+68:32 
+
+68:32 valid or not. And if it is valid, it the
+68:34 
+
+68:34 request passes through and if it is not
+68:36 
+
+68:36 valid then it sends an error response
+68:38 
+
+68:38 something like 401 which is
+68:40 
+
+68:40 unauthorized. But the whole round trip
+68:43 
+
+68:43 spend around 100 milliseconds just to
+68:45 
+
+68:45 get an error response that you are not
+68:47 
+
+68:47 authorized to make this request which
+68:49 
+
+68:49 seems like a lot of waste of your
+68:52 
+
+68:52 bandwidth and your service resources
+68:54 
+
+68:54 just to send a rejection. So for this
+68:57 
+
+68:57 use case what alternatives have come up
+68:60 
+
+68:60 is instead of sending this
+69:02 
+
+69:02 authentication based request directly to
+69:04 
+
+69:04 your primary server you send it to your
+69:06 
+
+69:06 edge node. So this is your edge node
+69:09 
+
+69:09 whatever CDN node which is capable of
+69:11 
+
+69:11 doing some kind of processing. So you
+69:13 
+
+69:13 send it and it checks the same amount of
+69:15 
+
+69:15 logic that you would have done in your
+69:17 
+
+69:17 server layer you do it at the edge
+69:19 
+
+69:19 layer. You check the session information
+69:20 
+
+69:20 you check the session ID if it is not
+69:22 
+
+69:22 valid instantly send 401. Now instead of
+69:24 
+
+69:24 getting a 401 response after 100
+69:27 
+
+69:27 millconds, you get it in 2 to 3
+69:28 
+
+69:28 millconds and your server was not
+69:31 
+
+69:31 disturbed with a lot of unauthorized
+69:33 
+
+69:33 based requests and only if this user is
+69:36 
+
+69:36 authorized then we let the request pass
+69:39 
+
+69:39 to our server. So the server only deals
+69:41 
+
+69:41 with legit requests which in turn
+69:44 
+
+69:44 reduces a lot of traffic unnecessary
+69:46 
+
+69:46 traffic. So that is a very good and
+69:48 
+
+69:48 famous use cases of using edge
+69:50 
+
+69:50 computing. They can also do a lot of
+69:52 
+
+69:52 other things. For example, let's say
+69:54 
+
+69:54 they get a request and depending on user
+69:56 
+
+69:56 location since the edge nodes they are
+69:58 
+
+69:58 very close to the users they know which
+70:00 
+
+70:00 region they are serving. So the request
+70:02 
+
+70:02 coming from Tokyo they can check the
+70:04 
+
+70:04 headers and if the request says that the
+70:06 
+
+70:06 user's browser language is something
+70:08 
+
+70:08 like Japanese. So instead of sending the
+70:10 
+
+70:10 content let's say it's a blog instead of
+70:12 
+
+70:12 sending it in English or instead of
+70:14 
+
+70:14 doing the localization based
+70:16 
+
+70:16 configuration of your website in English
+70:18 
+
+70:18 they can directly send a response. This
+70:20 
+
+70:20 is a Japanese version of your website
+70:22 
+
+70:22 and all of this happens very fast. So
+70:24 
+
+70:24 all this users location based
+70:27 
+
+70:27 configuration customization and user
+70:29 
+
+70:29 preferences. This is also a solid use
+70:31 
+
+70:31 case for using edge computing. But one
+70:34 
+
+70:34 question that you might have is if edge
+70:36 
+
+70:36 computing is so fast and so useful then
+70:38 
+
+70:38 why not use everything? Why not use edge
+70:42 
+
+70:42 computing for everything? And the reason
+70:43 
+
+70:43 for that is constraints. What kind of
+70:46 
+
+70:46 constraints that we are talking about?
+70:47 
+
+70:47 As I've already said, edge computing or
+70:50 
+
+70:50 CDN nodes have always been an
+70:52 
+
+70:52 infrastructure of our ISPs. So you can
+70:55 
+
+70:55 imagine a request from a user from
+70:57 
+
+70:57 Tokyo, it goes through and the first
+70:60 
+
+70:60 point of contact is going to be the ISP,
+71:03 
+
+71:03 the company which provides you with
+71:05 
+
+71:05 internet. So let's say if you're from
+71:07 
+
+71:07 India, so a company like Etel or a
+71:10 
+
+71:10 company like ACT or whatever ISP that
+71:12 
+
+71:12 you're using that gets your request and
+71:14 
+
+71:14 they have a number of routing layers,
+71:16 
+
+71:16 hobs as you can call it. It goes from
+71:18 
+
+71:18 one point then another point and then
+71:20 
+
+71:20 another point then eventually it crosses
+71:22 
+
+71:22 the undersea cables and goes to another
+71:25 
+
+71:25 country then they have another ISP there
+71:28 
+
+71:28 and eventually it reaches your server.
+71:30 
+
+71:30 Right? So all these routing happens
+71:32 
+
+71:32 throughout the way. So traditionally
+71:34 
+
+71:34 CDNs are usually let's say an ISP has an
+71:37 
+
+71:37 infrastructure here to route the
+71:39 
+
+71:39 internet request. So at this particular
+71:41 
+
+71:41 infrastructure they'll have some
+71:43 
+
+71:43 collaboration with a company like
+71:45 
+
+71:45 Cloudflare and they will provide a CDN
+71:47 
+
+71:47 level functionality here but their
+71:50 
+
+71:50 primary responsibility has always been
+71:52 
+
+71:52 routing the internet requests. CDN is
+71:54 
+
+71:54 just something they do in collaboration
+71:56 
+
+71:56 with all these providers like Cloudfare
+71:58 
+
+71:58 and AWS. So the kind of infrastructure
+72:00 
+
+72:00 they provide it is not very robust which
+72:03 
+
+72:03 means that they have limited amount of
+72:04 
+
+72:04 RAM. So instead of having like 8 GB of
+72:06 
+
+72:06 RAM or 16 GB of RAM they'll have
+72:08 
+
+72:08 something like 1 GB of or one core CPU.
+72:10 
+
+72:10 Right? So the resource constraints are a
+72:13 
+
+72:13 big problem when we are talking about
+72:15 
+
+72:15 edge computing. That is one point. The
+72:17 
+
+72:17 second point is the whole idea of edge
+72:20 
+
+72:20 computing has always been very low
+72:21 
+
+72:21 latency based computing. So one primary
+72:25 
+
+72:25 example of edge computing is Cloudflare
+72:28 
+
+72:28 workers right one of the most famous
+72:30 
+
+72:30 edge computing based infrastructure that
+72:32 
+
+72:32 we have available today and Cloudflare
+72:35 
+
+72:35 workers they use V8 isolates a
+72:38 
+
+72:38 JavaScript runtime from Chrome and they
+72:41 
+
+72:41 use this V8 based runtime to process
+72:44 
+
+72:44 your request to do any kind of
+72:46 
+
+72:46 computations and this edge computing
+72:48 
+
+72:48 environment comes with a lot of
+72:50 
+
+72:50 constraints like it cannot interact with
+72:51 
+
+72:51 your file system it cannot do things
+72:54 
+
+72:54 like TCP protocols etc etc. So all these
+72:57 
+
+72:57 resource constraint all these runtime
+72:59 
+
+72:59 processing constraints are the reason
+73:01 
+
+73:01 that we cannot offload everything to CDN
+73:04 
+
+73:04 nodes our primary servers are robust
+73:07 
+
+73:07 data center infrastructure they have to
+73:09 
+
+73:09 be there but we can offload some amount
+73:12 
+
+73:12 of logic strategic logic which makes
+73:14 
+
+73:14 sense to be placed at the CDN level at
+73:17 
+
+73:17 the edge computing level so that the
+73:20 
+
+73:20 edge nodes and our primary servers can
+73:22 
+
+73:22 work together to provide a very seamless
+73:24 
+
+73:24 experience to our users. Things that we
+73:27 
+
+73:27 already discussed like authentication or
+73:29 
+
+73:29 user customization or validation or
+73:32 
+
+73:32 routing which server the request should
+73:35 
+
+73:35 go to etc. All these things they are
+73:36 
+
+73:36 very good at but they cannot completely
+73:38 
+
+73:38 replace our primary servers as of now.
+73:41 
+
+73:41 Moving on to our next topic which is
+73:44 
+
+73:44 asynchronous processing. Whenever we
+73:46 
+
+73:46 talk about reducing the latency of our
+73:49 
+
+73:49 backend application, at least reducing
+73:50 
+
+73:50 the perceived latency, the kind of
+73:52 
+
+73:52 latency that the user faces while
+73:54 
+
+73:54 interacting with our application on the
+73:57 
+
+73:57 front end side, then asynchronous
+73:58 
+
+73:58 processing is typically one of the
+74:01 
+
+74:01 solutions that we opt for and it is not
+74:03 
+
+74:03 something that we implement at the later
+74:06 
+
+74:06 stage. For example, horizontal scaling
+74:08 
+
+74:08 is something that we go for at a
+74:11 
+
+74:11 particular threshold. Let's say we have
+74:14 
+
+74:14 crossed 10,000 users, 50,000 users. When
+74:16 
+
+74:16 vertical scaling does not make any
+74:18 
+
+74:18 sense, we go for horizontal scaling. But
+74:20 
+
+74:20 asynchronous processing is one of those
+74:22 
+
+74:22 solutions that we typically opt for at
+74:24 
+
+74:24 the start of our application only
+74:25 
+
+74:25 because of the very obvious benefits
+74:27 
+
+74:27 that it has that we are going to talk
+74:29 
+
+74:29 about. What do we mean by asynchronous
+74:31 
+
+74:31 processing? Typically what happens, we
+74:33 
+
+74:33 have our users, they interact with our
+74:36 
+
+74:36 server using a browser. So for a normal
+74:39 
+
+74:39 API call, a normal HTTP API call, they
+74:42 
+
+74:42 send a request. We do some amount of
+74:44 
+
+74:44 processing and we send a response back.
+74:46 
+
+74:46 For example, let's say the user is on
+74:49 
+
+74:49 their profile page. They updated the
+74:52 
+
+74:52 name from A to B. We take that, we call
+74:55 
+
+74:55 a DB query by interacting with the
+74:58 
+
+74:58 database. We run update update user set
+75:01 
+
+75:01 name equals to B returning user do ID
+75:05 
+
+75:05 whatever. and that database operation is
+75:07 
+
+75:07 successful and only after that database
+75:09 
+
+75:09 operation is successful, we send a
+75:11 
+
+75:11 response back. We cannot tell the user
+75:14 
+
+75:14 that okay your username has been updated
+75:17 
+
+75:17 before the database response is
+75:19 
+
+75:19 successful. Right? It has to be only
+75:21 
+
+75:21 after the database operation is
+75:24 
+
+75:24 successful. We can tell the user that
+75:25 
+
+75:25 okay this is a 20 response. This is a
+75:29 
+
+75:29 successful response which means that
+75:30 
+
+75:30 when the user does a refresh when they
+75:33 
+
+75:33 hit a refresh page or if you have
+75:36 
+
+75:36 automatic reloading of the user profile
+75:38 
+
+75:38 page they immediately see this change
+75:40 
+
+75:40 their name getting changed from A to B.
+75:42 
+
+75:42 So this is a typical experience that we
+75:45 
+
+75:45 have in most of our operations. But
+75:47 
+
+75:47 there are some kind of operations which
+75:50 
+
+75:50 do not have to be synchronous in the
+75:52 
+
+75:52 sense synchronous behavior. I'm not
+75:54 
+
+75:54 talking about synchronous processing but
+75:56 
+
+75:56 synchronous behavior. The users do not
+75:58 
+
+75:58 have to see the change immediately after
+75:60 
+
+75:60 the response. So for them what we do so
+76:02 
+
+76:02 let's take an example in most of our SAS
+76:05 
+
+76:05 applications there is a functionality
+76:07 
+
+76:07 that you have your workspace or you have
+76:11 
+
+76:11 your team if you have used a software
+76:13 
+
+76:13 like Jira or notion or pretty much all
+76:16 
+
+76:16 the SAS applications these days offer
+76:19 
+
+76:19 this functionality of having your own
+76:21 
+
+76:21 workspace and team and you can add more
+76:23 
+
+76:23 members of your team to your workspace
+76:26 
+
+76:26 so that you can all work together work
+76:28 
+
+76:28 have access to the same kind of
+76:29 
+
+76:29 resources So usually in our front end
+76:32 
+
+76:32 there is some kind of UI where you go
+76:34 
+
+76:34 and you type the email. Say you want to
+76:37 
+
+76:37 invite one atgmail.com
+76:41 
+
+76:41 and you hit enter. Okay, invite or
+76:43 
+
+76:43 whatever the button is to submit this
+76:46 
+
+76:46 request and to invite this user. So the
+76:48 
+
+76:48 first thing that happens is obviously
+76:50 
+
+76:50 the browser JavaScript converts it into
+76:53 
+
+76:53 an STP API call and you get this in your
+76:56 
+
+76:56 server. All right. Now in your server
+76:59 
+
+76:59 the first layer is routing layer. Then
+77:00 
+
+77:00 your handler gets it and it gets the
+77:03 
+
+77:03 request body and in turn it finds out
+77:05 
+
+77:05 the email that you want to invite user
+77:07 
+
+77:07 one atgmail.com. So what would this
+77:11 
+
+77:11 processing look like? There are the
+77:14 
+
+77:14 obvious layers of validating this
+77:16 
+
+77:16 particular request authenticating that
+77:17 
+
+77:17 the that user but we'll ignore all that.
+77:20 
+
+77:20 Purely focusing on the service layer on
+77:22 
+
+77:22 the pure business layer and the database
+77:24 
+
+77:24 layer. This is how it would look like.
+77:25 
+
+77:25 First using our database we will check
+77:27 
+
+77:27 whether this particular user is already
+77:30 
+
+77:30 part of this team or not just as a
+77:32 
+
+77:32 database level validation layer and once
+77:34 
+
+77:34 it passes that the next thing we do we
+77:37 
+
+77:37 save this database entry in a table in a
+77:40 
+
+77:40 table something like invites table or
+77:43 
+
+77:43 team members table or organization users
+77:47 
+
+77:47 table depending on how you are
+77:48 
+
+77:48 structuring your database in some kind
+77:50 
+
+77:50 of table you will add this data this is
+77:53 
+
+77:53 the particular email that the user has
+77:55 
+
+77:55 invited to and the status of that. There
+77:57 
+
+77:57 will be other fields and these are the
+77:59 
+
+77:59 primary ones. The status is it is
+78:01 
+
+78:01 pending by default. It'll be in pending
+78:03 
+
+78:03 state. The user has not accepted the
+78:05 
+
+78:05 invite yet. Then accepted then rejected
+78:08 
+
+78:08 whatever logic that you have. Okay. Once
+78:10 
+
+78:10 that is done, the next phase typically
+78:14 
+
+78:14 involves sending an email to this
+78:16 
+
+78:16 particular user email user 1@gmail.com
+78:19 
+
+78:19 because that's how they'll get the
+78:20 
+
+78:20 invite and that's how they'll be able to
+78:21 
+
+78:21 come to the platform and accept the
+78:23 
+
+78:23 invite. But for that we have to send an
+78:24 
+
+78:24 email. So now from your backend server
+78:27 
+
+78:27 all this processing is very fast because
+78:29 
+
+78:29 you are doing whatever processing that
+78:31 
+
+78:31 you have and you are interacting with
+78:32 
+
+78:32 your database which is like assuming
+78:34 
+
+78:34 closer to your server when talking about
+78:36 
+
+78:36 the data center region. So this
+78:38 
+
+78:38 typically consists let's say somewhere
+78:40 
+
+78:40 around 50 to 80 millconds or max to max
+78:43 
+
+78:43 100 millconds. Now after doing all this
+78:45 
+
+78:45 we have to send an email. Now to send an
+78:47 
+
+78:47 email we have to usually send an make an
+78:50 
+
+78:50 API call to an external email provider
+78:52 
+
+78:52 something like Mailchimp or send grid or
+78:55 
+
+78:55 resend whatever email provider that
+78:57 
+
+78:57 you're using they all pretty much do the
+78:59 
+
+78:59 same thing they take the email they take
+79:00 
+
+79:00 either a template ID or a readym made
+79:02 
+
+79:02 HTML template and you make an API call
+79:05 
+
+79:05 and they send a successful response back
+79:07 
+
+79:07 but this typically since we do not have
+79:10 
+
+79:10 any control or we do not have any idea
+79:12 
+
+79:12 about where this particular mail server
+79:14 
+
+79:14 is and how their infrastructure consists
+79:16 
+
+79:16 stop. We can assume that this external
+79:18 
+
+79:18 API call usually takes somewhere around
+79:20 
+
+79:20 200 to 300 millconds. Now our own
+79:23 
+
+79:23 processing was around 100. Then we on
+79:26 
+
+79:26 top of that added another 300 millconds
+79:28 
+
+79:28 for this external API call. And after we
+79:31 
+
+79:31 got the response from this external
+79:33 
+
+79:33 email provider that okay this email
+79:35 
+
+79:35 request has been processed then we send
+79:38 
+
+79:38 a response back to the user. So the user
+79:40 
+
+79:40 enters the email, clicks on the enter
+79:42 
+
+79:42 button, then they see the loader for 400
+79:46 
+
+79:46 milliseconds, then they see a tick mark
+79:48 
+
+79:48 or a toast message. Okay, this you have
+79:50 
+
+79:50 successfully invited this user and we
+79:52 
+
+79:52 refresh the invited users list in the
+79:54 
+
+79:54 and they can see that this user has not
+79:56 
+
+79:56 accepted the invite and it's in a
+79:57 
+
+79:57 pending state all that but this whole
+79:59 
+
+79:59 interaction took 400 millconds but if
+80:02 
+
+80:02 you think about it after doing our own
+80:04 
+
+80:04 processing after adding this particular
+80:06 
+
+80:06 entry in our database which was around
+80:07 
+
+80:07 100 millconds what we can do instead of
+80:11 
+
+80:11 making the API call making the HTTP call
+80:14 
+
+80:14 to our email provider to send the email
+80:16 
+
+80:16 after doing our own processing we can
+80:18 
+
+80:18 send a response responds back. It's a
+80:19 
+
+80:19 200 response and the user will see a
+80:22 
+
+80:22 tick mark that okay this user has been
+80:23 
+
+80:23 successfully invited and they will see
+80:25 
+
+80:25 in their UI that okay this is in pending
+80:27 
+
+80:27 state all that but now this whole user
+80:30 
+
+80:30 interaction has come down from 400
+80:31 
+
+80:31 millconds to 100 millconds which is a
+80:33 
+
+80:33 very snappy experience even though 400
+80:36 
+
+80:36 is itself not that slow but you can
+80:38 
+
+80:38 assume there are other API calls maybe
+80:40 
+
+80:40 the email provider is down whatever
+80:43 
+
+80:43 reason is that but our goal was to
+80:45 
+
+80:45 reduce the perceived latency of the user
+80:48 
+
+80:48 the user who is interacting with our
+80:50 
+
+80:50 system and that has come down
+80:51 
+
+80:51 significantly on a server level. How we
+80:54 
+
+80:54 handle it before we send a successful
+80:56 
+
+80:56 response back. Usually how we implement
+80:59 
+
+80:59 asynchronous processing is we take that
+81:01 
+
+81:01 request of sending the email. So we call
+81:04 
+
+81:04 that is some kind of task or some kind
+81:06 
+
+81:06 of job. So if you have watched the
+81:09 
+
+81:09 background job processing video then you
+81:11 
+
+81:11 would understand what I'm talking about
+81:13 
+
+81:13 since and obviously that video came
+81:15 
+
+81:15 before this. So I'm assuming that you
+81:17 
+
+81:17 already have the knowledge about message
+81:18 
+
+81:18 cues and background job cues. So
+81:20 
+
+81:20 typically we take the task of sending
+81:23 
+
+81:23 the email or the job of sending the
+81:25 
+
+81:25 email and we push it into queue. Now
+81:27 
+
+81:27 this Q can be something like radius Q or
+81:30 
+
+81:30 Rabbit MQ these are the most popular
+81:33 
+
+81:33 options also other ones like Kafka event
+81:35 
+
+81:35 based processing etc etc lot of options
+81:37 
+
+81:37 but usually Reddis Q or Rabbit MQ based
+81:40 
+
+81:40 Q library will do the job. So our server
+81:42 
+
+81:42 as a producer we call it because it is
+81:46 
+
+81:46 producing the task or it is producing
+81:48 
+
+81:48 the job any kind of job. Now it pushes
+81:51 
+
+81:51 task into a queue. This is a radius Q or
+81:54 
+
+81:54 rabbit MQ based cube and there is
+81:57 
+
+81:57 another phase of this Q which is a
+81:59 
+
+81:59 consumer. Consumers or we also call them
+82:03 
+
+82:03 workers. Now there is a distinction
+82:06 
+
+82:06 here. this consumer or this worker. It
+82:09 
+
+82:09 can either be in the same code that is
+82:12 
+
+82:12 running your server which means it just
+82:14 
+
+82:14 spins up a new worker based on the same
+82:17 
+
+82:17 code or it can be a different code base
+82:20 
+
+82:20 itself so that when you have a lot of
+82:22 
+
+82:22 traffic you can also horizontally scale
+82:24 
+
+82:24 your workers. That is another
+82:26 
+
+82:26 infrastructure choice usually people
+82:28 
+
+82:28 make when they're scaling their infra.
+82:30 
+
+82:30 So this workers these consumer they pick
+82:34 
+
+82:34 this task out of the queue when they
+82:36 
+
+82:36 detect one and they perform the job or
+82:39 
+
+82:39 they perform the task whatever handle
+82:40 
+
+82:40 logic that we have we take the email we
+82:43 
+
+82:43 make the API call to send grid resend
+82:45 
+
+82:45 whatever email provider that we have and
+82:47 
+
+82:47 that's done but for our users they do
+82:50 
+
+82:50 not need to know all that because
+82:52 
+
+82:52 sending an email or inviting a user into
+82:55 
+
+82:55 the platform this is not a kind of
+82:57 
+
+82:57 operation that the user needs to see the
+83:00 
+
+83:00 result of instantly because anyway the
+83:02 
+
+83:02 user will get an email they will
+83:04 
+
+83:04 eventually come to the platform and
+83:05 
+
+83:05 they'll accept the invite or reject the
+83:07 
+
+83:07 invite. So this is not a synchronous
+83:09 
+
+83:09 behavior-based operation or synchronous
+83:11 
+
+83:11 computing synchronous behavior based
+83:13 
+
+83:13 operation. So this is a very good
+83:14 
+
+83:14 example and it is one of the most famous
+83:16 
+
+83:16 examples of when we opt for asynchronous
+83:19 
+
+83:19 processing in our backends sending
+83:21 
+
+83:21 emails sending notifications also users
+83:23 
+
+83:23 don't expect the moment they perform
+83:26 
+
+83:26 some task in the next millisecond that
+83:28 
+
+83:28 notification should be there. They don't
+83:29 
+
+83:29 expect that. That is a standard user
+83:31 
+
+83:31 experience. Same way another good
+83:33 
+
+83:33 example is video processing. So let's
+83:35 
+
+83:35 say you have a video processing
+83:37 
+
+83:37 platform. Let's talk about YouTube. So
+83:40 
+
+83:40 when you upload a video to YouTube, so
+83:43 
+
+83:43 YouTube usually has this kind of
+83:45 
+
+83:45 interaction where you pick the file and
+83:47 
+
+83:47 you click upload and the upload starts.
+83:50 
+
+83:50 And while that upload is happening, you
+83:52 
+
+83:52 have to keep that tab open for obvious
+83:54 
+
+83:54 reasons because it is reading bytes from
+83:56 
+
+83:56 your local file system and it is
+83:58 
+
+83:58 uploading YouTube servers. But after the
+84:01 
+
+84:01 upload is finished, after the upload is
+84:02 
+
+84:02 finished, you don't have to keep the tab
+84:04 
+
+84:04 open. You can close the tab or whatever.
+84:06 
+
+84:06 In the background, what YouTube does
+84:08 
+
+84:08 after the upload is done, it pushes a
+84:11 
+
+84:11 number of tasks into the queue. Whatever
+84:13 
+
+84:13 Q logic they have, the most likely a
+84:15 
+
+84:15 very robust Qbased logic. But typically
+84:17 
+
+84:17 imagining after the upload job is
+84:19 
+
+84:19 complete, it pushes a number of tasks.
+84:21 
+
+84:21 The tasks like generate thumbnails and
+84:24 
+
+84:24 encode the video into HD or generate
+84:27 
+
+84:27 subtitles. All these tasks maybe
+84:30 
+
+84:30 parallelly, maybe in sequence, whatever
+84:32 
+
+84:32 logic that they have. But the point is
+84:34 
+
+84:34 all these tasks are done asynchronously.
+84:37 
+
+84:37 You as a user do not have to wait or you
+84:40 
+
+84:40 do not expect to see all this in a
+84:43 
+
+84:43 particular time frame. Sometimes all
+84:45 
+
+84:45 these tasks happen let's say in 10
+84:47 
+
+84:47 minutes. Sometime it might take 20
+84:49 
+
+84:49 minutes depending on the server load of
+84:51 
+
+84:51 YouTube etc. But the point is all these
+84:54 
+
+84:54 are asynchronous processes that we as
+84:56 
+
+84:56 users expect that these will take time.
+84:59 
+
+84:59 So there is a category of tasks or there
+85:02 
+
+85:02 is a category of operations that are out
+85:04 
+
+85:04 there where you can safely offload them
+85:08 
+
+85:08 to an asynchronous process. um video
+85:11 
+
+85:11 uploads and image uploads, image
+85:13 
+
+85:13 resizing and we already talked about
+85:16 
+
+85:16 sending emails. Another thing that you
+85:19 
+
+85:19 might have noticed is in some SAS
+85:21 
+
+85:21 platforms there is an option to delete
+85:23 
+
+85:23 account. Delete account and what does it
+85:25 
+
+85:25 mean by delete account? you are using a
+85:28 
+
+85:28 particular SAS for let's say 1 month or
+85:30 
+
+85:30 2 months or 3 months and after 3 months
+85:32 
+
+85:32 that you decided that for some reason
+85:34 
+
+85:34 for some fault on their side or maybe
+85:36 
+
+85:36 you do not need it anymore for some
+85:38 
+
+85:38 reason you want to delete your account
+85:39 
+
+85:39 and never come back or maybe you want to
+85:41 
+
+85:41 come back after a year with a different
+85:43 
+
+85:43 account but the point is you want to
+85:45 
+
+85:45 delete your account and deleting account
+85:48 
+
+85:48 usually means that deleting all your
+85:50 
+
+85:50 data in that platform which means that
+85:52 
+
+85:52 let's say it is a to-do based
+85:54 
+
+85:54 application so if If you delete your
+85:57 
+
+85:57 account, it means that deleting all your
+85:59 
+
+85:59 to-dos obviously the first thing. Then
+86:01 
+
+86:01 all your categories of to-dos. Then your
+86:04 
+
+86:04 profile, whatever profile information
+86:05 
+
+86:05 that you have used, your profile
+86:07 
+
+86:07 picture, your bio etc. all your calendar
+86:10 
+
+86:10 schedules. Basically, we have a lot of
+86:13 
+
+86:13 database tables and in a lot of tables
+86:15 
+
+86:15 we have data related to a particular
+86:17 
+
+86:17 user. So imagine you are the backend
+86:20 
+
+86:20 engineer of this application, this to-do
+86:22 
+
+86:22 based application and a user clicks on
+86:25 
+
+86:25 delete account. So what do you do in a
+86:27 
+
+86:27 very naive approach? The browser makes
+86:29 
+
+86:29 the request of delete account. It's a
+86:31 
+
+86:31 delete HTTP API call. And what you do
+86:34 
+
+86:34 you run a number of database queries in
+86:37 
+
+86:37 transaction because either you want to
+86:39 
+
+86:39 delete all of them or you don't want to
+86:41 
+
+86:41 delete in it will be classified as a
+86:43 
+
+86:43 database transaction. So first what you
+86:45 
+
+86:45 do you delete all the categories of the
+86:47 
+
+86:47 user that they have created. Then you
+86:49 
+
+86:49 delete all the calendar schedules. Then
+86:50 
+
+86:50 you delete the all the to-dos of the
+86:52 
+
+86:52 user. Then you delete the user's profile
+86:54 
+
+86:54 data. And at last you delete the entry
+86:57 
+
+86:57 from the users table which comes last
+86:59 
+
+86:59 because all these have foreign keys
+87:01 
+
+87:01 associated with this table. And finally
+87:03 
+
+87:03 after running delete queries in let's
+87:06 
+
+87:06 say seven or eight database tables you
+87:09 
+
+87:09 send a response back something like 200
+87:11 
+
+87:11 and the user is logged out from the
+87:13 
+
+87:13 browser. But assume that this is a big
+87:15 
+
+87:15 platform or the user has let's say a
+87:19 
+
+87:19 million tasks created because they've
+87:21 
+
+87:21 been using for last 10 years and they
+87:23 
+
+87:23 have a million tasks created and same
+87:25 
+
+87:25 for other tables also. Each table has a
+87:27 
+
+87:27 million rows that you have to delete. So
+87:29 
+
+87:29 obviously running a delete operation
+87:31 
+
+87:31 finding out all the data of the user
+87:33 
+
+87:33 then deleting them takes time. So each
+87:36 
+
+87:36 database table deletion takes somewhere
+87:39 
+
+87:39 around 5 milliseconds let's say. So if
+87:42 
+
+87:42 you deleted data from eight tables, it
+87:44 
+
+87:44 took around 4 seconds and adding some
+87:47 
+
+87:47 business logic related processing and
+87:49 
+
+87:49 the request latency etc. The total
+87:52 
+
+87:52 roundtrip time of this request response
+87:55 
+
+87:55 life cycle was around 8 seconds. So the
+87:58 
+
+87:58 user after clicking on delete account
+87:60 
+
+87:60 they saw the spinner for 8 seconds. So 8
+88:03 
+
+88:03 seconds is obviously a very bad user
+88:06 
+
+88:06 experience no matter what the operation
+88:07 
+
+88:07 is unless you have clearly specified in
+88:10 
+
+88:10 the dialogue that please do not close
+88:12 
+
+88:12 the tab or do not please wait for at
+88:14 
+
+88:14 least 10 seconds or 20 seconds which
+88:16 
+
+88:16 again is not something that you can
+88:18 
+
+88:18 expect from your users. So in that case
+88:20 
+
+88:20 also instead of doing everything
+88:23 
+
+88:23 synchronously the user makes a request
+88:25 
+
+88:25 to delete their account your server does
+88:28 
+
+88:28 some very basic processing that checks
+88:29 
+
+88:29 whether this user exists or not they're
+88:31 
+
+88:31 authenticated or not which takes
+88:33 
+
+88:33 somewhere around 50 to 80 millconds and
+88:35 
+
+88:35 after that the server immediately sends
+88:38 
+
+88:38 a response back saying that your account
+88:40 
+
+88:40 is deleted and the browser sees the
+88:42 
+
+88:42 successful response and logs the user
+88:44 
+
+88:44 out. Okay. Now the user only had to see
+88:46 
+
+88:46 the spinner for let's say for a moment
+88:49 
+
+88:49 only 100 millconds and they've been
+88:51 
+
+88:51 logged out. But in the background what
+88:52 
+
+88:52 you do after doing all your sanity
+88:54 
+
+88:54 checks checking the user exists or not
+88:56 
+
+88:56 or whatever you again push a task is
+88:60 
+
+88:60 called delete user with the ID of the
+89:01 
+
+89:01 user or whatever into the queue and
+89:03 
+
+89:03 later on the consumer can pick up the
+89:06 
+
+89:06 task and that can in turn run all these
+89:09 
+
+89:09 database queries one by one and it does
+89:11 
+
+89:11 not matter whether it takes 5 seconds or
+89:12 
+
+89:12 10 second or 30 seconds because your
+89:15 
+
+89:15 user is not waiting for that response
+89:17 
+
+89:17 and it all is happening in the
+89:19 
+
+89:19 background after the user has been send
+89:21 
+
+89:21 a response. So this is typically what we
+89:24 
+
+89:24 mean by asynchronous processing. One of
+89:26 
+
+89:26 the very very easy solutions when you
+89:30 
+
+89:30 are trying to scale your application or
+89:32 
+
+89:32 when you're trying to reduce the latency
+89:34 
+
+89:34 of application a very easy solution you
+89:37 
+
+89:37 just create a radius instance mostly a
+89:39 
+
+89:39 managed radius something like radius
+89:41 
+
+89:41 instance or opt stash which is a very
+89:43 
+
+89:43 good radius instance or we have these
+89:45 
+
+89:45 libraries if you're using a nodejs bull
+89:48 
+
+89:48 mq bull mq is a very famous background
+89:51 
+
+89:51 job based library and it uses radius
+89:54 
+
+89:54 behind the scenes radius pops up But it
+89:56 
+
+89:56 manages a lot of things like error
+89:58 
+
+89:58 handling, rate limiting and all the
+90:00 
+
+90:00 things that you expect from a production
+90:02 
+
+90:02 grade robust queue. So you can use
+90:04 
+
+90:04 something like this and you can easily
+90:06 
+
+90:06 implement a background job a Q- based
+90:09 
+
+90:09 solution for your asynchronous based
+90:11 
+
+90:11 task. Of course the first thing is to
+90:13 
+
+90:13 identify which kind of task which task
+90:16 
+
+90:16 exactly can you offload to your queue.
+90:18 
+
+90:18 So as I already said things like sending
+90:21 
+
+90:21 emails, sending notifications, deleting
+90:23 
+
+90:23 user data, video uploads, image uploads,
+90:26 
+
+90:26 all these tasks where the user does not
+90:28 
+
+90:28 expect to see the response immediately,
+90:31 
+
+90:31 you can offload to a queue and that in
+90:33 
+
+90:33 turn significantly improves your
+90:35 
+
+90:35 perceived latency. A very easy solution
+90:37 
+
+90:37 and a very recommended solution while
+90:39 
+
+90:39 you are trying to increase the
+90:40 
+
+90:40 performance of your application and
+90:42 
+
+90:42 reduce the latency. Now moving on to
+90:45 
+
+90:45 another important question which is
+90:48 
+
+90:48 micro services. Very fancy term and a
+90:51 
+
+90:51 very trendy term. If you are a backend
+90:54 
+
+90:54 engineer even a front-end engineer also
+90:56 
+
+90:56 at some point you will keep hearing this
+90:58 
+
+90:58 term called microservices because
+91:00 
+
+91:00 apparently every company these days goes
+91:02 
+
+91:02 for this microser architecture. Whenever
+91:05 
+
+91:05 you ask around about how to scale your
+91:08 
+
+91:08 application, how to scale your back end
+91:09 
+
+91:09 application, someone is going to suggest
+91:11 
+
+91:11 you eventually that you should divide
+91:14 
+
+91:14 your application into multiple
+91:15 
+
+91:15 independent services or also called as
+91:18 
+
+91:18 microservices. That is the only way to
+91:20 
+
+91:20 scale your application or maybe you'll
+91:23 
+
+91:23 join a company one day which already
+91:25 
+
+91:25 uses this micros service-based
+91:27 
+
+91:27 architecture. So understanding this what
+91:30 
+
+91:30 are microservices and when do we use
+91:32 
+
+91:32 them is important. Of course, dealing
+91:34 
+
+91:34 with microservices or implementing
+91:36 
+
+91:36 microservices is a very different topic
+91:38 
+
+91:38 in itself and it involves a lot of
+91:41 
+
+91:41 technologies and a lot of methodologies.
+91:43 
+
+91:43 We'll not get into that but we'll talk
+91:45 
+
+91:45 briefly about microservices and what
+91:48 
+
+91:48 role they play in scaling your wagon. So
+91:51 
+
+91:51 let's start with what we currently have
+91:53 
+
+91:53 right now which we call is monoliths.
+91:57 
+
+91:57 What is a monolith? A monolith is an
+91:60 
+
+91:60 application and whenever I say
+92:02 
+
+92:02 application I mean a backend application
+92:03 
+
+92:03 because that's what we are talking about
+92:05 
+
+92:05 currently. So a monolith is an
+92:08 
+
+92:08 application which is considered as a
+92:10 
+
+92:10 single deployable unit. So all
+92:13 
+
+92:13 functionality does not matter whether it
+92:15 
+
+92:15 is authentication functionality or your
+92:18 
+
+92:18 order processing, your notifications,
+92:21 
+
+92:21 your payments, your web hooks, all these
+92:24 
+
+92:24 functionalities are just different
+92:26 
+
+92:26 different files in your codebase and all
+92:29 
+
+92:29 of them live in the same codebase. They
+92:31 
+
+92:31 interact with each other and they
+92:33 
+
+92:33 function together. And you can take all
+92:35 
+
+92:35 of this every time you make a change.
+92:37 
+
+92:37 You take all of this and you deploy your
+92:39 
+
+92:39 an application which serves your users,
+92:41 
+
+92:41 right? One single deployable unit which
+92:43 
+
+92:43 runs as a single process or if you're
+92:46 
+
+92:46 horizontally scaling multiple process
+92:48 
+
+92:48 but one process consists of all these
+92:51 
+
+92:51 things together. They are just different
+92:53 
+
+92:53 modules in a same service or in a same
+92:55 
+
+92:55 application. And monoliths are pretty
+92:58 
+
+92:58 intuitive and pretty easy to manage
+93:01 
+
+93:01 because they are very simple to develop.
+93:03 
+
+93:03 They are very simple to test and they
+93:05 
+
+93:05 are very simple to deploy. All your code
+93:07 
+
+93:07 lives in one place in your one codebase,
+93:10 
+
+93:10 one GitHub repository. Whenever you
+93:11 
+
+93:11 refactor, you make a change in one
+93:14 
+
+93:14 module and you go to the other module,
+93:16 
+
+93:16 make the change and you take all that
+93:18 
+
+93:18 and you deploy that. So refactoring is
+93:20 
+
+93:20 also very straightforward. Testing is
+93:22 
+
+93:22 also very straightforward because
+93:24 
+
+93:24 everything runs in one process and
+93:26 
+
+93:26 deployment is obviously simple from the
+93:28 
+
+93:28 start. Now the question is why would you
+93:30 
+
+93:30 consider anything else? Why would you
+93:32 
+
+93:32 even think about microservices? You can
+93:34 
+
+93:34 just take a monolith and you can
+93:36 
+
+93:36 horizontally scale it whenever you want
+93:38 
+
+93:38 to scale your application. You always
+93:40 
+
+93:40 have the option of horizontally scaling
+93:42 
+
+93:42 your monolith application. So why do you
+93:45 
+
+93:45 need microser? Now microservices
+93:48 
+
+93:48 primarily they are not necessarily to
+93:51 
+
+93:51 scale your performance of your
+93:53 
+
+93:53 application but microservices are more
+93:56 
+
+93:56 about scaling your team. It's more about
+93:58 
+
+93:58 scaling your human interaction. It's not
+94:01 
+
+94:01 really about scaling your machine's
+94:03 
+
+94:03 performance. It's about scaling your
+94:05 
+
+94:05 team's performance. The humans behind
+94:07 
+
+94:07 the machine because monoliths have a
+94:10 
+
+94:10 couple of problems. If you are working
+94:12 
+
+94:12 in a large team that is that is the
+94:14 
+
+94:14 number one prerequisite of having a
+94:16 
+
+94:16 micros service based architecture if you
+94:18 
+
+94:18 don't have a large team and when I say
+94:21 
+
+94:21 large it can be subjective but we are
+94:23 
+
+94:23 talking about more than 100 or 200
+94:26 
+
+94:26 developers working on the same
+94:27 
+
+94:27 application that's the point when you
+94:29 
+
+94:29 start considering a micros service
+94:31 
+
+94:31 architecture so what are the problems of
+94:34 
+
+94:34 monoliths one obvious one is the
+94:36 
+
+94:36 deployment dependency and what do you
+94:38 
+
+94:38 mean by that let's say we have different
+94:40 
+
+94:40 different modules in our application. We
+94:42 
+
+94:42 have our payment module. We have our
+94:44 
+
+94:44 order processing. It's an e-commerce
+94:46 
+
+94:46 based application that you can imagine.
+94:47 
+
+94:47 We have our notification based module
+94:49 
+
+94:49 and the people the engineers who are
+94:52 
+
+94:52 working on the payments module they
+94:55 
+
+94:55 implemented some critical change or some
+94:57 
+
+94:57 important user experience which change
+94:59 
+
+94:59 and they want to deploy that so that
+95:01 
+
+95:01 users can start using that. But while
+95:04 
+
+95:04 they do that there are some changes from
+95:07 
+
+95:07 our notification team in our main
+95:08 
+
+95:08 branch. Typically the branch that we
+95:10 
+
+95:10 deploy in production they have some
+95:12 
+
+95:12 change in the main branch which is not
+95:14 
+
+95:14 ready yet it's not broken but it is not
+95:17 
+
+95:17 ready for sending to our users. Now of
+95:20 
+
+95:20 course you can say that there are
+95:21 
+
+95:21 solutions like feature flags. There are
+95:22 
+
+95:22 solution like planning your life cycle
+95:25 
+
+95:25 in a way that you only keep the ready to
+95:28 
+
+95:28 deploy things in your main branch. But
+95:30 
+
+95:30 in a very abstract way in a very
+95:32 
+
+95:32 oversimplified way you can imagine like
+95:34 
+
+95:34 you have some changes in one module but
+95:37 
+
+95:37 since it is a monolith application and
+95:38 
+
+95:38 since you have to deploy everything as a
+95:40 
+
+95:40 single module sometimes you will face
+95:42 
+
+95:42 difficulties. Again as I said these
+95:45 
+
+95:45 problems you cannot relate unless you
+95:47 
+
+95:47 work in a very large team and the
+95:49 
+
+95:49 communication between different teams
+95:51 
+
+95:51 it's not as close because typically when
+95:54 
+
+95:54 we work in a startups 10 15 or 30
+95:58 
+
+95:58 developers pretty much everybody knows
+95:60 
+
+95:60 what everybody is working on. The team
+96:02 
+
+96:02 works in a very closely coupled way. So
+96:04 
+
+96:04 we are able to plan our things our git
+96:07 
+
+96:07 life cycle our feature flag and
+96:09 
+
+96:09 everything in a way that this particular
+96:11 
+
+96:11 problem does not happen. If something is
+96:13 
+
+96:13 on main branch then we can go ahead and
+96:15 
+
+96:15 deploy it. But if it is a very lasting
+96:16 
+
+96:16 500 developers or thousand developers
+96:19 
+
+96:19 you will start seeing this problem that
+96:21 
+
+96:21 when rapid development is happening in
+96:23 
+
+96:23 one module and another module is not
+96:25 
+
+96:25 ready yet this problem will start
+96:27 
+
+96:27 happening. So that is one the
+96:28 
+
+96:28 organization based problem. The second
+96:30 
+
+96:30 one is scaling which is an obvious one.
+96:32 
+
+96:32 Taking the same three modules for
+96:34 
+
+96:34 example our notification module let's
+96:36 
+
+96:36 say it is not as resourceheavy we just
+96:40 
+
+96:40 make some database queries and we just
+96:42 
+
+96:42 insert some database queries because it
+96:44 
+
+96:44 is inapp notification and maybe some
+96:46 
+
+96:46 websocket based operation but our order
+96:49 
+
+96:49 processing logic or our payment based
+96:51 
+
+96:51 logic it requires a lot of resources a
+96:53 
+
+96:53 lot of CPU resources a lot of memory
+96:55 
+
+96:55 resources and basically harder resources
+96:58 
+
+96:58 if we get a lot of user traffic or if we
+97:01 
+
+97:01 are expecting a lot user traffic. If you
+97:03 
+
+97:03 want to be ready to the point that we
+97:06 
+
+97:06 cannot afford any kind of payment
+97:08 
+
+97:08 related failures or order related
+97:10 
+
+97:10 failures, then we have to scale our back
+97:12 
+
+97:12 end applications vertical scaling or
+97:13 
+
+97:13 horizontal scaling. But the problem is
+97:16 
+
+97:16 when we scale our application, we scale
+97:18 
+
+97:18 the whole thing. We cannot say that okay
+97:20 
+
+97:20 since notification does not use as much
+97:22 
+
+97:22 amount of resource, we do not want to
+97:24 
+
+97:24 scale notification. We only want to
+97:26 
+
+97:26 scale payments. We cannot do that. We
+97:28 
+
+97:28 cannot scale independent modules. So
+97:30 
+
+97:30 that is another use case of
+97:31 
+
+97:31 microservices. You can since you have
+97:33 
+
+97:33 already divided services into different
+97:35 
+
+97:35 maybe code bases or maybe not but
+97:37 
+
+97:37 different deployable units and because
+97:40 
+
+97:40 of that you can scale different services
+97:41 
+
+97:41 depending on your expected user traffic
+97:44 
+
+97:44 or your current user traffic independent
+97:46 
+
+97:46 of other modules. Third thing is text
+97:48 
+
+97:48 stack. So let's say you have a blog
+97:52 
+
+97:52 platform something like medium. You are
+97:54 
+
+97:54 an engineer of an platform like medium
+97:57 
+
+97:57 or hash node or dev all these famous
+97:60 
+
+97:60 blogging platforms and in your back end
+98:03 
+
+98:03 there are some parts where you have to
+98:05 
+
+98:05 deal with markdowns since is a blogging
+98:08 
+
+98:08 based application and you have to deal
+98:10 
+
+98:10 with markdown based cleaning or maybe
+98:12 
+
+98:12 some kind of website parsing and all
+98:14 
+
+98:14 these different stuff and for this you
+98:17 
+
+98:17 either have to go with a NodeJS app or a
+98:21 
+
+98:21 Python app because in NodeJS and Python
+98:24 
+
+98:24 ecosystems there is a choice of
+98:26 
+
+98:26 thousands and millions of libraries for
+98:29 
+
+98:29 pretty much all the use cases. So you
+98:31 
+
+98:31 found out that for a particular
+98:33 
+
+98:33 operation let's say a markdown based
+98:36 
+
+98:36 parsing or markdown based rendering
+98:38 
+
+98:38 application there is a very famous
+98:39 
+
+98:39 library. So this part of your module
+98:42 
+
+98:42 which deals with content or especially a
+98:44 
+
+98:44 markdown content it absolutely needs a
+98:47 
+
+98:47 NodeJS based environment because it has
+98:49 
+
+98:49 to use a particular npm package but in a
+98:52 
+
+98:52 different part in a different part of
+98:54 
+
+98:54 your same back end let's say you are
+98:56 
+
+98:56 taking the images that the user uploads
+98:59 
+
+98:59 and you do some kind of image
+99:00 
+
+99:00 manipulation or image resizing or any
+99:03 
+
+99:03 kind of image related operation and you
+99:06 
+
+99:06 find that using a programming language
+99:08 
+
+99:08 like Go or Rust makes this whole image
+99:11 
+
+99:11 manipulation based operation very fast.
+99:14 
+
+99:14 Since these programming languages are
+99:16 
+
+99:16 very efficient at CPUbound tasks and if
+99:19 
+
+99:19 you use something like Python or NodeJS
+99:22 
+
+99:22 for this, the latency becomes something
+99:24 
+
+99:24 like 500 millconds. And when you use Go
+99:26 
+
+99:26 or Rust, it becomes 50 mconds. Though
+99:29 
+
+99:29 obviously the performance benefits are
+99:31 
+
+99:31 huge. But since for one module you need
+99:35 
+
+99:35 in the NodeJS ecosystem since you have
+99:37 
+
+99:37 to use an npm package or a Python
+99:39 
+
+99:39 library and another module where it is
+99:41 
+
+99:41 CPU bound you need pure raw performance
+99:44 
+
+99:44 of a systems based programming language.
+99:47 
+
+99:47 Now you face another dilemma that since
+99:50 
+
+99:50 all your modules are a single deployable
+99:52 
+
+99:52 unit, you cannot use different
+99:54 
+
+99:54 programming languages. And if you have
+99:55 
+
+99:55 microservices, you can just divide this
+99:58 
+
+99:58 into a different service which uses
+99:59 
+
+99:59 NodeJS and this into a different service
+100:01 
+
+100:01 which use Rust and you deploy this
+100:03 
+
+100:03 separately and you deploy this
+100:04 
+
+100:04 separately. That is another advantage.
+100:07 
+
+100:07 So these are a couple of very obvious
+100:09 
+
+100:09 advantages of using microser not just
+100:12 
+
+100:12 for pure machine performance but mostly
+100:15 
+
+100:15 for organizational performance. Now the
+100:18 
+
+100:18 question is if microservices have all
+100:20 
+
+100:20 these performance organizational wins
+100:23 
+
+100:23 then why don't we use microservices as a
+100:25 
+
+100:25 default architecture and as we already
+100:27 
+
+100:27 know every solution comes with its
+100:30 
+
+100:30 trade-offs. So microser also come with a
+100:32 
+
+100:32 lot of trade-offs, a lot of
+100:34 
+
+100:34 disadvantages also, a lot of
+100:35 
+
+100:35 complexities also. The first one is
+100:37 
+
+100:37 network since you have divided your
+100:41 
+
+100:41 application into different different
+100:43 
+
+100:43 services. Previously it was just depend
+100:45 
+
+100:45 different modules all of the code work
+100:47 
+
+100:47 together and was deployed as a single
+100:49 
+
+100:49 process and now you have divided into
+100:51 
+
+100:51 different service and they have physical
+100:54 
+
+100:54 distance between them. So previously it
+100:57 
+
+100:57 was just a pure function call. Now it
+100:59 
+
+100:59 has become a network call. Whether it is
+101:01 
+
+101:01 a gRPC based network call or an HTTP
+101:04 
+
+101:04 network call, it can be any of them. But
+101:07 
+
+101:07 the truth is it is still a network call.
+101:09 
+
+101:09 So the latency will start showing up
+101:12 
+
+101:12 depending on how you're organizing your
+101:14 
+
+101:14 services. And latency is not just the
+101:17 
+
+101:17 only problem. The moment we talk about
+101:18 
+
+101:18 networks, there is obviously the
+101:21 
+
+101:21 question of failures. An HTTP call might
+101:24 
+
+101:24 fail, right? So you have to start
+101:26 
+
+101:26 worrying about how to handle your
+101:28 
+
+101:28 failures, how to retry etc. How to
+101:30 
+
+101:30 configure timeouts. So dealing with
+101:33 
+
+101:33 network is a huge complexity that comes
+101:36 
+
+101:36 the moment you go for a micros
+101:38 
+
+101:38 service-based architecture. Second is
+101:40 
+
+101:40 microservices are primarily a
+101:42 
+
+101:42 distributed systemsbased architecture
+101:44 
+
+101:44 and when you're trying to understand a
+101:47 
+
+101:47 request let's say you are trying to
+101:48 
+
+101:48 debug a particular request and you find
+101:50 
+
+101:50 out at the entry point let's say the
+101:52 
+
+101:52 request went through your load balancer
+101:54 
+
+101:54 then it went through your routing layer
+101:57 
+
+101:57 then it went to your order service then
+101:60 
+
+101:60 it went to your payment service then it
+102:02 
+
+102:02 went to your notification service etc
+102:03 
+
+102:03 etc. So if you want to debug a
+102:05 
+
+102:05 particular request, you have to check
+102:07 
+
+102:07 logs of four different services
+102:10 
+
+102:10 primarily four different services at the
+102:12 
+
+102:12 same time to understand a simple
+102:14 
+
+102:14 request. So debugging becomes a little
+102:17 
+
+102:17 complex. You have to opt for distributed
+102:19 
+
+102:19 tracing based tools that we have and you
+102:22 
+
+102:22 also have to architect your applications
+102:24 
+
+102:24 in a way that they make it easy for
+102:27 
+
+102:27 debugging a single request across
+102:29 
+
+102:29 different different services. Then third
+102:31 
+
+102:31 is data consistency. When we are talking
+102:34 
+
+102:34 about very complex micros service based
+102:37 
+
+102:37 architecture, each service eventually
+102:39 
+
+102:39 holds an instance of its own database
+102:42 
+
+102:42 and as we have already talked about when
+102:45 
+
+102:45 we are talking about scaling your
+102:46 
+
+102:46 database or different different
+102:48 
+
+102:48 databases number one concern is
+102:50 
+
+102:50 consistency. How do we make sure that
+102:52 
+
+102:52 change in one database even though we
+102:54 
+
+102:54 have features like replication etc etc
+102:56 
+
+102:56 but still there is some amount of
+102:58 
+
+102:58 replication lag that comes the moment we
+103:01 
+
+103:01 talk about different different database
+103:02 
+
+103:02 instances. So that becomes another
+103:04 
+
+103:04 problem you have to start worrying about
+103:06 
+
+103:06 replication lag or data consistency
+103:08 
+
+103:08 across different different databases and
+103:10 
+
+103:10 there are other disadvantages of
+103:12 
+
+103:12 microservices that you can read more
+103:14 
+
+103:14 about. But the question is when do you
+103:16 
+
+103:16 decide or how do you decide that
+103:18 
+
+103:18 microservices are a very good solution
+103:20 
+
+103:20 for you? As I have already said large
+103:22 
+
+103:22 teams are one of the mandatory
+103:25 
+
+103:25 requirements before you even consider a
+103:28 
+
+103:28 micros service-based architecture
+103:29 
+
+103:29 because large teams intuitively have
+103:32 
+
+103:32 very clear boundaries and microser
+103:34 
+
+103:34 architecture itself has very clear
+103:36 
+
+103:36 boundaries so that human organization
+103:38 
+
+103:38 and this technical organization aligns
+103:40 
+
+103:40 very well. The second obvious criteria
+103:43 
+
+103:43 is different scaling needs. As we talked
+103:45 
+
+103:45 about, if one service needs to scale
+103:48 
+
+103:48 independently, then something like
+103:50 
+
+103:50 microservices makes a lot of sense. Then
+103:52 
+
+103:52 technology, if you need to use different
+103:54 
+
+103:54 different technology for different
+103:55 
+
+103:55 different parts of your back end, then
+103:57 
+
+103:57 also microser make a lot of sense. But
+103:59 
+
+103:59 all these complexities that we talked
+104:01 
+
+104:01 about in microservices, they outweigh
+104:03 
+
+104:03 the advantages. So going for a micros
+104:06 
+
+104:06 service-based architecture is a very big
+104:07 
+
+104:07 decision. And unless you have clear
+104:09 
+
+104:09 answers for all these questions, whether
+104:11 
+
+104:11 you have a large team or not, whether
+104:13 
+
+104:13 you have very specific technology
+104:15 
+
+104:15 requirements across your different
+104:17 
+
+104:17 different parts of your back end and
+104:18 
+
+104:18 your deployment velocity, etc., etc.,
+104:21 
+
+104:21 going for a microser based architecture
+104:23 
+
+104:23 is typically not worth it. And the last
+104:25 
+
+104:25 thing that I want to talk about in the
+104:27 
+
+104:27 context of performance and scaling is
+104:30 
+
+104:30 serverless which has in modern times
+104:33 
+
+104:33 become the go-to way of scaling any kind
+104:37 
+
+104:37 of applications especially backend
+104:38 
+
+104:38 applications with the advent of
+104:41 
+
+104:41 platforms like Versel, Netleifi,
+104:43 
+
+104:43 Cloudflare which have popularized
+104:46 
+
+104:46 serverless computing to a large extent.
+104:48 
+
+104:48 I have created a different playlist
+104:51 
+
+104:51 where I talk solely about serverless
+104:54 
+
+104:54 computing, their origin, how it all
+104:56 
+
+104:56 started and how platforms like Versel
+104:59 
+
+104:59 work, how serverless databases work and
+105:01 
+
+105:01 everything related to serverless. If you
+105:03 
+
+105:03 are more curious about how serverless
+105:05 
+
+105:05 computing works, you can of course give
+105:07 
+
+105:07 that playlist a watch. But here we are
+105:08 
+
+105:08 going to talk about the intuition of
+105:10 
+
+105:10 serverless since we are already talking
+105:12 
+
+105:12 about scaling and serless is such an
+105:15 
+
+105:15 important part of that process. Now
+105:17 
+
+105:17 before we talk about serverless
+105:19 
+
+105:19 computing we need to understand what
+105:21 
+
+105:21 came before that. So when you run your
+105:23 
+
+105:23 application a backend application it
+105:25 
+
+105:25 runs on a server which means some kind
+105:27 
+
+105:27 of VM inless EC2 or whatever cloud
+105:31 
+
+105:31 you're using it runs on a server which
+105:34 
+
+105:34 has an operating system like Ubuntu some
+105:36 
+
+105:36 kind of Unix distribution. So
+105:38 
+
+105:38 traditionally what you do you take a VM
+105:41 
+
+105:41 from a cloud provider which comes with
+105:43 
+
+105:43 an operating system like Ubuntu. You
+105:45 
+
+105:45 configure or you provision your server
+105:47 
+
+105:47 there. You install whatever software
+105:49 
+
+105:49 that you need like NX or Docker or
+105:52 
+
+105:52 containerizing your application.
+105:54 
+
+105:54 Whatever stack that you have for
+105:55 
+
+105:55 deploying your application. You install
+105:57 
+
+105:57 all those applications. You configure it
+105:59 
+
+105:59 so that it can fetch your code or it can
+106:02 
+
+106:02 build your core or it can run your code
+106:04 
+
+106:04 etc etc. configure that particular
+106:06 
+
+106:06 server with your application and you
+106:08 
+
+106:08 keep managing that server how it works
+106:10 
+
+106:10 whether the configuration breaks or not
+106:12 
+
+106:12 whether the DNS is working or not and
+106:14 
+
+106:14 all of that you are responsible for
+106:17 
+
+106:17 managing your server throughout the
+106:18 
+
+106:18 lifetime as long as you are using that
+106:20 
+
+106:20 server now this whole process this whole
+106:23 
+
+106:23 model of deploying our application or
+106:26 
+
+106:26 provisioning our server has been working
+106:28 
+
+106:28 for decades now you know exactly what
+106:30 
+
+106:30 you have with a particular VM or a
+106:32 
+
+106:32 particular machine with two cores of CPU
+106:35 
+
+106:35 or four cores of CPU or 16 GB of RAM, 32
+106:38 
+
+106:38 GB of RAM or 4 GB of RAM and you have 30
+106:42 
+
+106:42 GB of SSD capacity or hard drive
+106:45 
+
+106:45 whatever you want to call and what
+106:47 
+
+106:47 network capacity that you have something
+106:49 
+
+106:49 like 1 TB in a month or whatever that
+106:52 
+
+106:52 your cloud provider is providing you and
+106:54 
+
+106:54 your application runs on this particular
+106:57 
+
+106:57 machine with this limit with 4 GB of
+106:60 
+
+107:00 RAM, two core CPU, 30 GB of hard drive
+107:03 
+
+107:03 space and one terab terabyte of
+107:05 
+
+107:05 bandwidth per month. You know exactly
+107:07 
+
+107:07 what you're getting, the exact machine
+107:09 
+
+107:09 that you are getting and your
+107:10 
+
+107:10 application starts serving starts
+107:13 
+
+107:13 processing requests as they arrive. Now
+107:15 
+
+107:15 the challenge that arises with this kind
+107:18 
+
+107:18 of setup or this kind of model is first
+107:20 
+
+107:20 one is capacity planning. What do you
+107:23 
+
+107:23 mean by capacity planning? It means that
+107:25 
+
+107:25 you need to decide beforehand before you
+107:28 
+
+107:28 even start serving your users. You need
+107:30 
+
+107:30 to decide how many servers if you are
+107:33 
+
+107:33 going for horizontal scaling how many
+107:35 
+
+107:35 servers that you need and for each
+107:37 
+
+107:37 server what should be the capacity of
+107:39 
+
+107:39 the machine how much RAM it should have
+107:41 
+
+107:41 how much CPU cores it should have and
+107:44 
+
+107:44 how much hard drive capacity that it
+107:46 
+
+107:46 should have all of this you have to
+107:48 
+
+107:48 decide beforehand which means that you
+107:50 
+
+107:50 have to predict your user traffic you
+107:53 
+
+107:53 have to predict your users's behavior
+107:55 
+
+107:55 before you even deploy your application
+107:57 
+
+107:57 why because if you provision too little
+107:60 
+
+108:00 let's say you only provision for 4GB of
+108:03 
+
+108:03 RAM for your server and a huge traffic
+108:06 
+
+108:06 spike happens because of some kind of
+108:08 
+
+108:08 online campaign or some kind of blog and
+108:11 
+
+108:11 your server is not able to process that
+108:14 
+
+108:14 many requests per second and it starts
+108:16 
+
+108:16 crashing. So either that or your server
+108:19 
+
+108:19 becomes very unresponsive. Every request
+108:22 
+
+108:22 takes 3 to 4 seconds to send a response
+108:25 
+
+108:25 back. So your users either they will
+108:27 
+
+108:27 start experiencing slowness or they will
+108:30 
+
+108:30 start experiencing a lot of errors, a
+108:32 
+
+108:32 lot of error toast messages in their
+108:35 
+
+108:35 front end and because of that they will
+108:37 
+
+108:37 start quitting your application. If they
+108:39 
+
+108:39 are new users then you lost a chance for
+108:42 
+
+108:42 them to become your paid users. But if
+108:44 
+
+108:44 they are already paid users they might
+108:46 
+
+108:46 be motivated to quit your platform and
+108:48 
+
+108:48 start looking for alternatives. The
+108:51 
+
+108:51 point is you start experiencing losses
+108:54 
+
+108:54 either financial losses or loss in terms
+108:57 
+
+108:57 of reputation because you could not
+108:59 
+
+108:59 predict your user traffic or you could
+109:01 
+
+109:01 not plan what kind of traffic that you
+109:03 
+
+109:03 might receive and you could not plan the
+109:05 
+
+109:05 capacity of your server according to
+109:07 
+
+109:07 that. And the other side of that is if
+109:10 
+
+109:10 you provisioned too much. Let's say you
+109:12 
+
+109:12 did not want to risk all of this and
+109:15 
+
+109:15 instead of going for 4 GB RAM, you went
+109:17 
+
+109:17 for 32GB of RAM and the traffic spike
+109:20 
+
+109:20 happened and your server got request and
+109:23 
+
+109:23 it was able to send all the responses
+109:25 
+
+109:25 back. But since you overprovisioned
+109:28 
+
+109:28 which means you configured a capacity
+109:31 
+
+109:31 which is much more than what you needed.
+109:33 
+
+109:33 You only needed 8 GB of RAM which would
+109:36 
+
+109:36 have done the job perfectly depending on
+109:38 
+
+109:38 the user traffic. But since you went
+109:40 
+
+109:40 ahead and configured 32GB of RAM for
+109:43 
+
+109:43 your server instance, you had to pay for
+109:45 
+
+109:45 this machine for as long as it was
+109:48 
+
+109:48 running. Let's say you ran it for 1
+109:49 
+
+109:49 week. then it cost you around, let's
+109:51 
+
+109:51 say, $5,000 for running at 32GB RAM of
+109:55 
+
+109:55 capacity. Even though you only used 20%
+109:58 
+
+109:58 of the capacity, if you had configured 8
+110:00 
+
+110:00 GB of RAM, then it would have only cost
+110:03 
+
+110:03 you around $500. But now it cost you
+110:05 
+
+110:05 $5,000. Why? Because you could not
+110:08 
+
+110:08 predict your user traffic. Again, it
+110:10 
+
+110:10 does not matter whether you
+110:12 
+
+110:12 underprovision or you overprovision. In
+110:14 
+
+110:14 both cases, you suffer some amount of
+110:16 
+
+110:16 loss because predicting is obviously
+110:18 
+
+110:18 impossible of your user behavior. There
+110:20 
+
+110:20 is an obvious solution to this and it
+110:23 
+
+110:23 has been around for a long time which is
+110:24 
+
+110:24 autoscaling. Autoscaling. What is
+110:26 
+
+110:26 autoscaling? Autoscaling basically means
+110:28 
+
+110:28 depending on your CPU usage. Let's say
+110:31 
+
+110:31 you initially provisioned only two
+110:33 
+
+110:33 servers of 4 GB RAM each, a lot of users
+110:36 
+
+110:36 started coming. So these two servers
+110:38 
+
+110:38 resource usage will start going up and
+110:41 
+
+110:41 an autoscaling config will detect that
+110:44 
+
+110:44 these two servers have already reached
+110:46 
+
+110:46 70% of their memory usage. So what it
+110:49 
+
+110:49 will do it will spin up a new instance.
+110:51 
+
+110:51 Now all these requests will start
+110:53 
+
+110:53 getting distributed across three servers
+110:55 
+
+110:55 and the memory usage of each server will
+110:57 
+
+110:57 come down to 40%. So autoscaling is
+110:59 
+
+110:59 definitely a solution for our problem of
+111:02 
+
+111:02 underprovisioning or overprovisioning
+111:04 
+
+111:04 but it again comes with a couple of
+111:06 
+
+111:06 drawbacks or a couple of trade-offs.
+111:08 
+
+111:08 Number one is time. When we say your
+111:11 
+
+111:11 autoscaling config or your autoscaling
+111:13 
+
+111:13 infrastructure, it spins up a new server
+111:16 
+
+111:16 instance. What it means is it starts
+111:19 
+
+111:19 provisioning a new server. And what that
+111:21 
+
+111:21 includes first booting a new operating
+111:24 
+
+111:24 system. You are most likely using some
+111:26 
+
+111:26 kind of Linux distribution something
+111:28 
+
+111:28 like Ubuntu. The first thing that
+111:30 
+
+111:30 happens when we say we are spinning up a
+111:32 
+
+111:32 new instance through our autoscaling
+111:34 
+
+111:34 config is booting up the operating
+111:36 
+
+111:36 system Ubuntu operating system. Second,
+111:39 
+
+111:39 configuring your application which means
+111:41 
+
+111:41 building your code or fetching your code
+111:44 
+
+111:44 and starting your application in a
+111:45 
+
+111:45 process then exposing that process to
+111:48 
+
+111:48 the internal network to our load
+111:50 
+
+111:50 balancer etc etc whatever it takes to
+111:52 
+
+111:52 configure our application and all of
+111:54 
+
+111:54 this depending on what operating system
+111:56 
+
+111:56 that you use, what programming language
+111:58 
+
+111:58 that you use, the build time and
+111:60 
+
+111:60 everything. All of this can take
+112:01 
+
+112:01 somewhere from a few seconds to a few
+112:04 
+
+112:04 minutes. So if a lot of users start
+112:07 
+
+112:07 sending you request in a very small
+112:10 
+
+112:10 window, let's say in 3 to 4 seconds,
+112:13 
+
+112:13 your autoscaling infrastructure might
+112:15 
+
+112:15 not have enough time to scale because of
+112:18 
+
+112:18 this constraint of how much time it
+112:20 
+
+112:20 takes to boot up a new server instance.
+112:23 
+
+112:23 Second, scaling has its limits. Whenever
+112:26 
+
+112:26 you are configuring your autoscaling
+112:28 
+
+112:28 infrastructure, there are two fields
+112:30 
+
+112:30 that you have to set. One is the minimum
+112:32 
+
+112:32 instance and the second is the maximum
+112:34 
+
+112:34 instance. If you set maximum too low as
+112:37 
+
+112:37 we talking about earlier now you're back
+112:39 
+
+112:39 to your underprovisioning problem which
+112:41 
+
+112:41 means after a certain amount of instance
+112:44 
+
+112:44 let's say after 10 instances you set in
+112:46 
+
+112:46 your autoscaling infra that you cannot
+112:48 
+
+112:48 scale beyond 10 instances. So now you're
+112:51 
+
+112:51 capped at this and if you get even more
+112:54 
+
+112:54 amount of user traffic then they'll
+112:56 
+
+112:56 start experiencing the same
+112:58 
+
+112:58 unresponsiveness and errors. If you set
+113:01 
+
+113:01 the maximum too high, let's say you set
+113:02 
+
+113:02 the maximum as thousand in the sense
+113:04 
+
+113:04 that you don't care how many instances
+113:06 
+
+113:06 you spin up, but you have to cater to
+113:08 
+
+113:08 all of your users traffic. If this
+113:10 
+
+113:10 happens and some kind of attack happens
+113:13 
+
+113:13 or maybe it is a genuine user traffic,
+113:15 
+
+113:15 let's say some Black Friday sale is
+113:17 
+
+113:17 happening. Now your user traffic because
+113:19 
+
+113:19 of your user traffic, your instances
+113:22 
+
+113:22 actually went up till let's say 500 or
+113:24 
+
+113:24 600 and because of that you incurred a
+113:27 
+
+113:27 charge of something like $100,000 in one
+113:29 
+
+113:29 day. and now you're beyond your budget.
+113:31 
+
+113:31 That is a completely different problem.
+113:34 
+
+113:34 Third is a very serious problem which is
+113:36 
+
+113:36 the reactiveness of autoscaling which
+113:39 
+
+113:39 means that the way autoscaling works is
+113:41 
+
+113:41 let's say you have two instances which
+113:43 
+
+113:43 we have already talked about and the
+113:45 
+
+113:45 memory of age is 4 GB RAM. The
+113:47 
+
+113:47 autoscaling infrastructure will only
+113:50 
+
+113:50 start spinning up new containers or
+113:52 
+
+113:52 spinning up new instances of your server
+113:54 
+
+113:54 when it starts seeing that your memory
+113:56 
+
+113:56 has crossed 70% threshold. Now by the
+113:59 
+
+113:59 time it starts a new server instance you
+114:02 
+
+114:02 are already overloaded because it is
+114:04 
+
+114:04 reactive. It is not proactive. It cannot
+114:06 
+
+114:06 predict the user traffic beforehand. It
+114:08 
+
+114:08 can only spin up new instances when it
+114:11 
+
+114:11 knows that you are under load. And if
+114:14 
+
+114:14 that window of time is too less then you
+114:17 
+
+114:17 cannot say that you will be able to
+114:19 
+
+114:19 scale in time. You might still
+114:21 
+
+114:21 experience crashes or errors. But even
+114:24 
+
+114:24 though we have all these limitations of
+114:25 
+
+114:25 autoscaling, autoscaling is still one of
+114:28 
+
+114:28 the most standard practice for scaling
+114:30 
+
+114:30 our applications. But the other problem
+114:33 
+
+114:33 which is the the always on cost even
+114:36 
+
+114:36 with autoscaling you have a minimum. Now
+114:39 
+
+114:39 if we are talking in the context of
+114:41 
+
+114:41 horizontal scaling maybe you have two
+114:43 
+
+114:43 instance minimum but even if you talk
+114:45 
+
+114:45 about vertical scaling or you think
+114:47 
+
+114:47 about in the context of a single machine
+114:49 
+
+114:49 you still have a minimum which is that
+114:52 
+
+114:52 machine's configuration let's say this
+114:54 
+
+114:54 machine has 4 GB of RAM two cores of CPU
+114:56 
+
+114:56 30 GB of hard disk this is your minimum
+114:58 
+
+114:58 it does not matter whether you have a
+115:00 
+
+115:00 500 requests per second or you have zero
+115:04 
+
+115:04 requests per second you are constantly
+115:06 
+
+115:06 paying for this server for this
+115:09 
+
+115:09 particular configuration which is your
+115:11 
+
+115:11 machine's minimum capacity. So if your
+115:14 
+
+115:14 application is something which receives
+115:16 
+
+115:16 constant and steady amount of requests a
+115:19 
+
+115:19 very predictable flow of request then
+115:21 
+
+115:21 this model definitely makes sense. The
+115:23 
+
+115:23 traditional serverful model the server
+115:26 
+
+115:26 which is always online even if there is
+115:28 
+
+115:28 one request it can still cater to it and
+115:31 
+
+115:31 it can still send a response back for
+115:33 
+
+115:33 that kind of setup. This model makes a
+115:35 
+
+115:35 lot of sense which is typically most of
+115:38 
+
+115:38 our SAS applications but because of some
+115:41 
+
+115:41 requirements some kind of setups where
+115:44 
+
+115:44 this does not make any sense which does
+115:46 
+
+115:46 not have very predictable amount of user
+115:48 
+
+115:48 request people have come up with a new
+115:51 
+
+115:51 model which is called serverless. Now
+115:54 
+
+115:54 simply speaking what serverless means is
+115:57 
+
+115:57 you do not worry about servers at all.
+115:60 
+
+115:60 It's not like serverless does not
+116:02 
+
+116:02 include servers. They definitely include
+116:04 
+
+116:04 server otherwise there is no amount of
+116:06 
+
+116:06 processing that can happen. We still
+116:08 
+
+116:08 need a machine. We still need a VM. We
+116:10 
+
+116:10 still need some kind of operating system
+116:12 
+
+116:12 and we still need to configure our
+116:14 
+
+116:14 application in that operating system so
+116:16 
+
+116:16 that it can start responding to
+116:18 
+
+116:18 requests. But the difference between
+116:21 
+
+116:21 serverless and a traditional
+116:23 
+
+116:23 architecture is you do not have to worry
+116:25 
+
+116:25 about the machines itself. You do not
+116:28 
+
+116:28 have to worry about the operating
+116:29 
+
+116:29 system. You do not have to worry about
+116:31 
+
+116:31 whether your server has 4 GB of RAM, 8
+116:33 
+
+116:33 GB of RAM, nothing. And you do not have
+116:36 
+
+116:36 to worry about configuring your server
+116:38 
+
+116:38 to work with your operating system or to
+116:39 
+
+116:39 work with your server. The only thing
+116:41 
+
+116:41 that you manage, the only thing that you
+116:44 
+
+116:44 provide is you provide your code or in
+116:47 
+
+116:47 serverless terminology, we call it
+116:50 
+
+116:50 functions. Particular functions which
+116:52 
+
+116:52 will be triggered based on particular
+116:54 
+
+116:54 events. These are the two core
+116:56 
+
+116:56 functionalities. These are the only two
+116:58 
+
+116:58 things you have to worry about. These
+116:60 
+
+116:60 are the only two things you have to
+117:01 
+
+117:01 manage. The way the computing model
+117:03 
+
+117:03 differs from traditional computing is
+117:06 
+
+117:06 let's say you get a request and there is
+117:08 
+
+117:08 some kind of front here. You of course
+117:10 
+
+117:10 do not go to your function execution
+117:13 
+
+117:13 layer, your serverless layer directly.
+117:15 
+
+117:15 Usually we have what we call as an API
+117:17 
+
+117:17 gateway here which means that it takes
+117:20 
+
+117:20 HTTP calls at this point and depending
+117:24 
+
+117:24 on what route that we are trying to
+117:26 
+
+117:26 access it spins up a particular
+117:28 
+
+117:28 function. So it maps routes to the
+117:31 
+
+117:31 functions address since we as developers
+117:33 
+
+117:33 we only worry about functions and the
+117:36 
+
+117:36 events. So the events are these routes
+117:39 
+
+117:39 and the functions are the code that we
+117:41 
+
+117:41 write. So API gateway works as a
+117:43 
+
+117:43 middleman which takes a particular user
+117:45 
+
+117:45 request. If we are talking about
+117:47 
+
+117:47 traditional backend based request
+117:49 
+
+117:49 response cycle comparing with serverless
+117:51 
+
+117:51 this is how it would work. Then APA
+117:53 
+
+117:53 gateway lives here it takes an HTTP
+117:55 
+
+117:55 request depending on the route it spins
+117:57 
+
+117:57 up a new function. So what does it mean
+117:60 
+
+117:60 to spin up a new function or spin up a
+118:02 
+
+118:02 new uh serverless function is
+118:04 
+
+118:04 traditionally what we were saying we
+118:06 
+
+118:06 have a server it has some amount of
+118:08 
+
+118:08 capacity let's say 4 GB of RAM two core
+118:11 
+
+118:11 processor 30 GB hard disk etc and it is
+118:13 
+
+118:13 always ready to cater to any amount of
+118:16 
+
+118:16 requests whether it is zero request
+118:17 
+
+118:17 whether it is 500 request it's always
+118:19 
+
+118:19 there always present always listening
+118:21 
+
+118:21 for requests and we are paying for this
+118:23 
+
+118:23 how serverless works we do not worry
+118:25 
+
+118:25 about the machine's capacity or the
+118:27 
+
+118:27 machine at all we just Okay, if there is
+118:29 
+
+118:29 a request for this route, we want to run
+118:31 
+
+118:31 this particular piece of code. That's
+118:33 
+
+118:33 all we say. Now the provider, our
+118:35 
+
+118:35 serverless provider, whether it is
+118:37 
+
+118:37 lambda or cloudflare workers etc etc.
+118:40 
+
+118:40 Now they handle this machine handling
+118:42 
+
+118:42 part. So when a new request arrives,
+118:44 
+
+118:44 let's say it is the first time you
+118:46 
+
+118:46 deploy your server, no machine is
+118:49 
+
+118:49 provisioned for you. You just push your
+118:51 
+
+118:51 code and it's just there. But the first
+118:53 
+
+118:53 time a new request arrives or a new
+118:56 
+
+118:56 event happens which needs the code
+118:58 
+
+118:58 running the serverless infrastructure
+119:00 
+
+119:00 your serverless provider it takes your
+119:03 
+
+119:03 code whatever that you have provided it
+119:05 
+
+119:05 spins up a new instance this machine now
+119:07 
+
+119:07 we don't know what machine is this or
+119:09 
+
+119:09 how much capacity it has or whatever any
+119:12 
+
+119:12 information about the machine just that
+119:14 
+
+119:14 our code is going to run in some machine
+119:16 
+
+119:16 and it is going to send a response back
+119:18 
+
+119:18 and this happens only after we get a
+119:20 
+
+119:20 request and After we send the response
+119:23 
+
+119:23 back either depending on your
+119:25 
+
+119:25 configuration of your serverless
+119:27 
+
+119:27 infrastructure provider it lives for a
+119:29 
+
+119:29 few seconds let's say 3 5 seconds or 30
+119:32 
+
+119:32 seconds or it goes to a pool of
+119:33 
+
+119:33 connections so that when the next
+119:35 
+
+119:35 request comes instead of spinning a new
+119:38 
+
+119:38 machine an existing machine can cater to
+119:40 
+
+119:40 that request that is the difference in
+119:42 
+
+119:42 the computing model. The second
+119:44 
+
+119:44 difference is the pricing model. In our
+119:46 
+
+119:46 traditional servers, we always pay for
+119:49 
+
+119:49 our servers 24/7 cost. As long as our
+119:52 
+
+119:52 server is running, we pay for that. But
+119:54 
+
+119:54 in serverless based setup, we only pay
+119:57 
+
+119:57 for this interaction. The request, the
+119:59 
+
+119:59 moment our request comes here and our
+120:02 
+
+120:02 serverless instance spins up, whatever
+120:04 
+
+120:04 processing that we do here, we only pay
+120:07 
+
+120:07 for that amount of time, the CPU time,
+120:10 
+
+120:10 the memory time, whatever it is. The
+120:11 
+
+120:11 moment we send the response back, we are
+120:13 
+
+120:13 done with this. So our monthly cost is
+120:16 
+
+120:16 only going to be a sum of all these
+120:19 
+
+120:19 interactions, all the milliseconds that
+120:22 
+
+120:22 the CPU was actually executing our code.
+120:25 
+
+120:25 So which in turn saves a lot of money
+120:28 
+
+120:28 because we're not paying for 24/7. Now
+120:30 
+
+120:30 the question is where is the catch?
+120:32 
+
+120:32 Since we already know no solution comes
+120:34 
+
+120:34 without its own set of trade-offs. So
+120:36 
+
+120:36 the number one problem the number one
+120:38 
+
+120:38 issue that we face when it comes to
+120:41 
+
+120:41 serverless computing is what we call as
+120:43 
+
+120:43 cold start times. Since the way
+120:46 
+
+120:46 serverless works is we do not have any
+120:48 
+
+120:48 pre-assigned machine. We do not have any
+120:50 
+
+120:50 machine which is ready to take any
+120:52 
+
+120:52 request. We only spin up a new machine a
+120:55 
+
+120:55 physical server. Does not matter the
+120:57 
+
+120:57 capacity of the server but we only spin
+120:59 
+
+120:59 up a new physical instance of a server
+121:02 
+
+121:02 after getting the first request. And
+121:04 
+
+121:04 that instance only lives for a few more
+121:06 
+
+121:06 seconds until we give it back or we
+121:09 
+
+121:09 close the instance forever. Because of
+121:11 
+
+121:11 this nature, this time which it takes to
+121:14 
+
+121:14 spin up a new instance, this is what we
+121:16 
+
+121:16 call as a cold start time. This has
+121:19 
+
+121:19 always been the number one problem of
+121:21 
+
+121:21 using serverless technologies. Now there
+121:23 
+
+121:23 has been a lot of solutions people are
+121:25 
+
+121:25 still inventing to get around the cold
+121:27 
+
+121:27 start problem of serverless. Some of the
+121:29 
+
+121:29 famous ones are keeping a few instances
+121:33 
+
+121:33 always ready through some kind of
+121:35 
+
+121:35 automated pings. Right? You automate a
+121:38 
+
+121:38 couple of requests from your own
+121:39 
+
+121:39 infrastructure so that every few seconds
+121:42 
+
+121:42 you send a request so that an instance
+121:44 
+
+121:44 comes up to cater to that request so
+121:47 
+
+121:47 that when an actual user request comes
+121:49 
+
+121:49 there is an instance always ready to
+121:51 
+
+121:51 serve to that user's request. So this
+121:53 
+
+121:53 hack exists but you cannot go overboard
+121:57 
+
+121:57 with it. Otherwise you'll end up with
+121:59 
+
+121:59 always having a few instances of your
+122:02 
+
+122:02 servers ready and you again start paying
+122:05 
+
+122:05 for them 24/7 which completely defeats
+122:08 
+
+122:08 the problem of serless again. So that is
+122:10 
+
+122:10 one solution that we have come up with.
+122:12 
+
+122:12 Second is another one which is the most
+122:15 
+
+122:15 efficient one that you can say which is
+122:18 
+
+122:18 coming up with runtimes with minimum
+122:21 
+
+122:21 cold start. Some of the largest reasons
+122:23 
+
+122:23 of big cold start timing is two reasons.
+122:26 
+
+122:26 One is booting up a new operating system
+122:28 
+
+122:28 or a new VM which comes with an
+122:31 
+
+122:31 operating system. Second is the language
+122:33 
+
+122:33 runtime. Whether it is it can be a Java
+122:35 
+
+122:35 application or a rust application or go
+122:38 
+
+122:38 application or a NodeJS application or a
+122:41 
+
+122:41 Python application whatever your
+122:42 
+
+122:42 language is. These are the two primary
+122:44 
+
+122:44 calls of cold start time. one if it is a
+122:48 
+
+122:48 traditional VM something like hypervisor
+122:50 
+
+122:50 or VM etc etc then that takes a long
+122:54 
+
+122:54 time to boot up a new operating system
+122:56 
+
+122:56 to prevent the OS related the VM related
+122:60 
+
+122:60 cold start timing has come up with this
+123:03 
+
+123:03 new container technology new VM
+123:06 
+
+123:06 technology a new VM technology which
+123:08 
+
+123:08 works which is called as KVM technology
+123:10 
+
+123:10 called firecrackers which is what they
+123:13 
+
+123:13 use for their lambdas and this has
+123:15 
+
+123:15 become the indust industry standard for
+123:17 
+
+123:17 any kind of serverless based
+123:19 
+
+123:19 architecture. The second one, the second
+123:22 
+
+123:22 major one you can say is Cloudflare
+123:24 
+
+123:24 workers. They are again one of the
+123:25 
+
+123:25 largest providers of serverless
+123:27 
+
+123:27 computing. They use V8 isolates. Now V8
+123:31 
+
+123:31 is a JavaScript runtime which you can
+123:33 
+
+123:33 read more about. But V8 isolates, they
+123:35 
+
+123:35 provide an isolation level, a VM like
+123:38 
+
+123:38 functionality where your code can run
+123:40 
+
+123:40 which is extremely fast. They claim that
+123:43 
+
+123:43 it's something like 0 to 1 millconds to
+123:45 
+
+123:45 boot up a new V8 isolate. So these kinds
+123:47 
+
+123:47 of technology that we keep innovating
+123:50 
+
+123:50 they help with the cold start timing of
+123:52 
+
+123:52 operating system related. The second is
+123:55 
+
+123:55 language. A language like JavaScript or
+123:58 
+
+123:58 Python which is an interpreted language
+124:01 
+
+124:01 which means it does not have any kind of
+124:03 
+
+124:03 compilation step. You just provide the
+124:05 
+
+124:05 code and the code starts running line by
+124:07 
+
+124:07 line. there is no pre-ompiled phase and
+124:09 
+
+124:09 because of that these languages are much
+124:12 
+
+124:12 faster in a serverless environment
+124:14 
+
+124:14 compared to a language like Java which
+124:16 
+
+124:16 has its own compilation JVM and all that
+124:20 
+
+124:20 and same for other system languages
+124:21 
+
+124:21 which has a compilation phase. So that
+124:23 
+
+124:23 is another big factor and that is why
+124:25 
+
+124:25 Cloudflare workers the one of the
+124:28 
+
+124:28 largest providers of serverless
+124:29 
+
+124:29 computing they use V8 isolates which
+124:32 
+
+124:32 prevents the OS booting problem and they
+124:35 
+
+124:35 use JavaScript. So combined with these
+124:37 
+
+124:37 two they have extremely low cold start
+124:40 
+
+124:40 time somewhere around 5 millconds you
+124:42 
+
+124:42 can say but again the cold start timings
+124:45 
+
+124:45 will always be there. We can never beat
+124:47 
+
+124:47 the traditional serverful compute when
+124:50 
+
+124:50 it comes to cold start because
+124:51 
+
+124:51 traditional servers are always online
+124:53 
+
+124:53 always online to cater to our requests.
+124:56 
+
+124:56 But every time we talk about serverless
+124:58 
+
+124:58 computing the cold start problem will
+124:60 
+
+124:60 always be there because of the nature of
+125:02 
+
+125:02 how serverless computing works. Now
+125:04 
+
+125:04 second problem first was the cold start
+125:07 
+
+125:07 timing. Second was limits. Most of these
+125:10 
+
+125:10 serverless providers levelless lambda
+125:12 
+
+125:12 they have some amount of limit. For
+125:13 
+
+125:13 example the list lambda functions they
+125:16 
+
+125:16 can run for at least like 15 minutes. So
+125:18 
+
+125:18 if you have a long running HTTP call
+125:20 
+
+125:20 something which takes a long amount of
+125:21 
+
+125:21 time like 30 minutes then this will fail
+125:24 
+
+125:24 halfway right. So most of the serverless
+125:26 
+
+125:26 computing environments they have certain
+125:28 
+
+125:28 amount of limits on how long they can
+125:31 
+
+125:31 keep the request alive. Third is
+125:33 
+
+125:33 statelessness. Now this is a big problem
+125:36 
+
+125:36 which we discuss in depth in the
+125:38 
+
+125:38 serverless based video. But in short
+125:41 
+
+125:41 most of our setup in a traditional
+125:44 
+
+125:44 server it is based on the premise that
+125:48 
+
+125:48 our server is stateful which means that
+125:50 
+
+125:50 to interact with the database we
+125:52 
+
+125:52 establish TCP connections which is a
+125:55 
+
+125:55 active connection that we hold with our
+125:57 
+
+125:57 database. Same way if we have some kind
+126:00 
+
+126:00 of websocket based connection that we
+126:02 
+
+126:02 established with our browsers.
+126:04 
+
+126:04 Similarly, we have a lot of stateful
+126:07 
+
+126:07 behaviors associated with our
+126:08 
+
+126:08 traditional servers. But the moment we
+126:10 
+
+126:10 are talking about serverless which
+126:12 
+
+126:12 because of their execution limits, they
+126:14 
+
+126:14 can only be alive for a few seconds or
+126:17 
+
+126:17 they cannot hold any data inside the
+126:19 
+
+126:19 operating system because every few
+126:21 
+
+126:21 seconds we are replacing the machines.
+126:23 
+
+126:23 We are running the same code but the
+126:26 
+
+126:26 machines in which the code is running
+126:28 
+
+126:28 they keep getting replaced depending on
+126:30 
+
+126:30 the user traffic and because of all
+126:32 
+
+126:32 these behaviors our architecture when it
+126:35 
+
+126:35 comes to serless is primarily stateless.
+126:37 
+
+126:37 So all these behaviors of statefulness
+126:40 
+
+126:40 the TCP connections the websocket
+126:42 
+
+126:42 connections all of these have to be
+126:44 
+
+126:44 reimagined on how they work the moment
+126:46 
+
+126:46 you go and start using a serverless
+126:49 
+
+126:49 based architecture in your back end. So
+126:51 
+
+126:51 with all this when should you start
+126:54 
+
+126:54 using or when should you start migrating
+126:56 
+
+126:56 to a serverless architecture. Now it is
+126:58 
+
+126:58 easy to say when should you not use a
+127:01 
+
+127:01 serverless architecture which is latency
+127:03 
+
+127:03 sensitive applications. Latency plays a
+127:06 
+
+127:06 huge role something like any kind of
+127:08 
+
+127:08 userfacing sensitive application like
+127:10 
+
+127:10 banking application or payment based
+127:11 
+
+127:11 applications where latency you cannot
+127:13 
+
+127:13 afford any amount of latency. Then
+127:16 
+
+127:16 serverless does not make a lot of sense.
+127:18 
+
+127:18 Then comes the long running procedures.
+127:20 
+
+127:20 If you have HTTP calls or websocket
+127:22 
+
+127:22 connections on somewhere then serverless
+127:25 
+
+127:25 does not make a lot of sense or
+127:27 
+
+127:27 applications which require a lot of
+127:29 
+
+127:29 database connections then also you'll
+127:31 
+
+127:31 have to figure out a lot of missing
+127:33 
+
+127:33 components you have to opt for a
+127:35 
+
+127:35 serverless database if you make your
+127:38 
+
+127:38 backend serverless first. So some of the
+127:40 
+
+127:40 ideal use cases of serverless that we
+127:43 
+
+127:43 typically use is very specific
+127:45 
+
+127:45 operations in our workflow. One famous
+127:48 
+
+127:48 one is video processing or image
+127:50 
+
+127:50 processing or image resizing as it is
+127:52 
+
+127:52 since these are tasks or jobs in our
+127:55 
+
+127:55 application which is not very regular
+127:58 
+
+127:58 unless it is your application purely
+127:60 
+
+127:60 does video processing it is not very
+128:02 
+
+128:02 regular. So in a typical serverlessbased
+128:04 
+
+128:04 architecture we can just instead of
+128:06 
+
+128:06 running our heavy infrastructure heavy
+128:08 
+
+128:08 infrastructure which handles the video
+128:10 
+
+128:10 processing the image processing etc
+128:12 
+
+128:12 instead of paying for that 24/7 we just
+128:14 
+
+128:14 keep a serverless instance and depending
+128:16 
+
+128:16 on when we get a request to process a
+128:19 
+
+128:19 new video or process a new image we can
+128:21 
+
+128:21 spin up a new serverless instance and
+128:23 
+
+128:23 finish the task and return a response.
+128:25 
+
+128:25 So that is a very good use case for
+128:27 
+
+128:27 serless or any kind of event based
+128:30 
+
+128:30 operations for example a new message
+128:33 
+
+128:33 appeared in cues or any kind of file
+128:35 
+
+128:35 upload that I just mentioned or
+128:38 
+
+128:38 something like a database changes. So if
+128:40 
+
+128:40 you are thinking in the context of event
+128:43 
+
+128:43 triggering some kind of pipeline or
+128:45 
+
+128:45 event triggering some kind of operation
+128:47 
+
+128:47 there also serverless makes a lot of
+128:49 
+
+128:49 sense. Currently the industry is
+128:51 
+
+128:51 somewhat overhyped when it comes to
+128:53 
+
+128:53 serverless. It is definitely a powerful
+128:55 
+
+128:55 tool for very specific use cases but in
+128:58 
+
+128:58 my opinion not a universal replacement
+129:01 
+
+129:01 for servers but understanding where it
+129:04 
+
+129:04 fits why we have come up with it how it
+129:06 
+
+129:06 works and when should you use it
+129:08 
+
+129:08 definitely is a very good tool in your
+129:10 
+
+129:10 arsenal whenever you are thinking in the
+129:13 
+
+129:13 context of scaling and performance. So
+129:15 
+
+129:15 we have covered a lot of topics in both
+129:19 
+
+129:19 of these videos about scaling and
+129:22 
+
+129:22 performance from the fundamentals of
+129:24 
+
+129:24 latency and throughput through database
+129:26 
+
+129:26 optimization and caching and vertical
+129:29 
+
+129:29 scaling horizontal scaling distributed
+129:31 
+
+129:31 systems and infrastructure components
+129:33 
+
+129:33 that come into play like API gateways
+129:35 
+
+129:35 load balancers and organization
+129:37 
+
+129:37 practices when it comes to microservices
+129:40 
+
+129:40 etc etc. So let let me summarize it. Let
+129:43 
+
+129:43 me give you a couple of thumb rules, a
+129:45 
+
+129:45 couple of mental models that you can
+129:47 
+
+129:47 take away from all this information.
+129:50 
+
+129:50 First one is always start with a
+129:53 
+
+129:53 problem. All these things, all these
+129:55 
+
+129:55 techniques, all these topics that we
+129:57 
+
+129:57 discussed in these videos, they are
+129:60 
+
+129:60 primarily solutions. So even though we
+130:02 
+
+130:02 came from a context of what problem they
+130:05 
+
+130:05 solve, but still the discussions were
+130:08 
+
+130:08 about solutions. So before you start
+130:10 
+
+130:10 reaching for solutions, you should
+130:12 
+
+130:12 understand where you stand with your
+130:15 
+
+130:15 problem. Whether your system is actually
+130:17 
+
+130:17 slow or not and how slow is that you
+130:20 
+
+130:20 have to actually measure your system
+130:22 
+
+130:22 using practices like observability,
+130:24 
+
+130:24 using traces, metrices, logs and
+130:27 
+
+130:27 performance testing, load etc. So
+130:29 
+
+130:29 measuring is a very big part which
+130:32 
+
+130:32 answers your question where exactly your
+130:34 
+
+130:34 system is slow. Which component is
+130:36 
+
+130:36 exactly slow in your whole system? What
+130:38 
+
+130:38 exactly is your bottleneck? Unless you
+130:41 
+
+130:41 know the answers to these and you know
+130:43 
+
+130:43 the specific answer to this, you have to
+130:45 
+
+130:45 know that if your database is the
+130:47 
+
+130:47 bottleneck, then it is the bottleneck
+130:50 
+
+130:50 because of the absence of this
+130:51 
+
+130:51 particular index. It is the bottleneck
+130:53 
+
+130:53 because of the absence of sharding.
+130:56 
+
+130:56 Unless you know the specific answers all
+130:58 
+
+130:58 these solutions that we talked about you
+131:00 
+
+131:00 should not opt for them because when we
+131:02 
+
+131:02 do that that's what we call as premature
+131:05 
+
+131:05 optimization which is not something I
+131:07 
+
+131:07 would advise so always measure first
+131:10 
+
+131:10 measure everything then profile trace
+131:13 
+
+131:13 your requests there are tools that you
+131:15 
+
+131:15 can configure like Prometheus Graphana
+131:17 
+
+131:17 to trace every single request to find
+131:19 
+
+131:19 out where your bottlenecks are or you
+131:22 
+
+131:22 can go with some paid service or some
+131:25 
+
+131:25 managed tool something like New Relic
+131:27 
+
+131:27 which makes measuring your system a lot
+131:29 
+
+131:29 easier. And after doing all this,
+131:31 
+
+131:31 understand where actually the time goes
+131:34 
+
+131:34 before trying to make your system faster
+131:36 
+
+131:36 because the worst thing that you can do
+131:39 
+
+131:39 while solving your performance related
+131:41 
+
+131:41 problems is solving the wrong problem or
+131:44 
+
+131:44 fixing the wrong bottleneck because it
+131:46 
+
+131:46 gives you the impression that you have
+131:49 
+
+131:49 fixed your problem which in turn becomes
+131:52 
+
+131:52 a much larger problem along the way. So
+131:54 
+
+131:54 if you want to take something from both
+131:57 
+
+131:57 of these videos, this advice, measure
+131:59 
+
+131:59 every single interaction of your system
+132:01 
+
+132:01 using tools like New Relic or if you
+132:04 
+
+132:04 want to go to the custom solution
+132:06 
+
+132:06 something like Prometheus Graphana only
+132:08 
+
+132:08 after you have measured every single
+132:10 
+
+132:10 component of your system only after you
+132:12 
+
+132:12 know all the numbers. What is your
+132:13 
+
+132:13 average latency? What is your average
+132:15 
+
+132:15 amount of errors and everything once you
+132:17 
+
+132:17 have all the numbers in front of you
+132:20 
+
+132:20 then only go for solutions only after
+132:22 
+
+132:22 that go for caching go for aggressive
+132:24 
+
+132:24 indexing and whatever all the solutions
+132:26 
+
+132:26 that we discuss in this video. Second
+132:28 
+
+132:28 always prefer simple solutions. What do
+132:31 
+
+132:31 we mean by simple solutions? One example
+132:34 
+
+132:34 that we discussed just before this was
+132:37 
+
+132:37 the microser architecture. Now microser
+132:39 
+
+132:39 architecture is one of those things
+132:41 
+
+132:41 which do have a lot of benefits but the
+132:45 
+
+132:45 complexities that they come with. It is
+132:47 
+
+132:47 usually not worth switching and
+132:50 
+
+132:50 microservices are not what we call as a
+132:52 
+
+132:52 simple solution. It can get very
+132:54 
+
+132:54 complicated unless you have experience
+132:57 
+
+132:57 dealing with and handling microservices.
+132:59 
+
+132:59 So that is one example. Same way while
+133:02 
+
+133:02 we are discussing horizontal scaling
+133:04 
+
+133:04 dealing with something like Kubernetes
+133:06 
+
+133:06 if you are interacting with your infra
+133:09 
+
+133:09 part dealing with Kubernetes is again
+133:11 
+
+133:11 what we will not consider as a simple
+133:13 
+
+133:13 solution. So unless you have no choices
+133:16 
+
+133:16 left and unless you know you definitely
+133:18 
+
+133:18 need this particular tool then only go
+133:20 
+
+133:20 for these complicated solutions
+133:23 
+
+133:23 otherwise always try to stick to simple
+133:25 
+
+133:25 solution because they are easy to
+133:26 
+
+133:26 understand they are easy to debug and
+133:28 
+
+133:28 they are easy to operate. So starting
+133:31 
+
+133:31 with a large server with a large
+133:33 
+
+133:33 vertical scaling based solution is
+133:35 
+
+133:35 always simpler than going with like from
+133:37 
+
+133:37 day one of development going with a
+133:39 
+
+133:39 horizontal scaling based architecture.
+133:41 
+
+133:41 Right? Same way indexing your database
+133:44 
+
+133:44 queries. Implementing proper indices for
+133:46 
+
+133:46 your database query is a much simpler
+133:48 
+
+133:48 solution than placing a radius cache in
+133:51 
+
+133:51 front all of your database queries. And
+133:53 
+
+133:53 a monolith is always simpler than going
+133:56 
+
+133:56 with a micros servicebased architecture
+133:58 
+
+133:58 because complexity has costs. It always
+134:01 
+
+134:01 has costs. Every component that you add
+134:04 
+
+134:04 to a system is another component that
+134:06 
+
+134:06 can fail is another component that you
+134:08 
+
+134:08 have to monitor. Is another component
+134:10 
+
+134:10 that you have to understand and operate.
+134:12 
+
+134:12 So only accept complexity when
+134:14 
+
+134:14 simplicity is genuinely insufficient.
+134:17 
+
+134:17 You have no other choices. Of course,
+134:19 
+
+134:19 this does not mean that you always
+134:21 
+
+134:21 choose the simplest possible approach.
+134:24 
+
+134:24 Sometimes complexity is necessary, but
+134:26 
+
+134:26 you have to understand the fact that
+134:28 
+
+134:28 complexity is a cost and it requires
+134:31 
+
+134:31 enough amount of justification before
+134:34 
+
+134:34 you start implementing it. Third, scale
+134:37 
+
+134:37 for the problems you have. What do you
+134:41 
+
+134:41 mean by this? You do not need to build
+134:43 
+
+134:43 for a million users on your first day of
+134:46 
+
+134:46 development. you probably will not ever
+134:49 
+
+134:49 reach a million users. Most platforms do
+134:51 
+
+134:51 not make it. So build for the scale that
+134:54 
+
+134:54 you currently have with some headroom
+134:57 
+
+134:57 for growth, keeping some amount of
+134:58 
+
+134:58 buffer, reasonable buffer. And as you
+135:01 
+
+135:01 grow, you will learn where your
+135:03 
+
+135:03 bottlenecks are. As long as you have
+135:06 
+
+135:06 properly implemented your observability,
+135:08 
+
+135:08 which means your logs, metrics, and
+135:10 
+
+135:10 traces. Your specific application has
+135:14 
+
+135:14 its own set of specific characteristics.
+135:17 
+
+135:17 So generic advice from internet from
+135:20 
+
+135:20 from engineering blogs that are from big
+135:23 
+
+135:23 companies Netflix or Facebook or Google
+135:26 
+
+135:26 they might not apply to your specific
+135:28 
+
+135:28 situation. So learning from measuring
+135:31 
+
+135:31 your system is much more valuable and a
+135:34 
+
+135:34 much more solid approach as compared to
+135:37 
+
+135:37 taking some performance engineering blog
+135:39 
+
+135:39 from a big company and start
+135:41 
+
+135:41 implementing their solution for your
+135:43 
+
+135:43 systems. Which brings me to the fourth
+135:45 
+
+135:45 problem and measure. Now I cannot stress
+135:48 
+
+135:48 this enough. Observability is one of
+135:51 
+
+135:51 those components in your backend systems
+135:53 
+
+135:53 that you should have from day one. So in
+135:57 
+
+135:57 the first point as I said that always go
+135:59 
+
+135:59 for the simplest solution. So this is
+136:02 
+
+136:02 one of those cases where you have to
+136:04 
+
+136:04 make an exception. Now you might think
+136:06 
+
+136:06 that on your day one going for simple
+136:09 
+
+136:09 logs and ignoring metrics and traces are
+136:13 
+
+136:13 a good way until you reach like 50,000
+136:16 
+
+136:16 users or one lakh users. But from my
+136:18 
+
+136:18 experience, measuring your systems,
+136:20 
+
+136:20 which means implementing proper
+136:22 
+
+136:22 production grade observability from day
+136:24 
+
+136:24 one always pays off. You never have to
+136:27 
+
+136:27 face random errors. You never have to
+136:29 
+
+136:29 face random crashes in your system. You
+136:32 
+
+136:32 never have to guess where your system's
+136:35 
+
+136:35 bottleneck is. Everything is in front of
+136:37 
+
+136:37 your face all the time. And as your
+136:39 
+
+136:39 system grows, you have enough headroom.
+136:42 
+
+136:42 You get enough headsups that you can
+136:44 
+
+136:44 scale. You can make changes to your
+136:46 
+
+136:46 system. You can make changes to your
+136:48 
+
+136:48 infra before they cause any kind of
+136:51 
+
+136:51 problems because you measure every
+136:52 
+
+136:52 single thing. So this is very important.
+136:55 
+
+136:55 Now the last thing is mindset. Similarly
+136:58 
+
+136:58 as we talked about in the security
+136:60 
+
+136:60 video, security is a mindset. You have
+137:02 
+
+137:02 to constantly learn about new threats.
+137:04 
+
+137:04 You have to constantly learn about new
+137:05 
+
+137:05 ways to secure our application. Same way
+137:08 
+
+137:08 performance optimization and scaling is
+137:11 
+
+137:11 an ongoing learning phase. It is a
+137:13 
+
+137:13 mindset and it comes from experience.
+137:16 
+
+137:16 You will build your systems and you will
+137:19 
+
+137:19 watch your systems struggle and you will
+137:21 
+
+137:21 optimize and see what helps and what
+137:24 
+
+137:24 does not help. And over the time after a
+137:26 
+
+137:26 lot of trial and errors you can say that
+137:28 
+
+137:28 your system can scale. Your system has
+137:31 
+
+137:31 all the performance tweaks all the
+137:34 
+
+137:34 performance related changes all the
+137:36 
+
+137:36 scaling needs so that it can cater to
+137:38 
+
+137:38 any amount of user traffic. At least the
+137:41 
+
+137:41 kind of user traffic your application
+137:43 
+
+137:43 gets, not the generic number based user
+137:46 
+
+137:46 traffic. And a single tutorial cannot
+137:49 
+
+137:49 teach you all that. Your job as a
+137:52 
+
+137:52 backend engineer is not to predict all
+137:54 
+
+137:54 kinds of problems that can happen, but
+137:56 
+
+137:56 to build systems that handle problems
+137:59 
+
+137:59 when they do happen in a graceful manner
+138:02 
+
+138:02 and to develop skills so that you can
+138:04 
+
+138:04 measure these things and so that you can
+138:07 
+
+138:07 diagnose these problems and you can
+138:08 
+
+138:08 resolve them quickly when they do

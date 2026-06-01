@@ -1,0 +1,1224 @@
+00:00 In this video, we are going to talk
+00:03 about background jobs or background
+00:06 tasks. If you are a back-end developer,
+00:09 understanding background jobs is very
+00:12 important so that you can build scalable
+00:15 and responsive applications or
+00:18 responsive backends. So what exactly is
+00:21 a background task and why should you
+00:23 really care? So a background task is
+00:25 basically any piece of code that runs
+00:29 outside of the request response life
+00:32 cycle, right? This is our request, this
+00:35 is our response and this is our client.
+00:39 This is our server, right? any piece of
+00:42 code or any logic, any workflow which
+00:45 runs outside of this whole interaction,
+00:49 this whole client server interaction or
+00:51 the request response life cycle that we
+00:55 call as background job or a background
+00:58 task. Which means that whatever that you
+01:01 are doing here outside of the request
+01:04 response life cycle, this does not need
+01:08 to happen immediately, right? This is
+01:10 not a missionritical task that needs to
+01:14 be responded immediately after calling
+01:17 it. This is not synchronous and that is
+01:19 the reason we can offload it to a
+01:22 separate process and finish however we
+01:25 have programmed it to finish. Right?
+01:27 However we have programmed it to respond
+01:30 to whatever client or to whatever
+01:33 separate process. Why exactly do we need
+01:36 them? Right? So let's take an example.
+01:39 Let's say you have an user and you have
+01:42 a platform some kind of SAS platform.
+01:44 The user comes to your platform and they
+01:46 sign up. They sign up to your platform
+01:49 which means they type their email, they
+01:51 type their name, they type their
+01:53 password etc. and they make a request
+01:56 and that request is made by your front
+02:00 end whichever UI is represented to the
+02:03 user and your front end makes a request
+02:06 or an API call to your server to your
+02:10 back end and your server does whatever
+02:13 processing whatever validation etc it
+02:15 needs to do for the email for the
+02:19 password for the length of the password
+02:20 for the complexity of the password etc
+02:23 and after that is successful. What it
+02:25 needs to do? It needs to send an email
+02:28 to that user to this user. So that if
+02:33 you have ever signed up to different
+02:35 platforms, you must have noticed this
+02:38 workflow that whenever you sign up to
+02:40 their platform, you give them your
+02:42 email, you give them a password and they
+02:47 send a verification email to your
+02:50 provided email so that they can verify
+02:53 that whatever email that you have
+02:55 provided that actually belongs to you
+02:58 and you're not providing any random
+02:60 email that you don't actually own,
+03:02 right? That is one of the ways to verify
+03:05 that you own the email. What they do,
+03:08 they send a verification email which
+03:10 contains either a link which you can
+03:13 click on and that redirects you to the
+03:17 front end and it asks you to provide a
+03:20 new password etc etc or it can also
+03:22 provide you a code right a sixdigit code
+03:26 or 8digit code that you need to type
+03:30 into the front-end interface right some
+03:33 kind of one-time password so this is how
+03:35 the workflow
+03:37 looks like and when you sign up to a new
+03:39 platform. Now the point to focus here is
+03:42 the user comes to your platform they
+03:44 type their email they type their name
+03:46 the username whatever and they click on
+03:49 sign up and your front end makes a
+03:51 request an API call to your back end and
+03:54 your back end does whatever the initial
+03:55 processing it needs to do and then it
+03:57 sends an email to the user. Now this is
+04:01 the task that we want to focus here the
+04:05 sending the email to the user and this
+04:08 is one of the examples of a workflow or
+04:12 a task that we usually offload to
+04:15 background processes and the reason
+04:17 being when you want to send an email to
+04:20 user what actually happens is you are
+04:24 subscribed or you are using some
+04:28 third-party application right? Some
+04:31 third party platform to send your email,
+04:34 some email provider, right? It can be a
+04:37 provider, some modern providers like
+04:39 resend, bravo. There are a lot of email
+04:42 providers that we use and how it
+04:46 actually works is you construct whatever
+04:49 the content of your email is. Uh let's
+04:52 say you have an HTML template that you
+04:56 want to send to the user and you fill
+04:59 the template with whatever code or
+05:02 whatever link that you want to send to
+05:04 actually verify the email and you take
+05:07 that HTML template and you provide what
+05:11 is the email address that you want to
+05:12 send to. This is the email address of
+05:14 the user
+05:16 and you provide the subject you provide
+05:19 which email that you want to send from
+05:22 etc etc right whatever the default
+05:24 parameters is for sending an email
+05:26 through an email provider to an SMTP
+05:28 provider and you make an API call to a
+05:32 different service your back end makes an
+05:36 another API call to the server of
+05:38 whatever email provider that you're
+05:40 using recent mail gun etc etc Now that
+05:44 server processes your email. It checks
+05:46 whatever it needs to check whether you
+05:48 own this email, whether you have the
+05:50 correct API key, etc., etc. And if
+05:53 everything is successful, it sends the
+05:55 email. However, that server has
+05:58 configured to send emails and it sends
+06:00 the response back to your server that
+06:03 whether the email sending was successful
+06:05 or not or whether it was a failure or
+06:08 not, etc., etc. Now the reason we want
+06:11 to offload this to a background task
+06:13 offloading this particular interaction
+06:16 you your back end calling another back
+06:19 end or another server for sending the
+06:21 email is because this server may not be
+06:24 as responsive as our own server right
+06:28 because we don't have control over other
+06:32 servers and for some reason for some
+06:35 kind of traffic spike or some kind of
+06:38 service downtime etc. There can be a lot
+06:40 of reasons. So for some reason let's say
+06:43 this service is down and assuming we
+06:46 were not doing this whole email sending
+06:49 workflow in a background job. We were
+06:51 doing it synchronously. What happens?
+06:54 Your server server does all the
+06:56 processing. It makes the database calls.
+06:58 It stores the initial data of the user
+07:01 in the database and it creates a
+07:04 verification code etc etc and it calls
+07:07 this API and this API call fails. So
+07:11 there can be multiple parts here. One is
+07:15 if you are not properly handling the
+07:19 error of this API failing and because of
+07:24 that what happens this API call this
+07:27 whole the user signing up this API call
+07:30 this also fails if you don't have proper
+07:33 error handling for this API right the
+07:36 email sending it this API and that gives
+07:38 a very bad user experience if your
+07:41 signup API fails itself now the second
+07:44 thing is let's say you have proper error
+07:46 handling in place and if you do have
+07:50 that then only this interaction fails
+07:52 right the signup API itself works
+07:56 properly but this interaction fails and
+08:01 even in that case the signup is
+08:03 successful and in the front end you are
+08:05 showing that we have sent you a
+08:07 verification email and you can use that
+08:10 to verify your account right but Since
+08:14 this never actually succeeded and you
+08:18 told the user that we have already sent
+08:21 the email. So that again gives a very
+08:24 bad user experience. Now what they have
+08:26 to do they have to come again to the
+08:28 platform and they have to if you have
+08:30 the functionality. they can click on
+08:32 resend email and again if the recend
+08:35 email resend email now that is a
+08:37 different API call and by then if the
+08:40 service is up then all good you can
+08:43 resend the email and they can verify the
+08:45 account and if the service is still down
+08:48 then again this part of the API is
+08:52 failed and you show the user that we
+08:54 have sent you an email again right and
+08:57 etc etc you can imagine how that
+08:59 experience goes
+09:01 So that's how it works in a synchronous
+09:05 workflow when you do all the processing
+09:09 in the same process that your API is
+09:12 working in in the same request response
+09:14 life cycle. Now imagining let's say
+09:17 let's go to a different diagram we have
+09:19 a user they come to your front-end
+09:22 platform they type their name type their
+09:24 email and your front end platform makes
+09:26 that request to your server right now
+09:30 the server does the all the initial
+09:31 processing then what it does at last
+09:34 after doing all the processing etc
+09:37 generating the verification code
+09:39 constructing the email instead of
+09:42 sending the email or instead of calling
+09:44 the API
+09:45 of the email provider to send the email
+09:48 in the same method in the same function
+09:50 in the same request in the same request
+09:53 response life cycle. What it does, it
+09:55 takes all the content, all the
+09:57 information that we need to send the
+09:60 email and it packages that into some
+10:04 format. Let's say a JSON format like it
+10:07 serializes it into a JSON format. All
+10:09 the information that we need to send the
+10:12 email and it injects it into some kind
+10:16 of Q, right? Some kind of Q. We have a
+10:19 lot of tasks here or maybe the queue is
+10:21 empty at this point. does not matter but
+10:25 it pushes this task into a queue and
+10:30 what it does after it pushes the task
+10:32 into the queue the API call does not
+10:34 happen at that point it just says that
+10:37 this is a new task this is a new
+10:40 function call that we need to trigger or
+10:43 that we need to execute at some point at
+10:47 somewhere we don't know that yet right
+10:50 and it pushes that into the cube And
+10:53 after that it returns and by return we
+10:56 mean returns some kind of success status
+10:58 code either 20 0 or 201 depending on
+11:01 whatever semantics that you're using and
+11:04 because of this workflow what happens
+11:06 the user signs up
+11:08 and your front end makes the API call
+11:11 and they immediately see that screen
+11:12 that we have sent a verification email
+11:15 to your provided email. So you can use
+11:18 the link in that email to verify your
+11:20 account and that takes care of creating
+11:23 the task part. Coming to a different
+11:25 side of this execution. Let's say here
+11:28 after we created the task and pushed it
+11:32 into the queue. Now what happens on this
+11:35 side of the task Q is there are
+11:38 consumers or depending on which
+11:41 framework or which language that you're
+11:43 using there are consumers or there are
+11:46 workers etc. What they do they take out
+11:50 this particular task from this queue and
+11:53 depending on the configuration and there
+11:55 can be a lot of different types of
+11:57 configuration and depending on what kind
+11:59 of scale that you're executing if you
+12:02 have different different types of nodes
+12:03 different nodes for producers different
+12:06 nodes for consumers but we are talking
+12:08 in a very high level overview to
+12:10 understand how the workflow exactly
+12:12 works what they do they take out this
+12:15 task from the queue some kind of
+12:17 consumer. And when I say consumer, what
+12:21 we mean is a program that runs in a
+12:25 different process from our main process
+12:28 from our main backend application.
+12:30 Right? this different process it picks
+12:33 up this particular task and since we had
+12:37 serialized the all the information in
+12:39 the task into some kind of format let's
+12:41 say JSON format here it des serializes
+12:45 into whatever the native language format
+12:47 is let's say if it's Python it des
+12:49 serializes into a dictionary if it's
+12:52 JavaScript it des serializes into an
+12:54 object if it's go it des serializes into
+12:57 a strct right you get the idea des
+12:60 serializ it and it has now a native
+13:03 format for all that data that it needs
+13:06 to perform that kind of task. Now there
+13:10 can be different different configs here.
+13:11 Let's say you have pushed the email into
+13:14 the email sending queue, right? There
+13:17 can be a different queue for sending
+13:19 notifications, for sending inapp
+13:21 notifications or for sending push
+13:23 notifications to mobiles. Right? Now
+13:26 different types of consumers pick up
+13:29 different tasks from different cues
+13:31 right those all can be configurable
+13:34 depending on what library or what
+13:36 framework that you're using. Now since
+13:39 it is a email sending queue our email
+13:41 consumer or email worker picked up this
+13:44 task and it was in JSON format it des
+13:47 serializes serialized into a native
+13:50 format and now it has all the
+13:52 information that it needs to perform the
+13:54 task. Now what happens it has all the
+13:56 information and beforehand what we do in
+13:60 that consumer side we configure from
+14:03 which queue we want to pick up the task
+14:06 from and we also configure what kind of
+14:09 data that we are expecting to receive
+14:12 from the task right and that falls under
+14:15 the d serialization layer of the
+14:17 consumer then what happens we also
+14:19 register a method or a handler which is
+14:24 the code that actually runs when we
+14:27 provide it the data that it needs to use
+14:30 for running, right? Which is basically
+14:33 the same workflow or the same function
+14:37 that we're running synchronously when we
+14:40 did not have a background job, right? B
+14:43 which basically means here at this point
+14:46 what we do we take all the information
+14:48 that we need for sending the email which
+14:51 is the HTML template the sender email
+14:56 the receiver email the subject etc and
+15:00 the user ID the user information for
+15:02 adding the user first name for adding
+15:05 the user's email etc etc now it has all
+15:08 the data it needs to send the email now
+15:10 what it happens It calls the API for
+15:14 sending the email from different
+15:16 different email providers depending on
+15:18 which email provider that you are using.
+15:20 It can be recent, it can be mail gun, it
+15:23 can be bravo. Right now this consumer
+15:27 this finally calls the API which sends
+15:32 the user the email. Now usually what
+15:34 happens this all this processing it
+15:37 happens between a few seconds or even
+15:40 milliseconds if there are not a lot of
+15:43 tasks in the queue. So latency is not a
+15:47 problem when you are trying to send an
+15:50 email right because the expiry of let's
+15:54 say verification emails are usually 15
+15:58 minutes or 20 minutes and since our
+15:60 email will be delivered in milliseconds
+16:02 or max to max under 5 to 10 seconds if
+16:06 you have a lot of traffic and you have a
+16:08 lot of tasks in your queue right what
+16:12 happens this consumer causes pay and
+16:15 this service sends the email and the
+16:16 user receives the email and they can now
+16:19 verify their account. And in a different
+16:22 scenario, what happens since we assumed
+16:25 in the previous example that if this
+16:28 service was down and our email sending
+16:32 this API call fails, right? this API
+16:34 call fails. What happens now is since
+16:37 this API failed, this consumer process,
+16:41 this consumer function that the handler
+16:44 that we registered with the consumer,
+16:46 this also fails, which means our task,
+16:48 this particular task has failed. At this
+16:51 point, if we were processing
+16:54 synchronously, our the request response
+16:58 life cycle breaks and we return some
+16:60 kind of code. Since it's an server
+17:03 error, we return a 500 internal server
+17:05 error. Now that it's happening in the
+17:08 background, what happens if a task fails
+17:10 and depending on what framework that
+17:13 you're using? If you're using Python,
+17:14 you have something like celery. If
+17:17 you're using NodeJS, you have something
+17:18 like Bullmq. In Go, you have something
+17:22 like async Q. Right? Depending on what
+17:25 library or what framework that you're
+17:27 using for all this background task
+17:30 processing, background task execution,
+17:32 when a task fails, it is again injected
+17:35 into the queue for retrying. And for
+17:38 retries, we have different different
+17:40 algorithms. One of the popular algorithm
+17:43 is exponential back off which basically
+17:47 means after a task fails, it will try
+17:49 after let's say 1 minute, it'll retry
+17:52 that task. If it again fails, it will
+17:54 try after 2 minutes. It will increase
+17:58 the time. It will increase the whole
+18:01 time every time the task fails. And of
+18:04 course, we have a maximum amount of
+18:07 retries that we have configured
+18:09 beforehand. Let's say five times. So
+18:12 after it fails the second time, we'll
+18:13 try after 4 minutes. After it fails the
+18:16 third time, we'll try after 8 minutes.
+18:18 And usually if you're using an email
+18:20 provider, a big email provider like
+18:22 recent or mail gun, the services don't
+18:25 go down or your APIs don't fail for like
+18:30 4 minutes, 8 minutes straight. Usually
+18:32 the downtime will be in seconds or
+18:36 milliseconds. So for those cases, it
+18:39 might fail let's say once or max twice,
+18:44 but the third time it'll most likely
+18:47 succeed. the service, the external
+18:49 service will be back up again and your
+18:51 email sending will be successful and the
+18:54 user will receive the email. And since
+18:57 we offloaded this whole email sending
+18:60 workflow to a background task even if
+19:02 the external service was down, we were
+19:05 able to send the email successfully with
+19:08 all this retrying mechanism etc. And
+19:12 that is another advantage of using
+19:15 background task processing because of
+19:17 this very convenient functionalities
+19:20 like retrying mechanisms and failure
+19:22 detection etc etc. So now we have a very
+19:26 general idea about how background task
+19:29 processing works and why do we use them?
+19:33 What are the advantages? One of the
+19:34 advantage is the faster processing time,
+19:38 the responsiveness of our backend
+19:40 application so that we don't block our
+19:43 actual API call because of some external
+19:45 service or because of some heavy
+19:47 processing. And second is we have
+19:49 retrying mechanisms for tasks which are
+19:52 prone to failing. Now to summarize
+19:55 background tasks allow you to offload
+19:58 time consuming and non-critical
+20:01 operations and because of that your
+20:03 backend application your actual backend
+20:06 API calls they are responsive they
+20:08 prevent timeouts because of dependency
+20:11 on external services and it
+20:14 significantly improves your overall user
+20:16 experience. Now what are some major
+20:20 examples or what are some major kind of
+20:23 tasks that we usually in a typical SAS
+20:27 applications offload to background. One
+20:29 which we already saw is sending emails.
+20:33 Sending emails since it depends on an
+20:36 external service we offloaded to a
+20:39 background task which we already
+20:41 discussed the whole workflow of. The
+20:43 second is processing images or videos.
+20:47 So if you have a workflow where the user
+20:52 uploads an image and what you have to do
+20:55 is you have to take that image and you
+20:58 have to resize it or you have to resize
+21:00 it into different different format so
+21:02 that the image can be optimized for
+21:05 delivery depending on the network
+21:07 conditions of the user or the device of
+21:10 the user. Since in mobile smartphones we
+21:14 usually need smaller size images and in
+21:18 desktop applications in big size 2 XL XL
+21:21 etc. we need big images for all these
+21:24 kinds of tasks processing images or
+21:26 processing videos can be offloaded to
+21:28 background. Third we have generating
+21:33 generating reports. So if you are
+21:35 running some kind of enterprise
+21:37 application, enterprise SAS application,
+21:39 let's say take an example of a project
+21:42 management application. So you have to
+21:44 send weekly reports or daily reports or
+21:48 monthly reports depending on your
+21:50 configuration of the user. represent
+21:52 reports which are basically PDF files,
+21:55 emails of all the stats, all the process
+21:59 task, all the completed task, all the
+22:01 pending task, all the pendings task in a
+22:03 sprint etc etc. In a typical project
+22:05 management application, you have to
+22:07 construct a email with all the content
+22:10 directly in the HTML format or in a PDF
+22:13 format. You have to generate that report
+22:15 in the PDF format and you have to send
+22:17 the email daily at midnight at 12:00
+22:21 weekly on Sunday at 12:00 etc. Right?
+22:25 For these kinds of tasks also we offload
+22:28 them to backgrounds using chron jobs.
+22:31 Right? And if you're using a framework
+22:33 or a library like salary bulmq they also
+22:36 have features for scheduled task so that
+22:40 you can configure a particular date a
+22:42 particular time and those task will be
+22:46 executed again and again on those
+22:49 particular intervals. Those features are
+22:51 provided by different different
+22:53 libraries or again sending push
+22:55 notifications. Push notification
+22:57 basically means all the notification
+22:59 that you receive in your smartphone
+23:01 right on your notification bar from
+23:04 different apps. If you have apps like
+23:07 Swiggy, Zumato, you receive these
+23:10 notifications to order food or your
+23:13 delivery guy has reached a restaurant
+23:15 etc etc. Right? These are called push
+23:17 notifications that your user receive in
+23:19 the smartphone directly in the
+23:21 notification panel instead of inside the
+23:23 app. And usually how it works is you
+23:28 have a back end. Let's say the Zumato or
+23:30 Swiggy, they have the back end. Whenever
+23:32 you install the app in your phone, let's
+23:36 say you install the Swiggy app in your
+23:38 phone, your device is registered under
+23:41 this push notification service. And
+23:44 usually it is provided by your operating
+23:48 system. So Google has their own push
+23:50 notification service and Apple has their
+23:52 own push notification service etc etc.
+23:55 Now what happens your back end has to
+23:57 store this devices some kind of code in
+24:00 their database and whenever they want to
+24:03 send a particular notification to a
+24:06 particular device. They have to make a
+24:08 service call to Google or Apple
+24:12 depending on which operating system
+24:13 their user is using. And these external
+24:17 services like Google and Apple, they
+24:19 actually send the notification to you.
+24:21 Not the back end cannot send the
+24:22 notification directly to your phone. It
+24:24 is done by your operating system, right?
+24:27 Operating system service. The back end
+24:29 actually stores the code of your device
+24:32 in the database and it uses that to send
+24:34 you a notification. So since this
+24:37 workflow also involves making an API
+24:40 call making a service call to a
+24:42 different service external service we
+24:44 also offload this to a background task.
+24:47 Now these are some of the major examples
+24:49 of when do we actually use background
+24:52 tasks in a typical backend application.
+24:55 Now let's get a little technical and
+24:58 understand what exactly is a task Q and
+25:04 how do they actually work. Now to go by
+25:07 definition, a task Q is just a system
+25:11 for managing and distributing background
+25:14 jobs or tasks. And this is actually the
+25:19 mechanism, the behind thescenes
+25:21 technology that enables you to offload
+25:25 task to reliably hand off the work that
+25:28 you want to do in the background to a
+25:30 separate process. Right? This is the
+25:33 core let's say engine that works behind
+25:35 the scenes to enable this whole
+25:38 workflow. Now the core idea is you have
+25:41 a producer which is your application
+25:44 code. It can be NodeJS code or Python
+25:47 code or Golang code right depending on
+25:51 what language you're using what
+25:53 framework that you're using your
+25:55 application code which creates the task
+25:58 which creates the task and pushes that
+26:02 into the queue the queue this is the
+26:05 task Q this is called the producer the
+26:09 responsibility of the producer the work
+26:11 of the producer is it will create the
+26:14 task And that creation process will have
+26:17 all the information the consumer the
+26:20 worker will need to process or execute
+26:23 the task. So the producer will take all
+26:25 that information and it will serialize
+26:27 it into a JSON format or any other kind
+26:31 of serializable any other kind of
+26:33 serializable format that your framework
+26:35 or the your library uses. It serializes
+26:38 that data it creates the task and it
+26:40 pushes that into the cube. That is all
+26:44 the work of a producer. Then on the
+26:47 other side you have the consumer. You
+26:50 have the consumer which basically runs
+26:52 in a different process. It can be in the
+26:54 same backend application code or it can
+26:57 be a separate codebase also right? It
+26:59 runs in a different process and what it
+27:01 does it picks out those tasks and it
+27:05 actually runs them. it executes those
+27:08 tasks depending on what is the execution
+27:11 code or what is the handler that you
+27:14 have registered for a particular task.
+27:16 This is how the whole interaction works
+27:18 on a very high level. So this is like
+27:20 imagine a to-do list for your back end.
+27:23 Your application code adds the tasks
+27:26 into the to-do list and the workers or
+27:29 the consumers they pick them off one by
+27:32 one and they execute them. Right? a
+27:34 to-do list for your backend application.
+27:36 So technically speaking on a high level
+27:39 the producer this part it creates a task
+27:43 and the task might contain information
+27:44 like the user ID or the user profile
+27:47 information like the name of the user
+27:49 the email of the user that we'll need
+27:52 for processing that task. it'll have all
+27:54 the information and if it is an image
+27:57 processing task it will have the image
+27:59 or if it is a report sending task it
+28:02 will have all the data that it needs to
+28:04 send the report etc etc right and the
+28:07 producer this process of pushing the
+28:11 task into the queue it is called nqing
+28:14 right if you are familiar with data
+28:16 structures and algorithms the process of
+28:20 pushing a new item into the queue it is
+28:22 called and queuing the task which means
+28:25 adding a new item to the task. Now this
+28:29 part this is called a broker. The queue
+28:32 is also called a broker. Now this is
+28:35 responsible for storing these tasks
+28:38 until a worker is ready to process them
+28:41 which happens on the this side other
+28:43 side. So this is like a temporary
+28:45 holding area until consumers or workers
+28:48 can pick up these tasks and start
+28:50 processing. And this part the consumer
+28:53 or the worker this runs in a separate
+28:56 process or a separate thread. The
+28:59 technicalities can be different
+29:00 depending on what language what
+29:02 framework and what library that you're
+29:04 using but the core fundamentals remain
+29:06 the same. This consumer, it runs in a
+29:08 separate process. And the way it picks
+29:11 these tasks is it constantly monitors
+29:14 the queue for new items, for new items
+29:17 being pushed into the queue. And when it
+29:20 sees a new task, when it finds a new
+29:23 task, it dqes it. The process of taking
+29:26 out an item from a queue, it's called
+29:29 DQing. And it dqes that task and it
+29:34 starts executing it. So that is the
+29:37 highlevel technical overview of how a
+29:40 task Q actually works. Now going a
+29:43 little more deep. When a task is NQed, a
+29:48 task this is called NQ and is called DQ.
+29:54 This is also called the broker. Right?
+29:58 So when a task is NQed, it is
+30:01 serializable. It is serialized into a
+30:04 JSON format. Right? This is an important
+30:06 part of ENQing a task. Now this
+30:09 underlying system this Q so far we've
+30:11 been talking in a very abstract way like
+30:14 task Q etc. Usually these are
+30:17 technologies. So speaking of examples,
+30:21 this can be technologies like Rabbit MQ
+30:24 or Radius,
+30:27 PubSub, right? Radius has a very useful
+30:32 module called publisher and subscriber
+30:35 module which are usually used for
+30:39 implementing task use, right? Or it can
+30:42 be SGS which is a managed queuing
+30:45 service from AWS. Right? If you are
+30:49 considering scaling your task management
+30:51 or task processing system to different
+30:55 nodes which are spread across the whole
+30:57 world then Amazon SQS is a good solution
+31:01 which is managed service provided by AWS
+31:05 which are deployed in multiple regions
+31:08 so that you have a very scalable and a
+31:10 very responsible task processing system
+31:13 in place. So this queue this broker
+31:16 which actually stores the task right
+31:20 this is usually managed by an underlying
+31:22 technology like rabbit MQ or radius
+31:24 pubsub etc. So what happens is when the
+31:28 worker or when the consumer it completes
+31:32 the task it sends an acknowledgement an
+31:35 acknowledgement back to the queue. This
+31:38 tells a Q that the task was successfully
+31:41 processed and it can be removed. But if
+31:45 it does not send an acknowledgement, the
+31:48 Q can decide depending on different
+31:50 parameters that whether the task was
+31:54 unresponsive in that case it will try a
+31:57 different retrying mechanism. If the
+31:58 task failed in that case it will try a
+32:02 different retrying mechanism. Right? All
+32:04 these frameworks like celery, bulmq,
+32:06 asyncq, all these very popular
+32:08 frameworks for task processing. They
+32:11 have all the features in place to manage
+32:14 all these different kinds of edge cases.
+32:16 In this whole interaction, we also have
+32:18 a concept called visibility timeout
+32:22 which basically means that this is the
+32:24 period this whole workflow. This
+32:27 visibility timeout is the period when a
+32:30 task is considered in progress, right?
+32:32 by a consumer or by a worker. And if the
+32:36 worker or the consumer it does not
+32:39 acknowledge the task, it does not send
+32:42 the acknowledgement signal back to the
+32:44 queue within that timeout, right?
+32:47 Whatever timeout we have configured
+32:49 depending on a configuration. If it does
+32:51 not the worker, the consumer does not
+32:53 send an acknowledgement signal within
+32:55 the timeout probably because it crashed
+32:57 or probably because the external service
+32:59 hung up. It can be a lot of reasons.
+33:02 What the Q will do is the Q will make
+33:05 the task. It will take the task and it
+33:07 will make it available to other
+33:10 consumers or other workers so that the
+33:13 task does not get lost in the whole
+33:16 interaction. And the reason being since
+33:18 the way our task processing systems work
+33:21 is we the publisher pushes a task into
+33:24 the queue and consumers take out task
+33:27 from the queue. they process it and the
+33:30 cues remove the task from the queue.
+33:33 Right? And since the consumer already
+33:35 took out a particular task from the
+33:38 queue and it was not able to acknowledge
+33:42 the success or the failure of the task.
+33:45 We don't want the task to get lost in
+33:47 the whole interaction. That's why we
+33:49 have this feature called visibility
+33:51 timeout. uh because of that the Q
+33:55 ensures that our task don't get lost and
+33:58 when a consumer or when a worker is not
+34:02 able to send a particular
+34:03 acknowledgement signal it will make that
+34:06 particular task available to other
+34:08 consumers or other workers so that they
+34:10 can start processing. So someone has to
+34:13 send an acknowledgement signal back to
+34:15 the queue to mark a particular task
+34:18 either as success or failure. Now let's
+34:21 talk about different kinds of tasks that
+34:25 we usually encounter in a backend
+34:28 application. So the first example is
+34:30 pretty simple that we have already seen
+34:32 one of task which means uh something
+34:35 happens in your in your request request
+34:37 response life cycle and you want to
+34:40 perform a single task which is like a
+34:43 trigger depending on a particular
+34:45 scenario we want to execute a particular
+34:48 function in background. So sending an
+34:50 email is a good example of one of task.
+34:54 A user registered. You want to send them
+34:56 a verification email. The verification
+34:58 was successful. You want to send them an
+34:60 welcome email. And someone wants to
+35:03 reset their password. You want to send
+35:05 them an email so that using that link
+35:07 they can reset their password. Let's say
+35:08 it's a social media application and
+35:12 someone texted you and you want to send
+35:14 them send the user a notification. So
+35:16 that's again a one-off task, right? So
+35:19 these are examples of one-off task which
+35:21 you will encounter more frequently as
+35:23 compared to other task. But other tasks
+35:25 also have their place. Then we have
+35:27 recurring tasks. Recurring tasks are
+35:30 basically tasks which have to be
+35:33 executed periodically in specific
+35:36 intervals. And examples of that can be
+35:40 sending a particular report, sending
+35:43 daily reports or sending monthly reports
+35:45 or sending annual reports to your users
+35:48 for whatever the stats in that quarter,
+35:51 in that year or in that month or in that
+35:54 day etc. Recurring task also can contain
+35:58 cleanup or maintenance jobs. So let's
+36:00 say you have an authentication system in
+36:02 place and for authenticating users you
+36:07 use stateful technologies and for
+36:09 implementing stateful authentication you
+36:11 have to store all the sessions of the
+36:14 user in your database in the sessions
+36:16 table and what happens as the user logs
+36:20 in logs out logs in logs out for a long
+36:22 time they have a lot of abandoned or a
+36:26 lot of orphan sessions which are not
+36:28 really active but they're still in your
+36:30 database since you never actually
+36:32 deleted them. So you have a task or a
+36:37 recurring task which executes let's say
+36:40 in every 3 months or in every 2 months
+36:42 or in every month end of the month or
+36:46 starting of the month what it does it
+36:48 goes through all the orphan sessions all
+36:50 the sessions which are not active and
+36:53 it's been a long
+36:54 time. So you actually go and delete them
+36:58 from your database. so that you have
+36:60 some free storage. The orphan sessions
+37:03 are not taking unused space in your
+37:06 database. So those are some examples of
+37:08 recurring tasks. Then we also have chain
+37:11 tasks. Chain task basically have parent
+37:14 child relationship between different
+37:17 different kinds of task. So let's say
+37:20 you have an LMS platform. LMS means
+37:24 learning management system. So some of
+37:27 the popular LMS platforms are let's say
+37:29 Udemy etc. Right now let's imagine you
+37:33 have an LMS platform of your own and
+37:37 what happens the user the instructor
+37:40 whoever is creating courses in that
+37:43 platform they can come into the platform
+37:46 and they can create a new course and for
+37:48 creating a new course what do they have
+37:50 to do? What they have to do is they have
+37:52 to upload videos. they have to upload
+37:54 videos into the platform. Right? Now a
+37:58 typical workflow of uploading videos
+38:00 into an LMS platform might look like the
+38:03 user comes they click on upload video
+38:06 and they select the video that they want
+38:08 to upload and they click enter and the
+38:10 video starts uploading and the
+38:13 technically how it works is the front
+38:16 end takes that video and it immediately
+38:19 the back end immediately sends an
+38:21 acknowledgement so that the request is
+38:23 not blocked but the uploading process is
+38:26 in progress. address right it can be
+38:29 uploaded to S3 using a pre-signed URL
+38:32 right the implementation can be
+38:34 different after the video is uploaded it
+38:38 number of tasks can be triggered the
+38:41 first task can be the video has to be
+38:43 taken and it has to be processed so that
+38:47 the video is available in different
+38:49 different resolutions depending on the
+38:51 network condition of the user or the
+38:54 device of the user etc right the video
+38:56 has to be encoded to different formats
+38:59 to cater to a wide range of network
+39:01 conditions and a wide range of devices.
+39:04 So that is your first task and after
+39:07 that video is processed and second task
+39:09 has to be triggered which depends on the
+39:12 first task which is the video has to be
+39:14 encoded first. Now the second task is
+39:17 the thumbnails for that video has to be
+39:20 generated right after the video is
+39:22 encoded to a particular format so that
+39:25 that video can be served efficiently
+39:28 from different different CDNs uh content
+39:31 delivery networks or whatever platforms
+39:33 that you're using. After the video is
+39:35 encoded then we have to trigger a
+39:38 different task so that the thumbnails
+39:40 for that video has to be generated.
+39:43 After the thumbnail has been generated,
+39:45 now we have to trigger another task
+39:48 which is those thumbnail images they
+39:51 have to be processed so that we have
+39:54 different different resolutions of the
+39:57 same thumbnail images for different
+39:58 network conditions and for different
+40:00 devices. Now this thumbnail image
+40:04 processing task depends on thumbnail
+40:06 generation task. But at the same time
+40:08 after the video is encoded at the same
+40:11 time we started the thumbnail generation
+40:13 task we can parallelly start another
+40:16 task which is transcription generation
+40:19 right the audio transcription generation
+40:22 to show to the user when the video is
+40:25 playing the basically the subtitles. Now
+40:28 this task the audio transcription
+40:30 generation and this task the thumbnail
+40:33 generation since they are not dependent
+40:35 on each other they can be started
+40:37 parallelly but they both depend on the
+40:39 task that the video has to be encoded
+40:42 first. So this kind of interaction this
+40:45 kind of task chaining this is what we
+40:49 mean when we say chain task or tasks
+40:52 which have a parent child relationship
+40:55 right or some kind of hierarchy. A
+40:57 particular task can only be triggered
+40:60 once the parent task is triggered and
+41:03 successfully completed first. Right?
+41:05 Those are examples of chain task. Then
+41:08 we have batch tasks. So one example of
+41:11 batch task from a real world example is
+41:14 let's say you have a SAS and you have a
+41:17 button where the user can click on
+41:21 delete account right a lot of SAS
+41:24 platforms offer this feature where you
+41:26 can delete your account now what happens
+41:29 when the user actually deletes that
+41:31 account you don't actually the front end
+41:34 cannot just make an API call and the
+41:36 back end cannot just go through all the
+41:38 data of the user in in the database and
+41:41 they cannot just delete it in the same
+41:43 request, right? Since if it's a big
+41:47 platform, the user might have a lot of
+41:49 data, right? And they might have data in
+41:53 a database which are spread across
+41:55 different different shards or different
+41:57 different regions etc. Right? There can
+41:59 be a lot of different types of
+42:00 conditions and lot of different types of
+42:02 data of a user that we have in the
+42:04 platform and all of those cannot be
+42:09 deleted in a single request response
+42:11 life cycle. Even if it can be deleted,
+42:14 it might take let's say more than 40 or
+42:17 50 seconds or let's say worst case more
+42:20 than a minute, right? And we cannot
+42:24 stall or we cannot block an API call for
+42:26 that long. And for that reason what
+42:30 happens whenever the delete account API
+42:33 call is made what we do we immediately
+42:36 respond back with a successful uh
+42:39 response like 200 and we say that your
+42:42 account deletion task is in progress and
+42:46 the user is logged out from the platform
+42:48 and they are given some kind of grace
+42:51 period that you have 3 days or you have
+42:54 7 days to log back into the account and
+42:57 cancel the deletion process or the
+42:60 account will be permanently deleted
+43:02 after the end of 3 days. That can be one
+43:04 use case or the second use case is let's
+43:07 say you don't have a grace period.
+43:09 You're not a big platform like AWS. In
+43:12 that case, what you do the moment the
+43:16 delete account API call is made the
+43:18 front end immediately receives the
+43:20 successful response that the back end
+43:23 sends back and it logs the user out. And
+43:26 for that user the account is deleted
+43:29 permanently from our platform. But what
+43:31 exactly happens is the back end takes
+43:34 whenever the back end receives the
+43:36 delete account API call. What it does?
+43:38 It creates a task which is delete
+43:40 account and it pushes that task into the
+43:43 queue and it immediately responds back a
+43:46 successful response like 200 and the
+43:49 front end does it job. And for the back
+43:52 end what happens the consumer which is
+43:56 responsible for actually performing the
+43:59 task of deleting an account it picks
+44:02 that task from the queue and it starts
+44:04 the deletion process which might be
+44:07 going through all the resources of the
+44:09 user. Let's say if it's a project
+44:11 management application going through all
+44:13 the projects where the user is the
+44:15 owner. So removing all the entities of
+44:18 the user from that project and then
+44:21 deleting the profile of the user,
+44:22 deleting the assets of the user like
+44:25 logos, cover images and then at last
+44:28 actually deleting the user account,
+44:31 right? Then sending some kind of email
+44:33 to the user that your account has been
+44:35 deleted etc etc. So all of those things
+44:37 happen in background which means our API
+44:40 call is not blocked and that is an
+44:43 example of batch tasks right because it
+44:46 involves calling a lot of task from a
+44:49 single task. So delete account task
+44:52 itself can call a lot of tasks for
+44:55 deleting the entities of the user
+44:57 deleting the assets of the user right
+44:59 those can be batch task triggering a lot
+45:01 of task from a single task. Another
+45:04 example of a batch task can be let's say
+45:06 at 12:00 or midnight or at the end of
+45:10 the week you have to send report to a
+45:12 particular user. Now since you are a big
+45:15 platform you have a lot of users. So at
+45:17 the same time you trigger a lot of tasks
+45:20 let's say thousands of tasks which all
+45:22 do the same thing generating a report
+45:25 and sending to the user but since it
+45:28 happens for a lot of user that also we
+45:30 can consider as a batch tasks right
+45:32 sending thousands of reports to
+45:34 thousands of users at a particular
+45:36 interval right those are some of the
+45:39 different types of background tasks that
+45:42 we usually deal with now these are some
+45:44 of the design considerations s that you
+45:48 have to account for when working with
+45:50 task use or working with background task
+45:53 especially when we are talking about
+45:56 scale when you're talking about
+45:57 thousands of users when it's a big
+45:59 platform you're managing the back end of
+46:01 a big platform and it's concerned about
+46:04 the background task processing first
+46:05 thing is it potency this basically means
+46:08 that whatever task that you're creating
+46:11 that you are executing you have to
+46:13 design them in a way that they can be
+46:16 safely executed multiple times without
+46:19 causing any side effects. Right? In case
+46:23 of let's say failure of the task. Let's
+46:26 say for example in our delete account
+46:29 task you have in your in our delete
+46:32 account task in a typical delete account
+46:35 task what you do is we go through all
+46:37 the resources all the entities of the
+46:40 user uh in the database and we start
+46:42 removing them or we start setting them
+46:44 null etc etc depending on our
+46:47 requirements. Now the what we mean by
+46:49 Adamency in that context is you have to
+46:52 do all of them in a particular
+46:55 transaction right a particular
+46:58 transaction so that what happens let's
+47:00 say you start deleting stuff from the
+47:03 database and down the road something
+47:06 fails right it can be something related
+47:08 to database or it can be an external
+47:11 service call right calling an API
+47:14 getting some kind of data of the user
+47:15 etc right it can be anything at this
+47:18 point. If something fails here, if you
+47:21 are executing all of this in a single
+47:23 transaction, what you can do it? You can
+47:25 do a custom roll back, right? A manual
+47:28 roll back. So what happens since this
+47:31 task has failed when the next time the
+47:34 the task Q retries this task, we start
+47:39 from scratch, right? We start from 0%
+47:42 completion. And this is what we mean by
+47:44 item potent. You have to design your
+47:46 tasks in a way that they don't cause any
+47:48 side effects in case something fails
+47:51 down the line and you have to retry that
+47:54 task from scratch. Same way error
+47:57 handling you have to make sure that you
+47:59 have very robust and very extensive
+48:03 error handling in place especially in
+48:05 tasks management systems because
+48:07 everything is happening in a different
+48:10 process right so you have to make sure
+48:12 you don't miss anything you don't miss
+48:14 any bottlenecks you don't miss any edge
+48:17 cases etc etc right so you have to
+48:20 implement robust error handling to catch
+48:22 and to log errors also to redry failed
+48:26 tasks. Right? So this is very important
+48:29 in a task management system. Then you
+48:33 have to set up proper monitoring. And
+48:36 what we mean by monitoring is you have
+48:38 to track the status of how many tasks
+48:41 that you currently have in your queue.
+48:44 What are the number of successful tasks?
+48:46 What are the number of failed tasks? And
+48:48 what is the major reason of failed task?
+48:50 It is. Is it some kind of external
+48:52 service or is it some kind of internal
+48:54 error etc etc right at any point you
+48:57 have to have the complete view of what
+48:60 is the status of your whole task
+49:02 management system so you can use
+49:04 technology like Prometheus right using
+49:07 graphana and tools like that so every
+49:10 time a new task is created you can in
+49:13 insert a new metrics we'll cover things
+49:16 like metrics instrumentation elastic elk
+49:20 stag etc etc all these things related to
+49:22 logs traces monitoring in a different
+49:25 video but we use this technique called
+49:29 metrics where every time something
+49:32 happens some kind of trigger we create a
+49:34 new metrics and we insert it into some
+49:36 kind of stack in this case we have
+49:39 graphana to monitor what are the
+49:41 different metrics currently that our
+49:43 back back end application have and we
+49:45 have ways to persist those metrics in
+49:48 disk different replication techniques
+49:50 etc etc. Right? So for your task
+49:53 processing system you have to have all
+49:55 these monitoring techniques in place so
+49:58 that at all times you can monitor what
+49:60 is the status of your system. Same way
+50:03 you have to design your system in a way
+50:05 that it scales so that down the lane if
+50:08 you require more processing power right
+50:12 let's say you your user base spiked and
+50:16 you have to cater to more users now
+50:19 double the amount of users now so what
+50:21 you have to do is you have to add more
+50:22 number of consumers right so you have to
+50:25 design it in a way that down the lane
+50:27 you can scale your consumers
+50:29 horizontally right you can add more
+50:31 nodes to your consumer customer so that
+50:33 the processing remains as responsive as
+50:36 ever. Same way if you require ordering
+50:39 you have to make sure that whatever
+50:41 library, whatever framework, whatever
+50:42 task you that you are using, they
+50:45 support ordered delivery. Right? Tasks
+50:48 have to be executed in a particular
+50:50 order. You have to make sure that your
+50:53 particular library or framework supports
+50:54 that. Same way we also have rate
+50:56 limiting. So if your task interact with
+50:59 external services, you have to implement
+51:01 proper rate limiting to prevent
+51:03 overloading those services, right?
+51:05 Because those services also charge you
+51:08 for number of API calls and they also
+51:11 have their own API rate limiting or
+51:13 technique etc etc right so you have to
+51:16 take this also into
+51:18 consideration while designing your
+51:20 tasks. So these are some of the design
+51:23 considerations you have to keep in mind
+51:25 when you're working with a task
+51:27 management or background task management
+51:28 system. Now talking about some of the
+51:30 best practices that I can recommend from
+51:33 my own experience of dealing with these
+51:36 task background task management systems
+51:38 is the first thing is keep your task
+51:40 small and focused which basically means
+51:43 a single task should only be concerned
+51:46 about a single processing unit. Right?
+51:50 You should not do a lot of things in a
+51:52 single task. So you have to design your
+51:55 task in a way that you have to divide
+51:58 the responsibilities between different
+51:59 tasks so that if one task fails it does
+52:04 not affect other tasks. If the one task
+52:07 one processing is dependent on a
+52:10 different task then what you can do is
+52:12 you can go for chain task right. You can
+52:15 have a parent child relationship so that
+52:17 a task can be scaled in that way so that
+52:21 even if the child fails the parent does
+52:24 not fail right the child failing is a
+52:27 different task. So the retrying
+52:29 mechanism can handle that with
+52:32 exponential backoff or whatever. But if
+52:34 you do a lot of things in a single task,
+52:36 what happens is even if the topmost
+52:39 processing is successful but somewhere
+52:41 down the lane something fails then the
+52:43 whole thing has to be repeated all over
+52:45 again right and if you're trying to add
+52:48 a lot of stuff into a single task then
+52:50 that wastes a lot of processing power of
+52:54 your CPU of your consumer of your server
+52:57 right so if you keep your task focused
+52:60 and small it's easier to scale it's
+53:03 easier to avoid bugs and it's easier to
+53:07 monitor them, right? And it's also
+53:09 easier for your queue to implement
+53:11 different mechanisms like retries, etc.
+53:13 Same way, always try to avoid longunning
+53:16 tasks. If you have a task that takes a
+53:19 long time to complete, break it down to
+53:22 smaller and more manageable chunks.
+53:24 Right? As I said, this is something
+53:27 similar to the above point. If you have
+53:29 a task which is doing a lot of stuff
+53:32 then of course it's going to take a lot
+53:34 of time which is a signal to you that
+53:37 it's about time that you divide this
+53:39 particular task into different task
+53:42 either different tasks which are
+53:44 concurrently processed or different
+53:46 tasks which have a parent child
+53:48 relationship depending on your
+53:49 requirements. Same way using proper
+53:52 error handling and logging. This is as I
+53:53 said one of the most important things
+53:55 when we are dealing with background task
+53:57 processing. You have to have proper
+53:60 error handling in place so that you give
+54:02 a chance to your queue for retrying and
+54:06 you have all the information you need to
+54:09 debug whatever happened in your task
+54:11 which made it fail or whether it is an
+54:15 external service whether it is an
+54:17 internal error or everything. So you
+54:19 need all these error handling techniques
+54:21 or logging techniques so that it's
+54:23 easier for you to debug things. It's
+54:25 easier for you to monitor things to find
+54:28 out where the problem is and it's also
+54:31 easier for the queue to perform various
+54:35 retrying mechanisms. And at last you
+54:38 have to constantly monitor Q length and
+54:40 worker health which basically means you
+54:42 have to have proper alerting systems in
+54:45 place so that if the Q length exceeds a
+54:48 particular limit you have to come up
+54:51 with different techniques to make it
+54:52 more scalable or if some of the workers
+54:55 are going down for some reason you have
+54:57 to debug them what exactly is the error
+54:60 that is causing them to go down etc etc.
+55:02 You have to have proper alerting
+55:04 mechanism so that at all times you are
+55:06 aware that your system your whole task
+55:09 background task management systems is
+55:11 running smoothly. Now to recap,
+55:14 background tasks are essential for
+55:16 building scalable for building reliable
+55:19 and responsive backend applications and
+55:23 they allow you to offload time consuming
+55:26 and non-critical operations to improve
+55:29 the user experience and to prevent
+55:31 timeouts and to enable redrawing
+55:34 mechanisms for dependency on external
+55:37 services and for heavy processing tasks
+55:42 That's pretty much all about task use
+55:44 that you need to know as a back end
+55:46 engineer.
