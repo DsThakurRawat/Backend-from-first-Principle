@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scaling &amp; Performance Part II · The Backend Lens</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&family=Libre+Franklin:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ede4d3;
+    --bg-sidebar: #e6dcc9;
+    --bg-code: #ddd3c0;
+    --bg-card: #e8dece;
+    --text: #2c2420;
+    --text-muted: #6b5d52;
+    --text-light: #8a7b6e;
+    --accent: #b22222;
+    --accent-dark: #8b1a1a;
+    --border: #c9b99a;
+    --border-light: #d9cdb5;
+    --highlight: #f5e6c8;
+    --code-green: #4a7c59;
+    --code-blue: #3a6b8c;
+    --code-orange: #b5651d;
+    --code-purple: #7b4d8e;
+    --code-red: #b22222;
+    --diagram-bg: #f2e8d5;
+    --diagram-stroke: #5c4a3a;
+    --diagram-fill: #e8dbc4;
+    --diagram-accent: #b22222;
+    --diagram-blue: #4a708b;
+    --diagram-green: #5b8a5e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; font-size: 17px; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Serif 4', 'Georgia', serif;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .layout { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    padding: 2.5rem 1.5rem;
+    position: sticky; top: 0; height: 100vh;
+    overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  }
+  .sidebar-title { font-family: 'Playfair Display', serif; font-size: 1.35rem; font-weight: 900; line-height: 1.25; margin-bottom: 0.15rem; }
+  .sidebar-title em { font-style: italic; font-weight: 400; color: var(--accent); }
+  .sidebar-subtitle { font-family: 'Libre Franklin', sans-serif; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.18em; color: var(--text-light); margin-bottom: 2rem; }
+  .sidebar-nav { list-style: none; }
+  .sidebar-nav li { margin-bottom: 0.15rem; }
+  .sidebar-nav a { display: flex; align-items: baseline; gap: 0.6rem; padding: 0.4rem 0.5rem; text-decoration: none; color: var(--text); font-size: 0.85rem; border-radius: 4px; transition: background 0.2s, color 0.2s; line-height: 1.4; }
+  .sidebar-nav a:hover { background: var(--bg); color: var(--accent-dark); }
+  .nav-num { font-family: 'Libre Franklin', sans-serif; font-size: 0.7rem; font-weight: 700; color: var(--accent); min-width: 1.3rem; text-align: right; }
+  .sidebar-sep { height: 1px; background: var(--border); margin: 1.2rem 0; }
+  .sidebar-label { font-family: 'Libre Franklin', sans-serif; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.2em; color: var(--text-light); padding: 0.4rem 0.5rem 0.2rem; }
+
+  /* ── Main ── */
+  .main { max-width: 780px; padding: 3rem 3.5rem 6rem; }
+  .chapter-label { font-family: 'Libre Franklin', sans-serif; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.2em; color: var(--accent); margin-bottom: 0.5rem; font-weight: 600; }
+  .chapter-title { font-family: 'Playfair Display', serif; font-size: 2.8rem; font-weight: 900; line-height: 1.12; margin-bottom: 1.5rem; }
+  .chapter-intro { font-size: 1.05rem; color: var(--text-muted); line-height: 1.8; margin-bottom: 2.5rem; }
+  hr.section-rule { border: none; height: 1px; background: var(--border); margin: 3rem 0; }
+
+  .section-heading { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem; margin-top: 0.5rem; }
+  .section-num { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; background: var(--accent); color: #fff; font-family: 'Libre Franklin', sans-serif; font-size: 0.72rem; font-weight: 700; border-radius: 4px; flex-shrink: 0; }
+  .section-heading h2 { font-family: 'Playfair Display', serif; font-size: 1.65rem; font-weight: 700; line-height: 1.25; }
+  h3 { font-family: 'Playfair Display', serif; font-size: 1.25rem; font-weight: 700; margin: 2.2rem 0 0.8rem; line-height: 1.3; }
+  h4 { font-family: 'Source Serif 4', serif; font-size: 1.05rem; font-weight: 700; margin: 1.8rem 0 0.6rem; }
+  p { margin-bottom: 1rem; }
+  strong { font-weight: 600; }
+  em { font-style: italic; }
+  a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 2px; transition: text-decoration-color 0.2s; }
+  a:hover { text-decoration-color: var(--accent); }
+
+  code { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; background: var(--bg-code); padding: 0.15em 0.4em; border-radius: 3px; color: var(--accent-dark); }
+  pre { background: #2c2420; color: #e8dbc4; padding: 1.4rem 1.6rem; border-radius: 6px; overflow-x: auto; margin: 1.2rem 0 1.6rem; line-height: 1.6; font-size: 0.82rem; position: relative; border: 1px solid #3d3028; }
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+  .code-label { position: absolute; top: 0; right: 0; background: var(--accent); color: #fff; font-family: 'Libre Franklin', sans-serif; font-size: 0.6rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; padding: 0.25rem 0.7rem; border-radius: 0 6px 0 4px; }
+  .syn-kw { color: #e8a87c; } .syn-fn { color: #82b1c6; } .syn-str { color: #a8c97f; }
+  .syn-cm { color: #7a6d60; font-style: italic; } .syn-num { color: #d4a574; }
+  .syn-type { color: #c9a0dc; } .syn-op { color: #c9b99a; } .syn-builtin { color: #e8c170; }
+
+  .callout { border-left: 3px solid var(--accent); background: var(--bg-card); padding: 1.1rem 1.4rem; margin: 1.5rem 0; border-radius: 0 5px 5px 0; font-size: 0.95rem; }
+  .callout-title { font-family: 'Libre Franklin', sans-serif; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--accent); font-weight: 700; margin-bottom: 0.4rem; }
+  .callout.info { border-left-color: var(--diagram-blue); } .callout.info .callout-title { color: var(--diagram-blue); }
+  .callout.warn { border-left-color: var(--code-orange); } .callout.warn .callout-title { color: var(--code-orange); }
+
+  .diagram-container { background: var(--diagram-bg); border: 1px solid var(--border-light); border-radius: 6px; padding: 1.5rem; margin: 1.5rem 0 2rem; overflow-x: auto; }
+  .diagram-caption { font-family: 'Libre Franklin', sans-serif; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-light); text-align: center; margin-top: 0.8rem; }
+  .diagram-container svg { display: block; margin: 0 auto; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1.2rem 0 1.6rem; font-size: 0.9rem; }
+  th { font-family: 'Libre Franklin', sans-serif; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; text-align: left; padding: 0.7rem 1rem; border-bottom: 2px solid var(--border); color: var(--text-muted); }
+  td { padding: 0.6rem 1rem; border-bottom: 1px solid var(--border-light); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0 1.6rem; }
+  .compare-card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 6px; padding: 1.2rem 1.3rem; }
+  .compare-card h5 { font-family: 'Libre Franklin', sans-serif; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 700; margin-bottom: 0.6rem; color: var(--accent); }
+  .compare-card ul { list-style: none; font-size: 0.9rem; }
+  .compare-card li { padding: 0.2rem 0; padding-left: 1rem; position: relative; }
+  .compare-card li::before { content: '›'; position: absolute; left: 0; color: var(--accent); font-weight: 700; }
+
+  .ref-box { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 5px; padding: 0.8rem 1.2rem; margin: 1.2rem 0; font-size: 0.85rem; display: flex; align-items: center; gap: 0.6rem; }
+  .ref-box .ref-icon { font-size: 1rem; flex-shrink: 0; }
+
+  .keyword { text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 3px; font-weight: 600; }
+  .formula { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 5px; padding: 1rem 1.4rem; margin: 1.2rem 0; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; color: var(--accent-dark); }
+
+  .back-to-top { display: block; text-align: center; padding: 2rem 0; font-family: 'Libre Franklin', sans-serif; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--text-light); text-decoration: none; margin-top: 3rem; border-top: 1px solid var(--border); }
+  .back-to-top:hover { color: var(--accent); }
+
+  /* ── Triple column cards ── */
+  .triple-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8rem; margin: 1.2rem 0 1.6rem; }
+  .triple-grid .compare-card { padding: 1rem; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { position: relative; height: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 1.5rem; }
+    .main { padding: 2rem 1.5rem 4rem; }
+    .chapter-title { font-size: 2rem; }
+    .compare-grid, .triple-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="layout" id="top">
+
+<!-- ════════════════ SIDEBAR ════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-title">Scaling <em>/ the</em><br>backend lens</div>
+  <div class="sidebar-subtitle">Field Manual · V1 · Part II</div>
+  <nav>
+    <ul class="sidebar-nav">
+      <li class="sidebar-label">Horizontal Scaling</li>
+      <li><a href="#s1"><span class="nav-num">01</span> Statelessness</a></li>
+      <li><a href="#s2"><span class="nav-num">02</span> Load Balancer Algorithms</a></li>
+      <li><a href="#s3"><span class="nav-num">03</span> Health Checks</a></li>
+      <div class="sidebar-sep"></div>
+      <li class="sidebar-label">Database Scaling</li>
+      <li><a href="#s4"><span class="nav-num">04</span> Read Replicas</a></li>
+      <li><a href="#s5"><span class="nav-num">05</span> Sharding &amp; Partitioning</a></li>
+      <li><a href="#s6"><span class="nav-num">06</span> Distributed Databases</a></li>
+      <div class="sidebar-sep"></div>
+      <li class="sidebar-label">Edge &amp; CDN</li>
+      <li><a href="#s7"><span class="nav-num">07</span> CDNs &amp; Speed of Light</a></li>
+      <li><a href="#s8"><span class="nav-num">08</span> Edge Computing</a></li>
+      <div class="sidebar-sep"></div>
+      <li class="sidebar-label">Async &amp; Architecture</li>
+      <li><a href="#s9"><span class="nav-num">09</span> Async Processing &amp; Queues</a></li>
+      <li><a href="#s10"><span class="nav-num">10</span> Monoliths vs Microservices</a></li>
+      <li><a href="#s11"><span class="nav-num">11</span> Serverless Computing</a></li>
+      <div class="sidebar-sep"></div>
+      <li class="sidebar-label">Principles</li>
+      <li><a href="#s12"><span class="nav-num">12</span> Scaling Mental Models</a></li>
+    </ul>
+  </nav>
+</aside>
+
+<!-- ════════════════ MAIN CONTENT ════════════════ -->
+<main class="main">
+
+<div class="chapter-label">Chapter · Scaling &amp; Performance — Part II</div>
+<h1 class="chapter-title">Infrastructure,<br>Architecture &amp; Beyond</h1>
+<p class="chapter-intro">
+  Part I built the vocabulary — latency, percentiles, throughput, utilization — and covered database-level optimizations. This second part zooms out to infrastructure: how statelessness enables horizontal scaling, how load balancers distribute traffic, how databases themselves scale with replicas and shards, how CDNs defeat physics, how async processing slashes perceived latency, and how to choose between monoliths, microservices, and serverless. We close with the mental models that tie everything together.
+</p>
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 01: STATELESSNESS -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s1" class="section-heading">
+  <span class="section-num">01</span>
+  <h2>Statelessness — The Key Enabler</h2>
+</div>
+
+<p>
+  Horizontal scaling only works if <em>any</em> server instance can handle <em>any</em> request. The moment one server holds exclusive data — a session object in memory, an uploaded file on its local disk, an in-process cache — that server becomes special. Lose it, and you lose that data. Route a user elsewhere, and they get errors. This is <span class="keyword">statefulness</span>, and it breaks horizontal scaling.
+</p>
+
+<p>
+  <span class="keyword">Statelessness</span> is the principle that no single server instance holds any information that other instances cannot access. Every piece of persistent state — sessions, files, cache entries, database records — must live in an <em>external</em>, shared store that all instances can reach.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg" style="max-width:680px;width:100%">
+    <defs>
+      <marker id="a1" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="#5c4a3a"/></marker>
+      <marker id="a2" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="#b22222"/></marker>
+      <marker id="a3" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="#4a708b"/></marker>
+    </defs>
+
+    <!-- BAD: Stateful -->
+    <text x="10" y="20" font-family="'Libre Franklin',sans-serif" font-size="10" font-weight="700" fill="#b22222" letter-spacing="0.1em">✗ STATEFUL (BROKEN)</text>
+    <rect x="10" y="30" width="310" height="100" rx="5" fill="#b22222" fill-opacity="0.04" stroke="#b22222" stroke-width="1" stroke-dasharray="4,3"/>
+
+    <rect x="25" y="45" width="85" height="35" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1"/>
+    <text x="67" y="66" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server A</text>
+    <rect x="30" y="82" width="75" height="16" rx="2" fill="#b22222" fill-opacity="0.15" stroke="#b22222" stroke-width="0.8"/>
+    <text x="67" y="93" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#b22222">session in RAM</text>
+
+    <rect x="130" y="45" width="85" height="35" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1"/>
+    <text x="172" y="66" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server B</text>
+    <rect x="135" y="82" width="75" height="16" rx="2" fill="#e8dbc4" stroke="#c9b99a" stroke-width="0.8"/>
+    <text x="172" y="93" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#6b5d52">no session!</text>
+
+    <text x="240" y="75" font-family="'JetBrains Mono',monospace" font-size="9" fill="#b22222">→ 401 ✗</text>
+
+    <!-- GOOD: Stateless -->
+    <text x="10" y="155" font-family="'Libre Franklin',sans-serif" font-size="10" font-weight="700" fill="#5b8a5e" letter-spacing="0.1em">✓ STATELESS (CORRECT)</text>
+    <rect x="10" y="165" width="660" height="85" rx="5" fill="#5b8a5e" fill-opacity="0.04" stroke="#5b8a5e" stroke-width="1" stroke-dasharray="4,3"/>
+
+    <rect x="25" y="180" width="85" height="35" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1"/>
+    <text x="67" y="201" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server A</text>
+
+    <rect x="130" y="180" width="85" height="35" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1"/>
+    <text x="172" y="201" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server B</text>
+
+    <rect x="235" y="180" width="85" height="35" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1"/>
+    <text x="277" y="201" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server C</text>
+
+    <!-- Arrows to external stores -->
+    <line x1="320" y1="197" x2="400" y2="185" stroke="#5c4a3a" stroke-width="1" marker-end="url(#a1)"/>
+    <line x1="320" y1="197" x2="400" y2="205" stroke="#5c4a3a" stroke-width="1" marker-end="url(#a1)"/>
+    <line x1="320" y1="197" x2="400" y2="228" stroke="#5c4a3a" stroke-width="1" marker-end="url(#a1)"/>
+
+    <!-- Redis -->
+    <rect x="400" y="172" width="105" height="25" rx="4" fill="#e8dbc4" stroke="#4a708b" stroke-width="1.3"/>
+    <text x="452" y="189" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#3a6b8c">Redis (sessions)</text>
+
+    <!-- S3 -->
+    <rect x="400" y="200" width="105" height="25" rx="4" fill="#e8dbc4" stroke="#5b8a5e" stroke-width="1.3"/>
+    <text x="452" y="217" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#4a7c59">S3 (files)</text>
+
+    <!-- Postgres -->
+    <rect x="400" y="228" width="105" height="25" rx="4" fill="#e8dbc4" stroke="#b5651d" stroke-width="1.3"/>
+    <text x="452" y="245" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#b5651d">Postgres (data)</text>
+
+    <text x="540" y="210" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#5b8a5e" font-weight="600">All shared.</text>
+    <text x="540" y="222" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#5b8a5e" font-weight="600">Any instance</text>
+    <text x="540" y="234" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#5b8a5e" font-weight="600">can serve any</text>
+    <text x="540" y="246" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#5b8a5e" font-weight="600">request.</text>
+  </svg>
+  <div class="diagram-caption">Fig 1 · Stateful servers break under horizontal scaling; stateless ones don't</div>
+</div>
+
+<h3>What must be externalized</h3>
+
+<table>
+  <thead><tr><th>State Type</th><th>Wrong (in-process)</th><th>Right (external)</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Sessions</strong></td><td>In-memory dictionary</td><td>Redis / database / JWT tokens</td></tr>
+    <tr><td><strong>File uploads</strong></td><td>Local filesystem</td><td>S3, Cloudflare R2, MinIO</td></tr>
+    <tr><td><strong>Cache</strong></td><td>In-memory map</td><td>Redis, Memcached, Valkey</td></tr>
+    <tr><td><strong>Database</strong></td><td>SQLite file on disk</td><td>Postgres (RDS), MySQL, centralized SQLite</td></tr>
+    <tr><td><strong>Background jobs</strong></td><td>In-process goroutine/thread</td><td>Redis queue, RabbitMQ, Kafka</td></tr>
+  </tbody>
+</table>
+
+<h4>Stateless session management in Go</h4>
+
+<pre><code><span class="code-label">Go</span>
+<span class="syn-kw">import</span> (
+    <span class="syn-str">"context"</span>
+    <span class="syn-str">"github.com/redis/go-redis/v9"</span>
+    <span class="syn-str">"time"</span>
+)
+
+<span class="syn-kw">var</span> rdb = redis.<span class="syn-fn">NewClient</span>(&redis.Options{Addr: <span class="syn-str">"redis:6379"</span>})
+
+<span class="syn-cm">// StoreSession saves session data in Redis so ANY server can read it.</span>
+<span class="syn-kw">func</span> <span class="syn-fn">StoreSession</span>(ctx <span class="syn-type">context.Context</span>, sessionID <span class="syn-type">string</span>, userID <span class="syn-type">string</span>) <span class="syn-type">error</span> {
+    <span class="syn-kw">return</span> rdb.<span class="syn-fn">Set</span>(ctx, <span class="syn-str">"session:"</span>+sessionID, userID, <span class="syn-num">24</span>*time.Hour).<span class="syn-fn">Err</span>()
+}
+
+<span class="syn-cm">// GetSession retrieves session data — works regardless of which server</span>
+<span class="syn-cm">// the request lands on, because Redis is shared across all instances.</span>
+<span class="syn-kw">func</span> <span class="syn-fn">GetSession</span>(ctx <span class="syn-type">context.Context</span>, sessionID <span class="syn-type">string</span>) (<span class="syn-type">string</span>, <span class="syn-type">error</span>) {
+    <span class="syn-kw">return</span> rdb.<span class="syn-fn">Get</span>(ctx, <span class="syn-str">"session:"</span>+sessionID).<span class="syn-fn">Result</span>()
+}</code></pre>
+
+<h4>Stateless session in Python (FastAPI + Redis)</h4>
+
+<pre><code><span class="code-label">Python</span>
+<span class="syn-kw">import</span> redis, uuid
+<span class="syn-kw">from</span> fastapi <span class="syn-kw">import</span> FastAPI, Response, Cookie
+
+app = FastAPI()
+r = redis.<span class="syn-fn">Redis</span>(host=<span class="syn-str">"redis"</span>, decode_responses=<span class="syn-kw">True</span>)
+
+@app.<span class="syn-fn">post</span>(<span class="syn-str">"/login"</span>)
+<span class="syn-kw">def</span> <span class="syn-fn">login</span>(response: Response, email: <span class="syn-type">str</span>, password: <span class="syn-type">str</span>):
+    user = <span class="syn-fn">authenticate</span>(email, password)
+    session_id = <span class="syn-builtin">str</span>(uuid.<span class="syn-fn">uuid4</span>())
+
+    <span class="syn-cm"># Store in Redis — accessible by ALL server instances</span>
+    r.<span class="syn-fn">setex</span>(<span class="syn-str">f"session:</span>{session_id}<span class="syn-str">"</span>, <span class="syn-num">86400</span>, user.id)
+    response.<span class="syn-fn">set_cookie</span>(<span class="syn-str">"session_id"</span>, session_id, httponly=<span class="syn-kw">True</span>)
+    <span class="syn-kw">return</span> {<span class="syn-str">"status"</span>: <span class="syn-str">"ok"</span>}</code></pre>
+
+<div class="callout">
+  <div class="callout-title">Thumb rule</div>
+  <p>If you can't delete a server instance at random and have your system continue working identically, your architecture is stateful and will break under horizontal scaling. Audit every <code>os.MkdirTemp</code>, every in-memory map, every local file write.</p>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 02: LOAD BALANCER ALGORITHMS -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s2" class="section-heading">
+  <span class="section-num">02</span>
+  <h2>Load Balancer Algorithms</h2>
+</div>
+
+<p>
+  With multiple server instances, you need a mechanism to decide which instance handles each incoming request. The <span class="keyword">load balancer</span> sits between the internet and your servers, receives all traffic, and forwards each request based on a chosen algorithm.
+</p>
+
+<h3>Round Robin</h3>
+
+<p>
+  The simplest algorithm: requests are distributed in rotating order — server A, B, C, A, B, C. It works well when all servers have equal capacity and all requests have roughly equal cost. It fails when request costs vary widely: expensive requests (external API calls, heavy DB writes) can all pile up on one server by chance.
+</p>
+
+<h3>Weighted Round Robin</h3>
+
+<p>
+  A variation where servers with more capacity receive proportionally more requests. If server A has 8 GB RAM and servers B/C have 4 GB each, A gets twice the traffic. Still blind to request cost.
+</p>
+
+<h3>Least Connections</h3>
+
+<p>
+  A smarter algorithm: the load balancer tracks the number of <em>active</em> connections on each server and routes each new request to the server with the fewest. Since expensive operations keep connections open longer, servers handling heavy requests naturally receive fewer new ones. This self-balances across heterogeneous workloads.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 640 230" xmlns="http://www.w3.org/2000/svg" style="max-width:640px;width:100%">
+    <defs><marker id="ar" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="#5c4a3a"/></marker></defs>
+
+    <!-- LB -->
+    <rect x="20" y="80" width="120" height="70" rx="6" fill="#b22222" fill-opacity="0.1" stroke="#b22222" stroke-width="1.5"/>
+    <text x="80" y="108" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="10" font-weight="700" fill="#b22222">LOAD BALANCER</text>
+    <text x="80" y="125" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">least_conn</text>
+
+    <!-- Arrows -->
+    <line x1="140" y1="95" x2="230" y2="42" stroke="#5c4a3a" stroke-width="1" marker-end="url(#ar)"/>
+    <line x1="140" y1="115" x2="230" y2="115" stroke="#5c4a3a" stroke-width="1" marker-end="url(#ar)"/>
+    <line x1="140" y1="135" x2="230" y2="188" stroke="#5c4a3a" stroke-width="1" marker-end="url(#ar)"/>
+
+    <!-- Server A — busy -->
+    <rect x="230" y="20" width="120" height="45" rx="4" fill="#b22222" fill-opacity="0.08" stroke="#b22222" stroke-width="1.2"/>
+    <text x="290" y="40" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server A</text>
+    <text x="290" y="56" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#b22222">47 active conns ⚠</text>
+    <rect x="370" y="26" width="220" height="12" rx="2" fill="#b22222" fill-opacity="0.15"/>
+    <rect x="370" y="26" width="180" height="12" rx="2" fill="#b22222" fill-opacity="0.4"/>
+    <text x="460" y="35" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#fff">82%</text>
+    <text x="600" y="35" font-family="'JetBrains Mono',monospace" font-size="7" fill="#b22222">↓ fewer new</text>
+
+    <!-- Server B — medium -->
+    <rect x="230" y="93" width="120" height="45" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.2"/>
+    <text x="290" y="113" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server B</text>
+    <text x="290" y="129" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">12 active conns</text>
+    <rect x="370" y="99" width="220" height="12" rx="2" fill="#5b8a5e" fill-opacity="0.15"/>
+    <rect x="370" y="99" width="80" height="12" rx="2" fill="#5b8a5e" fill-opacity="0.4"/>
+    <text x="410" y="108" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#fff">36%</text>
+    <text x="600" y="108" font-family="'JetBrains Mono',monospace" font-size="7" fill="#5b8a5e">← next request</text>
+
+    <!-- Server C — idle -->
+    <rect x="230" y="166" width="120" height="45" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.2"/>
+    <text x="290" y="186" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server C</text>
+    <text x="290" y="202" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">14 active conns</text>
+    <rect x="370" y="172" width="220" height="12" rx="2" fill="#5b8a5e" fill-opacity="0.15"/>
+    <rect x="370" y="172" width="90" height="12" rx="2" fill="#5b8a5e" fill-opacity="0.4"/>
+    <text x="415" y="181" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#fff">41%</text>
+  </svg>
+  <div class="diagram-caption">Fig 2 · Least connections routes away from the busy server automatically</div>
+</div>
+
+<h3>Other algorithms</h3>
+
+<p>
+  <strong>Least Response Time</strong> favors servers returning responses fastest — servers already struggling get fewer requests. <strong>Resource-Based</strong> monitors actual CPU/RAM usage on each server and routes accordingly. <strong>IP Hash</strong> deterministically maps each client IP to a specific server (useful for session affinity, though statelessness is the better solution).
+</p>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 03: HEALTH CHECKS -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s3" class="section-heading">
+  <span class="section-num">03</span>
+  <h2>Health Checks</h2>
+</div>
+
+<p>
+  What happens when a server crashes? Without <span class="keyword">health checks</span>, a round-robin load balancer keeps sending requests to the dead server — every third user gets a 502 error. Health checks solve this with a simple mechanism: the load balancer periodically sends a lightweight test request (typically <code>GET /health</code>) to every backend. Servers that return 200 stay in the rotation; servers that fail get blacklisted until they recover.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 600 180" xmlns="http://www.w3.org/2000/svg" style="max-width:600px;width:100%">
+    <defs><marker id="ah" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="#5b8a5e"/></marker>
+    <marker id="af" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="#b22222"/></marker></defs>
+
+    <!-- LB -->
+    <rect x="20" y="55" width="100" height="65" rx="5" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.3"/>
+    <text x="70" y="85" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">LB</text>
+    <text x="70" y="100" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#6b5d52">health check</text>
+    <text x="70" y="112" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#6b5d52">every 1s</text>
+
+    <!-- Server A — healthy -->
+    <rect x="200" y="15" width="120" height="40" rx="4" fill="#e8dbc4" stroke="#5b8a5e" stroke-width="1.3"/>
+    <text x="260" y="39" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#4a7c59">Server A ✓</text>
+    <line x1="120" y1="72" x2="200" y2="35" stroke="#5b8a5e" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#ah)"/>
+    <text x="170" y="44" font-family="'JetBrains Mono',monospace" font-size="7" fill="#5b8a5e">200</text>
+
+    <!-- Server B — dead -->
+    <rect x="200" y="70" width="120" height="40" rx="4" fill="#b22222" fill-opacity="0.1" stroke="#b22222" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="260" y="94" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#b22222">Server B ✗</text>
+    <line x1="120" y1="88" x2="200" y2="90" stroke="#b22222" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#af)"/>
+    <text x="170" y="82" font-family="'JetBrains Mono',monospace" font-size="7" fill="#b22222">502</text>
+    <text x="340" y="82" font-family="'Libre Franklin',sans-serif" font-size="8" fill="#b22222" font-weight="600">→ BLACKLISTED</text>
+    <text x="340" y="95" font-family="'JetBrains Mono',monospace" font-size="7" fill="#6b5d52">no user traffic sent</text>
+
+    <!-- Server C — healthy -->
+    <rect x="200" y="125" width="120" height="40" rx="4" fill="#e8dbc4" stroke="#5b8a5e" stroke-width="1.3"/>
+    <text x="260" y="149" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#4a7c59">Server C ✓</text>
+    <line x1="120" y1="105" x2="200" y2="145" stroke="#5b8a5e" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#ah)"/>
+    <text x="170" y="135" font-family="'JetBrains Mono',monospace" font-size="7" fill="#5b8a5e">200</text>
+  </svg>
+  <div class="diagram-caption">Fig 3 · Health checks — dead servers get blacklisted; pings continue until recovery</div>
+</div>
+
+<h4>Health endpoint in Go</h4>
+
+<pre><code><span class="code-label">Go</span>
+<span class="syn-cm">// A production health check verifies downstream dependencies, not just "I'm alive."</span>
+http.<span class="syn-fn">HandleFunc</span>(<span class="syn-str">"/health"</span>, <span class="syn-kw">func</span>(w <span class="syn-type">http.ResponseWriter</span>, r *<span class="syn-type">http.Request</span>) {
+    checks := <span class="syn-kw">map</span>[<span class="syn-type">string</span>]<span class="syn-type">string</span>{}
+
+    <span class="syn-kw">if</span> err := db.<span class="syn-fn">PingContext</span>(r.<span class="syn-fn">Context</span>()); err != <span class="syn-kw">nil</span> {
+        checks[<span class="syn-str">"database"</span>] = <span class="syn-str">"unreachable"</span>
+    } <span class="syn-kw">else</span> {
+        checks[<span class="syn-str">"database"</span>] = <span class="syn-str">"ok"</span>
+    }
+
+    <span class="syn-kw">if</span> err := rdb.<span class="syn-fn">Ping</span>(r.<span class="syn-fn">Context</span>()).<span class="syn-fn">Err</span>(); err != <span class="syn-kw">nil</span> {
+        checks[<span class="syn-str">"redis"</span>] = <span class="syn-str">"unreachable"</span>
+    } <span class="syn-kw">else</span> {
+        checks[<span class="syn-str">"redis"</span>] = <span class="syn-str">"ok"</span>
+    }
+
+    <span class="syn-kw">for</span> _, v := <span class="syn-kw">range</span> checks {
+        <span class="syn-kw">if</span> v != <span class="syn-str">"ok"</span> {
+            w.<span class="syn-fn">WriteHeader</span>(http.StatusServiceUnavailable)
+            json.<span class="syn-fn">NewEncoder</span>(w).<span class="syn-fn">Encode</span>(checks)
+            <span class="syn-kw">return</span>
+        }
+    }
+    json.<span class="syn-fn">NewEncoder</span>(w).<span class="syn-fn">Encode</span>(checks)
+})</code></pre>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 04: READ REPLICAS -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s4" class="section-heading">
+  <span class="section-num">04</span>
+  <h2>Read Replicas</h2>
+</div>
+
+<p>
+  Scaling your application servers is straightforward once you externalize state. Scaling the <em>database</em> — the stateful heart of your architecture — is harder. The first and most common approach is <span class="keyword">read replicas</span>.
+</p>
+
+<p>
+  The idea: maintain one <strong>primary</strong> (master) database that handles all write operations (INSERT, UPDATE, DELETE), and one or more <strong>replica</strong> databases that hold copies of the same data and serve only read operations (SELECT). Since 70–90% of typical SaaS traffic is reads, replicas absorb the majority of the load.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 640 210" xmlns="http://www.w3.org/2000/svg" style="max-width:640px;width:100%">
+    <defs><marker id="aw" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="#b22222"/></marker>
+    <marker id="ar2" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="#4a708b"/></marker>
+    <marker id="arep" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="#5b8a5e"/></marker></defs>
+
+    <!-- Backend -->
+    <rect x="20" y="75" width="100" height="55" rx="5" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.3"/>
+    <text x="70" y="100" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" fill="#5c4a3a">Backend</text>
+    <text x="70" y="118" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">servers</text>
+
+    <!-- Write arrow -->
+    <line x1="120" y1="88" x2="220" y2="55" stroke="#b22222" stroke-width="1.3" marker-end="url(#aw)"/>
+    <text x="160" y="60" font-family="'Libre Franklin',sans-serif" font-size="8" fill="#b22222" font-weight="600">WRITES (30%)</text>
+
+    <!-- Read arrows -->
+    <line x1="120" y1="115" x2="220" y2="130" stroke="#4a708b" stroke-width="1.3" marker-end="url(#ar2)"/>
+    <line x1="120" y1="115" x2="220" y2="160" stroke="#4a708b" stroke-width="1.3" marker-end="url(#ar2)"/>
+    <line x1="120" y1="115" x2="220" y2="190" stroke="#4a708b" stroke-width="1.3" marker-end="url(#ar2)"/>
+    <text x="155" y="145" font-family="'Libre Franklin',sans-serif" font-size="8" fill="#4a708b" font-weight="600">READS (70%)</text>
+
+    <!-- Primary -->
+    <rect x="220" y="30" width="130" height="48" rx="5" fill="#e8dbc4" stroke="#b22222" stroke-width="1.5"/>
+    <text x="285" y="50" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#8b1a1a">Primary (US)</text>
+    <text x="285" y="66" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">INSERT/UPDATE/DELETE</text>
+
+    <!-- Replication arrows -->
+    <line x1="310" y1="78" x2="280" y2="118" stroke="#5b8a5e" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arep)"/>
+    <line x1="320" y1="78" x2="295" y2="148" stroke="#5b8a5e" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arep)"/>
+    <line x1="330" y1="78" x2="310" y2="178" stroke="#5b8a5e" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arep)"/>
+    <text x="360" y="110" font-family="'Libre Franklin',sans-serif" font-size="7" fill="#5b8a5e" font-weight="600">replication</text>
+
+    <!-- Replicas -->
+    <rect x="220" y="118" width="130" height="30" rx="4" fill="#e8dbc4" stroke="#4a708b" stroke-width="1.2"/>
+    <text x="285" y="137" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#3a6b8c">Replica (India)</text>
+
+    <rect x="220" y="153" width="130" height="30" rx="4" fill="#e8dbc4" stroke="#4a708b" stroke-width="1.2"/>
+    <text x="285" y="172" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#3a6b8c">Replica (Japan)</text>
+
+    <rect x="220" y="188" width="130" height="30" rx="4" fill="#e8dbc4" stroke="#4a708b" stroke-width="1.2"/>
+    <text x="285" y="207" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#3a6b8c">Replica (EU)</text>
+
+    <!-- Benefits -->
+    <text x="410" y="135" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#5c4a3a">Benefits:</text>
+    <text x="410" y="152" font-family="'Source Serif 4',serif" font-size="10" fill="#5c4a3a">› Primary load drops to ~30%</text>
+    <text x="410" y="169" font-family="'Source Serif 4',serif" font-size="10" fill="#5c4a3a">› Users get regional low latency</text>
+    <text x="410" y="186" font-family="'Source Serif 4',serif" font-size="10" fill="#5c4a3a">› Read capacity scales linearly</text>
+  </svg>
+  <div class="diagram-caption">Fig 4 · Read replicas offload read traffic and reduce geographic latency</div>
+</div>
+
+<h3>The replication lag problem</h3>
+
+<p>
+  Data written to the primary must propagate to replicas, and propagation takes time — the <span class="keyword">replication lag</span>. If a user updates their name on the primary and immediately refreshes (a read that hits a replica), they may see the old name because the replica hasn't caught up yet.
+</p>
+
+<p>
+  Solutions include: <strong>read-after-write routing</strong> — route reads that follow a recent write to the primary instead of a replica; <strong>lag-aware delays</strong> — delay the read until replication is confirmed; or <strong>client-side optimistic updates</strong> — show the new value locally before the server confirms.
+</p>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 05: SHARDING -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s5" class="section-heading">
+  <span class="section-num">05</span>
+  <h2>Sharding &amp; Partitioning</h2>
+</div>
+
+<p>
+  <span class="keyword">Sharding</span> (also called partitioning) means splitting a single large table across multiple physical database instances based on a <strong>shard key</strong>. Instead of one orders table with 10 billion rows, you have 12 shards — one per month — each holding a fraction of the data.
+</p>
+
+<p>
+  Sharding solves two problems simultaneously: <strong>query latency</strong> drops because each shard contains fewer rows to scan, and <strong>throughput</strong> increases because multiple database instances can serve requests in parallel.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 620 160" xmlns="http://www.w3.org/2000/svg" style="max-width:620px;width:100%">
+    <!-- Original table -->
+    <rect x="20" y="20" width="100" height="120" rx="4" fill="#b22222" fill-opacity="0.08" stroke="#b22222" stroke-width="1.3"/>
+    <text x="70" y="42" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#8b1a1a">orders</text>
+    <text x="70" y="58" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">10B rows</text>
+    <text x="70" y="78" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#b22222">slow queries</text>
+    <text x="70" y="93" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#b22222">single instance</text>
+    <text x="70" y="108" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#b22222">bottleneck</text>
+
+    <!-- Arrow -->
+    <text x="155" y="80" font-family="'Source Serif 4',serif" font-size="24" fill="#b22222">→</text>
+
+    <!-- Shards -->
+    <rect x="210" y="15" width="120" height="38" rx="4" fill="#5b8a5e" fill-opacity="0.1" stroke="#5b8a5e" stroke-width="1.2"/>
+    <text x="270" y="32" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#4a7c59">Shard 1: Jan–Mar</text>
+    <text x="270" y="46" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">2.5B rows</text>
+
+    <rect x="210" y="58" width="120" height="38" rx="4" fill="#5b8a5e" fill-opacity="0.1" stroke="#5b8a5e" stroke-width="1.2"/>
+    <text x="270" y="75" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#4a7c59">Shard 2: Apr–Jun</text>
+    <text x="270" y="89" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">2.5B rows</text>
+
+    <rect x="210" y="101" width="120" height="38" rx="4" fill="#5b8a5e" fill-opacity="0.1" stroke="#5b8a5e" stroke-width="1.2"/>
+    <text x="270" y="118" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#4a7c59">Shard 3: Jul–Sep</text>
+    <text x="270" y="132" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">2.5B rows</text>
+
+    <rect x="355" y="15" width="120" height="38" rx="4" fill="#5b8a5e" fill-opacity="0.1" stroke="#5b8a5e" stroke-width="1.2"/>
+    <text x="415" y="32" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#4a7c59">Shard 4: Oct–Dec</text>
+    <text x="415" y="46" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">2.5B rows</text>
+
+    <!-- Benefits -->
+    <text x="500" y="35" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#5b8a5e" font-weight="600">4× fewer rows</text>
+    <text x="500" y="50" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#5b8a5e" font-weight="600">per query</text>
+    <text x="500" y="80" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#5b8a5e" font-weight="600">4× throughput</text>
+    <text x="500" y="95" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#5b8a5e" font-weight="600">(parallel shards)</text>
+  </svg>
+  <div class="diagram-caption">Fig 5 · Sharding divides one massive table across multiple database instances</div>
+</div>
+
+<p>
+  The hardest part of sharding is choosing the <strong>shard key</strong>: the column or criteria that determines which shard holds each row. Common strategies include time-based (order date), geographic (user region), or hash-based (hash of user ID modulo shard count). A poorly chosen shard key creates "hot shards" — imbalanced partitions where one shard receives disproportionate traffic.
+</p>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 06: DISTRIBUTED DATABASES -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s6" class="section-heading">
+  <span class="section-num">06</span>
+  <h2>Distributed Databases</h2>
+</div>
+
+<p>
+  Modern distributed databases handle replication, sharding, distributed transactions, and geographic distribution automatically. Instead of manually configuring replicas and shard keys, you sign up for a service and get a connection URL.
+</p>
+
+<table>
+  <thead><tr><th>Database</th><th>Base Engine</th><th>Key Feature</th></tr></thead>
+  <tbody>
+    <tr><td><strong>PlanetScale</strong></td><td>MySQL (Vitess)</td><td>Horizontal sharding with online migrations</td></tr>
+    <tr><td><strong>Neon</strong></td><td>Postgres (Rust)</td><td>Serverless Postgres with branching</td></tr>
+    <tr><td><strong>CockroachDB</strong></td><td>Postgres-compatible</td><td>Multi-region consistency, survives zone failures</td></tr>
+    <tr><td><strong>YugabyteDB</strong></td><td>Postgres-compatible</td><td>Geo-distributed with tunable consistency</td></tr>
+  </tbody>
+</table>
+
+<div class="callout info">
+  <div class="callout-title">Practical advice</div>
+  <p>Unless you have deep database administration expertise, <strong>do not roll your own replication or sharding infrastructure</strong>. Use a managed provider. Your job is to understand these concepts well enough to configure the provider's dashboard — choosing replica regions, backup frequency, and shard strategies — not to implement the algorithms yourself.</p>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 07: CDNS -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s7" class="section-heading">
+  <span class="section-num">07</span>
+  <h2>CDNs &amp; the Speed of Light</h2>
+</div>
+
+<p>
+  Light travels through fiber optic cables at roughly 200,000 km/s. A round trip from Tokyo to Virginia (US-East-1) — about 20,000 km — takes a minimum of <strong>100ms</strong>. This is a physics floor that no amount of code optimization can reduce. And 100ms is just the network transit — add server processing, database queries, and serialization, and the total easily reaches 500–800ms.
+</p>
+
+<p>
+  <span class="keyword">Content Delivery Networks (CDNs)</span> solve this by placing cached content on <strong>edge nodes</strong> (also called Points of Presence or PoPs) physically close to users. Instead of a 20,000 km round trip, the request travels 100–200 km, reducing network latency from 100ms to 2–3ms.
+</p>
+
+<div class="formula">
+  Tokyo → Virginia: ~100ms &nbsp;&nbsp;|&nbsp;&nbsp; Tokyo → Local CDN: ~2ms
+</div>
+
+<h3>What to cache on a CDN</h3>
+
+<p>
+  <strong>Static content</strong> is the obvious starting point: JavaScript bundles, CSS, HTML files, images, fonts, and videos. These change only on deployment, making them perfect for long-lived caching. <strong>API responses</strong> can also be cached when the data is relatively stable — product catalogs, blog posts, public configuration. CDN providers like Cloudflare support tag-based cache purging: when data changes, you invalidate only the affected entries.
+</p>
+
+<h3>CDNs as a security layer</h3>
+
+<p>
+  CDNs also absorb <strong>DDoS attacks</strong>. An attacker flooding your origin server with traffic from thousands of bots can crash your server or rack up massive autoscaling bills. With a CDN like Cloudflare in front, the traffic is distributed across their global network — which is large enough to absorb even terabytes-per-second attacks — while automated detection triggers CAPTCHAs and blocks suspicious IPs before traffic reaches your origin.
+</p>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 08: EDGE COMPUTING -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s8" class="section-heading">
+  <span class="section-num">08</span>
+  <h2>Edge Computing</h2>
+</div>
+
+<p>
+  Traditional CDNs serve static files — no processing, just "find file, send file." <span class="keyword">Edge computing</span> adds a processing layer at the CDN node: your code runs at the edge, close to the user, before (or instead of) reaching your origin server.
+</p>
+
+<h3>Use cases</h3>
+
+<p>
+  <strong>Authentication at the edge:</strong> Instead of a 100ms round trip to your origin just to verify a session and return 401, the edge node validates the session in 2–3ms. Your origin only receives legitimate, authenticated requests — reducing both latency and load. <strong>Localization:</strong> Edge nodes detect the user's region and language, serving a Japanese version of your site without a round trip to the origin. <strong>Request routing:</strong> Intelligent routing to the nearest backend based on geography.
+</p>
+
+<h3>Constraints</h3>
+
+<p>
+  Edge computing environments have limited resources — typically 1 GB RAM, 1 CPU core, no filesystem access, no raw TCP sockets. Cloudflare Workers use V8 isolates (Chrome's JavaScript engine) which boot in under 1ms but can only run JavaScript/TypeScript. These constraints mean edge computing complements your origin servers — it can't replace them for complex business logic, database-heavy operations, or long-running tasks.
+</p>
+
+<pre><code><span class="code-label">Cloudflare Worker</span>
+<span class="syn-cm">// Edge authentication — runs in 2–3ms at the closest CDN node</span>
+<span class="syn-kw">export default</span> {
+  <span class="syn-kw">async</span> <span class="syn-fn">fetch</span>(request, env) {
+    <span class="syn-kw">const</span> sessionId = <span class="syn-fn">getCookie</span>(request, <span class="syn-str">"session_id"</span>);
+
+    <span class="syn-kw">if</span> (!sessionId) {
+      <span class="syn-kw">return new</span> <span class="syn-type">Response</span>(<span class="syn-str">"Unauthorized"</span>, { status: <span class="syn-num">401</span> });
+    }
+
+    <span class="syn-cm">// Check session in edge KV store (global, low-latency)</span>
+    <span class="syn-kw">const</span> userId = <span class="syn-kw">await</span> env.SESSIONS.<span class="syn-fn">get</span>(sessionId);
+    <span class="syn-kw">if</span> (!userId) {
+      <span class="syn-kw">return new</span> <span class="syn-type">Response</span>(<span class="syn-str">"Unauthorized"</span>, { status: <span class="syn-num">401</span> });
+    }
+
+    <span class="syn-cm">// Authenticated → forward to origin server</span>
+    request.headers.<span class="syn-fn">set</span>(<span class="syn-str">"X-User-Id"</span>, userId);
+    <span class="syn-kw">return</span> <span class="syn-fn">fetch</span>(request);
+  },
+};</code></pre>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 09: ASYNC PROCESSING -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s9" class="section-heading">
+  <span class="section-num">09</span>
+  <h2>Asynchronous Processing &amp; Queues</h2>
+</div>
+
+<p>
+  Not every operation requires the user to wait for its completion. <span class="keyword">Asynchronous processing</span> identifies tasks that can happen in the background and offloads them to a message queue — dramatically reducing the latency the user perceives.
+</p>
+
+<h3>The pattern</h3>
+
+<p>
+  Consider inviting a team member: you validate the request, save the invitation to the database (100ms), and then need to send an email via an external provider (300ms). The user doesn't need to wait for the email to send — they just need confirmation that the invite was recorded. So you return 200 after the database write, and push "send email" as a job to a queue. A separate worker process picks up the job and handles the email asynchronously.
+</p>
+
+<div class="formula">
+  Synchronous: 100ms (DB) + 300ms (email) = 400ms perceived<br>
+  Async: 100ms (DB) + push to queue = 100ms perceived
+</div>
+
+<h3>What to offload</h3>
+
+<p>
+  <strong>Emails &amp; notifications</strong> — users don't expect instant delivery. <strong>Image/video processing</strong> — encoding, resizing, thumbnail generation. <strong>Account deletion</strong> — cascading deletes across many tables. <strong>Report generation</strong> — aggregating data across millions of rows. <strong>Webhook delivery</strong> — retrying on failure without blocking the main request. The rule: if the user doesn't need the result in the same HTTP response, it's a candidate for async processing.
+</p>
+
+<h4>Background job with Go and Redis</h4>
+
+<pre><code><span class="code-label">Go</span>
+<span class="syn-kw">import</span> (
+    <span class="syn-str">"context"</span>
+    <span class="syn-str">"encoding/json"</span>
+    <span class="syn-str">"github.com/redis/go-redis/v9"</span>
+)
+
+<span class="syn-kw">type</span> EmailJob <span class="syn-kw">struct</span> {
+    To       <span class="syn-type">string</span> <span class="syn-str">`json:"to"`</span>
+    Subject  <span class="syn-type">string</span> <span class="syn-str">`json:"subject"`</span>
+    Template <span class="syn-type">string</span> <span class="syn-str">`json:"template"`</span>
+}
+
+<span class="syn-cm">// Producer: push job to queue (called from your API handler)</span>
+<span class="syn-kw">func</span> <span class="syn-fn">EnqueueEmail</span>(ctx <span class="syn-type">context.Context</span>, job EmailJob) <span class="syn-type">error</span> {
+    data, _ := json.<span class="syn-fn">Marshal</span>(job)
+    <span class="syn-kw">return</span> rdb.<span class="syn-fn">LPush</span>(ctx, <span class="syn-str">"queue:emails"</span>, data).<span class="syn-fn">Err</span>()
+}
+
+<span class="syn-cm">// Consumer: runs as a separate process (or goroutine)</span>
+<span class="syn-kw">func</span> <span class="syn-fn">EmailWorker</span>(ctx <span class="syn-type">context.Context</span>) {
+    <span class="syn-kw">for</span> {
+        result, err := rdb.<span class="syn-fn">BRPop</span>(ctx, <span class="syn-num">0</span>, <span class="syn-str">"queue:emails"</span>).<span class="syn-fn">Result</span>()
+        <span class="syn-kw">if</span> err != <span class="syn-kw">nil</span> { <span class="syn-kw">continue</span> }
+
+        <span class="syn-kw">var</span> job EmailJob
+        json.<span class="syn-fn">Unmarshal</span>([]<span class="syn-kw">byte</span>(result[<span class="syn-num">1</span>]), &job)
+        <span class="syn-fn">sendEmail</span>(job)  <span class="syn-cm">// takes 300ms — but no user is waiting</span>
+    }
+}</code></pre>
+
+<h4>Background job with Python (Celery)</h4>
+
+<pre><code><span class="code-label">Python</span>
+<span class="syn-kw">from</span> celery <span class="syn-kw">import</span> Celery
+
+app = Celery(<span class="syn-str">"tasks"</span>, broker=<span class="syn-str">"redis://localhost:6379/0"</span>)
+
+@app.<span class="syn-fn">task</span>(bind=<span class="syn-kw">True</span>, max_retries=<span class="syn-num">3</span>)
+<span class="syn-kw">def</span> <span class="syn-fn">send_invitation_email</span>(self, email: <span class="syn-type">str</span>, invite_url: <span class="syn-type">str</span>):
+    <span class="syn-kw">try</span>:
+        <span class="syn-fn">email_provider.send</span>(
+            to=email,
+            subject=<span class="syn-str">"You've been invited!"</span>,
+            template=<span class="syn-str">"invite"</span>,
+            context={<span class="syn-str">"url"</span>: invite_url},
+        )
+    <span class="syn-kw">except</span> <span class="syn-type">Exception</span> <span class="syn-kw">as</span> exc:
+        <span class="syn-kw">raise</span> self.<span class="syn-fn">retry</span>(exc=exc, countdown=<span class="syn-num">60</span>)
+
+<span class="syn-cm"># In your API handler — returns instantly to the user</span>
+send_invitation_email.<span class="syn-fn">delay</span>(<span class="syn-str">"user@example.com"</span>, <span class="syn-str">"https://app.co/invite/abc"</span>)</code></pre>
+
+<div class="ref-box">
+  <span class="ref-icon">📖</span>
+  <span><strong>Reference:</strong> <a href="https://docs.celeryq.dev/en/stable/" target="_blank">Celery Documentation</a> · <a href="https://docs.bullmq.io/" target="_blank">BullMQ (Node.js)</a> — production-grade task queues for Python and JavaScript respectively.</span>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 10: MONOLITHS VS MICROSERVICES -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s10" class="section-heading">
+  <span class="section-num">10</span>
+  <h2>Monoliths vs Microservices</h2>
+</div>
+
+<p>
+  A <span class="keyword">monolith</span> is a single deployable unit: authentication, order processing, notifications, payments — all in one codebase, one process, one deployment. Monoliths are simple to develop, test, deploy, and refactor. You can horizontally scale a monolith by running multiple instances behind a load balancer.
+</p>
+
+<p>
+  <span class="keyword">Microservices</span> split the application into independent services, each with its own codebase, deployment, and often its own database. They are primarily about scaling <em>teams</em>, not machines.
+</p>
+
+<h3>When monoliths break down</h3>
+
+<p>
+  <strong>Deployment coupling:</strong> With 200 developers on one codebase, one team's unfinished work can block another team's deployment. <strong>Scaling granularity:</strong> You can't scale just the payment module — you scale the entire monolith, wasting resources on modules that don't need it. <strong>Technology lock-in:</strong> Every module must use the same language and runtime, even when a different language would be dramatically better for a specific task (e.g., Rust for image processing vs. Node.js for markdown rendering).
+</p>
+
+<h3>What microservices cost</h3>
+
+<p>
+  <strong>Network latency:</strong> What was a function call is now an HTTP/gRPC call across the network — slower and can fail. <strong>Debugging complexity:</strong> A single user request may flow through 4+ services; debugging requires distributed tracing across all of them. <strong>Data consistency:</strong> Each service may own its own database, introducing replication lag and eventual consistency problems. <strong>Operational overhead:</strong> Each service needs its own CI/CD pipeline, monitoring, alerting, and on-call rotation.
+</p>
+
+<div class="compare-grid">
+  <div class="compare-card">
+    <h5>Monolith — Choose When</h5>
+    <ul>
+      <li>Team &lt; 50–100 engineers</li>
+      <li>Single tech stack is sufficient</li>
+      <li>Scaling needs are uniform</li>
+      <li>You want fast iteration speed</li>
+      <li>You're starting a new product</li>
+    </ul>
+  </div>
+  <div class="compare-card">
+    <h5>Microservices — Choose When</h5>
+    <ul>
+      <li>Team &gt; 100+ engineers with clear boundaries</li>
+      <li>Different modules need different tech stacks</li>
+      <li>Individual modules need independent scaling</li>
+      <li>Deployment velocity is blocked by coupling</li>
+      <li>You have deep distributed systems expertise</li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout warn">
+  <div class="callout-title">The cardinal rule</div>
+  <p>Microservices are <strong>not</strong> a performance optimization. They are an organizational architecture for large teams. If your team is small, microservices add massive complexity for zero benefit. A horizontally scaled monolith handles millions of users — most companies never outgrow one.</p>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 11: SERVERLESS -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s11" class="section-heading">
+  <span class="section-num">11</span>
+  <h2>Serverless Computing</h2>
+</div>
+
+<p>
+  Traditional servers are <strong>always on</strong> — you provision a machine (e.g., 4 GB RAM, 2 cores) and pay for it 24/7, whether it's handling 500 RPS or zero. You must predict capacity: under-provision and users get errors during traffic spikes; over-provision and you waste money.
+</p>
+
+<p>
+  <span class="keyword">Serverless</span> flips this model: you provide code (functions), and the platform provisions a machine <em>only when a request arrives</em>. After the response is sent, the machine may be recycled. You pay only for the milliseconds of actual CPU execution — not for idle time.
+</p>
+
+<h3>How it works</h3>
+
+<p>
+  An <strong>API Gateway</strong> receives HTTP requests and routes each one to a serverless function. On the first request, the platform boots a runtime, loads your code, processes the request, and returns a response. The instance may stay warm for a few seconds (handling subsequent requests without cold start) or be destroyed. Scaling is automatic and theoretically unbounded — the platform creates as many instances as needed.
+</p>
+
+<h3>The cold start problem</h3>
+
+<p>
+  Spinning up a new execution environment — booting the OS/VM, loading the language runtime, loading your code — takes time. This is the <span class="keyword">cold start</span>, and it's the primary disadvantage of serverless. Cold starts vary dramatically by technology:
+</p>
+
+<table>
+  <thead><tr><th>Platform</th><th>Technology</th><th>Cold Start</th></tr></thead>
+  <tbody>
+    <tr><td>Cloudflare Workers</td><td>V8 Isolates (JavaScript)</td><td>~0–5ms</td></tr>
+    <tr><td>AWS Lambda (Node.js)</td><td>Firecracker microVM</td><td>~100–300ms</td></tr>
+    <tr><td>AWS Lambda (Java)</td><td>Firecracker + JVM</td><td>~1–3 seconds</td></tr>
+    <tr><td>AWS Lambda (Python)</td><td>Firecracker + CPython</td><td>~200–500ms</td></tr>
+  </tbody>
+</table>
+
+<h3>When to use serverless</h3>
+
+<div class="compare-grid">
+  <div class="compare-card">
+    <h5>Good Fit</h5>
+    <ul>
+      <li>Event-driven tasks (file upload processing, queue consumers)</li>
+      <li>Sporadic, unpredictable traffic</li>
+      <li>Image/video processing pipelines</li>
+      <li>Scheduled jobs (cron-like tasks)</li>
+      <li>Edge authentication &amp; routing</li>
+    </ul>
+  </div>
+  <div class="compare-card">
+    <h5>Bad Fit</h5>
+    <ul>
+      <li>Latency-sensitive APIs (banking, payments)</li>
+      <li>Long-running processes (&gt;15 min on Lambda)</li>
+      <li>WebSocket-heavy applications</li>
+      <li>Apps requiring many persistent DB connections</li>
+      <li>Steady, predictable high-volume traffic</li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="callout-title">The honest take</div>
+  <p>Serverless is powerful for specific use cases but is <strong>not a universal replacement for servers</strong>. The industry is somewhat over-hyped. Traditional servers with autoscaling remain the right choice for most SaaS applications with steady traffic. Serverless shines for event-driven, sporadic workloads where you'd otherwise pay for idle compute.</p>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 12: MENTAL MODELS -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s12" class="section-heading">
+  <span class="section-num" style="background:#5c4a3a">∑</span>
+  <h2>Scaling Mental Models</h2>
+</div>
+
+<p>
+  After covering the full landscape — from latency percentiles through database sharding, CDNs, async processing, microservices, and serverless — here are the mental models that tie everything together:
+</p>
+
+<h3>1. Always start with the problem</h3>
+
+<p>
+  Every technique in these notes is a <em>solution</em>. Before reaching for solutions, measure your system using observability (logs, metrics, traces). Know <em>specifically</em> which component is slow, why it's slow, and how slow it is. Solving the wrong problem is worse than doing nothing — it gives you false confidence while the real bottleneck festers.
+</p>
+
+<h3>2. Prefer simple solutions</h3>
+
+<p>
+  A vertically scaled monolith is simpler than a horizontally scaled microservice mesh. Proper database indexing is simpler than adding a Redis cache. Simple solutions are easier to understand, debug, and operate. Complexity is a cost — every component you add is another component that can fail, that must be monitored, that must be understood. Accept complexity only when simplicity is genuinely insufficient.
+</p>
+
+<h3>3. Scale for the problems you have</h3>
+
+<p>
+  You don't need to build for a million users on day one — most platforms never reach a million users. Build for your current scale with reasonable headroom, and let observability tell you when and where to invest in scaling. Your application has unique characteristics that generic advice from Netflix engineering blogs may not apply to. Learn from <em>your</em> system's behavior.
+</p>
+
+<h3>4. Measure from day one</h3>
+
+<p>
+  Observability is the one exception to "start simple." Production-grade logging, metrics, and tracing should be in place from the first deployment. They pay for themselves immediately — you never have to guess where a bug is, you never get surprised by a traffic spike, and you always have the data to make informed scaling decisions.
+</p>
+
+<pre><code><span class="code-label">Go</span>
+<span class="syn-cm">// A minimal but real observability setup: Prometheus metrics + structured logging</span>
+<span class="syn-kw">import</span> (
+    <span class="syn-str">"github.com/prometheus/client_golang/prometheus"</span>
+    <span class="syn-str">"github.com/prometheus/client_golang/prometheus/promhttp"</span>
+    <span class="syn-str">"log/slog"</span>
+)
+
+<span class="syn-kw">var</span> requestDuration = prometheus.<span class="syn-fn">NewHistogramVec</span>(
+    prometheus.HistogramOpts{
+        Name:    <span class="syn-str">"http_request_duration_seconds"</span>,
+        Help:    <span class="syn-str">"Duration of HTTP requests"</span>,
+        Buckets: prometheus.<span class="syn-fn">DefBuckets</span>,
+    },
+    []<span class="syn-type">string</span>{<span class="syn-str">"method"</span>, <span class="syn-str">"path"</span>, <span class="syn-str">"status"</span>},
+)
+
+<span class="syn-kw">func</span> <span class="syn-fn">init</span>() {
+    prometheus.<span class="syn-fn">MustRegister</span>(requestDuration)
+}
+
+<span class="syn-cm">// Expose /metrics for Prometheus to scrape</span>
+<span class="syn-cm">// Visualize in Grafana: p50, p90, p99 latency per endpoint</span>
+http.<span class="syn-fn">Handle</span>(<span class="syn-str">"/metrics"</span>, promhttp.<span class="syn-fn">Handler</span>())</code></pre>
+
+<h3>5. Performance is a mindset</h3>
+
+<p>
+  Scaling is not a one-time project. It's an ongoing practice — you build systems, watch them struggle under real traffic, optimize what matters, and learn what doesn't. Over time, through trial and error, you develop an intuition for where bottlenecks hide and which solutions actually move the needle. Your job isn't to predict every failure — it's to build systems that handle failures gracefully and to develop the diagnostic skills to resolve them quickly when they occur.
+</p>
+
+<div class="callout">
+  <div class="callout-title">The Scaling Playbook — In Order</div>
+  <p>
+    <strong>Step 1:</strong> Measure everything (observability from day one).<br>
+    <strong>Step 2:</strong> Fix the database (indexes, N+1, connection pooling).<br>
+    <strong>Step 3:</strong> Add caching (Redis for hot paths).<br>
+    <strong>Step 4:</strong> Offload work (async processing for emails, uploads, deletes).<br>
+    <strong>Step 5:</strong> Use CDNs (static content + API response caching).<br>
+    <strong>Step 6:</strong> Vertical scaling (bigger machine — no code changes).<br>
+    <strong>Step 7:</strong> Horizontal scaling (stateless servers + load balancer).<br>
+    <strong>Step 8:</strong> Database scaling (read replicas, then sharding if needed).<br>
+    <strong>Step 9:</strong> Only then consider microservices, serverless, or edge computing.
+  </p>
+</div>
+
+<div class="ref-box">
+  <span class="ref-icon">📖</span>
+  <span><strong>Further reading:</strong>
+    <a href="https://developer.mozilla.org/en-US/docs/Web/Performance" target="_blank">MDN Web Performance</a> ·
+    <a href="https://www.postgresql.org/docs/current/performance-tips.html" target="_blank">Postgres Performance Tips</a> ·
+    <a href="https://opentelemetry.io/docs/" target="_blank">OpenTelemetry</a> ·
+    <a href="https://prometheus.io/docs/" target="_blank">Prometheus</a> ·
+    <a href="https://redis.io/docs/" target="_blank">Redis</a> ·
+    <a href="https://www.cloudflare.com/learning/cdn/what-is-a-cdn/" target="_blank">Cloudflare CDN Guide</a>
+  </span>
+</div>
+
+<a href="#top" class="back-to-top">↑ Back to top</a>
+
+</main>
+</div>
+</body>
+</html>
