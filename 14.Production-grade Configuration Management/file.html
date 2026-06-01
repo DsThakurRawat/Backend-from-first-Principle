@@ -1,0 +1,1379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Configuration Management — Backend Engineering Notes</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #F5F2EB;
+    --surface: #EDEAE0;
+    --surface2: #E4E0D4;
+    --ink: #1A1916;
+    --ink2: #3D3C38;
+    --ink3: #6B6A65;
+    --red: #C0392B;
+    --red-bg: #F9EAE8;
+    --red-border: #E8C4BF;
+    --sidebar: #E9E4D6;
+    --sidebar-text: #1A1916;
+    --sidebar-muted: #5F5E58;
+    --sidebar-accent: #C0392B;
+    --code-bg: #2A2925;
+    --code-text: #E8E5DC;
+    --code-comment: #7A7870;
+    --code-keyword: #E8834A;
+    --code-string: #A8C285;
+    --code-number: #7DB8D4;
+    --code-type: #C9A869;
+    --border: #D4D0C4;
+    --accent-gold: #B8960C;
+    --accent-gold-bg: #FBF6E2;
+    --teal: #0F7066;
+    --teal-bg: #E4F2EF;
+    --chapter-num: #C0392B;
+    --divider: #C8C4B8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 17px;
+    line-height: 1.75;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: 260px;
+    height: 100vh;
+    background: #E9E4D6;
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    z-index: 100;
+    padding: 0 0 2rem;
+    border-right: 1px solid #C8C2B2;
+  }
+  .sidebar-header {
+    padding: 2rem 1.5rem 1.5rem;
+    border-bottom: 1px solid var(--divider);
+  }
+  .sidebar-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--sidebar-muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .sidebar-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--sidebar-text);
+  }
+  .sidebar-subtitle {
+    font-size: 12px;
+    color: var(--sidebar-muted);
+    margin-top: 4px;
+    font-style: italic;
+  }
+  .sidebar-nav { padding: 1rem 0; }
+  .nav-section {
+    padding: 0.5rem 1.5rem 0.25rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    color: var(--sidebar-muted);
+    text-transform: uppercase;
+  }
+  .nav-item {
+    display: block;
+    padding: 6px 1.5rem 6px 2rem;
+    font-size: 13px;
+    color: #5F5E58 !important;
+    text-decoration: none !important;
+    border-bottom: none !important;
+    border-top: none !important;
+    transition: color 0.15s, background 0.15s;
+    line-height: 1.4;
+    border-left: 2px solid transparent;
+  }
+  .nav-item:hover {
+    color: #1A1916 !important;
+    background: rgba(192,57,43,0.07);
+    border-left-color: #C0392B;
+    border-bottom: none !important;
+  }
+  .nav-item.active {
+    color: #C0392B !important;
+    border-left-color: #C0392B;
+  }
+
+  /* ── MAIN CONTENT ── */
+  .main {
+    margin-left: 260px;
+    flex: 1;
+    max-width: 860px;
+    padding: 4rem 4rem 6rem;
+  }
+
+  /* ── CHAPTER HEADER ── */
+  .chapter-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--chapter-num);
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .chapter-eyebrow::after {
+    content: '';
+    flex: 1;
+    max-width: 60px;
+    height: 1px;
+    background: var(--chapter-num);
+    opacity: 0.5;
+  }
+  .chapter-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 52px;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    margin-bottom: 1rem;
+  }
+  .chapter-subtitle {
+    font-size: 19px;
+    font-weight: 300;
+    color: var(--ink3);
+    font-style: italic;
+    margin-bottom: 2.5rem;
+    max-width: 560px;
+  }
+  .chapter-divider {
+    border: none;
+    border-top: 1px solid var(--divider);
+    margin: 2.5rem 0;
+  }
+
+  /* ── SECTION HEADINGS ── */
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--red);
+    letter-spacing: 0.12em;
+    display: inline-block;
+    background: var(--red-bg);
+    padding: 3px 8px;
+    border-radius: 3px;
+    margin-bottom: 10px;
+  }
+  h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--ink);
+    margin: 3rem 0 0.75rem;
+  }
+  h2:first-of-type { margin-top: 0; }
+  h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 21px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 2.25rem 0 0.6rem;
+  }
+  h4 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink2);
+    margin: 1.5rem 0 0.4rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  p { margin-bottom: 1rem; }
+  a { color: var(--red); text-decoration: none; border-bottom: 1px solid var(--red-border); }
+  a:hover { border-bottom-color: var(--red); }
+  .sidebar a, .sidebar a:visited, .sidebar a:hover { color: inherit; border-bottom: none; text-decoration: none; }
+  .nav-item, .nav-item:visited { color: #9A9890 !important; border-bottom: none !important; }
+  .nav-item:hover { color: #F5F2EB !important; border-bottom: none !important; }
+  .nav-item.active { color: #F5F2EB !important; }
+
+  /* ── CALLOUT BOXES ── */
+  .callout {
+    border-left: 3px solid var(--red);
+    background: var(--red-bg);
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--red);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .callout p { margin: 0; font-size: 15px; color: var(--ink2); }
+
+  .callout-gold {
+    border-left-color: var(--accent-gold);
+    background: var(--accent-gold-bg);
+  }
+  .callout-gold .callout-label { color: var(--accent-gold); }
+
+  .callout-teal {
+    border-left-color: var(--teal);
+    background: var(--teal-bg);
+  }
+  .callout-teal .callout-label { color: var(--teal); }
+
+  /* ── CODE BLOCKS ── */
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13.5px;
+    line-height: 1.65;
+    margin: 1.25rem 0;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    background: var(--surface2);
+    color: var(--red);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+
+  .kw  { color: var(--code-keyword); }
+  .str { color: var(--code-string); }
+  .num { color: var(--code-number); }
+  .ty  { color: var(--code-type); }
+  .cm  { color: var(--code-comment); font-style: italic; }
+  .fn  { color: #7DB8D4; }
+
+  /* ── CODE FILE HEADER ── */
+  .code-file {
+    background: #222018;
+    border-radius: 8px 8px 0 0;
+    padding: 8px 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #7A7870;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-bottom: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 1.25rem;
+  }
+  .code-file + pre { border-radius: 0 0 8px 8px; margin-top: 0; }
+  .code-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-r { background: #E8534A; }
+  .dot-y { background: #E8B84A; }
+  .dot-g { background: #4ACA57; }
+
+  /* ── DEFINITION TERMS ── */
+  .def-term {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--ink);
+    border-bottom: 2px solid var(--red);
+    display: inline;
+  }
+
+  /* ── DIAGRAM SVG CONTAINERS ── */
+  .diagram-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin: 1.75rem 0;
+    overflow: hidden;
+  }
+  .diagram-caption {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink3);
+    margin-top: 0.75rem;
+    text-align: center;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── COMPARISON TABLE ── */
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin: 1.5rem 0;
+  }
+  .compare-table th {
+    background: var(--sidebar);
+    color: var(--sidebar-text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 500;
+  }
+  .compare-table td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--ink2);
+    vertical-align: top;
+  }
+  .compare-table tr:nth-child(even) td { background: var(--surface); }
+  .compare-table tr:last-child td { border-bottom: none; }
+  .tag-fast { color: var(--teal); font-weight: 600; }
+  .tag-slow { color: var(--red); font-weight: 600; }
+
+  /* ── STRATEGY CARDS ── */
+  .strategy-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .strategy-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem 1.4rem;
+  }
+  .strategy-card-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--ink3);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .strategy-card h4 {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px;
+    color: var(--ink);
+    margin: 0 0 8px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-style: italic;
+  }
+  .strategy-card p { font-size: 14px; color: var(--ink2); margin: 0; }
+
+  /* ── EVICTION POLICY BADGES ── */
+  .policy-list { list-style: none; margin: 1rem 0 1.5rem; }
+  .policy-list li {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .policy-list li:last-child { border-bottom: none; }
+  .policy-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    padding: 4px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .badge-none { background: var(--surface2); color: var(--ink3); }
+  .badge-lru  { background: var(--teal-bg); color: var(--teal); }
+  .badge-lfu  { background: var(--accent-gold-bg); color: var(--accent-gold); }
+  .badge-ttl  { background: var(--red-bg); color: var(--red); }
+
+  /* ── USE-CASE TILES ── */
+  .usecase-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .usecase-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--red);
+    border-radius: 0 0 8px 8px;
+    padding: 1rem 1.2rem;
+  }
+  .usecase-tile h4 {
+    font-family: 'Playfair Display', serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0 0 6px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .usecase-tile p { font-size: 13.5px; color: var(--ink2); margin: 0; }
+
+  /* ── REFERENCE LINKS ── */
+  .ref-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 1rem 0;
+  }
+  .ref-box-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--ink3);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .ref-box a { font-size: 13.5px; display: block; margin-bottom: 4px; }
+
+  /* ── PULL QUOTE ── */
+  .pull-quote {
+    border-top: 2px solid var(--ink);
+    border-bottom: 2px solid var(--ink);
+    padding: 1.25rem 0;
+    margin: 2rem 0;
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-style: italic;
+    font-weight: 400;
+    color: var(--ink);
+    line-height: 1.4;
+  }
+
+  /* ── INLINE TERM HIGHLIGHT ── */
+  .term { color: var(--red); font-weight: 600; font-style: italic; }
+
+  /* ── SVG ── */
+  svg text { font-family: 'Source Serif 4', serif; }
+
+  /* ── PRINT / SCROLL ── */
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; padding: 2rem 1.5rem 4rem; }
+    .chapter-title { font-size: 36px; }
+    .strategy-grid, .usecase-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Smooth scroll */
+  html { scroll-behavior: smooth; }
+
+  /* Section spacing */
+  section { padding-top: 1rem; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════ SIDEBAR ══════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-label">Field Manual · V2</div>
+    <div class="sidebar-title">Backend Engineering</div>
+    <div class="sidebar-subtitle">Chapter 13 · Config Management</div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Contents</div>
+    <a class="nav-item" href="#what-is-config" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">01 · What is Config Management?</a>
+    <a class="nav-item" href="#ecommerce" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">02 · E-Commerce Example</a>
+    <a class="nav-item" href="#distributed" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">03 · Distributed Systems</a>
+    <a class="nav-item" href="#chaos" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">04 · Configuration Chaos</a>
+    <a class="nav-item" href="#types" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">05 · Types of Config</a>
+    <a class="nav-item" href="#sources" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">06 · Sources / Storage</a>
+    <a class="nav-item" href="#env-vars" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">↳ Environment Variables</a>
+    <a class="nav-item" href="#files" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">↳ Config Files</a>
+    <a class="nav-item" href="#kv-cloud" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">↳ KV Stores &amp; Cloud</a>
+    <a class="nav-item" href="#environments" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">07 · Per-Environment Config</a>
+    <a class="nav-item" href="#security" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">08 · Security</a>
+    <a class="nav-item" href="#code" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">09 · Code Examples</a>
+    <div class="nav-section" style="margin-top:1rem">References</div>
+    <a class="nav-item" href="#refs" style="color:#5F5E58;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#5F5E58';this.style.borderLeftColor='transparent';this.style.background='none'">Docs &amp; Links</a>
+  </nav>
+</aside>
+
+<!-- ══════════════════ MAIN ══════════════════ -->
+<main class="main">
+
+  <!-- CHAPTER HEADER -->
+  <div class="chapter-eyebrow">Chapter 13 · Backend Operations</div>
+  <h1 class="chapter-title">Configuration<br/>Management</h1>
+  <p class="chapter-subtitle">The DNA of your application — how the same code behaves differently across environments without ever touching the codebase.</p>
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 1: WHAT IS CONFIG MANAGEMENT ══════ -->
+  <section id="what-is-config">
+    <div class="section-num">01 · DEFINITION</div>
+    <h2>What is Configuration Management?</h2>
+
+    <div class="pull-quote">
+      Config management is the systematic approach to organize, store, access and maintain all the settings of our backend app.
+    </div>
+
+    <p>If we go by the definition, configuration management (or just "config management") is the <strong>systematic approach to organize, store, access, or basically maintaining all the settings</strong> of our backend app. The key word there is <em>settings</em>.</p>
+
+    <p>You can think of configuration as the <span class="term">DNA of your application</span>. It decides how your code runs in different environments. The exact same application code can behave in completely different ways depending purely on its configuration — and that's by design.</p>
+
+    <h3>The Common Misconception</h3>
+    <p>When you say "configuration management" to most people, the first impression — the first idea that hits the mind — is storing things like:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:6px">Database passwords and the secure connection URL of your database</li>
+      <li style="margin-bottom:6px">Secure authentication keys — secret keys for your JWT secrets, etc.</li>
+      <li style="margin-bottom:6px">API keys of external services — like your email delivery service</li>
+    </ul>
+
+    <p>Those are the things that come to mind whenever we talk about config management. But thinking like that <strong>misses a lot of the scope</strong>.</p>
+
+    <div class="callout callout-gold">
+      <div class="callout-label">The Car Analogy</div>
+      <p>Thinking config management is just secrets and DB URLs is like saying <em>"a car is just about the engine."</em> The engine is definitely the most important part of a car — but you're still missing out on 90% of the other features of the car. Similarly, configuration management has a lot of other dimensions.</p>
+    </div>
+
+    <h3>The Full Scope of Config Management</h3>
+    <p>Configuration management actually covers a wide range of application behaviors:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:8px"><strong>How your application starts up</strong> — the bootstrap sequence and what it needs to begin running</li>
+      <li style="margin-bottom:8px"><strong>How it connects to external services</strong> — databases, caches, message queues, third-party APIs</li>
+      <li style="margin-bottom:8px"><strong>How it behaves in different environments</strong> — dev vs staging vs production behaviour</li>
+      <li style="margin-bottom:8px"><strong>What it logs, whether it logs, and where it logs</strong> — logging behaviour and destinations</li>
+      <li style="margin-bottom:8px"><strong>Where it sends metrics</strong> — performance metrics and business metrics destinations</li>
+      <li style="margin-bottom:8px"><strong>Which features are enabled or disabled</strong> — for this version of the deployment, and for which users</li>
+    </ul>
+
+    <p>There is a lot of scope for config management. It's not just limited to your database URL or secret keys — it affects a lot of important behaviors of your backend application. That's exactly why it's such an important topic.</p>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 2: E-COMMERCE EXAMPLE ══════ -->
+  <section id="ecommerce">
+    <div class="section-num">02 · WORKED EXAMPLE</div>
+    <h2>The E-Commerce Platform Example</h2>
+    <p>Let's say you are building an e-commerce platform, and you're working on the backend. Your configuration might include a whole range of things, each with very different characteristics. Let's walk through every category that such a backend would need.</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 280" role="img">
+        <title>E-commerce backend configuration categories</title>
+        <!-- center node -->
+        <rect x="280" y="120" width="160" height="48" rx="10" fill="#F9EAE8" stroke="#C0392B" stroke-width="1"/>
+        <text x="360" y="140" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1916">E-Commerce</text>
+        <text x="360" y="156" text-anchor="middle" font-size="11" fill="#C0392B">Backend Config</text>
+        <!-- 6 surrounding nodes -->
+        <rect x="20" y="20" width="180" height="46" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="110" y="40" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">DB Connection</text>
+        <text x="110" y="55" text-anchor="middle" font-size="10" fill="#0F7066">host, port, user, pass, timeout</text>
+
+        <rect x="270" y="20" width="180" height="46" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="360" y="40" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Payment API Keys</text>
+        <text x="360" y="55" text-anchor="middle" font-size="10" fill="#B8960C">e.g. Stripe keys</text>
+
+        <rect x="520" y="20" width="180" height="46" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="610" y="40" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Feature Flags</text>
+        <text x="610" y="55" text-anchor="middle" font-size="10" fill="#0F7066">new vs old checkout</text>
+
+        <rect x="20" y="222" width="180" height="46" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="110" y="242" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Performance Tuning</text>
+        <text x="110" y="257" text-anchor="middle" font-size="10" fill="#B8960C">connection pool size</text>
+
+        <rect x="270" y="222" width="180" height="46" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="360" y="242" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Security Settings</text>
+        <text x="360" y="257" text-anchor="middle" font-size="10" fill="#0F7066">session timeouts</text>
+
+        <rect x="520" y="222" width="180" height="46" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="610" y="242" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Business Rules</text>
+        <text x="610" y="257" text-anchor="middle" font-size="10" fill="#B8960C">max order amount</text>
+
+        <!-- connecting lines -->
+        <line x1="200" y1="48" x2="285" y2="120" stroke="#C8C4B8" stroke-width="1"/>
+        <line x1="360" y1="66" x2="360" y2="118" stroke="#C8C4B8" stroke-width="1"/>
+        <line x1="520" y1="48" x2="435" y2="120" stroke="#C8C4B8" stroke-width="1"/>
+        <line x1="200" y1="240" x2="285" y2="168" stroke="#C8C4B8" stroke-width="1"/>
+        <line x1="360" y1="222" x2="360" y2="170" stroke="#C8C4B8" stroke-width="1"/>
+        <line x1="520" y1="240" x2="435" y2="168" stroke="#C8C4B8" stroke-width="1"/>
+      </svg>
+      <div class="diagram-caption">Fig 1.1 — The six configuration categories of an e-commerce backend</div>
+    </div>
+
+    <p>Breaking down each category in detail:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:10px"><strong>Database connection details</strong> — timeout details, host, port, username, password, etc. All the connection details of your database.</li>
+      <li style="margin-bottom:10px"><strong>Payment processor API keys</strong> — if you're using Stripe, you'd have your Stripe API keys here.</li>
+      <li style="margin-bottom:10px"><strong>Feature flags</strong> — what features are enabled for this deployment and what's kept disabled. For example: you built a new checkout flow, and a feature flag controls whether you're still using the old checkout flow or the new one. You can even <strong>conditionally enable the new flow for some users and the old flow for others</strong>.</li>
+      <li style="margin-bottom:10px"><strong>Performance tuning parameters</strong> — like your connection pool size (the pool used for your database connections).</li>
+      <li style="margin-bottom:10px"><strong>Security settings</strong> — like session timeouts — whether it's 30 seconds, 60 seconds, etc.</li>
+      <li style="margin-bottom:10px"><strong>Business rules</strong> — for e-commerce, this might contain things like the maximum order amount allowed for a user.</li>
+    </ul>
+
+    <h3>Why These Configs Have Different Characteristics</h3>
+    <p>Each of these configurations has fundamentally different characteristics — and recognising these differences is what drives every decision about how to store and protect them:</p>
+
+    <table class="compare-table">
+      <thead>
+        <tr><th>Characteristic</th><th>Examples</th><th>Implication</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Sensitive / secret</td><td>DB password, Stripe key, JWT secret</td><td class="tag-slow">Must never leak — can cause major loss/damage</td></tr>
+        <tr><td>Non-secret but behavior-controlling</td><td>Log level, feature flags, pool size</td><td>Controls how the app behaves at runtime</td></tr>
+        <tr><td>Frequently changing</td><td>Feature flags during a rollout</td><td>Need a fast, dynamic update path</td></tr>
+        <tr><td>Rarely changing</td><td>Business rules (monthly/quarterly)</td><td>Can be stored more statically</td></tr>
+        <tr><td>Same across all environments</td><td>Certain business rules</td><td>Shared config</td></tr>
+        <tr><td>Different per environment</td><td>DB host, pool size, log level</td><td>Environment-specific config</td></tr>
+      </tbody>
+    </table>
+
+    <p>Some are sensitive and supposed to be kept secret — leaking them might cause a lot of damage and loss. Some are not secretive but they control how your application behaves while it's running. Some change frequently; others change once a month or once a quarter. Some stay the same across development, staging and production; others differ depending on the environment. This diversity is the core reason config management needs a real strategy.</p>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 3: DISTRIBUTED SYSTEMS ══════ -->
+  <section id="distributed">
+    <div class="section-num">03 · THE CHALLENGE</div>
+    <h2>The Distributed Systems Challenge</h2>
+    <p>On top of all that diversity sits one big challenge: <span class="term">distributed systems</span>. Most of our modern applications — all our modern backends — don't run in isolation anymore. Most of them are now part of a complex distributed system.</p>
+
+    <p>A distributed system consists of multiple moving parts:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:6px">Multiple services</li>
+      <li style="margin-bottom:6px">Databases</li>
+      <li style="margin-bottom:6px">Caches (like Redis)</li>
+      <li style="margin-bottom:6px">Message queues</li>
+      <li style="margin-bottom:6px">Third-party integrations</li>
+      <li style="margin-bottom:6px">Authentication providers</li>
+      <li style="margin-bottom:6px">Email services</li>
+      <li style="margin-bottom:6px">...and a lot more</li>
+    </ul>
+
+    <p>All these different integration points — where you connect a separate service to your main backend — <strong>they all require configuration</strong>. Your backend obviously needs to know how to connect to these services. But on top of that, it also needs to know:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:8px"><strong>How to handle failures</strong> — what happens when a service is down or slow</li>
+      <li style="margin-bottom:8px"><strong>How to optimize performance</strong> — depending on the environment and settings</li>
+      <li style="margin-bottom:8px"><strong>How to maintain security</strong> — depending on the environment and config sources</li>
+    </ul>
+
+    <p>All of this depends on different environments, different settings, and different configs — which we can control from different sources. This is the reason that, because most modern backends run on distributed systems, configuration management becomes such an important part of your application.</p>
+
+    <div class="callout">
+      <div class="callout-label">Why Backend Config Stakes Are So High</div>
+      <p>The stakes are higher for backend engineers because they handle the <strong>core business logic and data</strong> — pretty much the most important part of any platform or enterprise.<br/><br/>
+      A <strong>misconfigured frontend</strong> might show a wrong feature, a wrong dialogue it's not supposed to show, or redirect to a wrong route — annoying, but recoverable.<br/><br/>
+      A <strong>misconfigured backend</strong> can expose customer data, process payments incorrectly, or bring down your entire platform if an important part is affected. The blast radius is enormous.</p>
+    </div>
+
+    <p>And backend systems run in diverse environments — different cloud providers, on-premises servers, containers, serverless functions, edge functions — and all of these have their own requirements for different configurations. There's no single uniform target, which makes a systematic approach essential.</p>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 4: CONFIG CHAOS ══════ -->
+  <section id="chaos">
+    <div class="section-num">04 · THE ANTI-PATTERN</div>
+    <h2>Configuration Chaos</h2>
+    <p>If you don't have a systematic approach — if you don't have a dedicated pipeline, a dedicated strategy to manage your config — you will end up with what we call <span class="term">configuration chaos</span>.</p>
+
+    <p>Configuration chaos means that instead of controlling configs from a centralized point, you have a mess. Here's what it looks like:</p>
+
+    <div class="usecase-grid">
+      <div class="usecase-tile">
+        <h4>Hard-coded scattered values</h4>
+        <p>Configuration values are hard-coded and scattered throughout your codebase instead of living in one centralized place.</p>
+      </div>
+      <div class="usecase-tile">
+        <h4>Inconsistent behavior</h4>
+        <p>Your application behaves inconsistently across different environments because configs aren't managed uniformly.</p>
+      </div>
+      <div class="usecase-tile">
+        <h4>Security vulnerabilities</h4>
+        <p>Exposed secrets leak into your codebase, version control, and logs — creating real security holes.</p>
+      </div>
+      <div class="usecase-tile">
+        <h4>Debugging nightmare</h4>
+        <p>You can't reproduce issues because there's no centralized way of managing config. You don't know which config caused which break in production.</p>
+      </div>
+    </div>
+
+    <p>This last point is the killer: debugging your application becomes a nightmare because you cannot reproduce the issues. You don't really know what exactly happened, what particular config caused a particular issue, or what particular config caused a break in production. Centralized config management is what gives you that traceability.</p>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 5: TYPES OF CONFIG ══════ -->
+  <section id="types">
+    <div class="section-num">05 · TYPES</div>
+    <h2>Types of Configuration</h2>
+    <p>Not all configurations are created equal. Understanding the different types of configuration data is very important for choosing the right <strong>storage mechanism, security measures, and access patterns</strong> — who can access what, and in which environments a particular config should be accessible. Let's go through each type.</p>
+
+    <!-- App settings -->
+    <h3>5.1 — Application Settings</h3>
+    <p>The most common kind of config you'll see in most backend apps. This includes:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:8px"><strong>Log level</strong> — In development we set the log level to <code>debug</code> so we can see and differentiate between different logs while building the app locally. In production we change it to <code>info</code> so we don't clutter our valuable production logs.</li>
+      <li style="margin-bottom:8px"><strong>Port</strong> — Which port the backend runs on. Usually <code>8080</code> locally; in production (VPS or Kubernetes) you might have different ports.</li>
+      <li style="margin-bottom:8px"><strong>Connection pool size</strong> — The maximum pool size for your database connections. Backend apps use connection pooling to optimize DB connections.</li>
+      <li style="margin-bottom:8px"><strong>Timeout values</strong> — How long the server should wait for a request to complete.</li>
+    </ul>
+
+    <div class="callout callout-gold">
+      <div class="callout-label">Timeout Example — The AI Image Case</div>
+      <p>Say you set a server timeout of 60 seconds, and you initiate a request that generates an AI image (returned to the frontend in base64). If AI image generation takes ~80 seconds on average, but your server timeout is 60 seconds, your request gets <strong>dropped</strong> — you'll get a <code>504 Gateway Timeout</code> status. The timeout config directly determines whether a legitimate slow request succeeds or fails.</p>
+    </div>
+
+    <!-- Database config -->
+    <h3>5.2 — Database Configuration</h3>
+    <p>Database config includes all the details your application needs to connect to your database:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:6px"><strong>Host</strong> — where your database is running</li>
+      <li style="margin-bottom:6px"><strong>Port</strong> — the database port</li>
+      <li style="margin-bottom:6px"><strong>Username</strong> — database user</li>
+      <li style="margin-bottom:6px"><strong>Password</strong> — database password (sensitive!)</li>
+      <li style="margin-bottom:6px"><strong>Database name</strong> — the specific DB to connect to</li>
+    </ul>
+    <p>All these parameters combined let you construct a <strong>connection URL</strong>, which your application uses at runtime to connect to the database. It might also have other parameters — like query timeouts (how long a database query should run before it times out).</p>
+
+    <!-- External services -->
+    <h3>5.3 — External Services</h3>
+    <p>External services come in many types, and each has its own configuration needs — usually some kind of API key:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:6px"><strong>Email providers</strong> — Mailchimp, Resend, etc. → you'll need an API key to initiate the client and send emails</li>
+      <li style="margin-bottom:6px"><strong>Payment processors</strong> — Stripe → a Stripe API key</li>
+      <li style="margin-bottom:6px"><strong>Authentication providers</strong> — Clerk → a Clerk API key</li>
+    </ul>
+    <p>It doesn't matter which provider you use — you'll most probably have some kind of API key in your config that you need to cater to.</p>
+
+    <!-- Feature flags -->
+    <h3>5.4 — Feature Flags</h3>
+    <p>Feature flags exist so that you can <strong>dynamically enable or disable particular features</strong> of your application without changing code.</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 180" role="img">
+        <title>Feature flag A/B testing by region</title>
+        <defs>
+          <marker id="ff" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <!-- flag -->
+        <rect x="270" y="20" width="180" height="50" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="1"/>
+        <text x="360" y="40" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Feature Flag</text>
+        <text x="360" y="56" text-anchor="middle" font-size="10" fill="#B8960C">new_checkout_enabled</text>
+        <!-- US users -->
+        <rect x="60" y="120" width="220" height="46" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="170" y="140" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">US users → NEW checkout</text>
+        <text x="170" y="155" text-anchor="middle" font-size="10" fill="#0F7066">flag = true</text>
+        <!-- India users -->
+        <rect x="440" y="120" width="220" height="46" rx="8" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="550" y="140" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">India users → OLD checkout</text>
+        <text x="550" y="155" text-anchor="middle" font-size="10" fill="#C0392B">flag = false</text>
+        <!-- arrows -->
+        <line x1="320" y1="70" x2="190" y2="118" stroke="#0F7066" stroke-width="1.2" marker-end="url(#ff)" stroke-dasharray="4 3"/>
+        <line x1="400" y1="70" x2="530" y2="118" stroke="#C0392B" stroke-width="1.2" marker-end="url(#ff)" stroke-dasharray="4 3"/>
+        <text x="360" y="100" text-anchor="middle" font-size="10" fill="#6B6A65" font-style="italic">conditional rollout by location</text>
+      </svg>
+      <div class="diagram-caption">Fig 2.1 — Feature flag enabling new checkout for US users while India keeps the old flow (A/B testing)</div>
+    </div>
+
+    <p>The classic example: you've built a new checkout flow (using a different API) and you don't want to roll it out to all users at once. You want to do <strong>A/B testing</strong> — only enable the new feature for a particular segment of users depending on their location. For instance, enable the new checkout for users from the US, but keep the old flow for users from India. Feature flags make this dynamic enabling/disabling possible — and they also need config management.</p>
+
+    <!-- Other types -->
+    <h3>5.5 — Other Config Types</h3>
+    <p>Beyond the four main categories, there are several more:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:8px"><strong>Infra config</strong> — All your DevOps-related configurations.</li>
+      <li style="margin-bottom:8px"><strong>Security config</strong> — Your JWT secret, session secret, and anything related to security that affects your application.</li>
+      <li style="margin-bottom:8px"><strong>Performance tuning</strong> — If your backend is built with Go (Golang), you can set environment variables like the maximum number of CPUs (<code>GOMAXPROCS</code>), etc.</li>
+      <li style="margin-bottom:8px"><strong>Business rules</strong> — Different logic-related rules you want to enforce at the application level, but centralized in config rather than hard-coded.</li>
+    </ul>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 6: SOURCES / STORAGE ══════ -->
+  <section id="sources">
+    <div class="section-num">06 · STORAGE</div>
+    <h2>Sources of Config (Storage)</h2>
+    <p>With all these diverse config needs, we also have to think about <strong>where to store</strong> the configs. Where you store your configurations depends on a lot of parameters — security, speed, and your environment. Let's look at the main storage mechanisms.</p>
+
+    <!-- Env vars -->
+    <h3 id="env-vars">6.1 — Environment Variables</h3>
+    <p>The most common kind of config storage that most people have seen. If you've worked with backends before, you've encountered <code>.env</code> files. These are most common among Node.js apps, but they're also supported in Python, Go, and any language you build backends in.</p>
+
+    <h4>How it works locally</h4>
+    <p>In local environments, you have a file called <code>.env</code>. A very famous library called <strong>dotenv</strong> takes all your environment variables from the <code>.env</code> file and loads them into your operating system's environment.</p>
+
+    <div class="callout">
+      <div class="callout-label">Important Distinction</div>
+      <p>Environment variables are a feature provided by your <strong>operating system</strong> — this is not something you build. Libraries like dotenv simply take values from files and load them into your environment automatically, instead of you doing it manually with <code>export</code> commands.</p>
+    </div>
+
+    <h4>How it works in deployment</h4>
+    <p>If you're not local — say you're deploying in a containerized environment using Kubernetes — those technologies also support loading environment variables while deploying your application. Here's the typical cloud deployment workflow:</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 175" role="img">
+        <title>Cloud deployment env var loading workflow</title>
+        <defs>
+          <marker id="ev" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <rect x="15" y="65" width="120" height="50" rx="8" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="75" y="86" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1916">Deployment</text>
+        <text x="75" y="101" text-anchor="middle" font-size="10" fill="#C0392B">triggers</text>
+        <line x1="137" y1="90" x2="168" y2="90" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#ev)"/>
+        <rect x="170" y="50" width="170" height="80" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="255" y="74" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1916">Fetch secrets from</text>
+        <text x="255" y="90" text-anchor="middle" font-size="10" fill="#B8960C">Vault / Param Store</text>
+        <text x="255" y="104" text-anchor="middle" font-size="10" fill="#B8960C">Azure / GCP Secret Mgr</text>
+        <text x="255" y="120" text-anchor="middle" font-size="9" fill="#6B6A65">at a particular stage</text>
+        <line x1="342" y1="90" x2="373" y2="90" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#ev)"/>
+        <rect x="375" y="65" width="155" height="50" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="452" y="86" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1916">Load into env</text>
+        <text x="452" y="101" text-anchor="middle" font-size="10" fill="#0F7066">OS environment</text>
+        <line x1="532" y1="90" x2="563" y2="90" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#ev)"/>
+        <rect x="565" y="65" width="140" height="50" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="635" y="86" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1916">App starts</text>
+        <text x="635" y="101" text-anchor="middle" font-size="10" fill="#0F7066">reads env, runs</text>
+        <text x="360" y="25" text-anchor="middle" font-size="11" fill="#6B6A65" font-style="italic">Deployment → fetch from secret manager → load into environment → app boots</text>
+      </svg>
+      <div class="diagram-caption">Fig 3.1 — Cloud deployment env var workflow: deploy triggers fetch from a secrets service, loads into the environment, app reads on startup</div>
+    </div>
+
+    <p>The deployment triggers; at a particular stage it fetches all your environment variables from a service — Vault (HashiCorp), Parameter Store, Azure, or Google Secret Manager (any cloud provider that offers secrets management) — and loads them into your environment. Then when your application starts, it reads those environment variables and functions accordingly. This is the most common storage mechanism for configurations.</p>
+
+    <!-- Files -->
+    <h3 id="files">6.2 — Config Files</h3>
+    <p>The second kind of storage is files, which come in different formats:</p>
+
+    <table class="compare-table">
+      <thead>
+        <tr><th>Format</th><th>Comments support?</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>JSON</td><td class="tag-slow">No</td><td>Major disadvantage — cannot add comments, so harder to share knowledge in a team</td></tr>
+        <tr><td>YAML</td><td class="tag-fast">Yes</td><td>More famous for configs these days; supports comments for team knowledge-sharing</td></tr>
+        <tr><td>TOML</td><td class="tag-fast">Yes</td><td>A newer standard, also heavily used for managing configurations</td></tr>
+      </tbody>
+    </table>
+
+    <p>One of the major disadvantages of JSON is that <strong>you cannot add comments</strong> — JSON has no comment support. That's why most people use YAML: you can add your configuration <em>and</em> add comments so it's easier for your team to share knowledge. TOML is a newer standard that's also popular.</p>
+
+    <div class="callout callout-gold">
+      <div class="callout-label">Real-World Examples</div>
+      <p><strong>Authelia</strong> (an authentication provider written in Go) uses a <code>configuration.yaml</code> file holding server settings, log level (debug), storage, notification details, identity details, regulations, session settings — all in a single YAML file.<br/><br/>
+      <strong>Apache Answer</strong> (incubator, open source) also uses <code>config.yaml</code> in many places — app settings like which port the server runs on, databases (SQLite for local environments), and Swagger UI config. Storing configurations in YAML is very common across open-source repositories.</p>
+    </div>
+
+    <!-- KV stores and cloud -->
+    <h3 id="kv-cloud">6.3 — Key-Value Stores &amp; Cloud Providers</h3>
+
+    <h4>Key-Value Stores</h4>
+    <p>Beyond simple env values, there are dedicated cloud-native tools like <strong>Consul</strong> and <strong>etcd</strong>. Depending on your use case you can use any of them. Key-value stores are pretty <strong>lightweight and simple</strong> to use compared to more complicated, hierarchical data structures for config management. They act mostly like your environment variables.</p>
+
+    <h4>Dedicated Cloud Secret Managers</h4>
+    <p>Here the major players are:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:6px"><strong>HashiCorp Vault</strong></li>
+      <li style="margin-bottom:6px"><strong>AWS Parameter Store</strong></li>
+      <li style="margin-bottom:6px"><strong>Azure Key Vault</strong></li>
+      <li style="margin-bottom:6px"><strong>Google Secret Manager</strong></li>
+    </ul>
+
+    <p>These are dedicated services for config and secrets management that most companies use, because deployments today are distributed — Kubernetes, autoscaling, sometimes multiple cloud providers at once for scaling needs. Having all your configurations centralized in a tool like HashiCorp Vault — which already supports all these different environments, with dedicated docs and integrations — makes the integration as easy as possible. Using an external provider makes a lot of sense if you're running heavy user traffic in production.</p>
+
+    <h4>Hybrid Strategies</h4>
+    <p>Most of the time, teams actually use <strong>hybrid strategies</strong>. You have a loading phase where you construct your runtime application settings by fetching configs from multiple places, each with a priority:</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 165" role="img">
+        <title>Hybrid config loading with priority</title>
+        <defs>
+          <marker id="hy" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <!-- sources -->
+        <rect x="20" y="20" width="190" height="40" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="115" y="38" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1916">1. AWS Parameter Store</text>
+        <text x="115" y="52" text-anchor="middle" font-size="9" fill="#B8960C">highest priority</text>
+        <rect x="20" y="68" width="190" height="40" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="115" y="86" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1916">2. config.yaml file</text>
+        <text x="115" y="100" text-anchor="middle" font-size="9" fill="#0F7066">middle priority</text>
+        <rect x="20" y="116" width="190" height="40" rx="8" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="115" y="134" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1916">3. Environment variables</text>
+        <text x="115" y="148" text-anchor="middle" font-size="9" fill="#C0392B">fallback / defaults</text>
+        <!-- merge -->
+        <line x1="210" y1="40" x2="320" y2="78" stroke="#6B6A65" stroke-width="1" marker-end="url(#hy)"/>
+        <line x1="210" y1="88" x2="320" y2="85" stroke="#6B6A65" stroke-width="1" marker-end="url(#hy)"/>
+        <line x1="210" y1="136" x2="320" y2="92" stroke="#6B6A65" stroke-width="1" marker-end="url(#hy)"/>
+        <rect x="322" y="55" width="170" height="60" rx="8" fill="#E9E4D6" stroke="#5F5E58" stroke-width="0.8"/>
+        <text x="407" y="80" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1916">Loading phase</text>
+        <text x="407" y="96" text-anchor="middle" font-size="10" fill="#5F5E58">merge by priority</text>
+        <line x1="492" y1="85" x2="528" y2="85" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#hy)"/>
+        <rect x="530" y="55" width="170" height="60" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="615" y="80" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1916">Runtime Settings</text>
+        <text x="615" y="96" text-anchor="middle" font-size="10" fill="#0F7066">single config object</text>
+      </svg>
+      <div class="diagram-caption">Fig 3.2 — Hybrid config loading: multiple sources merged by priority into one runtime settings object</div>
+    </div>
+
+    <p>For example, in the first priority you might fetch from AWS Parameter Store, then from a <code>config.yaml</code>, then from environment variables. You pre-decide which source has higher priority, and depending on the environment you load those configs conditionally. This gives you flexibility: secrets from a vault, structured settings from a file, and overrides from env vars — all merged into one runtime config.</p>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 7: PER-ENVIRONMENT CONFIG ══════ -->
+  <section id="environments">
+    <div class="section-num">07 · ENVIRONMENTS</div>
+    <h2>Why Config Differs Per Environment</h2>
+    <p>One natural question: why do we have different configs depending on the environment we're running in? The answer is simple — <strong>each environment has a set of priorities that the other environments don't need or shouldn't have</strong>.</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 130" role="img">
+        <title>Four environments and their priorities</title>
+        <rect x="15" y="35" width="165" height="60" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="97" y="58" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Development</text>
+        <text x="97" y="74" text-anchor="middle" font-size="10" fill="#0F7066">developer productivity</text>
+        <text x="97" y="88" text-anchor="middle" font-size="10" fill="#0F7066">+ debugging</text>
+
+        <rect x="190" y="35" width="165" height="60" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="272" y="58" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Test</text>
+        <text x="272" y="74" text-anchor="middle" font-size="10" fill="#B8960C">automated validation</text>
+        <text x="272" y="88" text-anchor="middle" font-size="10" fill="#B8960C">+ quality assurance</text>
+
+        <rect x="365" y="35" width="165" height="60" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="447" y="58" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Staging</text>
+        <text x="447" y="74" text-anchor="middle" font-size="10" fill="#B8960C">mirror production</text>
+        <text x="447" y="88" text-anchor="middle" font-size="10" fill="#B8960C">catch issues early</text>
+
+        <rect x="540" y="35" width="165" height="60" rx="8" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="622" y="58" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Production</text>
+        <text x="622" y="74" text-anchor="middle" font-size="10" fill="#C0392B">reliability, security</text>
+        <text x="622" y="88" text-anchor="middle" font-size="10" fill="#C0392B">+ performance</text>
+      </svg>
+      <div class="diagram-caption">Fig 4.1 — The four environments and their distinct priorities</div>
+    </div>
+
+    <p>Walking through each environment's priority:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:8px"><strong>Development (local)</strong> — Running on localhost. Number one priority is <strong>developer productivity and debugging capabilities</strong> — so you can work faster and catch issues faster.</li>
+      <li style="margin-bottom:8px"><strong>Test</strong> — You trigger a GitHub Action that prepares a testing environment to run integration tests, unit tests, etc. Priority is <strong>automated validation and quality assurance</strong>.</li>
+      <li style="margin-bottom:8px"><strong>Staging</strong> — A hosted version of your application that functions as similar to production as possible, so you have a clear idea of how production will behave and can fix/debug issues accordingly. Priority is <strong>mirroring production</strong>.</li>
+      <li style="margin-bottom:8px"><strong>Production</strong> — The real thing. Priority is <strong>reliability, security, and performance</strong>.</li>
+    </ul>
+
+    <div class="callout callout-gold">
+      <div class="callout-label">The Whole Point — Code Stays the Same</div>
+      <p>We create configs keeping these priorities in mind. The <strong>application code remains the same</strong> across all environments — but depending on the config, the behavior changes. That's exactly what we want. Without changing the code (which we'd have to do if we were hard-coding things), centralized config management means we never have to touch our application code. We just change the config, and that reflects in the behavior.</p>
+    </div>
+
+    <h3>Worked Example — Database Pool Size Across Environments</h3>
+    <p>Take the database connection pool size as a concrete example of how the same setting differs per environment:</p>
+
+    <table class="compare-table">
+      <thead>
+        <tr><th>Environment</th><th>Max Pool Size</th><th>Reasoning</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Development</td><td>10</td><td>Works fine locally; modern high-end dev machines have plenty of capacity for testing/development</td></tr>
+        <tr><td>Staging</td><td class="tag-fast">2</td><td>Deliberately minimal to <strong>save cloud costs</strong> — we accept some delay since it's used by devs/testers</td></tr>
+        <tr><td>Production</td><td class="tag-slow">50</td><td>Must handle a large user base and traffic spikes, so a higher pool size is needed</td></tr>
+      </tbody>
+    </table>
+
+    <p>In production you set the pool size to 50 because you have to cater to a large user base and prepare for traffic spikes. In development, 10 works fine. The interesting one is <strong>staging</strong>: even though staging's main priority is to mirror production as much as possible to catch issues early, running a system that functions <em>exactly</em> like production would cost the same in cloud bills — and that's not something most teams want.</p>
+
+    <div class="callout">
+      <div class="callout-label">The Cost Tradeoff in Staging</div>
+      <p>Staging has a secondary priority: <strong>minimizing cloud costs</strong>. Since staging is usually used only by developers and testers, you can make decisions like keeping the database pool size to a minimum (e.g. 2). You accommodate some delay there, but you save a lot of money on cloud costs. This is a deliberate, config-driven tradeoff — and it's possible precisely because the pool size lives in config, not code.</p>
+    </div>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 8: SECURITY ══════ -->
+  <section id="security">
+    <div class="section-num">08 · SECURITY</div>
+    <h2>Configuration Security</h2>
+    <p>These are fairly obvious points, but for the sake of covering the full scope, they're worth stating explicitly. There are five key security practices for config management.</p>
+
+    <!-- 1 never hardcode -->
+    <h3>8.1 — Never Hardcode Secrets</h3>
+    <p>If you have secrets like your production database URL, the API key of your Clerk service, your email delivery service, or your payment processing service — you should <strong>never hardcode those secrets in your codebase</strong>. This is so obvious it barely needs explaining: hardcoded secrets end up in version control, get exposed in logs, and become permanent liabilities.</p>
+
+    <!-- 2 cloud secrets manager -->
+    <h3>8.2 — Use a Cloud Secrets Manager</h3>
+    <p>If possible, always go for a cloud secrets management service — HashiCorp Vault, AWS Parameter Store, Azure Key Vault, or Google Secret Manager. It's always a good idea to "over-engineer" when it comes to the security of your backend application.</p>
+
+    <p>These services already handle critical security features automatically:</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 150" role="img">
+        <title>Encryption at rest and in transit</title>
+        <defs>
+          <marker id="sec" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <rect x="20" y="50" width="180" height="56" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="110" y="73" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Secret Manager</text>
+        <text x="110" y="89" text-anchor="middle" font-size="10" fill="#B8960C">encrypted at rest 🔒</text>
+        <line x1="200" y1="78" x2="280" y2="78" stroke="#0F7066" stroke-width="1.2" marker-end="url(#sec)"/>
+        <text x="350" y="58" text-anchor="middle" font-size="10" fill="#0F7066" font-style="italic">encrypted in transit (API call)</text>
+        <rect x="282" y="50" width="180" height="56" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="372" y="73" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Your Infra</text>
+        <text x="372" y="89" text-anchor="middle" font-size="10" fill="#0F7066">decrypt w/ private key</text>
+        <line x1="462" y1="78" x2="542" y2="78" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#sec)"/>
+        <rect x="544" y="50" width="160" height="56" rx="8" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="624" y="73" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">App uses config</text>
+        <text x="624" y="89" text-anchor="middle" font-size="10" fill="#C0392B">decrypted, in memory</text>
+        <text x="360" y="130" text-anchor="middle" font-size="10" fill="#6B6A65" font-style="italic">Encrypted both at rest (storage) and in transit (transfer)</text>
+      </svg>
+      <div class="diagram-caption">Fig 5.1 — Secret managers encrypt configs at rest AND in transit; decryption happens with your private key in your infra</div>
+    </div>
+
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:8px"><strong>Encryption at rest</strong> — It doesn't matter where they store your config; whenever they store it, they encrypt it first, then store it in their database/storage.</li>
+      <li style="margin-bottom:8px"><strong>Encryption in transit</strong> — When you make an API call to fetch configs, they send the encrypted version. With your private key (stored in your infra, GitHub Action, repository secret, or Kubernetes environment), the configs are decoded and then used.</li>
+    </ul>
+    <p>These are essential security features, and when you use a cloud provider like Vault or Parameter Store, all of this is already taken care of — you don't have to think about it.</p>
+
+    <!-- 3 access control -->
+    <h3>8.3 — Access Control (Least Privilege)</h3>
+    <p>If you have a fairly large developer team, take time to strategize who should have access to which configs, following the <span class="term">principle of least privilege</span>:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:8px"><strong>Frontend developers</strong> — should only have access to the configs they need: the backend API URL and API keys for frontend integrations.</li>
+      <li style="margin-bottom:8px"><strong>Backend engineers</strong> — should only have access to databases, Redis instances, Elasticsearch, etc.</li>
+      <li style="margin-bottom:8px"><strong>DevOps team only</strong> — configs for accessing cloud instances (e.g. EC2 instances) should be restricted to DevOps.</li>
+    </ul>
+    <p>Following the least privilege principle, you strategize your access control so that each person only has access to what they actually need.</p>
+
+    <!-- 4 rotation -->
+    <h3>8.4 — Rotation</h3>
+    <p>You should <strong>periodically rotate</strong> all your configs — API key secrets, JWT secrets, and similar sensitive values — so that they're not very prone to leakage. Regular rotation limits the damage window if a secret is ever compromised.</p>
+
+    <!-- 5 validation -->
+    <h3>8.5 — Validation (The Most Important Point)</h3>
+    <p>Most of the time, teams don't validate their environment variables or whatever source their configs are coming from. With dotenv, for example, you load all the variables into your environment and just access them via <code>process.env.WHATEVER</code> — with no checks.</p>
+
+    <div class="callout callout-gold">
+      <div class="callout-label">The One Thing to Take Away From This Whole Topic</div>
+      <p>If you take just one thing away: <strong>always validate your configs</strong>, no matter where they come from. Validate at startup — before your application starts, right after it's deployed. Use a proper validation library:<br/><br/>
+      • <strong>TypeScript backend</strong> → use <code>Zod</code><br/>
+      • <strong>Go backend</strong> → use <code>go-playground/validator</code><br/><br/>
+      Use whatever validation library your language/framework offers, and properly validate every variable — which ones are mandatory, which are optional, which have application-code defaults.</p>
+    </div>
+
+    <p>Why does this matter so much? It's learned the hard way. If you have a mandatory environment variable requirement but fail to provide it, your production system either breaks or behaves in a strange way because it doesn't have access to a particular environment variable — and it's <strong>not easy to spot</strong>. Validating at startup turns a silent, mysterious production failure into a loud, immediate, obvious error message that tells you exactly which config is missing.</p>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 9: CODE ══════ -->
+  <section id="code">
+    <div class="section-num">09 · CODE</div>
+    <h2>Code Examples</h2>
+    <p>Below are practical implementations of config loading and validation in Go and Python — covering env vars, per-environment loading, hybrid sources, and startup validation.</p>
+
+    <!-- GO: config struct + validation -->
+    <h3>9.1 — Config Loading &amp; Validation in Go</h3>
+    <div class="code-file">
+      <div class="code-dot dot-r"></div><div class="code-dot dot-y"></div><div class="code-dot dot-g"></div>
+      <span>config.go · Go + go-playground/validator + godotenv</span>
+    </div>
+<pre><code><span class="kw">package</span> config
+
+<span class="kw">import</span> (
+    <span class="str">"fmt"</span>
+    <span class="str">"log"</span>
+    <span class="str">"os"</span>
+    <span class="str">"strconv"</span>
+
+    <span class="str">"github.com/go-playground/validator/v10"</span>
+    <span class="str">"github.com/joho/godotenv"</span>
+)
+
+<span class="cm">// Config holds all runtime application settings.</span>
+<span class="cm">// The `validate` tags enforce rules at startup — this is the</span>
+<span class="cm">// single most important safeguard for config management.</span>
+<span class="kw">type</span> <span class="ty">Config</span> <span class="kw">struct</span> {
+    <span class="cm">// Application settings</span>
+    Port     <span class="ty">int</span>    <span class="str">`validate:"required,min=1,max=65535"`</span>
+    LogLevel <span class="ty">string</span> <span class="str">`validate:"required,oneof=debug info warn error"`</span>
+    Env      <span class="ty">string</span> <span class="str">`validate:"required,oneof=development staging production"`</span>
+
+    <span class="cm">// Database config (sensitive)</span>
+    DBHost     <span class="ty">string</span> <span class="str">`validate:"required"`</span>
+    DBPort     <span class="ty">int</span>    <span class="str">`validate:"required"`</span>
+    DBUser     <span class="ty">string</span> <span class="str">`validate:"required"`</span>
+    DBPassword <span class="ty">string</span> <span class="str">`validate:"required"`</span>
+    DBName     <span class="ty">string</span> <span class="str">`validate:"required"`</span>
+    DBPoolSize <span class="ty">int</span>    <span class="str">`validate:"required,min=1"`</span>
+
+    <span class="cm">// External services (sensitive)</span>
+    StripeAPIKey <span class="ty">string</span> <span class="str">`validate:"required"`</span>
+
+    <span class="cm">// Feature flags (optional, default false)</span>
+    NewCheckoutEnabled <span class="ty">bool</span>
+}
+
+<span class="cm">// DatabaseURL constructs the connection URL from the parts.</span>
+<span class="kw">func</span> (c *Config) <span class="fn">DatabaseURL</span>() <span class="ty">string</span> {
+    <span class="kw">return</span> fmt.Sprintf(
+        <span class="str">"postgres://%s:%s@%s:%d/%s"</span>,
+        c.DBUser, c.DBPassword, c.DBHost, c.DBPort, c.DBName,
+    )
+}
+
+<span class="cm">// Load reads env vars, applies defaults, then VALIDATES before returning.</span>
+<span class="cm">// Called once at startup — fail loudly here, never silently in production.</span>
+<span class="kw">func</span> <span class="fn">Load</span>() (*Config, error) {
+    <span class="cm">// In local dev, load .env into the OS environment.</span>
+    <span class="cm">// In production this is a no-op (vars already injected by the platform).</span>
+    _ = godotenv.Load()
+
+    cfg := &amp;Config{
+        Port:               getEnvInt(<span class="str">"PORT"</span>, <span class="num">8080</span>),        <span class="cm">// default 8080</span>
+        LogLevel:           getEnv(<span class="str">"LOG_LEVEL"</span>, <span class="str">"info"</span>),    <span class="cm">// default info</span>
+        Env:                getEnv(<span class="str">"APP_ENV"</span>, <span class="str">"development"</span>),
+        DBHost:             os.Getenv(<span class="str">"DB_HOST"</span>),
+        DBPort:             getEnvInt(<span class="str">"DB_PORT"</span>, <span class="num">5432</span>),
+        DBUser:             os.Getenv(<span class="str">"DB_USER"</span>),
+        DBPassword:         os.Getenv(<span class="str">"DB_PASSWORD"</span>),
+        DBName:             os.Getenv(<span class="str">"DB_NAME"</span>),
+        DBPoolSize:         getEnvInt(<span class="str">"DB_POOL_SIZE"</span>, <span class="num">10</span>),  <span class="cm">// dev=10, prod=50</span>
+        StripeAPIKey:       os.Getenv(<span class="str">"STRIPE_API_KEY"</span>),
+        NewCheckoutEnabled: getEnv(<span class="str">"NEW_CHECKOUT"</span>, <span class="str">"false"</span>) == <span class="str">"true"</span>,
+    }
+
+    <span class="cm">// THE critical step — validate everything before the app boots</span>
+    <span class="kw">if</span> err := validator.New().Struct(cfg); err != <span class="kw">nil</span> {
+        <span class="kw">return</span> <span class="kw">nil</span>, fmt.Errorf(<span class="str">"config validation failed: %w"</span>, err)
+    }
+
+    <span class="kw">return</span> cfg, <span class="kw">nil</span>
+}
+
+<span class="kw">func</span> <span class="fn">getEnv</span>(key, fallback <span class="ty">string</span>) <span class="ty">string</span> {
+    <span class="kw">if</span> v := os.Getenv(key); v != <span class="str">""</span> {
+        <span class="kw">return</span> v
+    }
+    <span class="kw">return</span> fallback
+}
+
+<span class="kw">func</span> <span class="fn">getEnvInt</span>(key <span class="ty">string</span>, fallback <span class="ty">int</span>) <span class="ty">int</span> {
+    <span class="kw">if</span> v := os.Getenv(key); v != <span class="str">""</span> {
+        <span class="kw">if</span> n, err := strconv.Atoi(v); err == <span class="kw">nil</span> {
+            <span class="kw">return</span> n
+        }
+    }
+    <span class="kw">return</span> fallback
+}
+
+<span class="cm">// Usage in main.go:</span>
+<span class="cm">//   cfg, err := config.Load()</span>
+<span class="cm">//   if err != nil { log.Fatal(err) }  // crash early, crash loud</span></code></pre>
+
+    <!-- PYTHON: pydantic settings -->
+    <h3>9.2 — Config Loading &amp; Validation in Python</h3>
+    <div class="code-file">
+      <div class="code-dot dot-r"></div><div class="code-dot dot-y"></div><div class="code-dot dot-g"></div>
+      <span>config.py · Python + pydantic-settings (the Python equivalent of Zod)</span>
+    </div>
+<pre><code><span class="kw">from</span> enum <span class="kw">import</span> Enum
+<span class="kw">from</span> functools <span class="kw">import</span> lru_cache
+
+<span class="kw">from</span> pydantic <span class="kw">import</span> Field, computed_field
+<span class="kw">from</span> pydantic_settings <span class="kw">import</span> BaseSettings, SettingsConfigDict
+
+
+<span class="kw">class</span> <span class="ty">Environment</span>(str, Enum):
+    DEVELOPMENT = <span class="str">"development"</span>
+    STAGING = <span class="str">"staging"</span>
+    PRODUCTION = <span class="str">"production"</span>
+
+
+<span class="kw">class</span> <span class="ty">Settings</span>(BaseSettings):
+    <span class="str">"""
+    All runtime config. pydantic VALIDATES every field automatically
+    when the object is constructed — mandatory fields without a default
+    raise an error immediately at startup, not silently in production.
+    """</span>
+    model_config = SettingsConfigDict(
+        env_file=<span class="str">".env"</span>,        <span class="cm"># load .env in local dev</span>
+        env_file_encoding=<span class="str">"utf-8"</span>,
+        case_sensitive=<span class="kw">False</span>,
+    )
+
+    <span class="cm"># Application settings (with sensible defaults)</span>
+    port: int = Field(default=<span class="num">8080</span>, ge=<span class="num">1</span>, le=<span class="num">65535</span>)
+    log_level: str = Field(default=<span class="str">"info"</span>, pattern=<span class="str">"^(debug|info|warn|error)$"</span>)
+    app_env: Environment = Environment.DEVELOPMENT
+
+    <span class="cm"># Database config — mandatory, no defaults (will fail if missing)</span>
+    db_host: str
+    db_port: int = <span class="num">5432</span>
+    db_user: str
+    db_password: str          <span class="cm"># sensitive — never hardcoded</span>
+    db_name: str
+    db_pool_size: int = Field(default=<span class="num">10</span>, ge=<span class="num">1</span>)  <span class="cm"># dev=10, prod=50, staging=2</span>
+
+    <span class="cm"># External services — mandatory secret</span>
+    stripe_api_key: str
+
+    <span class="cm"># Feature flag — optional, defaults off</span>
+    new_checkout_enabled: bool = <span class="kw">False</span>
+
+    @computed_field
+    @property
+    <span class="kw">def</span> <span class="fn">database_url</span>(self) -> str:
+        <span class="kw">return</span> (
+            f<span class="str">"postgresql://{self.db_user}:{self.db_password}"</span>
+            f<span class="str">"@{self.db_host}:{self.db_port}/{self.db_name}"</span>
+        )
+
+
+@lru_cache  <span class="cm"># load &amp; validate once, reuse everywhere (singleton)</span>
+<span class="kw">def</span> <span class="fn">get_settings</span>() -> Settings:
+    <span class="cm"># Construction triggers validation. If a mandatory var is</span>
+    <span class="cm"># missing, pydantic raises here — at startup, loudly.</span>
+    <span class="kw">return</span> Settings()
+
+
+<span class="cm"># Usage:</span>
+<span class="cm">#   settings = get_settings()   # crashes early if config invalid</span>
+<span class="cm">#   print(settings.database_url)</span>
+<span class="cm">#   if settings.new_checkout_enabled: ...</span></code></pre>
+
+    <!-- YAML example -->
+    <h3>9.3 — Example YAML Config File</h3>
+    <p>For non-secret, structured settings, a YAML file (with comments, unlike JSON) is a common choice — as seen in real codebases like Authelia and Apache Answer:</p>
+    <div class="code-file">
+      <div class="code-dot dot-r"></div><div class="code-dot dot-y"></div><div class="code-dot dot-g"></div>
+      <span>config.yaml · structured app settings (non-secret)</span>
+    </div>
+<pre><code><span class="cm"># Server settings — note: YAML supports comments, JSON does not</span>
+server:
+  port: <span class="num">8080</span>
+  timeout_seconds: <span class="num">60</span>      <span class="cm"># raise this for slow ops like AI image gen</span>
+
+log:
+  level: <span class="str">debug</span>             <span class="cm"># debug in dev, info in production</span>
+
+database:
+  host: <span class="str">localhost</span>
+  port: <span class="num">5432</span>
+  name: <span class="str">ecommerce</span>
+  pool_size: <span class="num">10</span>            <span class="cm"># dev=10, staging=2, prod=50</span>
+  query_timeout_seconds: <span class="num">30</span>
+
+<span class="cm"># Feature flags — dynamically enable/disable features</span>
+features:
+  new_checkout_enabled: <span class="kw">false</span>
+  rollout_regions: [<span class="str">"US"</span>]   <span class="cm"># A/B test: US gets new checkout</span>
+
+<span class="cm"># Business rules — centralized, not hardcoded</span>
+business:
+  max_order_amount: <span class="num">500000</span>
+
+<span class="cm"># NOTE: secrets (db password, Stripe key, JWT secret) do NOT</span>
+<span class="cm"># belong here — those come from a secrets manager / env vars.</span></code></pre>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ REFERENCES ══════ -->
+  <section id="refs">
+    <div class="section-num">REFERENCES</div>
+    <h2>Further Reading &amp; Documentation</h2>
+
+    <h4>Secrets Management Tools</h4>
+    <div class="ref-box">
+      <a href="https://developer.hashicorp.com/vault/docs" target="_blank">HashiCorp Vault — Official Docs</a>
+      <a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html" target="_blank">AWS Systems Manager — Parameter Store</a>
+      <a href="https://learn.microsoft.com/en-us/azure/key-vault/" target="_blank">Azure Key Vault — Documentation</a>
+      <a href="https://cloud.google.com/secret-manager/docs" target="_blank">Google Cloud — Secret Manager Docs</a>
+    </div>
+
+    <h4>Key-Value / Config Stores</h4>
+    <div class="ref-box">
+      <a href="https://developer.hashicorp.com/consul/docs" target="_blank">HashiCorp Consul — Docs</a>
+      <a href="https://etcd.io/docs/" target="_blank">etcd — Distributed key-value store</a>
+    </div>
+
+    <h4>Validation Libraries</h4>
+    <div class="ref-box">
+      <a href="https://zod.dev/" target="_blank">Zod — TypeScript schema validation</a>
+      <a href="https://github.com/go-playground/validator" target="_blank">go-playground/validator — Go struct validation</a>
+      <a href="https://docs.pydantic.dev/latest/concepts/pydantic_settings/" target="_blank">pydantic-settings — Python config validation</a>
+    </div>
+
+    <h4>Config File Formats &amp; Libraries</h4>
+    <div class="ref-box">
+      <a href="https://yaml.org/spec/" target="_blank">YAML — Specification</a>
+      <a href="https://toml.io/en/" target="_blank">TOML — Tom's Obvious Minimal Language</a>
+      <a href="https://github.com/motdotla/dotenv" target="_blank">dotenv — .env loader (Node.js)</a>
+      <a href="https://github.com/joho/godotenv" target="_blank">godotenv — .env loader (Go)</a>
+    </div>
+
+    <h4>MDN Web Docs</h4>
+    <div class="ref-box">
+      <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/504" target="_blank">MDN — HTTP 504 Gateway Timeout</a>
+      <a href="https://developer.mozilla.org/en-US/docs/Glossary/Environment_variable" target="_blank">MDN — Environment variable (Glossary)</a>
+    </div>
+
+    <div style="margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--divider);">
+      <p style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink3); letter-spacing:0.08em;">
+        BACKEND ENGINEERING FIELD MANUAL · V2 · CHAPTER 13 · CONFIGURATION MANAGEMENT<br/>
+        Notes compiled from lecture transcript · Go + Python examples · Vault/MDN references inline
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // Sidebar active state on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const navItems = document.querySelectorAll('.nav-item');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navItems.forEach(item => {
+          const isActive = item.getAttribute('href') === '#' + entry.target.id;
+          item.classList.toggle('active', isActive);
+          item.style.color = isActive ? '#C0392B' : '#5F5E58';
+          item.style.borderLeftColor = isActive ? '#C0392B' : 'transparent';
+        });
+      }
+    });
+  }, { threshold: 0.2 });
+  sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>

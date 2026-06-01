@@ -1,0 +1,1978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logging, Monitoring & Observability · Field Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0ebe0;
+    --sidebar-bg: #e8e2d5;
+    --text: #1a1410;
+    --text-muted: #6b5f52;
+    --accent: #c0392b;
+    --accent-dark: #96281b;
+    --border: #c8bfb0;
+    --code-bg: #e2ddd4;
+    --sidebar-w: 240px;
+    --content-max: 780px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Source Serif 4', Georgia, serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    width: var(--sidebar-w);
+    min-height: 100vh;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    padding: 40px 24px 60px;
+    position: fixed;
+    top: 0; left: 0;
+    overflow-y: auto;
+    z-index: 100;
+  }
+
+  .sidebar-brand {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .sidebar-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 36px;
+  }
+
+  .sidebar-nav { list-style: none; }
+
+  .sidebar-nav li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .sidebar-nav li .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    min-width: 20px;
+    margin-top: 3px;
+  }
+
+  .sidebar-nav li a {
+    font-size: 13px;
+    color: var(--text-muted);
+    text-decoration: none;
+    line-height: 1.4;
+    transition: color 0.15s;
+  }
+
+  .sidebar-nav li a:hover { color: var(--accent); }
+  .sidebar-nav li.active a { color: var(--text); font-weight: 600; }
+
+  /* ── MAIN CONTENT ── */
+  #main {
+    margin-left: var(--sidebar-w);
+    padding: 60px 80px 120px;
+    flex: 1;
+    max-width: calc(var(--sidebar-w) + var(--content-max) + 160px);
+  }
+
+  .chapter-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+
+  h1.page-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 54px;
+    font-weight: 900;
+    line-height: 1.08;
+    color: var(--text);
+    margin-bottom: 24px;
+  }
+
+  .intro-para {
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--text-muted);
+    max-width: 640px;
+    margin-bottom: 48px;
+    font-style: italic;
+    font-weight: 300;
+  }
+
+  hr.divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 48px 0;
+  }
+
+  /* ── SECTION HEADINGS ── */
+  .section { margin-bottom: 60px; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .section-badge {
+    background: var(--accent);
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  h2.section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  h3.sub-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 32px 0 10px;
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 6px;
+    display: inline-block;
+  }
+
+  h4.mini-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 24px 0 8px;
+  }
+
+  p {
+    font-size: 15.5px;
+    line-height: 1.85;
+    color: var(--text);
+    margin-bottom: 16px;
+  }
+
+  strong { font-weight: 600; }
+  em { font-style: italic; color: var(--text-muted); }
+
+  /* ── CODE ── */
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: var(--accent-dark);
+  }
+
+  pre {
+    background: #1e1a16;
+    color: #e8dfd0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    padding: 28px 32px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 20px 0 28px;
+    position: relative;
+    border-left: 3px solid var(--accent);
+  }
+
+  pre .lang-tag {
+    position: absolute;
+    top: 10px; right: 16px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: #6b5f52;
+    text-transform: uppercase;
+  }
+
+  .kw  { color: #e06c75; }
+  .fn  { color: #61afef; }
+  .str { color: #98c379; }
+  .cm  { color: #5c6370; font-style: italic; }
+  .tp  { color: #e5c07b; }
+  .num { color: #d19a66; }
+  .pkg { color: #c678dd; }
+
+  /* ── DIAGRAMS ── */
+  .diagram-wrap {
+    background: #1e1a16;
+    border-radius: 8px;
+    padding: 36px 24px;
+    margin: 24px 0 32px;
+    overflow-x: auto;
+  }
+  .diagram-wrap svg { display: block; margin: 0 auto; }
+
+  /* ── CALLOUT BOXES ── */
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: rgba(192,57,43,0.06);
+    padding: 16px 20px;
+    border-radius: 0 6px 6px 0;
+    margin: 20px 0;
+  }
+  .callout .callout-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .callout p { margin: 0; font-size: 14.5px; }
+
+  .callout-note {
+    border-left-color: #2980b9;
+    background: rgba(41,128,185,0.06);
+  }
+  .callout-note .callout-label { color: #2980b9; }
+
+  .callout-green {
+    border-left-color: #27ae60;
+    background: rgba(39,174,96,0.06);
+  }
+  .callout-green .callout-label { color: #27ae60; }
+
+  /* ── DEFINITION GRID ── */
+  .def-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 20px 0 28px;
+    font-size: 14.5px;
+  }
+
+  .def-grid .cell {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    line-height: 1.6;
+  }
+
+  .def-grid .cell:last-child,
+  .def-grid .cell:nth-last-child(2) { border-bottom: none; }
+
+  .def-grid .key {
+    background: var(--sidebar-bg);
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent-dark);
+    border-right: 1px solid var(--border);
+  }
+
+  /* ── CARDS ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 20px 0 32px;
+  }
+
+  .card {
+    background: var(--sidebar-bg);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--accent);
+    padding: 20px 18px;
+    border-radius: 0 0 6px 6px;
+  }
+
+  .card .card-icon { font-size: 22px; margin-bottom: 10px; }
+  .card .card-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .card p { font-size: 13.5px; margin: 0; color: var(--text-muted); line-height: 1.6; }
+
+  /* ── LISTS ── */
+  ol.lecture-list, ul.lecture-list {
+    padding-left: 22px;
+    margin: 12px 0 20px;
+  }
+  ol.lecture-list li, ul.lecture-list li {
+    font-size: 15px;
+    line-height: 1.8;
+    margin-bottom: 6px;
+  }
+
+  /* ── TABLE ── */
+  table.compare {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0 32px;
+    font-size: 14px;
+  }
+  table.compare th {
+    background: var(--text);
+    color: var(--bg);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 12px 16px;
+    text-align: left;
+  }
+  table.compare td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    line-height: 1.6;
+  }
+  table.compare tr:last-child td { border-bottom: none; }
+  table.compare tr:nth-child(even) td { background: var(--sidebar-bg); }
+
+  /* ── FLOW STEPS ── */
+  .flow-steps {
+    list-style: none;
+    padding: 0;
+    margin: 20px 0 32px;
+    position: relative;
+  }
+  .flow-steps::before {
+    content: '';
+    position: absolute;
+    left: 18px; top: 24px; bottom: 24px;
+    width: 2px;
+    background: var(--border);
+  }
+  .flow-steps li {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+    position: relative;
+  }
+  .flow-steps li .step-num {
+    min-width: 36px; height: 36px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+  }
+  .flow-steps li .step-body { padding-top: 6px; }
+  .flow-steps li .step-body strong { display: block; margin-bottom: 4px; }
+  .flow-steps li .step-body p { margin: 0; font-size: 14.5px; color: var(--text-muted); }
+
+  /* ── PILLAR VISUAL ── */
+  .pillar-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 24px 0 32px;
+  }
+  .pillar {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .pillar-head {
+    padding: 14px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #fff;
+    font-weight: 500;
+  }
+  .pillar-body {
+    padding: 14px 16px;
+    background: var(--sidebar-bg);
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--text-muted);
+  }
+  .pillar-body strong { color: var(--text); }
+
+  /* ── LOG LEVEL CHIP ── */
+  .level-row {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 20px 0 28px;
+  }
+  .level-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .level-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    padding: 3px 10px;
+    border-radius: 3px;
+    min-width: 72px;
+    text-align: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .level-badge.debug  { background: #3a3028; color: #e5c07b; border: 1px solid #5c4a30; }
+  .level-badge.info   { background: #1a2e1a; color: #98c379; border: 1px solid #2a4a2a; }
+  .level-badge.warn   { background: #2e2a14; color: #e5c07b; border: 1px solid #4a4020; }
+  .level-badge.error  { background: #2e1a1a; color: #e06c75; border: 1px solid #4a2020; }
+  .level-badge.fatal  { background: #c0392b; color: #fff; border: 1px solid #96281b; }
+  .level-desc { font-size: 14.5px; line-height: 1.65; color: var(--text); }
+  .level-desc span { font-size: 13px; color: var(--text-muted); }
+
+  @media (max-width: 900px) {
+    #sidebar { display: none; }
+    #main { margin-left: 0; padding: 40px 24px 80px; }
+    h1.page-title { font-size: 36px; }
+    .pillar-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav id="sidebar">
+  <div class="sidebar-brand">Logging, Monitoring<br>&amp; Observability</div>
+  <div class="sidebar-sub">Field Manual · Backend Series</div>
+  <ul class="sidebar-nav">
+    <li><span class="num">01</span><a href="#s1">Why Observability Matters</a></li>
+    <li><span class="num">02</span><a href="#s2">The Three Pillars</a></li>
+    <li><span class="num">03</span><a href="#s3">Monitoring vs Observability</a></li>
+    <li><span class="num">04</span><a href="#s4">How All Three Work Together</a></li>
+    <li><span class="num">05</span><a href="#s5">Logging Deep Dive</a></li>
+    <li><span class="num">06</span><a href="#s6">Log Levels</a></li>
+    <li><span class="num">07</span><a href="#s7">Structured vs Unstructured</a></li>
+    <li><span class="num">08</span><a href="#s8">Metrics Deep Dive</a></li>
+    <li><span class="num">09</span><a href="#s9">Distributed Tracing</a></li>
+    <li><span class="num">10</span><a href="#s10">Instrumentation & OpenTelemetry</a></li>
+    <li><span class="num">11</span><a href="#s11">Code: Go Full Example</a></li>
+    <li><span class="num">12</span><a href="#s12">Code: Python Full Example</a></li>
+    <li><span class="num">13</span><a href="#s13">Tooling: Open Source Stack</a></li>
+    <li><span class="num">14</span><a href="#s14">Tooling: Proprietary (New Relic)</a></li>
+    <li><span class="num">15</span><a href="#s15">ELK Stack</a></li>
+    <li><span class="num">16</span><a href="#s16">Alert Design</a></li>
+    <li><span class="num">17</span><a href="#s17">Debugging Workflow</a></li>
+    <li><span class="num">18</span><a href="#s18">Best Practices</a></li>
+  </ul>
+</nav>
+
+<!-- MAIN -->
+<main id="main">
+
+  <div class="chapter-label">Backend Engineering · Observability</div>
+  <h1 class="page-title">Logging, Monitoring<br>&amp; Observability</h1>
+  <p class="intro-para">
+    These are not features — they are practices. A production backend without them is a black box. With them, you can determine the internal state of your entire system just by looking at what it emits. That is the definition of an observable system.
+  </p>
+  <hr class="divider">
+
+  <!-- ── SECTION 1 ── -->
+  <section class="section" id="s1">
+    <div class="section-header">
+      <span class="section-badge">01</span>
+      <h2 class="section-title">Why Observability Matters</h2>
+    </div>
+
+    <p>
+      Modern backend applications run in <strong>distributed environments</strong> — multiple services, multiple servers, multiple regions, users spread across the globe. Something will go wrong. The question is not <em>if</em>, but <em>when</em> — and more importantly, how fast can you find out and fix it?
+    </p>
+
+    <p>
+      Without logging, monitoring, and observability, when an incident happens you are completely blind. You know <em>something</em> is wrong (users are complaining, conversion dropped), but you have no idea <em>what</em>, <em>where</em>, or <em>why</em>. Every minute of debugging in the dark is revenue lost and user trust eroded.
+    </p>
+
+    <div class="callout">
+      <div class="callout-label">Important Framing</div>
+      <p>
+        These are implemented on a <strong>spectrum</strong> — no company can honestly say they follow 100% of all observability practices. The goal is to continuously improve your coverage, not to reach some mythical perfect state. Don't be intimidated by the sheer number of tools and practices in this space.
+      </p>
+    </div>
+
+    <p>
+      These practices also require a <strong>collective effort</strong>. As a developer, you instrument your code. DevOps / SRE teams configure the infrastructure that collects, stores, and displays that data. Neither side alone is sufficient.
+    </p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 680 180" xmlns="http://www.w3.org/2000/svg" width="640">
+        <defs>
+          <marker id="a1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#c0392b"/></marker>
+          <marker id="a2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#98c379"/></marker>
+          <marker id="a3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e5c07b"/></marker>
+        </defs>
+
+        <!-- Incident box -->
+        <rect x="10" y="65" width="110" height="50" rx="5" fill="#2a231c" stroke="#e06c75" stroke-width="1.5"/>
+        <text x="65" y="87" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="10">INCIDENT</text>
+        <text x="65" y="103" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">something broke</text>
+
+        <!-- Without -->
+        <rect x="170" y="20" width="130" height="50" rx="5" fill="#2a231c" stroke="#e06c75" stroke-width="1.2" stroke-dasharray="4,3"/>
+        <text x="235" y="41" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="10">WITHOUT LMO</text>
+        <text x="235" y="57" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">blind debugging</text>
+
+        <!-- With -->
+        <rect x="170" y="110" width="130" height="50" rx="5" fill="#2a231c" stroke="#98c379" stroke-width="1.5"/>
+        <text x="235" y="131" text-anchor="middle" fill="#98c379" font-family="JetBrains Mono" font-size="10">WITH LMO</text>
+        <text x="235" y="147" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">alert → metrics → logs → trace</text>
+
+        <line x1="122" y1="78" x2="168" y2="52" stroke="#e06c75" stroke-width="1.2" marker-end="url(#a1)"/>
+        <line x1="122" y1="98" x2="168" y2="128" stroke="#98c379" stroke-width="1.2" marker-end="url(#a2)"/>
+
+        <!-- Result without -->
+        <rect x="360" y="20" width="150" height="50" rx="5" fill="#2a231c" stroke="#e06c75" stroke-width="1"/>
+        <text x="435" y="40" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="10">hours of manual</text>
+        <text x="435" y="56" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="10">log grep / guessing</text>
+
+        <!-- Result with -->
+        <rect x="360" y="110" width="150" height="50" rx="5" fill="#2a231c" stroke="#98c379" stroke-width="1.5"/>
+        <text x="435" y="130" text-anchor="middle" fill="#98c379" font-family="JetBrains Mono" font-size="10">exact function, line,</text>
+        <text x="435" y="146" text-anchor="middle" fill="#98c379" font-family="JetBrains Mono" font-size="10">user, timestamp</text>
+
+        <line x1="302" y1="45" x2="358" y2="45" stroke="#e06c75" stroke-width="1.2" marker-end="url(#a1)"/>
+        <line x1="302" y1="135" x2="358" y2="135" stroke="#98c379" stroke-width="1.2" marker-end="url(#a2)"/>
+
+        <text x="550" y="90" text-anchor="middle" fill="#5c6370" font-family="JetBrains Mono" font-size="9">same incident,</text>
+        <text x="550" y="102" text-anchor="middle" fill="#5c6370" font-family="JetBrains Mono" font-size="9">different outcomes</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ── SECTION 2 ── -->
+  <section class="section" id="s2">
+    <div class="section-header">
+      <span class="section-badge">02</span>
+      <h2 class="section-title">The Three Pillars of Observability</h2>
+    </div>
+
+    <p>
+      Observability theory defines three foundational pillars. A system is only fully observable when all three are in place. Each pillar answers a different question about your system's behaviour.
+    </p>
+
+    <div class="pillar-row">
+      <div class="pillar">
+        <div class="pillar-head" style="background:#2a4a2a;">📋 &nbsp;LOGS</div>
+        <div class="pillar-body">
+          <strong>What happened?</strong><br>
+          Timestamped records of discrete events in your application — a request came in, a database query ran, an error occurred. Think of logs as your backend's diary.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-head" style="background:#1a2e48;">📊 &nbsp;METRICS</div>
+        <div class="pillar-body">
+          <strong>What are the patterns?</strong><br>
+          Numerical measurements aggregated over time — request rate, error rate, latency p99, CPU usage. Metrics tell you <em>trends</em>, not individual events.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-head" style="background:#3a2020;">🔗 &nbsp;TRACES</div>
+        <div class="pillar-body">
+          <strong>Where did it go?</strong><br>
+          A trace follows a single request through every component it touched — handler → service → DB → external API. Shows component interactions and latency per step.
+        </div>
+      </div>
+    </div>
+
+    <div class="def-grid">
+      <div class="cell key">Logs → Answer</div>
+      <div class="cell">"User 42 tried to log in at 14:32:01 and failed — invalid password."</div>
+
+      <div class="cell key">Metrics → Answer</div>
+      <div class="cell">"In the last 5 minutes, 800 requests/sec, 12% error rate, p99 latency 340ms."</div>
+
+      <div class="cell key">Traces → Answer</div>
+      <div class="cell">"This request spent 240ms in the DB query layer and 80ms calling the email provider — that's where the latency is."</div>
+    </div>
+  </section>
+
+  <!-- ── SECTION 3 ── -->
+  <section class="section" id="s3">
+    <div class="section-header">
+      <span class="section-badge">03</span>
+      <h2 class="section-title">Monitoring vs Observability — The Difference</h2>
+    </div>
+
+    <p>
+      These terms are often used interchangeably but they are distinct concepts at different levels of capability.
+    </p>
+
+    <table class="compare">
+      <thead>
+        <tr><th>Dimension</th><th>Monitoring</th><th>Observability</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Core question</strong></td>
+          <td>"Is something wrong?"</td>
+          <td>"What exactly is wrong and why?"</td>
+        </tr>
+        <tr>
+          <td><strong>Approach</strong></td>
+          <td>Pre-defined dashboards and alerts on known metrics</td>
+          <td>Ad-hoc investigation using logs + metrics + traces together</td>
+        </tr>
+        <tr>
+          <td><strong>Scope</strong></td>
+          <td>Tracks metrics you decided to measure in advance</td>
+          <td>Can answer questions you didn't know to ask when you set it up</td>
+        </tr>
+        <tr>
+          <td><strong>Output</strong></td>
+          <td>"CPU is at 95%" → alert fires</td>
+          <td>"CPU is 95% because function X is running an N+1 DB query for user segment Y"</td>
+        </tr>
+        <tr>
+          <td><strong>Historical analogy</strong></td>
+          <td>Dashboard on a car: speed, fuel, temp</td>
+          <td>Full diagnostic system: tells you the exact faulty component and cause</td>
+        </tr>
+        <tr>
+          <td><strong>What it requires</strong></td>
+          <td>Metrics collection, alert rules</td>
+          <td>Logs + Metrics + Traces all correlated and linked</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <div class="callout-label">Historical Context</div>
+      <p>
+        A decade ago, monitoring was the primary form of error detection. You'd set up Nagios alerts on CPU and memory and call it a day. The observability movement emerged because in microservices/distributed systems, knowing <em>that</em> something failed is almost useless without knowing <em>where</em> across dozens of services the failure actually originated.
+      </p>
+    </div>
+
+    <p>
+      <strong>Key insight:</strong> Monitoring tells you <em>there is a problem</em>. Observability tells you <em>exactly what the problem is</em> — the specific function, the specific service, the specific user, the specific query. This is only possible if you've properly implemented all three pillars.
+    </p>
+  </section>
+
+  <!-- ── SECTION 4 ── -->
+  <section class="section" id="s4">
+    <div class="section-header">
+      <span class="section-badge">04</span>
+      <h2 class="section-title">How All Three Work Together — The Debugging Workflow</h2>
+    </div>
+
+    <p>
+      In practice, when an incident occurs, you navigate from coarse-grained signals to fine-grained details. Here's the canonical flow used in production systems:
+    </p>
+
+    <ul class="flow-steps">
+      <li>
+        <span class="step-num">1</span>
+        <div class="step-body">
+          <strong>Alert fires (Monitoring)</strong>
+          <p>Grafana / New Relic detects error rate > 80% and fires a Slack webhook. You get a message: "API service error rate spiked at 14:32." This is monitoring doing its job.</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">2</span>
+        <div class="step-body">
+          <strong>Go to Metrics dashboard</strong>
+          <p>Open Grafana / New Relic. You see concrete numbers: 840 requests/min, 82% returning 5xx, p99 latency jumped from 120ms to 4.2s at 14:31. You now know the <em>scale</em> of the problem and <em>when</em> it started.</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">3</span>
+        <div class="step-body">
+          <strong>Correlate to Logs</strong>
+          <p>From the metrics view, click through to the associated error logs for that 2-minute window. You see hundreds of logs: <code>ERROR: connection pool exhausted after 4000ms</code>. Now you know <em>what</em> is failing.</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">4</span>
+        <div class="step-body">
+          <strong>Follow the Trace</strong>
+          <p>Click on one of those error logs. It links to a trace. The trace shows the full request journey: <code>AuthMiddleware (2ms) → UserHandler (5ms) → UserService (3ms) → DB.GetUser (3990ms ← HERE)</code>. The DB query is timing out. Root cause found.</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">5</span>
+        <div class="step-body">
+          <strong>Fix &amp; Confirm with Metrics</strong>
+          <p>You add a missing index to the query. Within minutes, the Grafana dashboard shows error rate dropping back to 0.2%, latency back to 110ms. Monitoring confirms the fix worked.</p>
+        </div>
+      </li>
+    </ul>
+
+    <div class="callout-green callout">
+      <div class="callout-label">The Power of Correlation</div>
+      <p>Alert → Metric → Log → Trace is only possible when all three pillars are <strong>correlated</strong>. Tools like Grafana, New Relic, and Datadog link them using a shared <code>trace_id</code> / <code>request_id</code> that flows through every component. This is why setting a request ID in middleware and passing it everywhere is critical.</p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 5 ── -->
+  <section class="section" id="s5">
+    <div class="section-header">
+      <span class="section-badge">05</span>
+      <h2 class="section-title">Logging — Deep Dive</h2>
+    </div>
+
+    <p>
+      Logging is the practice of <strong>recording all important events</strong> throughout your application's execution lifecycle. Think of it as a journal your backend keeps — timestamped, detailed, structured entries for every significant thing that happens.
+    </p>
+
+    <h3 class="sub-title">What Should You Log?</h3>
+    <p>
+      A good rule of thumb: anything a developer would want to know when debugging an issue at 2 AM — without access to the live system, without the ability to reproduce the bug, with only the logs to go on.
+    </p>
+
+    <div class="def-grid">
+      <div class="cell key">Business events</div>
+      <div class="cell">User created a to-do. Order was placed. Payment succeeded. Subscription cancelled. These are the events that matter to the business and to auditing.</div>
+
+      <div class="cell key">Security events</div>
+      <div class="cell">Login attempt (success or failure). Password reset. Token revoked. Admin action. These are critical for security audits and intrusion detection.</div>
+
+      <div class="cell key">System events</div>
+      <div class="cell">Server startup / shutdown. Database connection established / lost. Background job started / finished. Config loaded.</div>
+
+      <div class="cell key">Errors &amp; exceptions</div>
+      <div class="cell">Every unhandled error, every caught exception, every failed external API call. Always include: timestamp, user ID, request ID, error type, stack trace.</div>
+
+      <div class="cell key">Performance signals</div>
+      <div class="cell">Slow queries (> 500ms), large payload responses, DB connection pool warnings. These are logs that become metrics over time.</div>
+    </div>
+
+    <h3 class="sub-title">What Metadata to Include in Every Log</h3>
+    <p>
+      A log without context is almost useless. Every log entry should carry enough metadata to answer: <em>who did what, when, where, and with what result?</em>
+    </p>
+
+    <pre><code><span class="cm">// A well-structured log entry (JSON, production format)</span>
+{
+  <span class="str">"timestamp"</span>:   <span class="str">"2024-01-15T14:32:01.234Z"</span>,
+  <span class="str">"level"</span>:        <span class="str">"error"</span>,
+  <span class="str">"message"</span>:      <span class="str">"database query failed"</span>,
+  <span class="str">"service"</span>:      <span class="str">"todo-api"</span>,
+  <span class="str">"environment"</span>:  <span class="str">"production"</span>,
+  <span class="str">"request_id"</span>:   <span class="str">"req_01J2KXYZ"</span>,    <span class="cm">// unique per request</span>
+  <span class="str">"trace_id"</span>:     <span class="str">"abc123def456"</span>,    <span class="cm">// links to distributed trace</span>
+  <span class="str">"span_id"</span>:      <span class="str">"span_789"</span>,
+  <span class="str">"user_id"</span>:      <span class="str">"usr_01J2K"</span>,
+  <span class="str">"method"</span>:       <span class="str">"POST"</span>,
+  <span class="str">"path"</span>:         <span class="str">"/todos"</span>,
+  <span class="str">"error"</span>:        <span class="str">"pq: deadlock detected"</span>,
+  <span class="str">"duration_ms"</span>:  <span class="num">4001</span>,
+  <span class="str">"host"</span>:         <span class="str">"worker-node-3"</span>
+}
+<span class="lang-tag">JSON Log Entry</span></code></pre>
+  </section>
+
+  <!-- ── SECTION 6 ── -->
+  <section class="section" id="s6">
+    <div class="section-header">
+      <span class="section-badge">06</span>
+      <h2 class="section-title">Log Levels</h2>
+    </div>
+
+    <p>
+      Every log entry is assigned a <strong>severity level</strong>. This lets you filter what you see — in development you want everything, in production you care about warnings and above. Your logging library will let you set a minimum level per environment.
+    </p>
+
+    <div class="level-row">
+      <div class="level-item">
+        <span class="level-badge debug">DEBUG</span>
+        <div class="level-desc">
+          <strong>Verbose diagnostic info for development only.</strong>
+          <span>Variable values, function entry/exit, loop iterations. Never enable in production — the volume would overwhelm your log pipeline and cost a fortune in storage. Used when troubleshooting a specific issue locally.</span>
+        </div>
+      </div>
+      <div class="level-item">
+        <span class="level-badge info">INFO</span>
+        <div class="level-desc">
+          <strong>Normal, successful application operations.</strong>
+          <span>Server started. User logged in. To-do created. Background job completed. These record the normal flow of business events. This is the default level for production.</span>
+        </div>
+      </div>
+      <div class="level-item">
+        <span class="level-badge warn">WARN</span>
+        <div class="level-desc">
+          <strong>Something unexpected, but not a failure.</strong>
+          <span>A user typed the wrong password (not your fault). An API responded slowly but successfully. A deprecated config option is still in use. Something you should investigate eventually but the system is still working.</span>
+        </div>
+      </div>
+      <div class="level-item">
+        <span class="level-badge error">ERROR</span>
+        <div class="level-desc">
+          <strong>Something failed and needs attention.</strong>
+          <span>Database query failed. External API returned 500. Validation failed in a way that should not have happened. A task handler threw an unhandled exception. This is the level you build alerts around.</span>
+        </div>
+      </div>
+      <div class="level-item">
+        <span class="level-badge fatal">FATAL</span>
+        <div class="level-desc">
+          <strong>The application cannot continue and is shutting down.</strong>
+          <span>Cannot connect to database on startup. Config file missing. Critical dependency unavailable. After logging FATAL, the process terminates. Infrastructure will restart it. Use sparingly — only for truly unrecoverable states.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout-note callout">
+      <div class="callout-label">Level Hierarchy</div>
+      <p>
+        Levels form a hierarchy: <strong>DEBUG &lt; INFO &lt; WARN &lt; ERROR &lt; FATAL</strong>. Setting your logger to <code>INFO</code> means it emits INFO, WARN, ERROR, and FATAL — but suppresses DEBUG. Setting to <code>ERROR</code> means only ERROR and FATAL are emitted. This is how you control log volume per environment.
+      </p>
+    </div>
+
+    <h3 class="sub-title">Environment-Specific Level Configuration (Go)</h3>
+    <pre><code><span class="cm">// logger/logger.go — Environment-aware log level</span>
+<span class="kw">package</span> <span class="pkg">logger</span>
+
+<span class="kw">import</span> (
+    <span class="str">"os"</span>
+    <span class="str">"go.uber.org/zap"</span>
+    <span class="str">"go.uber.org/zap/zapcore"</span>
+)
+
+<span class="kw">func</span> <span class="fn">getLogLevel</span>() zapcore.<span class="tp">Level</span> {
+    env := os.<span class="fn">Getenv</span>(<span class="str">"APP_ENV"</span>)
+    <span class="kw">switch</span> env {
+    <span class="kw">case</span> <span class="str">"production"</span>:
+        <span class="kw">return</span> zapcore.<span class="tp">InfoLevel</span>   <span class="cm">// production: INFO and above</span>
+    <span class="kw">case</span> <span class="str">"staging"</span>:
+        <span class="kw">return</span> zapcore.<span class="tp">WarnLevel</span>   <span class="cm">// staging: WARN and above only</span>
+    <span class="kw">default</span>:
+        <span class="kw">return</span> zapcore.<span class="tp">DebugLevel</span>  <span class="cm">// local dev: everything</span>
+    }
+}
+
+<span class="kw">func</span> <span class="fn">New</span>() *zap.<span class="tp">Logger</span> {
+    env := os.<span class="fn">Getenv</span>(<span class="str">"APP_ENV"</span>)
+    level := <span class="fn">getLogLevel</span>()
+
+    <span class="kw">var</span> cfg zap.<span class="tp">Config</span>
+    <span class="kw">if</span> env == <span class="str">"production"</span> {
+        <span class="cm">// Production: JSON format — parseable by Loki, ELK, New Relic</span>
+        cfg = zap.<span class="fn">NewProductionConfig</span>()
+        cfg.EncoderConfig.TimeKey = <span class="str">"timestamp"</span>
+        cfg.EncoderConfig.EncodeTime = zapcore.<span class="tp">ISO8601TimeEncoder</span>
+    } <span class="kw">else</span> {
+        <span class="cm">// Development: coloured console format — human-readable</span>
+        cfg = zap.<span class="fn">NewDevelopmentConfig</span>()
+        cfg.EncoderConfig.EncodeLevel = zapcore.<span class="tp">CapitalColorLevelEncoder</span>
+    }
+
+    cfg.Level = zap.<span class="fn">NewAtomicLevelAt</span>(level)
+    logger, _ := cfg.<span class="fn">Build</span>()
+    <span class="kw">return</span> logger
+}
+<span class="lang-tag">Go / Zap</span></code></pre>
+  </section>
+
+  <!-- ── SECTION 7 ── -->
+  <section class="section" id="s7">
+    <div class="section-header">
+      <span class="section-badge">07</span>
+      <h2 class="section-title">Structured vs Unstructured Logging</h2>
+    </div>
+
+    <p>
+      There are two fundamental ways to write a log entry. The choice of which to use depends on your environment.
+    </p>
+
+    <table class="compare">
+      <thead>
+        <tr><th>Property</th><th>Unstructured (Plain Text)</th><th>Structured (JSON)</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Format</strong></td>
+          <td><code>2024-01-15 14:32 ERROR: DB query failed for user 42</code></td>
+          <td><code>{"level":"error","user_id":"42","error":"pq: timeout",...}</code></td>
+        </tr>
+        <tr>
+          <td><strong>Human readability</strong></td>
+          <td>✓ Easy to read in a terminal</td>
+          <td>✗ Harder to read without a viewer</td>
+        </tr>
+        <tr>
+          <td><strong>Machine parseability</strong></td>
+          <td>✗ Hard — requires regex to extract user_id, error message, etc.</td>
+          <td>✓ Native JSON — any tool can parse instantly</td>
+        </tr>
+        <tr>
+          <td><strong>Field extraction</strong></td>
+          <td>Error-prone regex patterns</td>
+          <td>Direct field access: <code>log.user_id</code></td>
+        </tr>
+        <tr>
+          <td><strong>Querying in Loki/ELK</strong></td>
+          <td>Complex, fragile grep patterns</td>
+          <td><code>{user_id="42"} |= "error"</code> — trivial</td>
+        </tr>
+        <tr>
+          <td><strong>Use in</strong></td>
+          <td>Local development</td>
+          <td>Staging &amp; Production</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-title">What Structured Logs Look Like Side by Side</h3>
+    <pre><code><span class="cm">// UNSTRUCTURED — development console (human-friendly)</span>
+14:32:01 <span class="kw">DEBUG</span>  Connected to PostgreSQL on localhost:5432
+14:32:01 <span class="tp">INFO</span>   Started background job worker
+14:32:01 <span class="tp">INFO</span>   HTTP server listening on :8080
+14:32:14 <span class="fn">WARN</span>   Slow query detected: 520ms  query=SELECT * FROM todos WHERE user_id=$1
+14:32:15 <span class="str">ERROR</span>  Failed to send email  user_id=usr_01J2K  error=connection refused
+<span class="lang-tag">Console (Dev)</span></code></pre>
+
+    <pre><code><span class="cm">// STRUCTURED — production JSON (machine-friendly)</span>
+{"timestamp":"2024-01-15T14:32:14Z","level":"warn","msg":"slow query","duration_ms":520,"query":"SELECT * FROM todos WHERE user_id=$1","service":"todo-api","env":"production"}
+{"timestamp":"2024-01-15T14:32:15Z","level":"error","msg":"failed to send email","user_id":"usr_01J2K","error":"connection refused","trace_id":"abc123","span_id":"span_001","service":"todo-api","env":"production"}
+<span class="lang-tag">JSON (Production)</span></code></pre>
+
+    <div class="callout">
+      <div class="callout-label">Why JSON in Production?</div>
+      <p>
+        Log management systems (Loki, ELK, New Relic, Datadog) ingest thousands of log lines per second. If logs are plain text, these tools must use regex to extract fields like <code>user_id</code>, <code>error</code>, <code>duration_ms</code> — which is slow, error-prone, and fragile. JSON lets them parse fields natively in O(1). Always use JSON in production.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 8 ── -->
+  <section class="section" id="s8">
+    <div class="section-header">
+      <span class="section-badge">08</span>
+      <h2 class="section-title">Metrics — Deep Dive</h2>
+    </div>
+
+    <p>
+      Metrics are <strong>numerical measurements of your system's behaviour</strong>, aggregated over time. Unlike logs (one entry per event), a metric is a counter or gauge that summarises many events into a single number — e.g. "320 requests in the last 15 seconds". This makes them extremely efficient for dashboards and alerting.
+    </p>
+
+    <h3 class="sub-title">The Four Core Metric Types (Prometheus Model)</h3>
+
+    <div class="def-grid">
+      <div class="cell key">Counter</div>
+      <div class="cell">A value that <strong>only ever goes up</strong> (and resets on restart). Used for: total requests served, total errors, total tasks processed. Query: <code>rate(http_requests_total[5m])</code> = requests/sec over last 5 min.</div>
+
+      <div class="cell key">Gauge</div>
+      <div class="cell">A value that <strong>can go up or down</strong>. Used for: current queue depth, current active DB connections, current goroutine count, memory usage right now.</div>
+
+      <div class="cell key">Histogram</div>
+      <div class="cell">Records <strong>observations in configurable buckets</strong>. Used for: request latency, response size. Lets you compute percentiles (p50, p95, p99) — crucial for SLOs. "95% of requests complete under 200ms."</div>
+
+      <div class="cell key">Summary</div>
+      <div class="cell">Similar to Histogram but calculates percentiles client-side. Less flexible for aggregation across multiple instances. Prefer Histograms in most cases.</div>
+    </div>
+
+    <h3 class="sub-title">Key Metrics Every Backend Should Expose</h3>
+
+    <table class="compare">
+      <thead>
+        <tr><th>Metric</th><th>Type</th><th>Why It Matters</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>http_requests_total</code></td><td>Counter</td><td>Request throughput. Labels: method, path, status_code.</td></tr>
+        <tr><td><code>http_request_duration_seconds</code></td><td>Histogram</td><td>Latency distribution. p99 tells you worst-case user experience.</td></tr>
+        <tr><td><code>http_errors_total</code></td><td>Counter</td><td>Count of 4xx / 5xx responses. Spike = something broken.</td></tr>
+        <tr><td><code>db_query_duration_seconds</code></td><td>Histogram</td><td>Slow DB queries. Spikes indicate missing indexes or N+1 problems.</td></tr>
+        <tr><td><code>db_connections_open</code></td><td>Gauge</td><td>Pool exhaustion risk. Near max = you need more connections or fewer queries.</td></tr>
+        <tr><td><code>task_queue_depth</code></td><td>Gauge</td><td>Backlog in your background task system. Rising = workers need scaling.</td></tr>
+        <tr><td><code>task_processing_duration_seconds</code></td><td>Histogram</td><td>How long background tasks take. Useful for SLA tracking.</td></tr>
+        <tr><td><code>go_goroutines</code> / <code>process_resident_memory_bytes</code></td><td>Gauge</td><td>Runtime health. Goroutine leak = this keeps climbing.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-title">Scrape Interval &amp; Delay</h3>
+    <p>
+      Prometheus <em>scrapes</em> your <code>/metrics</code> endpoint at a configured interval (typically 15 seconds). This means there is a built-in delay of ~10–15 seconds between reality and what you see on a dashboard. This is acceptable for most use cases. For near-real-time alerting, use sub-15-second scrape intervals — but be aware this increases load on both your service and Prometheus.
+    </p>
+  </section>
+
+  <!-- ── SECTION 9 ── -->
+  <section class="section" id="s9">
+    <div class="section-header">
+      <span class="section-badge">09</span>
+      <h2 class="section-title">Distributed Tracing</h2>
+    </div>
+
+    <p>
+      A <strong>trace</strong> is the complete record of a single request's journey through your system. Each step of that journey is called a <strong>span</strong>. Spans are linked by a shared <code>trace_id</code> that is generated when the request first enters your system and propagated through every subsequent call.
+    </p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg" width="640">
+        <defs>
+          <marker id="t1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e5c07b"/></marker>
+          <marker id="t2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#61afef"/></marker>
+          <marker id="t3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#c678dd"/></marker>
+          <marker id="t4" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#98c379"/></marker>
+        </defs>
+
+        <!-- Timeline label -->
+        <text x="20" y="20" fill="#5c6370" font-family="JetBrains Mono" font-size="9">TRACE: abc123def456 — total: 340ms</text>
+        <line x1="20" y1="28" x2="660" y2="28" stroke="#3a3028" stroke-width="1"/>
+
+        <!-- Span rows: name label + bar -->
+        <!-- HTTP Handler -->
+        <text x="20" y="55" fill="#e5c07b" font-family="JetBrains Mono" font-size="10">HTTP Handler</text>
+        <rect x="180" y="42" width="460" height="20" rx="3" fill="#e5c07b" opacity="0.25"/>
+        <rect x="180" y="42" width="460" height="20" rx="3" fill="none" stroke="#e5c07b" stroke-width="1"/>
+        <text x="650" y="56" fill="#e5c07b" font-family="JetBrains Mono" font-size="9" text-anchor="end">340ms</text>
+
+        <!-- Auth Middleware -->
+        <text x="20" y="90" fill="#61afef" font-family="JetBrains Mono" font-size="10">AuthMiddleware</text>
+        <rect x="180" y="77" width="40" height="20" rx="3" fill="#61afef" opacity="0.35"/>
+        <rect x="180" y="77" width="40" height="20" rx="3" fill="none" stroke="#61afef" stroke-width="1"/>
+        <text x="225" y="91" fill="#61afef" font-family="JetBrains Mono" font-size="9">28ms</text>
+
+        <!-- Service layer -->
+        <text x="20" y="125" fill="#c678dd" font-family="JetBrains Mono" font-size="10">TodoService</text>
+        <rect x="225" y="112" width="300" height="20" rx="3" fill="#c678dd" opacity="0.25"/>
+        <rect x="225" y="112" width="300" height="20" rx="3" fill="none" stroke="#c678dd" stroke-width="1"/>
+        <text x="530" y="126" fill="#c678dd" font-family="JetBrains Mono" font-size="9">280ms</text>
+
+        <!-- DB query -->
+        <text x="20" y="160" fill="#98c379" font-family="JetBrains Mono" font-size="10">DB.GetTodos</text>
+        <rect x="230" y="147" width="250" height="20" rx="3" fill="#98c379" opacity="0.35"/>
+        <rect x="230" y="147" width="250" height="20" rx="3" fill="none" stroke="#98c379" stroke-width="1"/>
+        <text x="485" y="161" fill="#98c379" font-family="JetBrains Mono" font-size="9">240ms ← slow!</text>
+
+        <!-- Response serialisation -->
+        <text x="20" y="195" fill="#e5c07b" font-family="JetBrains Mono" font-size="10">JSONSerialise</text>
+        <rect x="485" y="182" width="30" height="20" rx="3" fill="#e5c07b" opacity="0.35"/>
+        <rect x="485" y="182" width="30" height="20" rx="3" fill="none" stroke="#e5c07b" stroke-width="1"/>
+        <text x="520" y="196" fill="#e5c07b" font-family="JetBrains Mono" font-size="9">22ms</text>
+
+        <text x="340" y="220" text-anchor="middle" fill="#5c6370" font-family="JetBrains Mono" font-size="9">← time →  (each bar shows the span's start and duration relative to trace start)</text>
+      </svg>
+    </div>
+
+    <h3 class="sub-title">Trace vs Span — Definitions</h3>
+    <div class="def-grid">
+      <div class="cell key">Trace</div>
+      <div class="cell">The entire end-to-end journey of a single request. Identified by a globally unique <code>trace_id</code>. Contains all spans for that request.</div>
+
+      <div class="cell key">Span</div>
+      <div class="cell">A single unit of work within a trace — one function call, one DB query, one HTTP call. Has a start time, duration, parent span ID, and arbitrary attributes (user_id, query, etc.).</div>
+
+      <div class="cell key">Root Span</div>
+      <div class="cell">The first span in a trace. Typically the HTTP handler or the entry point of the request. Has no parent.</div>
+
+      <div class="cell key">Context Propagation</div>
+      <div class="cell">The mechanism by which <code>trace_id</code> and <code>span_id</code> are passed from function to function (via Go's <code>context.Context</code>), and from service to service (via HTTP headers like <code>traceparent</code>).</div>
+
+      <div class="cell key">traceparent header</div>
+      <div class="cell">W3C standard header: <code>traceparent: 00-abc123-span001-01</code>. When your service calls another service, it includes this header so the receiving service can join its spans to the same trace.</div>
+    </div>
+
+    <div class="callout-note callout">
+      <div class="callout-label">Why Traces Are Different from Logs</div>
+      <p>
+        A log entry says "this error happened". A trace says "this error happened <em>here</em>, at <em>this point</em> in the request's journey, <em>after</em> these preceding steps, and it caused the total request to take 4.2 seconds instead of 50ms." Traces provide causal context that isolated logs cannot.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 10 ── -->
+  <section class="section" id="s10">
+    <div class="section-header">
+      <span class="section-badge">10</span>
+      <h2 class="section-title">Instrumentation &amp; OpenTelemetry</h2>
+    </div>
+
+    <p>
+      <strong>Instrumentation</strong> is the act of adding code to your application to measure its behaviour — recording spans, emitting metrics, enriching logs with context. You cannot observe what you haven't instrumented.
+    </p>
+
+    <p>
+      <strong>OpenTelemetry (OTel)</strong> is an open-source, vendor-neutral standard for instrumentation. It provides APIs, SDKs, and an agent (the <em>Collector</em>) for all major languages. The key value: instrument once, send to any backend (Jaeger, Grafana Tempo, New Relic, Datadog, Honeycomb) just by changing configuration — no code changes.
+    </p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" width="640">
+        <defs>
+          <marker id="o1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e5c07b"/></marker>
+          <marker id="o2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#61afef"/></marker>
+        </defs>
+
+        <!-- App -->
+        <rect x="10" y="70" width="130" height="60" rx="5" fill="#2a231c" stroke="#e5c07b" stroke-width="1.5"/>
+        <text x="75" y="96" text-anchor="middle" fill="#e5c07b" font-family="JetBrains Mono" font-size="11">YOUR APP</text>
+        <text x="75" y="113" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">OTel SDK instrumented</text>
+
+        <!-- Collector -->
+        <rect x="220" y="70" width="150" height="60" rx="5" fill="#2a231c" stroke="#61afef" stroke-width="1.5"/>
+        <text x="295" y="96" text-anchor="middle" fill="#61afef" font-family="JetBrains Mono" font-size="11">OTEL COLLECTOR</text>
+        <text x="295" y="113" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">receives, processes, exports</text>
+
+        <!-- Backends -->
+        <rect x="460" y="20" width="100" height="36" rx="4" fill="#2a231c" stroke="#98c379" stroke-width="1"/>
+        <text x="510" y="43" text-anchor="middle" fill="#98c379" font-family="JetBrains Mono" font-size="10">Jaeger / Tempo</text>
+
+        <rect x="460" y="70" width="100" height="36" rx="4" fill="#2a231c" stroke="#98c379" stroke-width="1"/>
+        <text x="510" y="93" text-anchor="middle" fill="#98c379" font-family="JetBrains Mono" font-size="10">Prometheus</text>
+
+        <rect x="460" y="120" width="100" height="36" rx="4" fill="#2a231c" stroke="#98c379" stroke-width="1"/>
+        <text x="510" y="143" text-anchor="middle" fill="#98c379" font-family="JetBrains Mono" font-size="10">New Relic / DD</text>
+
+        <rect x="460" y="170" width="100" height="20" rx="4" fill="#1a1410" stroke="#3a3028" stroke-width="1"/>
+        <text x="510" y="184" text-anchor="middle" fill="#5c6370" font-family="JetBrains Mono" font-size="9">Loki (logs)</text>
+
+        <!-- Arrows -->
+        <line x1="142" y1="100" x2="218" y2="100" stroke="#e5c07b" stroke-width="1.5" marker-end="url(#o1)"/>
+        <text x="180" y="93" text-anchor="middle" fill="#5c6370" font-family="JetBrains Mono" font-size="9">OTLP/gRPC</text>
+
+        <line x1="372" y1="90" x2="458" y2="40" stroke="#61afef" stroke-width="1.2" marker-end="url(#o2)"/>
+        <line x1="372" y1="100" x2="458" y2="88" stroke="#61afef" stroke-width="1.2" marker-end="url(#o2)"/>
+        <line x1="372" y1="110" x2="458" y2="136" stroke="#61afef" stroke-width="1.2" marker-end="url(#o2)"/>
+
+        <text x="340" y="170" text-anchor="middle" fill="#5c6370" font-family="JetBrains Mono" font-size="9">instrument once → send anywhere</text>
+      </svg>
+    </div>
+
+    <h3 class="sub-title">OTel Core Concepts</h3>
+    <div class="def-grid">
+      <div class="cell key">Tracer</div>
+      <div class="cell">The OTel object that creates spans. Each component (service, library) gets its own named tracer. <code>otel.Tracer("todo-service")</code></div>
+
+      <div class="cell key">Span</div>
+      <div class="cell">Created by the tracer. Has a name, start/end time, status, and key-value attributes. OTel spans automatically link to parent spans via context.</div>
+
+      <div class="cell key">Context Propagation</div>
+      <div class="cell">OTel automatically injects/extracts <code>traceparent</code> headers in HTTP clients and servers (with the right libraries). Zero manual work for standard HTTP.</div>
+
+      <div class="cell key">OTel Collector</div>
+      <div class="cell">A standalone agent/sidecar that receives telemetry from your app (via OTLP protocol), optionally processes/filters it, and exports to one or more backends. Decouples instrumentation from backend choice.</div>
+
+      <div class="cell key">Auto-instrumentation</div>
+      <div class="cell">OTel provides libraries that auto-instrument popular frameworks (net/http, gin, gRPC, database/sql, redis, etc.) with zero code changes. You get traces for DB queries and HTTP calls for free.</div>
+    </div>
+  </section>
+
+  <!-- ── SECTION 11 ── -->
+  <section class="section" id="s11">
+    <div class="section-header">
+      <span class="section-badge">11</span>
+      <h2 class="section-title">Code: Go — Full LMO Implementation</h2>
+    </div>
+
+    <p>
+      A complete example showing logging (Zap), metrics (Prometheus), and tracing (OpenTelemetry) wired into a Go service handler. This is the pattern from the lecture's to-do application.
+    </p>
+
+    <h3 class="sub-title">Logger Setup (Zap)</h3>
+    <pre><code><span class="cm">// logger/logger.go</span>
+<span class="kw">package</span> <span class="pkg">logger</span>
+
+<span class="kw">import</span> (
+    <span class="str">"os"</span>
+    <span class="str">"go.uber.org/zap"</span>
+    <span class="str">"go.uber.org/zap/zapcore"</span>
+)
+
+<span class="kw">var</span> Log *zap.<span class="tp">Logger</span>
+
+<span class="kw">func</span> <span class="fn">Init</span>() {
+    env := os.<span class="fn">Getenv</span>(<span class="str">"APP_ENV"</span>)
+    <span class="kw">var</span> cfg zap.<span class="tp">Config</span>
+
+    <span class="kw">if</span> env == <span class="str">"production"</span> {
+        cfg = zap.<span class="fn">NewProductionConfig</span>()          <span class="cm">// JSON output</span>
+        cfg.Level = zap.<span class="fn">NewAtomicLevelAt</span>(zapcore.<span class="tp">InfoLevel</span>)
+    } <span class="kw">else</span> {
+        cfg = zap.<span class="fn">NewDevelopmentConfig</span>()         <span class="cm">// coloured console</span>
+        cfg.Level = zap.<span class="fn">NewAtomicLevelAt</span>(zapcore.<span class="tp">DebugLevel</span>)
+        cfg.EncoderConfig.EncodeLevel = zapcore.<span class="tp">CapitalColorLevelEncoder</span>
+    }
+
+    Log, _ = cfg.<span class="fn">Build</span>(
+        <span class="cm">// Always include these fields in every log entry</span>
+        zap.<span class="fn">Fields</span>(
+            zap.<span class="fn">String</span>(<span class="str">"service"</span>, <span class="str">"todo-api"</span>),
+            zap.<span class="fn">String</span>(<span class="str">"env"</span>, env),
+        ),
+    )
+}
+<span class="lang-tag">Go / Zap</span></code></pre>
+
+    <h3 class="sub-title">Tracing Middleware (OpenTelemetry)</h3>
+    <pre><code><span class="cm">// middleware/tracing.go — Creates a trace span per request</span>
+<span class="kw">package</span> <span class="pkg">middleware</span>
+
+<span class="kw">import</span> (
+    <span class="str">"github.com/gin-gonic/gin"</span>
+    <span class="str">"go.opentelemetry.io/otel"</span>
+    <span class="str">"go.opentelemetry.io/otel/attribute"</span>
+    <span class="str">"go.opentelemetry.io/otel/codes"</span>
+    <span class="str">"go.uber.org/zap"</span>
+    <span class="str">"myapp/logger"</span>
+)
+
+<span class="kw">func</span> <span class="fn">EnhancedTracing</span>() gin.<span class="tp">HandlerFunc</span> {
+    tracer := otel.<span class="fn">Tracer</span>(<span class="str">"todo-api"</span>)
+
+    <span class="kw">return</span> <span class="kw">func</span>(c *gin.<span class="tp">Context</span>) {
+        <span class="cm">// Extract incoming trace context (from load balancer / front-end)</span>
+        ctx := otel.<span class="fn">GetTextMapPropagator</span>().<span class="fn">Extract</span>(
+            c.<span class="fn">Request</span>.<span class="fn">Context</span>(),
+            propagation.<span class="fn">HeaderCarrier</span>(c.<span class="fn">Request</span>.<span class="fn">Header</span>),
+        )
+
+        <span class="cm">// Start root span for this request</span>
+        ctx, span := tracer.<span class="fn">Start</span>(ctx, c.<span class="fn">FullPath</span>())
+        <span class="kw">defer</span> span.<span class="fn">End</span>()
+
+        <span class="cm">// Attach metadata to span (visible in trace UI)</span>
+        span.<span class="fn">SetAttributes</span>(
+            attribute.<span class="fn">String</span>(<span class="str">"http.method"</span>, c.<span class="fn">Request</span>.<span class="fn">Method</span>),
+            attribute.<span class="fn">String</span>(<span class="str">"http.path"</span>, c.<span class="fn">FullPath</span>()),
+            attribute.<span class="fn">String</span>(<span class="str">"http.user_agent"</span>, c.<span class="fn">Request</span>.<span class="fn">UserAgent</span>()),
+            attribute.<span class="fn">String</span>(<span class="str">"user.id"</span>, <span class="fn">getUserID</span>(c)),
+        )
+
+        <span class="cm">// Inject context so downstream handlers can create child spans</span>
+        c.<span class="fn">Request</span> = c.<span class="fn">Request</span>.<span class="fn">WithContext</span>(ctx)
+        c.<span class="fn">Next</span>()
+
+        <span class="cm">// After handler returns: record status code on span</span>
+        statusCode := c.<span class="fn">Writer</span>.<span class="fn">Status</span>()
+        span.<span class="fn">SetAttributes</span>(attribute.<span class="fn">Int</span>(<span class="str">"http.status_code"</span>, statusCode))
+        <span class="kw">if</span> statusCode >= <span class="num">500</span> {
+            span.<span class="fn">SetStatus</span>(codes.<span class="tp">Error</span>, <span class="str">"server error"</span>)
+        }
+
+        <span class="cm">// Structured log entry linking to this trace</span>
+        logger.Log.<span class="fn">Info</span>(<span class="str">"request completed"</span>,
+            zap.<span class="fn">String</span>(<span class="str">"method"</span>, c.<span class="fn">Request</span>.<span class="fn">Method</span>),
+            zap.<span class="fn">String</span>(<span class="str">"path"</span>, c.<span class="fn">FullPath</span>()),
+            zap.<span class="fn">Int</span>(<span class="str">"status"</span>, statusCode),
+            zap.<span class="fn">String</span>(<span class="str">"trace_id"</span>, span.<span class="fn">SpanContext</span>().<span class="fn">TraceID</span>().<span class="fn">String</span>()),
+        )
+    }
+}
+<span class="lang-tag">Go / Gin + OTel</span></code></pre>
+
+    <h3 class="sub-title">Service Layer — Logging + Tracing + Error Handling</h3>
+    <pre><code><span class="cm">// services/todo_service.go — The full LMO pattern per function</span>
+<span class="kw">package</span> <span class="pkg">services</span>
+
+<span class="kw">import</span> (
+    <span class="str">"context"</span>
+    <span class="str">"fmt"</span>
+    <span class="str">"go.opentelemetry.io/otel"</span>
+    <span class="str">"go.opentelemetry.io/otel/attribute"</span>
+    <span class="str">"go.opentelemetry.io/otel/codes"</span>
+    <span class="str">"go.uber.org/zap"</span>
+    <span class="str">"myapp/logger"</span>
+    <span class="str">"myapp/models"</span>
+)
+
+<span class="kw">var</span> tracer = otel.<span class="fn">Tracer</span>(<span class="str">"todo-service"</span>)
+
+<span class="kw">func</span> <span class="fn">CreateTodo</span>(ctx <span class="tp">context.Context</span>, req <span class="tp">models.CreateTodoRequest</span>, userID string) (*<span class="tp">models.Todo</span>, error) {
+    <span class="cm">// 1. Start a child span (parent span is in ctx from the middleware)</span>
+    ctx, span := tracer.<span class="fn">Start</span>(ctx, <span class="str">"TodoService.CreateTodo"</span>)
+    <span class="kw">defer</span> span.<span class="fn">End</span>()
+
+    <span class="cm">// 2. Add business context to the span — visible in trace UI</span>
+    span.<span class="fn">SetAttributes</span>(
+        attribute.<span class="fn">String</span>(<span class="str">"user.id"</span>, userID),
+        attribute.<span class="fn">String</span>(<span class="str">"todo.title"</span>, req.Title),
+        attribute.<span class="fn">String</span>(<span class="str">"todo.priority"</span>, req.Priority),
+    )
+
+    <span class="cm">// 3. INFO log — record business event start</span>
+    logger.Log.<span class="fn">Info</span>(<span class="str">"creating todo"</span>,
+        zap.<span class="fn">String</span>(<span class="str">"user_id"</span>, userID),
+        zap.<span class="fn">String</span>(<span class="str">"title"</span>, req.Title),
+        zap.<span class="fn">String</span>(<span class="str">"trace_id"</span>, span.<span class="fn">SpanContext</span>().<span class="fn">TraceID</span>().<span class="fn">String</span>()),
+    )
+
+    <span class="cm">// 4. Execute DB operation (inside its own child span — auto via otelgorm)</span>
+    todo, err := repo.<span class="fn">CreateTodo</span>(ctx, req, userID)
+    <span class="kw">if</span> err != nil {
+        <span class="cm">// ERROR log with full context</span>
+        logger.Log.<span class="fn">Error</span>(<span class="str">"failed to create todo"</span>,
+            zap.<span class="fn">String</span>(<span class="str">"user_id"</span>, userID),
+            zap.<span class="fn">String</span>(<span class="str">"error"</span>, err.<span class="fn">Error</span>()),
+            zap.<span class="fn">String</span>(<span class="str">"trace_id"</span>, span.<span class="fn">SpanContext</span>().<span class="fn">TraceID</span>().<span class="fn">String</span>()),
+        )
+        <span class="cm">// Record error on span — shows as failed in Jaeger/Grafana Tempo</span>
+        span.<span class="fn">RecordError</span>(err)
+        span.<span class="fn">SetStatus</span>(codes.<span class="tp">Error</span>, err.<span class="fn">Error</span>())
+        <span class="kw">return</span> nil, fmt.<span class="fn">Errorf</span>(<span class="str">"repo.CreateTodo: %w"</span>, err)
+    }
+
+    <span class="cm">// 5. DEBUG log — only visible in dev, suppressed in production</span>
+    logger.Log.<span class="fn">Debug</span>(<span class="str">"todo created"</span>,
+        zap.<span class="fn">String</span>(<span class="str">"todo_id"</span>, todo.ID),
+    )
+
+    <span class="cm">// 6. INFO — business event completion log (for audit trail)</span>
+    logger.Log.<span class="fn">Info</span>(<span class="str">"todo created successfully"</span>,
+        zap.<span class="fn">String</span>(<span class="str">"todo_id"</span>, todo.ID),
+        zap.<span class="fn">String</span>(<span class="str">"user_id"</span>, userID),
+        zap.<span class="fn">String</span>(<span class="str">"title"</span>, todo.Title),
+        zap.<span class="fn">String</span>(<span class="str">"priority"</span>, todo.Priority),
+        zap.<span class="fn">String</span>(<span class="str">"category_id"</span>, todo.CategoryID),
+    )
+
+    return todo, nil
+}
+<span class="lang-tag">Go / Zap + OTel</span></code></pre>
+
+    <h3 class="sub-title">Prometheus Middleware (Metrics)</h3>
+    <pre><code><span class="cm">// middleware/metrics.go — HTTP metrics instrumentation</span>
+<span class="kw">package</span> <span class="pkg">middleware</span>
+
+<span class="kw">import</span> (
+    <span class="str">"strconv"</span>
+    <span class="str">"time"</span>
+    <span class="str">"github.com/gin-gonic/gin"</span>
+    <span class="str">"github.com/prometheus/client_golang/prometheus"</span>
+    <span class="str">"github.com/prometheus/client_golang/prometheus/promauto"</span>
+)
+
+<span class="kw">var</span> (
+    httpRequestsTotal = promauto.<span class="fn">NewCounterVec</span>(prometheus.<span class="tp">CounterOpts</span>{
+        Name: <span class="str">"http_requests_total"</span>,
+        Help: <span class="str">"Total HTTP requests"</span>,
+    }, []string{<span class="str">"method"</span>, <span class="str">"path"</span>, <span class="str">"status"</span>})
+
+    httpDuration = promauto.<span class="fn">NewHistogramVec</span>(prometheus.<span class="tp">HistogramOpts</span>{
+        Name:    <span class="str">"http_request_duration_seconds"</span>,
+        Help:    <span class="str">"HTTP request latency"</span>,
+        Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
+    }, []string{<span class="str">"method"</span>, <span class="str">"path"</span>})
+)
+
+<span class="kw">func</span> <span class="fn">PrometheusMetrics</span>() gin.<span class="tp">HandlerFunc</span> {
+    <span class="kw">return</span> <span class="kw">func</span>(c *gin.<span class="tp">Context</span>) {
+        start := time.<span class="fn">Now</span>()
+        c.<span class="fn">Next</span>()
+        duration := time.<span class="fn">Since</span>(start)
+
+        status := strconv.<span class="fn">Itoa</span>(c.<span class="fn">Writer</span>.<span class="fn">Status</span>())
+        httpRequestsTotal.<span class="fn">WithLabelValues</span>(c.<span class="fn">Request</span>.<span class="fn">Method</span>, c.<span class="fn">FullPath</span>(), status).<span class="fn">Inc</span>()
+        httpDuration.<span class="fn">WithLabelValues</span>(c.<span class="fn">Request</span>.<span class="fn">Method</span>, c.<span class="fn">FullPath</span>()).<span class="fn">Observe</span>(duration.<span class="fn">Seconds</span>())
+    }
+}
+<span class="lang-tag">Go / Gin + Prometheus</span></code></pre>
+  </section>
+
+  <!-- ── SECTION 12 ── -->
+  <section class="section" id="s12">
+    <div class="section-header">
+      <span class="section-badge">12</span>
+      <h2 class="section-title">Code: Python — Full LMO Implementation</h2>
+    </div>
+
+    <h3 class="sub-title">Structured Logging with structlog</h3>
+    <pre><code><span class="cm"># logging_config.py — structlog setup for Python</span>
+<span class="kw">import</span> <span class="pkg">logging</span>
+<span class="kw">import</span> <span class="pkg">os</span>
+<span class="kw">import</span> <span class="pkg">structlog</span>
+
+<span class="kw">def</span> <span class="fn">configure_logging</span>():
+    env = os.<span class="fn">getenv</span>(<span class="str">"APP_ENV"</span>, <span class="str">"development"</span>)
+
+    <span class="kw">if</span> env == <span class="str">"production"</span>:
+        <span class="cm"># JSON renderer for production — parseable by Loki / ELK</span>
+        renderer = structlog.processors.<span class="tp">JSONRenderer</span>()
+        level = logging.<span class="tp">INFO</span>
+    <span class="kw">else</span>:
+        <span class="cm"># ColourfulConsole for local dev — human-readable</span>
+        renderer = structlog.dev.<span class="tp">ConsoleRenderer</span>(colors=<span class="tp">True</span>)
+        level = logging.<span class="tp">DEBUG</span>
+
+    structlog.<span class="fn">configure</span>(
+        processors=[
+            structlog.contextvars.<span class="fn">merge_contextvars</span>,      <span class="cm"># merge request-scoped context</span>
+            structlog.processors.<span class="tp">TimeStamper</span>(fmt=<span class="str">"iso"</span>),
+            structlog.stdlib.<span class="fn">add_log_level</span>,
+            structlog.stdlib.<span class="fn">add_logger_name</span>,
+            structlog.processors.<span class="tp">StackInfoRenderer</span>(),
+            structlog.processors.<span class="tp">ExceptionRenderer</span>(),     <span class="cm"># auto-renders exceptions</span>
+            renderer,
+        ],
+        logger_factory=structlog.stdlib.<span class="tp">LoggerFactory</span>(),
+        wrapper_class=structlog.stdlib.<span class="tp">BoundLogger</span>,
+        cache_logger_on_first_use=<span class="tp">True</span>,
+    )
+
+    logging.<span class="fn">basicConfig</span>(level=level)
+
+log = structlog.<span class="fn">get_logger</span>()
+<span class="lang-tag">Python / structlog</span></code></pre>
+
+    <h3 class="sub-title">OpenTelemetry Tracing in FastAPI</h3>
+    <pre><code><span class="cm"># tracing.py — OTel setup for FastAPI</span>
+<span class="kw">from</span> <span class="pkg">opentelemetry</span> <span class="kw">import</span> trace
+<span class="kw">from</span> <span class="pkg">opentelemetry.sdk.trace</span> <span class="kw">import</span> <span class="tp">TracerProvider</span>
+<span class="kw">from</span> <span class="pkg">opentelemetry.sdk.trace.export</span> <span class="kw">import</span> <span class="tp">BatchSpanProcessor</span>
+<span class="kw">from</span> <span class="pkg">opentelemetry.exporter.otlp.proto.grpc.trace_exporter</span> <span class="kw">import</span> <span class="tp">OTLPSpanExporter</span>
+<span class="kw">from</span> <span class="pkg">opentelemetry.instrumentation.fastapi</span> <span class="kw">import</span> <span class="tp">FastAPIInstrumentor</span>
+<span class="kw">from</span> <span class="pkg">opentelemetry.instrumentation.sqlalchemy</span> <span class="kw">import</span> <span class="tp">SQLAlchemyInstrumentor</span>
+
+<span class="kw">def</span> <span class="fn">setup_tracing</span>(app):
+    <span class="cm"># Tracer provider — sends spans to OTel Collector via gRPC</span>
+    provider = <span class="tp">TracerProvider</span>()
+    exporter = <span class="tp">OTLPSpanExporter</span>(endpoint=<span class="str">"http://otel-collector:4317"</span>)
+    provider.<span class="fn">add_span_processor</span>(<span class="tp">BatchSpanProcessor</span>(exporter))
+    trace.<span class="fn">set_tracer_provider</span>(provider)
+
+    <span class="cm"># Auto-instrument FastAPI — all routes get spans automatically</span>
+    <span class="tp">FastAPIInstrumentor</span>.<span class="fn">instrument_app</span>(app)
+
+    <span class="cm"># Auto-instrument SQLAlchemy — all DB queries get spans automatically</span>
+    <span class="tp">SQLAlchemyInstrumentor</span>().<span class="fn">instrument</span>(engine=engine)
+
+<span class="cm"># main.py — wire it all up</span>
+<span class="kw">from</span> <span class="pkg">fastapi</span> <span class="kw">import</span> <span class="tp">FastAPI</span>
+<span class="kw">from</span> <span class="pkg">tracing</span> <span class="kw">import</span> setup_tracing
+<span class="kw">from</span> <span class="pkg">logging_config</span> <span class="kw">import</span> configure_logging, log
+
+configure_logging()
+app = <span class="tp">FastAPI</span>()
+<span class="fn">setup_tracing</span>(app)
+<span class="lang-tag">Python / FastAPI + OTel</span></code></pre>
+
+    <h3 class="sub-title">Service Layer with Full LMO Pattern</h3>
+    <pre><code><span class="cm"># services/todo_service.py</span>
+<span class="kw">from</span> <span class="pkg">opentelemetry</span> <span class="kw">import</span> trace
+<span class="kw">import</span> <span class="pkg">structlog</span>
+
+tracer = trace.<span class="fn">get_tracer</span>(<span class="str">"todo-service"</span>)
+log = structlog.<span class="fn">get_logger</span>()
+
+<span class="kw">async def</span> <span class="fn">create_todo</span>(user_id: str, req: <span class="tp">CreateTodoRequest</span>) -> <span class="tp">Todo</span>:
+    <span class="cm"># 1. Start child span</span>
+    <span class="kw">with</span> tracer.<span class="fn">start_as_current_span</span>(<span class="str">"TodoService.create_todo"</span>) <span class="kw">as</span> span:
+        span.<span class="fn">set_attribute</span>(<span class="str">"user.id"</span>, user_id)
+        span.<span class="fn">set_attribute</span>(<span class="str">"todo.title"</span>, req.title)
+
+        <span class="cm"># 2. INFO log — business event start</span>
+        log.<span class="fn">info</span>(<span class="str">"creating_todo"</span>, user_id=user_id, title=req.title)
+
+        <span class="kw">try</span>:
+            todo = <span class="kw">await</span> repo.<span class="fn">create_todo</span>(user_id, req)
+
+            <span class="cm"># 3. Business event log — audit trail</span>
+            log.<span class="fn">info</span>(<span class="str">"todo_created"</span>,
+                todo_id=todo.id,
+                user_id=user_id,
+                title=todo.title,
+                priority=todo.priority,
+            )
+            <span class="kw">return</span> todo
+
+        <span class="kw">except</span> <span class="tp">Exception</span> <span class="kw">as</span> e:
+            <span class="cm"># 4. ERROR log + span error recording</span>
+            log.<span class="fn">error</span>(<span class="str">"todo_creation_failed"</span>, user_id=user_id, error=str(e))
+            span.<span class="fn">record_exception</span>(e)
+            span.<span class="fn">set_status</span>(trace.<span class="tp">StatusCode</span>.<span class="tp">ERROR</span>, str(e))
+            <span class="kw">raise</span>
+<span class="lang-tag">Python / FastAPI + OTel + structlog</span></code></pre>
+  </section>
+
+  <!-- ── SECTION 13 ── -->
+  <section class="section" id="s13">
+    <div class="section-header">
+      <span class="section-badge">13</span>
+      <h2 class="section-title">Tooling: The Open Source Stack</h2>
+    </div>
+
+    <p>
+      The open-source observability stack is what most large enterprises run. More control, no vendor lock-in, no per-seat pricing — but requires operational expertise to maintain.
+    </p>
+
+    <table class="compare">
+      <thead>
+        <tr><th>Tool</th><th>Pillar</th><th>Role</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Prometheus</strong></td>
+          <td>Metrics</td>
+          <td>Scrapes <code>/metrics</code> endpoints every 15s, stores time-series data, evaluates alert rules. The de facto standard metrics backend.</td>
+        </tr>
+        <tr>
+          <td><strong>Grafana</strong></td>
+          <td>Dashboards</td>
+          <td>Visualization layer. Queries Prometheus, Loki, Tempo, and others. Build dashboards, set alert thresholds, create on-call runbooks.</td>
+        </tr>
+        <tr>
+          <td><strong>Loki</strong></td>
+          <td>Logs</td>
+          <td>Log aggregation system by Grafana Labs. Unlike ELK, it indexes only metadata (labels), not full-text — much cheaper. Queryable via LogQL. Push-based via Promtail agent.</td>
+        </tr>
+        <tr>
+          <td><strong>Promtail</strong></td>
+          <td>Logs (agent)</td>
+          <td>Runs on each server, tails log files or Docker/Kubernetes log streams, and ships them to Loki. Zero-code change required.</td>
+        </tr>
+        <tr>
+          <td><strong>Grafana Tempo</strong></td>
+          <td>Traces</td>
+          <td>Distributed tracing backend. Receives OTel spans, stores them cheaply (object storage), queryable from Grafana. Replaces Jaeger for new setups.</td>
+        </tr>
+        <tr>
+          <td><strong>Jaeger</strong></td>
+          <td>Traces</td>
+          <td>Older distributed tracing system (CNCF). Still widely used. UI for navigating traces, service dependency graphs. Now recommends migrating to OTel SDK.</td>
+        </tr>
+        <tr>
+          <td><strong>Alertmanager</strong></td>
+          <td>Alerting</td>
+          <td>Routes Prometheus alerts to Slack, PagerDuty, email, etc. Handles deduplication, grouping, and silencing of alerts.</td>
+        </tr>
+        <tr>
+          <td><strong>OTel Collector</strong></td>
+          <td>All three</td>
+          <td>Receives all telemetry from apps, processes/enriches it, and fans out to Prometheus + Loki + Tempo. Central telemetry pipeline.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-title">Full Stack Architecture</h3>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg" width="640">
+        <defs>
+          <marker id="s1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e5c07b"/></marker>
+          <marker id="s2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#61afef"/></marker>
+          <marker id="s3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#98c379"/></marker>
+        </defs>
+
+        <!-- App nodes -->
+        <rect x="10" y="20" width="100" height="36" rx="4" fill="#2a231c" stroke="#e5c07b" stroke-width="1.2"/>
+        <text x="60" y="43" text-anchor="middle" fill="#e5c07b" font-family="JetBrains Mono" font-size="10">API Service</text>
+
+        <rect x="10" y="70" width="100" height="36" rx="4" fill="#2a231c" stroke="#e5c07b" stroke-width="1.2"/>
+        <text x="60" y="93" text-anchor="middle" fill="#e5c07b" font-family="JetBrains Mono" font-size="10">Worker</text>
+
+        <rect x="10" y="120" width="100" height="36" rx="4" fill="#2a231c" stroke="#e5c07b" stroke-width="1.2"/>
+        <text x="60" y="143" text-anchor="middle" fill="#e5c07b" font-family="JetBrains Mono" font-size="10">Auth Service</text>
+
+        <!-- Promtail -->
+        <rect x="10" y="180" width="100" height="36" rx="4" fill="#2a231c" stroke="#5c6370" stroke-width="1"/>
+        <text x="60" y="198" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">Promtail</text>
+        <text x="60" y="210" text-anchor="middle" fill="#5c6370" font-family="JetBrains Mono" font-size="8">(log agent)</text>
+
+        <!-- OTel Collector -->
+        <rect x="190" y="70" width="130" height="60" rx="5" fill="#2a231c" stroke="#61afef" stroke-width="1.5"/>
+        <text x="255" y="96" text-anchor="middle" fill="#61afef" font-family="JetBrains Mono" font-size="11">OTEL</text>
+        <text x="255" y="112" text-anchor="middle" fill="#61afef" font-family="JetBrains Mono" font-size="11">COLLECTOR</text>
+
+        <!-- Arrows from apps to collector -->
+        <line x1="112" y1="38" x2="188" y2="88" stroke="#e5c07b" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#s1)"/>
+        <line x1="112" y1="88" x2="188" y2="100" stroke="#e5c07b" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#s1)"/>
+        <line x1="112" y1="138" x2="188" y2="112" stroke="#e5c07b" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#s1)"/>
+        <line x1="112" y1="196" x2="188" y2="115" stroke="#5c6370" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#s1)"/>
+
+        <!-- Backends -->
+        <rect x="410" y="20" width="110" height="36" rx="4" fill="#2a231c" stroke="#e06c75" stroke-width="1.2"/>
+        <text x="465" y="43" text-anchor="middle" fill="#e06c75" font-family="JetBrains Mono" font-size="10">Prometheus</text>
+
+        <rect x="410" y="75" width="110" height="36" rx="4" fill="#2a231c" stroke="#98c379" stroke-width="1.2"/>
+        <text x="465" y="98" text-anchor="middle" fill="#98c379" font-family="JetBrains Mono" font-size="10">Loki</text>
+
+        <rect x="410" y="130" width="110" height="36" rx="4" fill="#2a231c" stroke="#c678dd" stroke-width="1.2"/>
+        <text x="465" y="153" text-anchor="middle" fill="#c678dd" font-family="JetBrains Mono" font-size="10">Grafana Tempo</text>
+
+        <!-- Grafana -->
+        <rect x="580" y="75" width="90" height="90" rx="5" fill="#2a231c" stroke="#e5c07b" stroke-width="2"/>
+        <text x="625" y="115" text-anchor="middle" fill="#e5c07b" font-family="JetBrains Mono" font-size="11">GRAFANA</text>
+        <text x="625" y="132" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">dashboards</text>
+        <text x="625" y="148" text-anchor="middle" fill="#6b5f52" font-family="JetBrains Mono" font-size="9">alerts</text>
+
+        <!-- Collector to backends -->
+        <line x1="322" y1="88" x2="408" y2="38" stroke="#61afef" stroke-width="1" marker-end="url(#s2)"/>
+        <line x1="322" y1="100" x2="408" y2="93" stroke="#61afef" stroke-width="1" marker-end="url(#s2)"/>
+        <line x1="322" y1="112" x2="408" y2="143" stroke="#61afef" stroke-width="1" marker-end="url(#s2)"/>
+
+        <!-- Backends to Grafana -->
+        <line x1="522" y1="38" x2="578" y2="100" stroke="#e06c75" stroke-width="1" marker-end="url(#s3)"/>
+        <line x1="522" y1="93" x2="578" y2="120" stroke="#98c379" stroke-width="1" marker-end="url(#s3)"/>
+        <line x1="522" y1="148" x2="578" y2="148" stroke="#c678dd" stroke-width="1" marker-end="url(#s3)"/>
+
+        <text x="340" y="225" text-anchor="middle" fill="#5c6370" font-family="JetBrains Mono" font-size="9">The Grafana Stack: logs + metrics + traces in one unified dashboard</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ── SECTION 14 ── -->
+  <section class="section" id="s14">
+    <div class="section-header">
+      <span class="section-badge">14</span>
+      <h2 class="section-title">Tooling: Proprietary Solutions</h2>
+    </div>
+
+    <p>
+      If you don't have the team to manage the open-source stack, proprietary all-in-one solutions are the pragmatic choice. They bundle logging, metrics, tracing, and alerting into a single platform with managed storage and a polished UI.
+    </p>
+
+    <table class="compare">
+      <thead>
+        <tr><th>Tool</th><th>Strengths</th><th>Best For</th><th>Pricing Model</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>New Relic</strong></td>
+          <td>Full-stack observability, Go/Python/Node agents, APM, browser monitoring, mobile. Easy 10-minute setup.</td>
+          <td>Teams that want one tool with minimal ops overhead</td>
+          <td>Free tier (100GB/month), then per GB ingested</td>
+        </tr>
+        <tr>
+          <td><strong>Datadog</strong></td>
+          <td>Industry-leading dashboards, 500+ integrations, excellent APM, infra monitoring, security. Very powerful.</td>
+          <td>Enterprises with complex infra — Kubernetes, multi-cloud</td>
+          <td>Per host + per GB — can get expensive quickly</td>
+        </tr>
+        <tr>
+          <td><strong>Sentry</strong></td>
+          <td>Best-in-class error tracking. Groups identical errors, shows stack traces, user context, release tracking.</td>
+          <td>Error monitoring specifically — pairs well with Grafana for metrics</td>
+          <td>Free tier (5k errors/month), then per event</td>
+        </tr>
+        <tr>
+          <td><strong>Honeycomb</strong></td>
+          <td>High-cardinality event querying. Built for observability-first teams. Native OTel support.</td>
+          <td>Teams doing advanced distributed tracing, many microservices</td>
+          <td>Per event ingested</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-title">New Relic Go Agent — Quick Integration</h3>
+    <pre><code><span class="cm">// main.go — New Relic agent setup in Go</span>
+<span class="kw">import</span> (
+    <span class="str">"github.com/newrelic/go-agent/v3/newrelic"</span>
+    <span class="str">"github.com/newrelic/go-agent/v3/integrations/nrgin"</span>
+)
+
+<span class="kw">func</span> <span class="fn">main</span>() {
+    <span class="cm">// Initialize New Relic application agent</span>
+    nrApp, _ := newrelic.<span class="fn">NewApplication</span>(
+        newrelic.<span class="fn">ConfigAppName</span>(<span class="str">"todo-api"</span>),
+        newrelic.<span class="fn">ConfigLicense</span>(os.<span class="fn">Getenv</span>(<span class="str">"NEW_RELIC_LICENSE_KEY"</span>)),
+        newrelic.<span class="fn">ConfigAppLogForwardingEnabled</span>(<span class="kw">true</span>),  <span class="cm">// forward logs to NR</span>
+        newrelic.<span class="fn">ConfigDistributedTracerEnabled</span>(<span class="kw">true</span>), <span class="cm">// enable distributed tracing</span>
+    )
+
+    r := gin.<span class="fn">New</span>()
+    <span class="cm">// nrgin middleware — auto-instruments every route with NR transactions</span>
+    r.<span class="fn">Use</span>(nrgin.<span class="fn">Middleware</span>(nrApp))
+
+    r.<span class="fn">Run</span>(<span class="str">":8080"</span>)
+}
+<span class="lang-tag">Go / New Relic</span></code></pre>
+
+    <div class="callout-note callout">
+      <div class="callout-label">What New Relic shows you</div>
+      <p>
+        After adding the middleware, New Relic automatically captures: transaction time per route, error rate, throughput (req/sec), Apdex score, Go runtime metrics (GC pause, goroutine count, memory), and distributed traces. The dashboard shows all of this within minutes of deploying.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 15 ── -->
+  <section class="section" id="s15">
+    <div class="section-header">
+      <span class="section-badge">15</span>
+      <h2 class="section-title">ELK Stack — Elasticsearch, Logstash, Kibana</h2>
+    </div>
+
+    <p>
+      The <strong>ELK Stack</strong> (now called the <strong>Elastic Stack</strong>) is the classic enterprise logging platform. It provides full-text search across logs, powerful aggregations, and rich dashboards. It's heavier than Loki but offers more querying flexibility.
+    </p>
+
+    <div class="def-grid">
+      <div class="cell key">Elasticsearch</div>
+      <div class="cell">The storage and search engine. Indexes every field of every log document. Supports complex queries: full-text search, aggregations, range filters. Horizontally scalable.</div>
+
+      <div class="cell key">Logstash</div>
+      <div class="cell">The log pipeline. Ingests logs from many sources (files, Kafka, Redis, Beats agents), transforms/filters them (parse JSON, add geo-IP, mask PII), and outputs to Elasticsearch. Powerful but resource-heavy.</div>
+
+      <div class="cell key">Kibana</div>
+      <div class="cell">The visualization layer. Build dashboards, run queries against Elasticsearch (KQL language), create alerts. The UI equivalent of Grafana for Elastic data.</div>
+
+      <div class="cell key">Filebeat / Fluentd</div>
+      <div class="cell">Lightweight log shipping agents that run on your servers and ship log files to Logstash or Elasticsearch directly. Lower resource overhead than Logstash as a local agent.</div>
+    </div>
+
+    <h3 class="sub-title">ELK vs Grafana Loki</h3>
+    <table class="compare">
+      <thead>
+        <tr><th>Property</th><th>ELK Stack</th><th>Grafana Loki</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Indexing</strong></td><td>Full-text indexes every field → powerful queries</td><td>Only indexes labels (metadata) → cheaper storage</td></tr>
+        <tr><td><strong>Storage cost</strong></td><td>High — indexing all fields is expensive</td><td>Low — like Prometheus for logs</td></tr>
+        <tr><td><strong>Query power</strong></td><td>Very high — KQL, complex aggregations</td><td>Good for label-based queries (LogQL)</td></tr>
+        <tr><td><strong>Integration</strong></td><td>Self-contained Kibana UI</td><td>Grafana — one UI for metrics + logs + traces</td></tr>
+        <tr><td><strong>Best for</strong></td><td>High query complexity, security/compliance use cases</td><td>Cost-sensitive setups already using Grafana stack</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── SECTION 16 ── -->
+  <section class="section" id="s16">
+    <div class="section-header">
+      <span class="section-badge">16</span>
+      <h2 class="section-title">Alert Design — What to Alert On</h2>
+    </div>
+
+    <p>
+      Not every metric needs an alert. Alert fatigue is a real problem — if engineers receive too many notifications, they start ignoring them. Good alert design means alerting on <strong>symptoms that impact users</strong>, not internal implementation details.
+    </p>
+
+    <h3 class="sub-title">The Four Golden Signals (Google SRE Book)</h3>
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon">📈</div>
+        <div class="card-title">Latency</div>
+        <p>Time to serve a request. Distinguish between successful and failed requests — a fast error is not a good metric. Alert on p99 > threshold.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🚦</div>
+        <div class="card-title">Traffic</div>
+        <p>Demand on your system — requests/sec. Sudden drops can indicate an outage just as much as sudden spikes. Alert on both extremes.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔥</div>
+        <div class="card-title">Errors</div>
+        <p>Rate of failed requests (5xx). Alert on error rate, not raw count — a spike in traffic will naturally cause more errors even if the error rate is stable.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <div class="card-title">Saturation</div>
+        <p>How "full" is your service — CPU, memory, DB connections, queue depth. Alerts before the system tips into failure. Alert at 80%, page at 95%.</p>
+      </div>
+    </div>
+
+    <h3 class="sub-title">Alert Rules (Grafana / Prometheus format)</h3>
+    <pre><code><span class="cm"># alert_rules.yml — Production-grade alert rules</span>
+groups:
+  - name: api_health
+    rules:
+
+      <span class="cm"># P1 — Error rate critical</span>
+      - alert: HighErrorRate
+        expr: |
+          rate(http_requests_total{status=~"5.."}[5m])
+          / rate(http_requests_total[5m]) * 100 > 5
+        <span class="kw">for</span>: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HTTP error rate above 5% ({{ $value | printf \"%.1f\" }}%)"
+          runbook: "https://wiki.company.com/runbooks/high-error-rate"
+
+      <span class="cm"># P2 — High latency</span>
+      - alert: HighP99Latency
+        expr: |
+          histogram_quantile(0.99,
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 2
+        <span class="kw">for</span>: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P99 latency above 2s ({{ $value | printf \"%.2f\" }}s)"
+
+      <span class="cm"># P2 — DB connection pool near exhaustion</span>
+      - alert: DBConnectionPoolExhaustion
+        expr: db_connections_open / db_connections_max > 0.85
+        <span class="kw">for</span>: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DB connection pool at {{ $value | humanizePercentage }}"
+
+      <span class="cm"># P1 — Service is down</span>
+      - alert: ServiceDown
+        expr: up{job="todo-api"} == 0
+        <span class="kw">for</span>: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "todo-api service is unreachable"
+<span class="lang-tag">YAML / Prometheus Rules</span></code></pre>
+
+    <div class="callout">
+      <div class="callout-label">Alert Severity Levels</div>
+      <p>
+        Define at least two levels: <strong>warning</strong> (investigate when convenient, business hours) and <strong>critical</strong> (page on-call immediately, any hour). Waking engineers at 3 AM for a warning-level issue is how you burn out your team and teach them to ignore alerts.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 17 ── -->
+  <section class="section" id="s17">
+    <div class="section-header">
+      <span class="section-badge">17</span>
+      <h2 class="section-title">Production Debugging Workflow — Full Example</h2>
+    </div>
+
+    <p>
+      Here is what the complete workflow looks like end-to-end when an incident occurs in a system with full LMO in place.
+    </p>
+
+    <h3 class="sub-title">Scenario: API Suddenly Slow + High Errors</h3>
+    <ul class="flow-steps">
+      <li>
+        <span class="step-num">1</span>
+        <div class="step-body">
+          <strong>🔔 Alert fires at 14:31 UTC</strong>
+          <p>Alertmanager sends Slack message: <em>"[CRITICAL] HighErrorRate: HTTP error rate is 82.4% (was 0.3%). Service: todo-api. Runbook: wiki/…"</em></p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">2</span>
+        <div class="step-body">
+          <strong>📊 Open Grafana → Metrics dashboard</strong>
+          <p>P99 latency jumped from 120ms to 4.3s at 14:31. Requests/sec unchanged (not a traffic spike). DB connection pool at 97%. Error type: 100% are 500s, not 4xx. Indicates server-side DB problem.</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">3</span>
+        <div class="step-body">
+          <strong>📋 Correlate to Logs in Loki / New Relic</strong>
+          <p>Query: <code>{service="todo-api", level="error"} |= "connection"</code>. Hundreds of entries: <code>ERROR: pq: remaining connection slots are reserved for non-replication superuser connections</code>. DB connection pool is exhausted.</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">4</span>
+        <div class="step-body">
+          <strong>🔗 Jump to Trace from log entry</strong>
+          <p>Click trace link in the log. Trace shows: HTTP Handler → AuthMiddleware (3ms) → TodoService (4290ms) → DB.GetTodos (4285ms ← STUCK). DB.GetTodos span has attribute: <code>query="SELECT * FROM todos WHERE user_id=$1"</code>.</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">5</span>
+        <div class="step-body">
+          <strong>🔍 Root cause identified</strong>
+          <p>A deployment 5 minutes ago added a <code>SELECT *</code> that performs a full table scan (missing index). Under load, queries pile up, connections are held longer, pool exhausts. Check <code>git log</code> — confirms deployment at 14:29 UTC.</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-num">6</span>
+        <div class="step-body">
+          <strong>✅ Fix + verify</strong>
+          <p>Add missing index migration. Deploy. Grafana shows error rate drops to 0.1% within 2 minutes of deployment. DB connection pool back to 12%. Incident resolved. Total time: 11 minutes.</p>
+        </div>
+      </li>
+    </ul>
+
+    <div class="callout-green callout">
+      <div class="callout-label">Without LMO</div>
+      <p>The same incident without observability: users complain on Twitter, you SSH into servers running <code>grep ERROR /var/log/app.log</code>, manually correlate timestamps, eventually realize something is wrong with the DB, spend 90 minutes narrowing down which query, then guess about the missing index. Total time: 2–3 hours minimum.</p>
+    </div>
+  </section>
+
+  <!-- ── SECTION 18 ── -->
+  <section class="section" id="s18">
+    <div class="section-header">
+      <span class="section-badge">18</span>
+      <h2 class="section-title">Best Practices</h2>
+    </div>
+
+    <h3 class="sub-title">1 · Always Include a Request ID</h3>
+    <p>
+      Generate a unique <code>request_id</code> (UUID or ULID) at the entry point of every request — either in your load balancer or in your first middleware. Inject it into the context and include it in <em>every</em> log entry and span for that request. This is what lets you pull all logs for a single failing request out of millions of entries.
+    </p>
+
+    <h3 class="sub-title">2 · Log at Boundaries, Not Inside Logic</h3>
+    <p>
+      Log at the <em>entry</em> and <em>exit</em> of major components (handler, service, repository), not scattered throughout every loop and condition. This gives you a clean, readable trail without noise. Inside functions, use spans for granular timing — not log.Debug spam.
+    </p>
+
+    <h3 class="sub-title">3 · Never Log Sensitive Data</h3>
+    <p>
+      Passwords, credit card numbers, SSNs, auth tokens, and API keys must <strong>never</strong> appear in logs. Use structured logging libraries that let you mark fields as redacted. In your CI pipeline, consider a log scanning step that fails the build if certain patterns are found in log statements.
+    </p>
+
+    <h3 class="sub-title">4 · Use Sampling for High-Volume Traces</h3>
+    <p>
+      At high traffic (1000+ req/sec), recording every trace is expensive. Use <strong>head-based sampling</strong> (record 10% of all requests) or <strong>tail-based sampling</strong> (record 100% of error requests + 1% of success requests). The OTel Collector supports both. Never sample errors — always record traces for failures.
+    </p>
+
+    <h3 class="sub-title">5 · Log Levels Discipline</h3>
+    <ul class="lecture-list">
+      <li>Never use DEBUG in production — it generates enormous volume and costs storage</li>
+      <li>INFO should be your production default — meaningful events, not chatty</li>
+      <li>Treat every ERROR log as something that needs a ticket or an alert rule</li>
+      <li>FATAL should mean "I need someone paged right now"</li>
+    </ul>
+
+    <h3 class="sub-title">6 · This is a Spectrum, Not a Checkbox</h3>
+    <p>
+      Start with basic structured logging in JSON format + a simple Prometheus counter for error rate. That alone will save you hours when the first production incident happens. Then iteratively add: histogram metrics, basic tracing, Grafana dashboards, alert rules. You don't need the full ELK + Jaeger + OTel Collector stack on day one. Build it incrementally.
+    </p>
+
+    <hr class="divider">
+
+    <div class="callout">
+      <div class="callout-label">Recap</div>
+      <p>
+        <strong>Logs</strong> tell you what happened. <strong>Metrics</strong> tell you patterns and trends. <strong>Traces</strong> tell you where exactly things went wrong and how long each step took. A system is <em>observable</em> when all three are in place and correlated. This requires developer effort (instrument your code) and infrastructure effort (collect, store, display) working together. The tooling — whether Grafana stack or New Relic — is secondary to the practice of consistently instrumenting your code with the right context.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('.sidebar-nav li');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navLinks.forEach(li => li.classList.remove('active'));
+        const idx = [...sections].indexOf(entry.target);
+        if (navLinks[idx]) navLinks[idx].classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+
+  sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>
