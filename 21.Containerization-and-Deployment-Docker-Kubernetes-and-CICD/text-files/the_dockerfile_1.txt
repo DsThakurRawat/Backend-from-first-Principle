@@ -1,0 +1,19 @@
+# FROM picks the base image — the first (bottom) layer. Pin a version, never :latest
+FROM golang:1.22
+
+# WORKDIR sets the working dir for the instructions that follow (and at runtime)
+WORKDIR /app
+
+# Copy dependency manifests FIRST and download — this layer caches across code edits (§7)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Now copy the source and build the binary
+COPY . .
+RUN go build -o /server ./cmd/server
+
+# Document the port the app listens on (metadata; publishing happens at run time §8)
+EXPOSE 8080
+
+# CMD is the default command run when a container starts from this image
+CMD ["/server"]

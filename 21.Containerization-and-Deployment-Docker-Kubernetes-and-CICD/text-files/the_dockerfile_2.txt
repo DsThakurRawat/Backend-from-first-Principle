@@ -1,0 +1,16 @@
+# Pin a slim base — smaller and fewer CVEs than the full image
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy the manifest FIRST so the dependency layer caches across code edits (§7)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Then copy the application code
+COPY . .
+
+EXPOSE 8080
+
+# Exec form (JSON array) — runs the process directly as PID 1, so signals work (§ graceful shutdown)
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]

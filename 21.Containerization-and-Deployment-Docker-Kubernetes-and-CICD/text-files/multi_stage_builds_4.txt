@@ -1,0 +1,18 @@
+# ---- Stage 1: install deps into a venv with build tools available ----
+FROM python:3.11 AS builder
+WORKDIR /app
+RUN python -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt   # may compile native wheels here
+
+# ---- Stage 2: slim runtime, copy the ready venv, run non-root ----
+FROM python:3.11-slim
+COPY --from=builder /venv /venv          # copy ONLY the built virtualenv
+ENV PATH="/venv/bin:$PATH"
+WORKDIR /app
+COPY . .
+RUN useradd -m app && chown -R app /app
+USER app                                 # non-root (§17)
+EXPOSE 8080
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]

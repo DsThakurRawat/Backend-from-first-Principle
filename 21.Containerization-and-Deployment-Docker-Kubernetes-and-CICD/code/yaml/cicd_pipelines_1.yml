@@ -1,0 +1,27 @@
+name: ci-cd
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests              # CI gate — must pass before we ship (§testing chapter)
+        run: make test               # go test ./...  |  pytest
+
+      - name: Build image
+        run: docker build -t $REGISTRY/myapp:${{ github.sha }} .   # tag = commit SHA (§8)
+
+      - name: Scan image for vulnerabilities
+        run: trivy image --severity HIGH,CRITICAL --exit-code 1 $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Push to registry
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u ci --password-stdin
+          docker push $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Deploy to Kubernetes   # update the Deployment's image → triggers a rolling update (§18)
+        run: kubectl set image deployment/api api=$REGISTRY/myapp:${{ github.sha }}
