@@ -1,0 +1,32 @@
+services:
+  api:
+    build: .                      # build the image from the local Dockerfile (§5/6)
+    ports:
+      - "8080:8080"               # publish to the host (§9)
+    environment:                  # config via env, not baked in (§16)
+      DATABASE_URL: postgres://app:secret@db:5432/app   # reach "db" by name (§9 DNS)
+      REDIS_URL: redis://cache:6379
+    depends_on:
+      db:
+        condition: service_healthy   # wait until the DB passes its healthcheck
+      cache:
+        condition: service_started
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: app
+    volumes:
+      - dbdata:/var/lib/postgresql/data   # named volume = data survives restarts (§9)
+    healthcheck:                          # so depends_on can wait for readiness
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+      retries: 5
+
+  cache:
+    image: redis:7
+
+volumes:
+  dbdata:                          # declared once, referenced above

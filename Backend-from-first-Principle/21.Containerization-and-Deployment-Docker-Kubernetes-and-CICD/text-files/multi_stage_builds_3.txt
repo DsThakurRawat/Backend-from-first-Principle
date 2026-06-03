@@ -1,0 +1,16 @@
+# ---- Stage 1: build with the full Go toolchain ----
+FROM golang:1.22 AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# static binary, no libc dependency — perfect for a scratch/distroless final image
+RUN CGO_ENABLED=0 go build -o /server ./cmd/server
+
+# ---- Stage 2: tiny runtime, no compiler, non-root ----
+FROM gcr.io/distroless/static:nonroot
+COPY --from=builder /server /server   # copy ONLY the artifact across stages
+EXPOSE 8080
+USER nonroot:nonroot                  # never run as root (§17, security)
+ENTRYPOINT ["/server"]
+# Result: a ~10-15 MB image with no shell, no package manager, minimal CVEs
