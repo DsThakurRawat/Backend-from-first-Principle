@@ -1,0 +1,34 @@
+# alert_rules.yml — Fire alerts when things go wrong
+groups:
+  - name: task_queue_alerts
+    rules:
+
+      # Alert if queue depth stays high for 5 minutes
+      - alert: HighQueueDepth
+        expr: worker_queue_depth{queue_name="email"} > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Email queue backed up ({{ $value }} tasks)"
+          description: "Queue depth has been above 1000 for 5+ minutes. Scale workers."
+
+      # Alert if failure rate > 10% over last 5 minutes
+      - alert: HighTaskFailureRate
+        expr: |
+          rate(worker_tasks_total{status="failure"}[5m])
+          / rate(worker_tasks_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Task failure rate above 10%"
+
+      # Alert if a worker process goes down (no scrape for 1 min)
+      - alert: WorkerDown
+        expr: up{job="celery_workers"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker {{ $labels.instance }} is down"
