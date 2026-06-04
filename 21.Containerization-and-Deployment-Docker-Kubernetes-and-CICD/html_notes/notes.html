@@ -1,0 +1,2365 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Containerization &amp; Deployment for Backend Engineers — Field Manual</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    rel="stylesheet">
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+
+  <style>
+    :root {
+      --paper: #f4efe6;
+      --paper-2: #ece4d6;
+      --ink: #1c1a17;
+      --ink-soft: #4a443c;
+      --rust: #bc4b2b;
+      --rust-deep: #8f3415;
+      --gold: #b8860b;
+      --teal: #1f6f6f;
+      --line: #d6ccba;
+      --code-bg: #1a1c22;
+      --code-bar: #11131a;
+      --shadow: rgba(38, 28, 18, .14);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 24px
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: 'Hanken Grotesk', sans-serif;
+      font-size: 17px;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+      background-image: radial-gradient(circle at 12% 8%, rgba(188, 75, 43, .05), transparent 38%), radial-gradient(circle at 88% 92%, rgba(31, 111, 111, .05), transparent 42%);
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 312px minmax(0, 1fr);
+      max-width: 1480px;
+      margin: 0 auto;
+    }
+
+    .toc {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 38px 24px 60px;
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--paper-2), var(--paper));
+    }
+
+    .content {
+      padding: 64px clamp(22px, 5vw, 86px) 140px;
+      min-width: 0;
+    }
+
+    .toc .brand {
+      font-family: 'Fraunces', serif;
+      font-weight: 900;
+      font-size: 21px;
+      line-height: 1.1;
+      letter-spacing: -.01em;
+      margin-bottom: 4px;
+    }
+
+    .toc .brand span {
+      color: var(--rust);
+    }
+
+    .toc .brand-sub {
+      font-size: 11px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+      margin-bottom: 26px;
+      font-weight: 600;
+    }
+
+    .toc nav a {
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+      text-decoration: none;
+      color: var(--ink-soft);
+      font-size: 13.5px;
+      font-weight: 500;
+      padding: 6px 9px;
+      border-radius: 7px;
+      margin-bottom: 1px;
+      transition: .16s;
+      border-left: 2px solid transparent;
+    }
+
+    .toc nav a:hover {
+      background: rgba(188, 75, 43, .09);
+      color: var(--ink);
+    }
+
+    .toc nav a.active {
+      color: var(--rust-deep);
+      background: rgba(188, 75, 43, .1);
+      border-left-color: var(--rust);
+      font-weight: 700;
+    }
+
+    .toc nav a .n {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px;
+      color: var(--rust);
+      min-width: 20px;
+      font-weight: 700;
+    }
+
+    .hero {
+      margin-bottom: 64px;
+    }
+
+    .kicker {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      letter-spacing: .3em;
+      text-transform: uppercase;
+      color: var(--rust);
+      font-weight: 700;
+      margin-bottom: 20px;
+    }
+
+    .hero h1 {
+      font-family: 'Fraunces', serif;
+      font-weight: 900;
+      font-size: clamp(40px, 6.5vw, 78px);
+      line-height: .95;
+      letter-spacing: -.025em;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 em {
+      font-style: italic;
+      color: var(--rust);
+      font-weight: 500;
+    }
+
+    .hero .lede {
+      font-size: 19px;
+      max-width: 64ch;
+      color: var(--ink-soft);
+      line-height: 1.6;
+    }
+
+    .hero .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 32px;
+    }
+
+    .hero .meta span {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      background: var(--paper-2);
+      padding: 6px 13px;
+      border-radius: 30px;
+      color: var(--ink-soft);
+    }
+
+    .hero .rule {
+      height: 3px;
+      width: 120px;
+      background: var(--rust);
+      margin-top: 38px;
+    }
+
+    .part-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      color: var(--rust);
+      font-weight: 700;
+      margin: 64px 0 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px dashed var(--line);
+    }
+
+    .part-label:first-of-type {
+      margin-top: 0;
+    }
+
+    section {
+      margin-bottom: 72px;
+      scroll-margin-top: 20px;
+    }
+
+    .sec-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+
+    .sec-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+      background: var(--rust);
+      border-radius: 8px;
+      padding: 7px 11px;
+      line-height: 1;
+      margin-top: 8px;
+      white-space: nowrap;
+      box-shadow: 0 3px 10px rgba(188, 75, 43, .3);
+    }
+
+    h2 {
+      font-family: 'Fraunces', serif;
+      font-weight: 600;
+      font-size: clamp(27px, 3.6vw, 38px);
+      line-height: 1.06;
+      letter-spacing: -.015em;
+    }
+
+    h3 {
+      font-family: 'Fraunces', serif;
+      font-weight: 600;
+      font-size: 22px;
+      margin: 34px 0 12px;
+      letter-spacing: -.01em;
+    }
+
+    h4 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--rust-deep);
+      margin: 24px 0 9px;
+    }
+
+    p {
+      margin-bottom: 15px;
+      max-width: 76ch;
+    }
+
+    .content a {
+      color: var(--rust-deep);
+      text-underline-offset: 3px;
+    }
+
+    strong {
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    ul,
+    ol {
+      margin: 0 0 17px 0;
+      padding-left: 0;
+      max-width: 76ch;
+    }
+
+    li {
+      margin: 0 0 9px 28px;
+    }
+
+    li::marker {
+      color: var(--rust);
+      font-weight: 700;
+    }
+
+    code:not(pre code) {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .85em;
+      background: var(--paper-2);
+      border: 1px solid var(--line);
+      padding: .12em .42em;
+      border-radius: 5px;
+      color: var(--rust-deep);
+      white-space: nowrap;
+    }
+
+    .box {
+      border-radius: 12px;
+      padding: 18px 22px;
+      margin: 22px 0;
+      border: 1px solid var(--line);
+      background: var(--paper-2);
+    }
+
+    .box .tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-bottom: 7px;
+      display: block;
+    }
+
+    .box p:last-child {
+      margin-bottom: 0;
+    }
+
+    .box.key {
+      background: linear-gradient(180deg, rgba(184, 134, 11, .1), rgba(184, 134, 11, .04));
+      border-color: rgba(184, 134, 11, .4);
+    }
+
+    .box.key .tag {
+      color: var(--gold);
+    }
+
+    .box.gotcha {
+      background: linear-gradient(180deg, rgba(188, 75, 43, .1), rgba(188, 75, 43, .03));
+      border-color: rgba(188, 75, 43, .4);
+    }
+
+    .box.gotcha .tag {
+      color: var(--rust);
+    }
+
+    .box.note {
+      background: linear-gradient(180deg, rgba(31, 111, 111, .09), rgba(31, 111, 111, .03));
+      border-color: rgba(31, 111, 111, .4);
+    }
+
+    .box.note .tag {
+      color: var(--teal);
+    }
+
+    .analogy {
+      font-style: italic;
+      color: var(--ink-soft);
+      font-family: 'Fraunces', serif;
+      font-size: 18px;
+      line-height: 1.55;
+      border-left: 3px solid var(--gold);
+      padding: 6px 0 6px 22px;
+      margin: 20px 0;
+    }
+
+    .tbl-wrap {
+      overflow-x: auto;
+      margin: 22px 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 11px 15px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--paper-2);
+      font-weight: 700;
+      font-size: 11.5px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--rust-deep);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    td code {
+      white-space: nowrap;
+    }
+
+    .mono-cell {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      color: var(--rust-deep);
+      font-size: 13px;
+    }
+
+    .yes {
+      color: #3d7a2e;
+      font-weight: 700;
+    }
+
+    .no {
+      color: #b9461f;
+      font-weight: 700;
+    }
+
+    .cond {
+      color: #9a7400;
+      font-weight: 700;
+    }
+
+    .sc {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .sc.s1 {
+      background: #e4eef0;
+      color: #1f6f6f;
+    }
+
+    .sc.s2 {
+      background: #e3efe0;
+      color: #3d7a2e;
+    }
+
+    .sc.s3 {
+      background: #fbf2dc;
+      color: #9a7400;
+    }
+
+    .sc.s4 {
+      background: #f7e3da;
+      color: #b9461f;
+    }
+
+    .sc.s5 {
+      background: #f6dada;
+      color: #a01f1f;
+    }
+
+    .codeblock {
+      margin: 20px 0;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 14px 30px -16px var(--shadow);
+      border: 1px solid #2a2d36;
+    }
+
+    .code-bar {
+      display: flex;
+      align-items: center;
+      background: var(--code-bar);
+      padding: 0 14px;
+      border-bottom: 1px solid #2a2d36;
+    }
+
+    .code-bar .dots {
+      display: flex;
+      gap: 7px;
+      margin-right: 14px;
+    }
+
+    .code-bar .dots i {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      display: block;
+    }
+
+    .dots i:nth-child(1) {
+      background: #e0644b;
+    }
+
+    .dots i:nth-child(2) {
+      background: #dca838;
+    }
+
+    .dots i:nth-child(3) {
+      background: #5aa75a;
+    }
+
+    .code-tabs {
+      display: flex;
+    }
+
+    .code-tabs button {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      font-weight: 600;
+      background: none;
+      border: none;
+      color: #7d818c;
+      padding: 13px 18px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: .15s;
+    }
+
+    .code-tabs button:hover {
+      color: #cfd2da;
+    }
+
+    .code-tabs button.on {
+      color: #fff;
+      border-bottom-color: var(--rust);
+    }
+
+    .lang-go {
+      color: #5dc9e2;
+    }
+
+    .lang-py {
+      color: #ffd23f;
+    }
+
+    .code-panel {
+      display: none;
+    }
+
+    .code-panel.on {
+      display: block;
+    }
+
+    .codeblock pre {
+      margin: 0;
+    }
+
+    .codeblock pre code {
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 13px;
+      line-height: 1.6;
+      padding: 18px 20px !important;
+      display: block;
+      overflow-x: auto;
+      background: var(--code-bg) !important;
+    }
+
+    .code-cap {
+      font-size: 13px;
+      color: var(--ink-soft);
+      font-style: italic;
+      margin: -8px 2px 22px;
+      font-family: 'Fraunces', serif;
+    }
+
+    .codeblock.single .code-bar .filename {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      color: #9da1ab;
+      padding: 13px 4px;
+    }
+
+    .flow {
+      margin: 22px 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--paper-2);
+      padding: 24px 22px;
+    }
+
+    .flow .step {
+      display: flex;
+      gap: 15px;
+      align-items: flex-start;
+      padding: 9px 0;
+    }
+
+    .flow .step .b {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 12px;
+      background: var(--ink);
+      color: var(--paper);
+      min-width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+
+    .flow .step.srv .b {
+      background: var(--teal);
+    }
+
+    .flow .step.cli .b {
+      background: var(--rust);
+    }
+
+    .flow .step .t {
+      padding-top: 3px;
+      font-size: 14.5px;
+    }
+
+    .flow .arrow {
+      color: var(--line);
+      text-align: center;
+      font-size: 18px;
+      line-height: .4;
+      margin: 0 0 0 14px;
+    }
+
+    /* method card */
+    .method {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      margin: 26px 0;
+      overflow: hidden;
+      background: var(--paper-2);
+    }
+
+    .method-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 22px;
+      background: linear-gradient(180deg, rgba(28, 26, 23, .04), transparent);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .method-top .verb {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 18px;
+      color: #fff;
+      background: var(--ink);
+      padding: 6px 14px;
+      border-radius: 8px;
+    }
+
+    .method-top .verb.get {
+      background: #3d7a2e;
+    }
+
+    .method-top .verb.post {
+      background: var(--rust);
+    }
+
+    .method-top .verb.put {
+      background: #7a5a1e;
+    }
+
+    .method-top .verb.patch {
+      background: #9a7400;
+    }
+
+    .method-top .verb.delete {
+      background: #a01f1f;
+    }
+
+    .method-top .verb.head {
+      background: #2e6a7a;
+    }
+
+    .method-top .verb.options {
+      background: var(--teal);
+    }
+
+    .method-top .verb.connect {
+      background: #5a3a7a;
+    }
+
+    .method-top .verb.trace {
+      background: #6a6a6a;
+    }
+
+    .method-top .props {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      margin-left: auto;
+    }
+
+    .method-top .props span {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 9px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+    }
+
+    .method-top .props .y {
+      color: #3d7a2e;
+      border-color: #bcdcb2;
+    }
+
+    .method-top .props .n {
+      color: #b9461f;
+      border-color: #e8c5b8;
+    }
+
+    .method-top .props .c {
+      color: #9a7400;
+      border-color: #e8d8a8;
+    }
+
+    .method-body {
+      padding: 6px 22px 20px;
+    }
+
+    .method-body .gloss {
+      font-family: 'Fraunces', serif;
+      font-style: italic;
+      font-size: 17px;
+      color: var(--ink-soft);
+      margin: 14px 0;
+    }
+
+    .foot {
+      border-top: 3px solid var(--rust);
+      margin-top: 56px;
+      padding-top: 28px;
+      color: var(--ink-soft);
+      font-size: 14px;
+    }
+
+    .foot strong {
+      color: var(--ink);
+    }
+
+    .toc-toggle {
+      display: none;
+    }
+
+    /* ============ VISUALIZATION STYLES (added) ============ */
+    .viz {
+      margin: 30px 0;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #fbf8f1, var(--paper-2));
+      padding: 24px 22px 18px;
+      box-shadow: 0 10px 26px -18px var(--shadow);
+    }
+
+    .viz-cap {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--rust);
+      font-weight: 700;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .viz-cap::before {
+      content: "";
+      width: 18px;
+      height: 2px;
+      background: var(--rust);
+      display: inline-block;
+    }
+
+    .viz-title {
+      font-family: 'Fraunces', serif;
+      font-weight: 600;
+      font-size: 18px;
+      letter-spacing: -.01em;
+      margin-bottom: 16px;
+      color: var(--ink);
+    }
+
+    .viz svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      overflow: visible;
+    }
+
+    .viz svg text {
+      font-family: 'Hanken Grotesk', sans-serif;
+    }
+
+    .viz svg .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .viz svg .serif {
+      font-family: 'Fraunces', serif;
+    }
+
+    .viz-note {
+      font-size: 12.5px;
+      color: var(--ink-soft);
+      font-style: italic;
+      font-family: 'Fraunces', serif;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--line);
+    }
+
+    @media(max-width:980px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .toc {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 286px;
+        z-index: 50;
+        transform: translateX(-100%);
+        transition: .28s;
+        box-shadow: 0 0 40px rgba(0, 0, 0, .3);
+      }
+
+      .toc.open {
+        transform: translateX(0);
+      }
+
+      .toc-toggle {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        z-index: 60;
+        background: var(--ink);
+        color: var(--paper);
+        border: none;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 11px 16px;
+        border-radius: 10px;
+        cursor: pointer;
+        box-shadow: 0 6px 18px var(--shadow);
+      }
+
+      .content {
+        padding: 80px 22px 100px;
+      }
+
+      .method-top .props {
+        margin-left: 0;
+        width: 100%;
+      }
+    }
+
+    @media(max-width:560px) {
+      body {
+        font-size: 16px;
+      }
+    }
+
+    ::selection {
+      background: var(--rust);
+      color: #fff;
+    }
+  </style>
+<style>
+.chapter-nav{position:fixed;bottom:0;left:0;right:0;z-index:9998;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(16px,4vw,48px);background:rgba(243,237,226,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1.5px solid #c7bca6;box-shadow:0 -8px 32px -16px rgba(40,30,20,.18);font-family:"JetBrains Mono","Spline Sans",monospace;}
+.nav-chapter-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:#5b5347;padding:10px 18px;border-radius:10px;transition:all .2s ease;max-width:38%;}
+.nav-chapter-link:hover{background:rgba(184,64,46,.08);color:#b8402e;transform:translateY(-1px);}
+.nav-chapter-link.nav-next{text-align:right;flex-direction:row;}
+.nav-arrow{font-size:22px;color:#b8402e;font-weight:700;flex:none;}
+.nav-label{display:flex;flex-direction:column;gap:2px;font-size:13.5px;line-height:1.3;}
+.nav-small{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8d8475;font-weight:600;}
+.nav-indicator{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#b8402e;font-weight:700;text-decoration:none;padding:8px 16px;border:1.5px solid #c7bca6;border-radius:40px;background:rgba(255,255,255,.5);transition:all .2s;white-space:nowrap;}
+.nav-indicator:hover{background:#b8402e;color:#fff;border-color:#b8402e;}
+.nav-dot{display:inline-block;width:7px;height:7px;background:#b8402e;border-radius:50%;margin-right:4px;vertical-align:middle;}
+.nav-sep{color:#c7bca6;margin:0 2px;}
+.nav-disabled{visibility:hidden;pointer-events:none;}
+@media(max-width:700px){.nav-label{font-size:11.5px;}.nav-chapter-link{padding:8px 10px;max-width:42%;}.chapter-nav{padding:10px 12px;}}
+body{padding-bottom:80px;}
+</style>
+</head>
+
+<body>
+
+  <button class="toc-toggle" onclick="document.querySelector('.toc').classList.toggle('open')">☰ Contents</button>
+
+  <div class="shell">
+    <aside class="toc">
+      <div class="brand">Containers <span>/</span> the backend lens</div>
+      <div class="brand-sub">Field Manual · v2</div>
+      <nav>
+        <a href="#s1"><span class="n">01</span> The Problem Containers Solve</a>
+        <a href="#s2"><span class="n">02</span> Containers vs VMs</a>
+        <a href="#s3"><span class="n">03</span> What a Container Actually Is</a>
+        <a href="#s4"><span class="n">04</span> Images, Layers &amp; the Union FS</a>
+        <a href="#s5"><span class="n">05</span> The Dockerfile</a>
+        <a href="#s6"><span class="n">06</span> Multi-Stage Builds</a>
+        <a href="#s7"><span class="n">07</span> Image Optimization &amp; Caching</a>
+        <a href="#s8"><span class="n">08</span> Runtime, Registries &amp; Tags</a>
+        <a href="#s9"><span class="n">09</span> Networking &amp; Volumes</a>
+        <a href="#s10"><span class="n">10</span> Docker Compose</a>
+        <a href="#s11"><span class="n">11</span> Why Orchestration</a>
+        <a href="#s12"><span class="n">12</span> Kubernetes Architecture</a>
+        <a href="#s13"><span class="n">13</span> Pods</a>
+        <a href="#s14"><span class="n">14</span> Deployments &amp; ReplicaSets</a>
+        <a href="#s15"><span class="n">15</span> Services &amp; Ingress</a>
+        <a href="#s16"><span class="n">16</span> Config, Secrets &amp; Env</a>
+        <a href="#s17"><span class="n">17</span> Health Probes &amp; Resources</a>
+        <a href="#s18"><span class="n">18</span> Scaling &amp; Rollouts</a>
+        <a href="#s19"><span class="n">19</span> CI/CD Pipelines</a>
+        <a href="#s20"><span class="n">20</span> Deploy Strategies &amp; GitOps</a>
+        <a href="#s21"><span class="n">21</span> Production Cheat-Sheet</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+
+      <header class="hero">
+        <div class="kicker">A detailed backend reference</div>
+        <h1>Containers, shipping your <em>code</em><br>and its world together.</h1>
+        <p class="lede">A first-principles walkthrough of how backend code gets packaged and run in production &mdash;
+          from the kernel features that make a <em>container</em> (namespaces and cgroups), through Docker images,
+          layers and multi-stage builds, into Kubernetes orchestration (pods, deployments, services, probes, autoscaling),
+          and out to CI/CD pipelines and zero-downtime rollouts. Written to explain not just <em>what</em> each piece
+          does but <em>why</em> it exists and <em>how</em> it works underneath. Application examples in both Go and Python.</p>
+        <div class="meta">
+          <span>Linux namespaces + cgroups</span>
+          <span>Docker / OCI</span>
+          <span>Kubernetes</span>
+          <span>21 sections</span>
+        </div>
+        <div class="rule"></div>
+      </header>
+
+      <div class="part-label">Part I · Why Containers Exist</div>
+
+      <!-- 1 -->
+      <section id="s1">
+        <div class="sec-head">
+          <div class="sec-num">01</div>
+          <h2>The Problem Containers Solve</h2>
+        </div>
+        <p>Every container concept later in this manual is an answer to one recurring pain: <strong>code that runs on
+          one machine fails on another because the two machines aren't identical.</strong> Your laptop has Python 3.11,
+          the server has 3.9; your build assumes a system library that prod lacks; an environment variable is set here
+          and unset there. The result is the oldest joke in software &mdash; "but it works on my machine" &mdash; and it
+          is not a joke, it's a class of outages.</p>
+
+        <p>The root cause is that a running program is never just its source code. It's the code <em>plus</em> a whole
+          invisible environment: the language runtime and its exact version, third-party libraries, system packages,
+          configuration, file paths, and OS-level dependencies. Traditionally you reproduced that environment by hand on
+          every machine &mdash; install steps, setup scripts, a wiki page nobody kept current &mdash; and any drift
+          between environments became a bug that only appears in one place.</p>
+
+        <div class="analogy">Before containers, deploying software was like mailing a recipe and hoping the recipient's
+          kitchen has the same oven, the same pans, and the same brand of flour. Containers mail the <em>entire kitchen</em>
+          &mdash; oven, pans, ingredients, pre-measured &mdash; sealed in a box that runs the same way wherever you open it.</div>
+
+        <div class="viz">
+          <div class="viz-cap">The deployment gap</div>
+          <div class="viz-title">A program is code plus an environment &mdash; and the environment is what drifts</div>
+          <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="The same application code running against different environments on a laptop versus a server, leading to failure, versus a container bundling code and environment so it runs identically">
+            <text x="20" y="22" class="mono" font-size="12" font-weight="700" fill="#bc4b2b">WITHOUT containers &mdash; same code, different worlds</text>
+            <rect x="20" y="34" width="200" height="86" rx="10" fill="#f7e9e2" stroke="#bc4b2b"/>
+            <text x="120" y="54" font-size="12" font-weight="700" fill="#8f3415" text-anchor="middle">your laptop</text>
+            <text x="120" y="74" class="mono" font-size="10" fill="#4a443c" text-anchor="middle">app + Python 3.11</text>
+            <text x="120" y="90" class="mono" font-size="10" fill="#4a443c" text-anchor="middle">libs A, B (v2)</text>
+            <text x="120" y="108" font-size="11" font-weight="700" fill="#3d7a2e" text-anchor="middle">&#10003; works</text>
+            <rect x="500" y="34" width="200" height="86" rx="10" fill="#f6dada" stroke="#a01f1f"/>
+            <text x="600" y="54" font-size="12" font-weight="700" fill="#a01f1f" text-anchor="middle">the server</text>
+            <text x="600" y="74" class="mono" font-size="10" fill="#4a443c" text-anchor="middle">app + Python 3.9</text>
+            <text x="600" y="90" class="mono" font-size="10" fill="#4a443c" text-anchor="middle">libs A (v1), no B</text>
+            <text x="600" y="108" font-size="11" font-weight="700" fill="#a01f1f" text-anchor="middle">&#10007; breaks</text>
+            <defs><marker id="da" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#a01f1f"/></marker></defs>
+            <path d="M222 77 H498" stroke="#a01f1f" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#da)"/>
+            <text x="360" y="70" font-size="11" font-style="italic" fill="#a01f1f" text-anchor="middle">"works on my machine"</text>
+
+            <text x="20" y="158" class="mono" font-size="12" font-weight="700" fill="#1f6f6f">WITH a container &mdash; the environment travels with the code</text>
+            <rect x="20" y="170" width="200" height="60" rx="10" fill="#1c1a17"/>
+            <text x="120" y="192" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">container image</text>
+            <text x="120" y="210" class="mono" font-size="9.5" fill="#7fd1c4" text-anchor="middle">app + runtime + libs + config</text>
+            <rect x="290" y="170" width="120" height="60" rx="10" fill="#e3efe0" stroke="#1f6f6f"/><text x="350" y="205" font-size="11" font-weight="700" fill="#1f6f6f" text-anchor="middle">laptop &#10003;</text>
+            <rect x="430" y="170" width="120" height="60" rx="10" fill="#e3efe0" stroke="#1f6f6f"/><text x="490" y="205" font-size="11" font-weight="700" fill="#1f6f6f" text-anchor="middle">staging &#10003;</text>
+            <rect x="570" y="170" width="130" height="60" rx="10" fill="#e3efe0" stroke="#1f6f6f"/><text x="635" y="205" font-size="11" font-weight="700" fill="#1f6f6f" text-anchor="middle">prod &#10003;</text>
+            <defs><marker id="da2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#1f6f6f"/></marker></defs>
+            <path d="M222 200 H288" stroke="#1f6f6f" stroke-width="1.6" marker-end="url(#da2)"/>
+          </svg>
+          <div class="viz-note">A container packages the application <em>and</em> its entire runtime environment into one
+            immutable artifact, so "the thing that runs" is byte-identical everywhere.</div>
+        </div>
+
+        <h4>Three problems, one solution</h4>
+        <ul>
+          <li><strong>Dependency hell &amp; drift</strong> &mdash; the exact runtime and libraries are baked in, so there's
+            no "install steps" to get wrong and no version skew between environments.</li>
+          <li><strong>Isolation</strong> &mdash; two apps that need conflicting versions of the same library can run side
+            by side on one host, each in its own sealed box, without interfering.</li>
+          <li><strong>Density &amp; portability</strong> &mdash; containers are light enough to pack many onto a single
+            machine and to move freely between laptop, CI, and any cloud &mdash; the foundation that orchestration
+            (Part IV) and modern CI/CD (Part V) build on.</li>
+        </ul>
+
+        <div class="box key"><span class="tag">The one idea</span>
+          <p>A container makes <strong>"the thing that runs in production" identical to "the thing you built and tested."</strong>
+            Everything else &mdash; images, Docker, Kubernetes, pipelines &mdash; is machinery for building, shipping,
+            and running that identical artifact at scale.</p>
+        </div>
+      </section>
+
+      <!-- 2 -->
+      <section id="s2">
+        <div class="sec-head">
+          <div class="sec-num">02</div>
+          <h2>Containers vs Virtual Machines</h2>
+        </div>
+        <p>The instinctive question is "isn't this just a virtual machine?" The answer reveals what containers actually
+          are. A <strong>VM virtualizes hardware</strong>: a hypervisor emulates a whole machine, and each VM runs its
+          <em>own complete operating system</em> &mdash; its own kernel, on top of which sit its libraries and your app.
+          A <strong>container virtualizes the operating system</strong>: all containers on a host <em>share the host's
+          single kernel</em>, and isolation is enforced by kernel features rather than by emulating separate hardware.</p>
+
+        <div class="viz">
+          <div class="viz-cap">The decisive difference</div>
+          <div class="viz-title">VMs each ship a full OS; containers share one kernel</div>
+          <svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Side by side: virtual machines each with a guest OS on a hypervisor, versus containers sharing one host kernel via a container runtime">
+            <text x="180" y="20" class="mono" font-size="12" font-weight="700" fill="#a01f1f" text-anchor="middle">Virtual Machines</text>
+            <text x="540" y="20" class="mono" font-size="12" font-weight="700" fill="#1f6f6f" text-anchor="middle">Containers</text>
+            <!-- VM side -->
+            <g>
+              <rect x="30" y="30" width="140" height="70" rx="8" fill="#f6dada" stroke="#a01f1f"/>
+              <text x="100" y="48" font-size="10.5" font-weight="700" fill="#a01f1f" text-anchor="middle">App A</text>
+              <text x="100" y="64" class="mono" font-size="8.5" fill="#4a443c" text-anchor="middle">bins / libs</text>
+              <rect x="40" y="70" width="120" height="22" rx="5" fill="#e8b9b9"/><text x="100" y="85" class="mono" font-size="9" fill="#7a1f1f" text-anchor="middle">Guest OS + kernel</text>
+              <rect x="190" y="30" width="140" height="70" rx="8" fill="#f6dada" stroke="#a01f1f"/>
+              <text x="260" y="48" font-size="10.5" font-weight="700" fill="#a01f1f" text-anchor="middle">App B</text>
+              <text x="260" y="64" class="mono" font-size="8.5" fill="#4a443c" text-anchor="middle">bins / libs</text>
+              <rect x="200" y="70" width="120" height="22" rx="5" fill="#e8b9b9"/><text x="260" y="85" class="mono" font-size="9" fill="#7a1f1f" text-anchor="middle">Guest OS + kernel</text>
+              <rect x="30" y="108" width="300" height="30" rx="6" fill="#1c1a17"/><text x="180" y="128" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">Hypervisor</text>
+              <rect x="30" y="144" width="300" height="28" rx="6" fill="#d6ccba"/><text x="180" y="163" font-size="10.5" font-weight="600" fill="#4a443c" text-anchor="middle">Host OS + kernel</text>
+              <rect x="30" y="178" width="300" height="26" rx="6" fill="#bcae95"/><text x="180" y="196" font-size="10.5" font-weight="600" fill="#3a342b" text-anchor="middle">Physical hardware</text>
+            </g>
+            <!-- Container side -->
+            <g>
+              <rect x="390" y="30" width="95" height="62" rx="8" fill="#e3efe0" stroke="#1f6f6f"/>
+              <text x="437" y="50" font-size="10.5" font-weight="700" fill="#1f6f6f" text-anchor="middle">App A</text>
+              <text x="437" y="66" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">bins/libs</text>
+              <text x="437" y="80" class="mono" font-size="8" fill="#3d7a2e" text-anchor="middle">no kernel</text>
+              <rect x="495" y="30" width="95" height="62" rx="8" fill="#e3efe0" stroke="#1f6f6f"/>
+              <text x="542" y="50" font-size="10.5" font-weight="700" fill="#1f6f6f" text-anchor="middle">App B</text>
+              <text x="542" y="66" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">bins/libs</text>
+              <text x="542" y="80" class="mono" font-size="8" fill="#3d7a2e" text-anchor="middle">no kernel</text>
+              <rect x="600" y="30" width="95" height="62" rx="8" fill="#e3efe0" stroke="#1f6f6f"/>
+              <text x="647" y="50" font-size="10.5" font-weight="700" fill="#1f6f6f" text-anchor="middle">App C</text>
+              <text x="647" y="66" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">bins/libs</text>
+              <text x="647" y="80" class="mono" font-size="8" fill="#3d7a2e" text-anchor="middle">no kernel</text>
+              <rect x="390" y="100" width="305" height="30" rx="6" fill="#1f6f6f"/><text x="542" y="120" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">Container runtime (e.g. containerd)</text>
+              <rect x="390" y="136" width="305" height="36" rx="6" fill="#3a6a3a"/><text x="542" y="159" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">ONE shared Host OS kernel</text>
+              <rect x="390" y="178" width="305" height="26" rx="6" fill="#bcae95"/><text x="542" y="196" font-size="10.5" font-weight="600" fill="#3a342b" text-anchor="middle">Physical hardware</text>
+            </g>
+            <text x="360" y="232" class="serif" font-size="13" font-style="italic" fill="#4a443c" text-anchor="middle">No per-app guest OS means containers start in milliseconds, weigh megabytes not gigabytes,</text>
+            <text x="360" y="252" class="serif" font-size="13" font-style="italic" fill="#4a443c" text-anchor="middle">and you can pack far more of them onto the same hardware.</text>
+          </svg>
+          <div class="viz-note">A VM's unit of isolation is a whole emulated computer; a container's is a process group
+            fenced off by the kernel. That single architectural choice explains every practical difference below.</div>
+        </div>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Dimension</th><th>Virtual Machine</th><th>Container</th></tr></thead>
+            <tbody>
+              <tr><td>Isolates by</td><td>Emulating hardware (hypervisor)</td><td>Kernel features (namespaces + cgroups)</td></tr>
+              <tr><td>OS per instance</td><td>Full guest OS + own kernel</td><td>Shares the host kernel; no guest OS</td></tr>
+              <tr><td>Size</td><td>Gigabytes</td><td>Megabytes</td></tr>
+              <tr><td>Start time</td><td>Seconds to minutes (boot an OS)</td><td>Milliseconds (start a process)</td></tr>
+              <tr><td>Density per host</td><td>Tens</td><td>Hundreds to thousands</td></tr>
+              <tr><td>Isolation strength</td><td>Stronger (separate kernels)</td><td>Weaker (shared kernel) &mdash; a real tradeoff</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="box gotcha"><span class="tag">The shared-kernel tradeoff</span>
+          <p>Sharing one kernel is what makes containers light <em>and</em> is their main security caveat: a kernel-level
+            escape affects every container on the host, whereas VMs have a thicker boundary. This is why multi-tenant
+            platforms often run containers <em>inside</em> VMs, and why container security (&sect;17, and the security
+            chapter) focuses on least privilege, non-root users, and dropping capabilities. Containers are isolation,
+            not a hard security sandbox by default.</p>
+        </div>
+      </section>
+
+      <!-- 3 -->
+      <section id="s3">
+        <div class="sec-head">
+          <div class="sec-num">03</div>
+          <h2>What a Container Actually Is</h2>
+        </div>
+        <p>Demystified: <strong>a container is just a normal Linux process (or a few) that the kernel has been told to
+          isolate.</strong> There is no "container" object in the kernel &mdash; the magic is three older Linux features
+          combined so a process <em>believes</em> it has a machine to itself. Understanding these three removes all the
+          mystery and explains every limit and behavior you'll hit.</p>
+
+        <div class="viz">
+          <div class="viz-cap">The three ingredients</div>
+          <div class="viz-title">A container = namespaces + cgroups + a filesystem image</div>
+          <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Three pillars of a container: namespaces for what it can see, cgroups for what it can use, and a union filesystem for what it runs on">
+            <rect x="20" y="30" width="210" height="150" rx="12" fill="#f7e9e2" stroke="#bc4b2b"/>
+            <text x="125" y="56" font-size="14" font-weight="700" fill="#8f3415" text-anchor="middle">Namespaces</text>
+            <text x="125" y="74" class="mono" font-size="10" fill="#bc4b2b" text-anchor="middle">WHAT IT CAN SEE</text>
+            <g font-size="10.5" fill="#4a443c"><text x="40" y="98">&middot; pid &mdash; its own process tree</text><text x="40" y="118">&middot; net &mdash; its own interfaces</text><text x="40" y="138">&middot; mnt &mdash; its own mounts</text><text x="40" y="158">&middot; uts/ipc/user &mdash; hostname, &hellip;</text></g>
+            <rect x="255" y="30" width="210" height="150" rx="12" fill="#e3efe0" stroke="#1f6f6f"/>
+            <text x="360" y="56" font-size="14" font-weight="700" fill="#1f6f6f" text-anchor="middle">cgroups</text>
+            <text x="360" y="74" class="mono" font-size="10" fill="#1f6f6f" text-anchor="middle">WHAT IT CAN USE</text>
+            <g font-size="10.5" fill="#4a443c"><text x="275" y="98">&middot; CPU shares / quota</text><text x="275" y="118">&middot; memory limit</text><text x="275" y="138">&middot; I/O bandwidth</text><text x="275" y="158">&middot; pids count</text></g>
+            <rect x="490" y="30" width="210" height="150" rx="12" fill="#fbf2dc" stroke="#9a7400"/>
+            <text x="595" y="56" font-size="14" font-weight="700" fill="#9a7400" text-anchor="middle">Union FS</text>
+            <text x="595" y="74" class="mono" font-size="10" fill="#9a7400" text-anchor="middle">WHAT IT RUNS ON</text>
+            <g font-size="10.5" fill="#4a443c"><text x="510" y="98">&middot; the image's layers</text><text x="510" y="118">&middot; read-only base + libs</text><text x="510" y="138">&middot; thin writable top layer</text><text x="510" y="158">&middot; its private root &ldquo;/&rdquo;</text></g>
+            <text x="360" y="212" class="serif" font-size="13" font-style="italic" fill="#4a443c" text-anchor="middle">Combine the three and an ordinary process is convinced it owns the machine &mdash; that illusion is a container.</text>
+          </svg>
+        </div>
+
+        <h3>1 · Namespaces &mdash; the illusion of being alone</h3>
+        <p>A <strong>namespace</strong> partitions a global kernel resource so the process only sees its own slice. The
+          PID namespace makes the container's main process believe it's PID 1 with no siblings; the network namespace
+          gives it its own interfaces and ports; the mount namespace gives it its own view of the filesystem. From
+          inside, it looks like a private machine. From the host, it's just processes with extra labels &mdash;
+          <code>ps</code> on the host sees them all.</p>
+
+        <h3>2 · cgroups &mdash; enforcing limits</h3>
+        <p>Namespaces hide the rest of the system; <strong>control groups (cgroups)</strong> cap how much the process may
+          consume &mdash; CPU, memory, I/O, process count. This is what stops one container from starving its neighbors,
+          and it's exactly the mechanism Kubernetes drives when you set resource <em>requests</em> and <em>limits</em>
+          (&sect;17). Exceed a memory limit and the kernel's OOM killer terminates the container &mdash; the famous
+          <code>OOMKilled</code> status.</p>
+
+        <h3>3 · A filesystem image &mdash; its own root</h3>
+        <p>Finally the process needs files: its own <code>/</code> with a runtime, libraries, and your binary. That comes
+          from the <strong>image</strong>, layered onto the mount namespace as the container's root filesystem (&sect;04).
+          The process can't see the host's files, only the image's &mdash; plus whatever you explicitly mount in (&sect;09).</p>
+
+        <div class="box note"><span class="tag">Why "Linux containers" specifically</span>
+          <p>Namespaces and cgroups are <em>Linux kernel</em> features, so containers are natively a Linux technology.
+            Docker on macOS or Windows quietly runs a lightweight Linux VM and your containers live inside it &mdash; which
+            is why a "container" on your Mac is really Linux-in-a-VM under the hood. The artifact is portable; the kernel
+            features it needs are Linux's.</p>
+        </div>
+      </section>
+
+      <div class="part-label">Part II · Docker — Images &amp; Containers</div>
+
+      <!-- 4 -->
+      <section id="s4">
+        <div class="sec-head"><div class="sec-num">04</div><h2>Images, Layers &amp; the Union Filesystem</h2></div>
+        <p>Two words get confused constantly, so nail them first. An <strong>image</strong> is the immutable, on-disk
+          <em>template</em> &mdash; a packaged filesystem plus metadata (what to run, which ports, env). A
+          <strong>container</strong> is a <em>running instance</em> of an image &mdash; the image brought to life as an
+          isolated process (&sect;03). The relationship is exactly class&ndash;to&ndash;object: one image, many containers.</p>
+
+        <div class="analogy">An image is to a container what a class is to an object, or what a baked, frozen meal is to
+          the same meal reheated on your plate. You build the image once; you run many identical containers from it.</div>
+
+        <h3>Images are stacks of read-only layers</h3>
+        <p>The clever part is <em>how</em> an image stores its filesystem: as a stack of <strong>layers</strong>, each
+          one a set of file changes, stacked by a <strong>union filesystem</strong> that merges them into a single
+          coherent <code>/</code>. Each instruction in your build adds one layer (&sect;05). Layers are immutable and
+          <strong>content-addressed</strong>, so identical layers are stored once and <em>shared</em> across images &mdash;
+          if ten images use the same base, that base lives on disk and travels over the network only once.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Union filesystem</div>
+          <div class="viz-title">Read-only layers shared across containers, each with its own thin writable top</div>
+          <svg viewBox="0 0 720 270" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A stack of read-only image layers shared by two containers, each adding its own writable layer on top via copy-on-write">
+            <text x="20" y="22" class="mono" font-size="11" font-weight="700" fill="#9a7400">IMAGE = read-only layers (shared)</text>
+            <rect x="20" y="32" width="300" height="26" rx="5" fill="#fbf2dc" stroke="#9a7400"/><text x="34" y="50" class="mono" font-size="10" fill="#7a5a1e">L4  COPY app binary           +2 MB</text>
+            <rect x="20" y="62" width="300" height="26" rx="5" fill="#fbf2dc" stroke="#9a7400"/><text x="34" y="80" class="mono" font-size="10" fill="#7a5a1e">L3  pip/go install deps      +40 MB</text>
+            <rect x="20" y="92" width="300" height="26" rx="5" fill="#fbf2dc" stroke="#9a7400"/><text x="34" y="110" class="mono" font-size="10" fill="#7a5a1e">L2  apt-get runtime libs     +25 MB</text>
+            <rect x="20" y="122" width="300" height="26" rx="5" fill="#f0e6cc" stroke="#9a7400"/><text x="34" y="140" class="mono" font-size="10" fill="#7a5a1e">L1  base image (e.g. debian) 50 MB</text>
+            <text x="170" y="166" class="serif" font-size="11" font-style="italic" fill="#4a443c" text-anchor="middle">these four layers are stored once &amp; shared</text>
+
+            <!-- two containers -->
+            <text x="500" y="22" class="mono" font-size="11" font-weight="700" fill="#1f6f6f">CONTAINERS add a writable top</text>
+            <rect x="400" y="40" width="140" height="24" rx="5" fill="#e3efe0" stroke="#1f6f6f"/><text x="470" y="57" class="mono" font-size="10" fill="#1f6f6f" text-anchor="middle">writable (C1)</text>
+            <rect x="560" y="40" width="140" height="24" rx="5" fill="#e3efe0" stroke="#1f6f6f"/><text x="630" y="57" class="mono" font-size="10" fill="#1f6f6f" text-anchor="middle">writable (C2)</text>
+            <defs><marker id="ua" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#9a7400"/></marker></defs>
+            <path d="M470 64 V96 C470 110 360 110 322 96" stroke="#9a7400" stroke-width="1.3" fill="none" stroke-dasharray="3 3" marker-end="url(#ua)"/>
+            <path d="M630 64 V100 C630 116 360 116 322 100" stroke="#9a7400" stroke-width="1.3" fill="none" stroke-dasharray="3 3" marker-end="url(#ua)"/>
+            <text x="550" y="92" font-size="10" fill="#4a443c">both share the same</text>
+            <text x="550" y="108" font-size="10" fill="#4a443c">read-only layers below</text>
+
+            <text x="20" y="200" class="mono" font-size="11" font-weight="700" fill="#bc4b2b">copy-on-write</text>
+            <text x="20" y="220" font-size="11.5" fill="#4a443c">A container reads straight from the shared layers. The instant it <tspan font-weight="700">modifies</tspan> a file,</text>
+            <text x="20" y="238" font-size="11.5" fill="#4a443c">that file is copied up into its own writable layer &mdash; the image underneath is never touched.</text>
+            <text x="20" y="258" font-size="11" font-style="italic" fill="#a01f1f">That writable layer is ephemeral: delete the container and those changes vanish (&sect;09 for persistence).</text>
+          </svg>
+          <div class="viz-note">Layer sharing is why pulling your second image based on the same runtime is nearly instant,
+            and why image size is dominated by your base choice (&sect;07).</div>
+        </div>
+
+        <div class="box gotcha"><span class="tag">The writable layer is not storage</span>
+          <p>Anything a container writes to its own filesystem dies with the container. Logs, uploads, database files
+            written "inside" are gone on restart. Persistent data must live in a <strong>volume</strong> (&sect;09) or an
+            external service. This ephemerality is a feature &mdash; it's what makes containers disposable and
+            replaceable &mdash; but it's the most common beginner trap.</p>
+        </div>
+      </section>
+
+      <!-- 5 -->
+      <section id="s5">
+        <div class="sec-head"><div class="sec-num">05</div><h2>The Dockerfile</h2></div>
+        <p>A <strong>Dockerfile</strong> is the recipe that builds an image: a sequence of instructions, executed top to
+          bottom, <em>each producing one layer</em> (&sect;04). <code>docker build</code> reads it, runs each step, and
+          caches the result. Because the file is plain text in your repo, your build is reproducible and reviewable &mdash;
+          the environment becomes code. Here is the same web service containerized in Go and in Python:</p>
+
+        <div class="codeblock" data-cb>
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div>
+            <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-go">&#9679;</span> Go</button><button data-lang="py"><span class="lang-py">&#9679;</span> Python</button></div></div>
+          <div class="code-panel on" data-panel="go"><pre><code class="language-dockerfile"># FROM picks the base image — the first (bottom) layer. Pin a version, never :latest
+FROM golang:1.22
+
+# WORKDIR sets the working dir for the instructions that follow (and at runtime)
+WORKDIR /app
+
+# Copy dependency manifests FIRST and download — this layer caches across code edits (§7)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Now copy the source and build the binary
+COPY . .
+RUN go build -o /server ./cmd/server
+
+# Document the port the app listens on (metadata; publishing happens at run time §8)
+EXPOSE 8080
+
+# CMD is the default command run when a container starts from this image
+CMD ["/server"]</code></pre></div>
+          <div class="code-panel" data-panel="py"><pre><code class="language-dockerfile"># Pin a slim base — smaller and fewer CVEs than the full image
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy the manifest FIRST so the dependency layer caches across code edits (§7)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Then copy the application code
+COPY . .
+
+EXPOSE 8080
+
+# Exec form (JSON array) — runs the process directly as PID 1, so signals work (§ graceful shutdown)
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]</code></pre></div>
+        </div>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Instruction</th><th>What it does</th></tr></thead>
+            <tbody>
+              <tr><td><code>FROM</code></td><td>The base image &mdash; the starting layer. Everything builds on it.</td></tr>
+              <tr><td><code>WORKDIR</code></td><td>Sets (and creates) the current directory for later steps and at runtime.</td></tr>
+              <tr><td><code>COPY</code> / <code>ADD</code></td><td>Copy files from your build context into the image. Prefer <code>COPY</code>; <code>ADD</code> has surprising URL/tar behavior.</td></tr>
+              <tr><td><code>RUN</code></td><td>Execute a command at <em>build</em> time (install deps, compile) &mdash; bakes the result into a layer.</td></tr>
+              <tr><td><code>ENV</code></td><td>Set environment variables baked into the image (config defaults &mdash; &sect;16).</td></tr>
+              <tr><td><code>EXPOSE</code></td><td>Documents the listening port. Informational; doesn't publish it (&sect;08).</td></tr>
+              <tr><td><code>ENTRYPOINT</code> / <code>CMD</code></td><td>What runs when the container starts. <code>ENTRYPOINT</code> = the executable, <code>CMD</code> = default args.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="box note"><span class="tag">Build context &amp; <code>RUN</code> vs <code>CMD</code></span>
+          <p>Two frequent confusions. The <strong>build context</strong> is the directory you point <code>docker build</code>
+            at &mdash; everything in it is sent to the builder, so a bloated context (e.g. <code>node_modules</code>, a
+            <code>.git</code> folder) slows builds; trim it with <code>.dockerignore</code> (&sect;07). And <strong><code>RUN</code>
+            executes at build time</strong> (baked into the image) while <strong><code>CMD</code>/<code>ENTRYPOINT</code>
+            execute at run time</strong> (when a container starts). Mixing them up is a classic early mistake.</p>
+        </div>
+      </section>
+
+      <!-- 6 -->
+      <section id="s6">
+        <div class="sec-head"><div class="sec-num">06</div><h2>Multi-Stage Builds</h2></div>
+        <p>The single most impactful technique for production images. The problem: <em>building</em> needs heavy tools
+          (compilers, the full SDK, build-time dev dependencies) that the <em>running</em> app doesn't. Ship them and your
+          image is huge and full of attack surface. A <strong>multi-stage build</strong> uses one stage to build and a
+          second, clean stage that <em>copies only the finished artifact</em> &mdash; the toolchain is discarded.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Multi-stage</div>
+          <div class="viz-title">Build in a heavy stage, copy only the artifact into a tiny final image</div>
+          <svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A large builder stage with full SDK producing a binary, with only that binary copied into a small final runtime stage, the builder discarded">
+            <text x="180" y="22" class="mono" font-size="11" font-weight="700" fill="#a01f1f" text-anchor="middle">STAGE 1 · builder (discarded)</text>
+            <rect x="30" y="32" width="300" height="150" rx="12" fill="#f6dada" stroke="#a01f1f"/>
+            <text x="180" y="56" font-size="12" font-weight="700" fill="#a01f1f" text-anchor="middle">golang:1.22 / python full</text>
+            <g class="mono" font-size="10" fill="#4a443c"><text x="50" y="80">+ compiler / full SDK</text><text x="50" y="100">+ build dependencies</text><text x="50" y="120">+ your source tree</text><text x="50" y="140">+ intermediate objects</text></g>
+            <rect x="70" y="150" width="220" height="22" rx="5" fill="#1c1a17"/><text x="180" y="166" class="mono" font-size="10" fill="#7fd1c4" text-anchor="middle">/server (the only keeper)</text>
+            <text x="180" y="200" font-size="11" font-style="italic" fill="#a01f1f" text-anchor="middle">~900 MB &mdash; thrown away after build</text>
+
+            <defs><marker id="ma" markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 Z" fill="#1f6f6f"/></marker></defs>
+            <path d="M332 161 H388" stroke="#1f6f6f" stroke-width="2.4" marker-end="url(#ma)"/>
+            <text x="360" y="150" class="mono" font-size="9" fill="#1f6f6f" text-anchor="middle">COPY --from</text>
+
+            <text x="540" y="22" class="mono" font-size="11" font-weight="700" fill="#1f6f6f" text-anchor="middle">STAGE 2 · final (shipped)</text>
+            <rect x="400" y="92" width="300" height="90" rx="12" fill="#e3efe0" stroke="#1f6f6f"/>
+            <text x="550" y="116" font-size="12" font-weight="700" fill="#1f6f6f" text-anchor="middle">distroless / alpine</text>
+            <rect x="440" y="128" width="220" height="22" rx="5" fill="#1c1a17"/><text x="550" y="144" class="mono" font-size="10" fill="#7fd1c4" text-anchor="middle">/server</text>
+            <text x="550" y="172" font-size="11" font-style="italic" fill="#3d7a2e" text-anchor="middle">~15 MB &mdash; binary + minimal runtime only</text>
+          </svg>
+        </div>
+
+        <div class="codeblock" data-cb>
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div>
+            <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-go">&#9679;</span> Go</button><button data-lang="py"><span class="lang-py">&#9679;</span> Python</button></div></div>
+          <div class="code-panel on" data-panel="go"><pre><code class="language-dockerfile"># ---- Stage 1: build with the full Go toolchain ----
+FROM golang:1.22 AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# static binary, no libc dependency — perfect for a scratch/distroless final image
+RUN CGO_ENABLED=0 go build -o /server ./cmd/server
+
+# ---- Stage 2: tiny runtime, no compiler, non-root ----
+FROM gcr.io/distroless/static:nonroot
+COPY --from=builder /server /server   # copy ONLY the artifact across stages
+EXPOSE 8080
+USER nonroot:nonroot                  # never run as root (§17, security)
+ENTRYPOINT ["/server"]
+# Result: a ~10-15 MB image with no shell, no package manager, minimal CVEs</code></pre></div>
+          <div class="code-panel" data-panel="py"><pre><code class="language-dockerfile"># ---- Stage 1: install deps into a venv with build tools available ----
+FROM python:3.11 AS builder
+WORKDIR /app
+RUN python -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt   # may compile native wheels here
+
+# ---- Stage 2: slim runtime, copy the ready venv, run non-root ----
+FROM python:3.11-slim
+COPY --from=builder /venv /venv          # copy ONLY the built virtualenv
+ENV PATH="/venv/bin:$PATH"
+WORKDIR /app
+COPY . .
+RUN useradd -m app && chown -R app /app
+USER app                                 # non-root (§17)
+EXPOSE 8080
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]</code></pre></div>
+        </div>
+        <p class="code-cap">Go compiles to a single static binary, so the final stage can be near-empty (distroless/scratch).
+          Python needs the interpreter, so the win comes from copying a pre-built virtualenv into a <code>-slim</code>
+          base instead of carrying the compilers.</p>
+
+        <div class="box key"><span class="tag">Why this matters in production</span>
+          <p>Smaller images pull faster (quicker autoscaling and rollouts &mdash; &sect;18), cost less to store and
+            transfer, and shrink the attack surface dramatically &mdash; a distroless image has no shell for an attacker
+            to use. Multi-stage builds are the default for any serious service image.</p>
+        </div>
+      </section>
+
+      <!-- 7 -->
+      <section id="s7">
+        <div class="sec-head"><div class="sec-num">07</div><h2>Image Optimization &amp; Layer Caching</h2></div>
+        <p>Two levers make builds fast and images lean, and both follow directly from the layer model (&sect;04). The
+          first is <strong>cache ordering</strong>; the second is <strong>base-image choice</strong> plus pruning what
+          you copy in.</p>
+
+        <h3>Order instructions from least- to most-frequently-changed</h3>
+        <p>Docker caches each layer and reuses it on the next build <em>as long as that instruction and everything before
+          it are unchanged</em>. The moment one layer's inputs change, that layer and <em>every layer after it</em> are
+          rebuilt. So the golden rule is: put the things that rarely change (installing dependencies) <em>before</em> the
+          things that change every commit (copying your source). That's why every Dockerfile above copies the dependency
+          manifest and installs <em>before</em> copying the full source &mdash; you edit code constantly but dependencies
+          rarely, so the expensive install layer stays cached.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Cache invalidation</div>
+          <div class="viz-title">Change one layer and everything below it rebuilds</div>
+          <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Two build orderings: deps-before-code keeps the dependency layer cached on a code change, code-before-deps busts it">
+            <text x="180" y="20" class="mono" font-size="11" font-weight="700" fill="#3d7a2e" text-anchor="middle">deps BEFORE code &mdash; good</text>
+            <rect x="40" y="30" width="280" height="24" rx="5" fill="#f6dada" stroke="#a01f1f"/><text x="54" y="47" class="mono" font-size="10" fill="#a01f1f">COPY . .  + build      &#8635; rebuilt</text>
+            <rect x="40" y="58" width="280" height="24" rx="5" fill="#e3efe0" stroke="#1f6f6f"/><text x="54" y="75" class="mono" font-size="10" fill="#3d7a2e">RUN install deps       &#10003; CACHED</text>
+            <rect x="40" y="86" width="280" height="24" rx="5" fill="#e3efe0" stroke="#1f6f6f"/><text x="54" y="103" class="mono" font-size="10" fill="#3d7a2e">COPY manifest          &#10003; CACHED</text>
+            <rect x="40" y="114" width="280" height="24" rx="5" fill="#e3efe0" stroke="#1f6f6f"/><text x="54" y="131" class="mono" font-size="10" fill="#3d7a2e">FROM base              &#10003; CACHED</text>
+            <text x="180" y="160" font-size="11" font-style="italic" fill="#3d7a2e" text-anchor="middle">edit code &rarr; only the top layer rebuilds (seconds)</text>
+
+            <text x="540" y="20" class="mono" font-size="11" font-weight="700" fill="#a01f1f" text-anchor="middle">code BEFORE deps &mdash; bad</text>
+            <rect x="400" y="30" width="280" height="24" rx="5" fill="#f6dada" stroke="#a01f1f"/><text x="414" y="47" class="mono" font-size="10" fill="#a01f1f">RUN install deps       &#8635; rebuilt</text>
+            <rect x="400" y="58" width="280" height="24" rx="5" fill="#f6dada" stroke="#a01f1f"/><text x="414" y="75" class="mono" font-size="10" fill="#a01f1f">COPY . .               &#8635; busts cache</text>
+            <rect x="400" y="86" width="280" height="24" rx="5" fill="#e3efe0" stroke="#1f6f6f"/><text x="414" y="103" class="mono" font-size="10" fill="#3d7a2e">FROM base              &#10003; CACHED</text>
+            <text x="540" y="135" font-size="11" font-style="italic" fill="#a01f1f" text-anchor="middle">edit code &rarr; deps reinstall every time (minutes)</text>
+          </svg>
+        </div>
+
+        <h3>Pick a small base &amp; copy less</h3>
+        <ul>
+          <li><strong>Base image</strong> &mdash; <code>-slim</code> variants drop hundreds of MB; <strong>alpine</strong>
+            is tiny (musl libc, watch for compatibility); <strong>distroless</strong> ships only your app and its runtime
+            with no shell or package manager (most secure). Choose the smallest that runs your app.</li>
+          <li><strong><code>.dockerignore</code></strong> &mdash; keeps junk out of the build context and the image
+            (faster builds, smaller images, no secrets leaking in).</li>
+          <li><strong>Combine related <code>RUN</code>s &amp; clean up in the same layer</strong> &mdash; deleting a cache
+            in a <em>later</em> layer doesn't shrink the image (the bytes still live in the earlier layer); clean within
+            the same <code>RUN</code>.</li>
+        </ul>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">.dockerignore &mdash; trim the build context</span></div>
+          <pre><code class="language-bash">.git
+node_modules
+*.md
+.env            # never bake secrets into an image (§16)
+**/__pycache__
+*.log
+dist/
+.vscode/</code></pre>
+        </div>
+
+        <div class="box gotcha"><span class="tag">Cleanup must be in the same layer</span>
+          <p><code>RUN apt-get install ...</code> on one line and <code>RUN rm -rf /var/lib/apt/lists/*</code> on the next
+            does <em>not</em> reduce size &mdash; the files still exist in the install layer. Chain them:
+            <code>RUN apt-get update &amp;&amp; apt-get install -y X &amp;&amp; rm -rf /var/lib/apt/lists/*</code> so the
+            cleanup happens before the layer is sealed.</p>
+        </div>
+      </section>
+
+      <!-- 8 -->
+      <section id="s8">
+        <div class="sec-head"><div class="sec-num">08</div><h2>Runtime, Registries &amp; Tags</h2></div>
+        <p>You've built an image &mdash; now run it, share it, and version it. Three commands cover 90% of daily use, and
+          three concepts (registry, tag, runtime) frame the lifecycle.</p>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">the everyday Docker lifecycle</span></div>
+          <pre><code class="language-bash"># BUILD an image from the Dockerfile in . and name:tag it
+docker build -t myapp:1.4.0 .
+
+# RUN a container from it:
+#   -d detached  -p host:container publishes a port  -e sets an env var (§16)
+docker run -d -p 8080:8080 -e DATABASE_URL=$DB myapp:1.4.0
+
+# Inspect & debug
+docker ps                      # running containers
+docker logs -f &lt;id&gt;            # stream stdout/stderr (your app should log there §logging)
+docker exec -it &lt;id&gt; sh        # shell INTO a running container to poke around
+docker stop &lt;id&gt;               # sends SIGTERM, then SIGKILL after a grace period (§graceful shutdown)
+
+# SHARE via a registry
+docker tag  myapp:1.4.0 registry.example.com/team/myapp:1.4.0
+docker push registry.example.com/team/myapp:1.4.0     # upload
+docker pull registry.example.com/team/myapp:1.4.0     # download (what prod/K8s does)</code></pre>
+        </div>
+
+        <h3>Registry, repository, tag</h3>
+        <p>A <strong>registry</strong> is the server that stores images (Docker Hub, GitHub Container Registry, AWS ECR,
+          Google Artifact Registry). A <strong>repository</strong> is a named image within it; a <strong>tag</strong>
+          is a label for a specific version (<code>myapp:1.4.0</code>). Pushing uploads your layers; pulling downloads
+          them &mdash; and thanks to content-addressed layers (&sect;04), only layers the registry doesn't already have
+          move over the wire. This push/pull cycle is the hand-off between your build (&sect;19) and where the image
+          runs (Part IV).</p>
+
+        <div class="viz">
+          <div class="viz-cap">The image lifecycle</div>
+          <div class="viz-title">Build once, push to a registry, pull anywhere to run</div>
+          <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Dockerfile builds an image, which is pushed to a registry, then pulled and run by CI, staging, and production">
+            <defs><marker id="ba" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f3415"/></marker></defs>
+            <rect x="20" y="50" width="120" height="50" rx="9" fill="#bc4b2b"/><text x="80" y="72" font-size="11.5" font-weight="700" fill="#fff" text-anchor="middle">docker build</text><text x="80" y="89" class="mono" font-size="9" fill="#f4d9cf" text-anchor="middle">Dockerfile</text>
+            <path d="M142 75 H210" stroke="#8f3415" stroke-width="1.8" marker-end="url(#ba)"/><text x="176" y="67" class="mono" font-size="9" fill="#8f3415" text-anchor="middle">push</text>
+            <rect x="212" y="44" width="150" height="62" rx="9" fill="#1c1a17"/><text x="287" y="70" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">Registry</text><text x="287" y="88" class="mono" font-size="9" fill="#cfd2da" text-anchor="middle">stores tagged layers</text>
+            <g stroke="#1f6f6f" stroke-width="1.8" fill="none"><path d="M362 60 C420 40 460 36 520 34" marker-end="url(#ba2)"/><path d="M362 75 H520" marker-end="url(#ba2)"/><path d="M362 90 C420 110 460 114 520 116" marker-end="url(#ba2)"/></g>
+            <defs><marker id="ba2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#1f6f6f"/></marker></defs>
+            <text x="445" y="58" class="mono" font-size="9" fill="#1f6f6f" text-anchor="middle">pull</text>
+            <rect x="522" y="22" width="150" height="26" rx="6" fill="#e3efe0" stroke="#1f6f6f"/><text x="597" y="39" font-size="10.5" font-weight="700" fill="#1f6f6f" text-anchor="middle">CI runs tests</text>
+            <rect x="522" y="62" width="150" height="26" rx="6" fill="#e3efe0" stroke="#1f6f6f"/><text x="597" y="79" font-size="10.5" font-weight="700" fill="#1f6f6f" text-anchor="middle">staging</text>
+            <rect x="522" y="102" width="150" height="26" rx="6" fill="#e3efe0" stroke="#1f6f6f"/><text x="597" y="119" font-size="10.5" font-weight="700" fill="#1f6f6f" text-anchor="middle">production (K8s)</text>
+          </svg>
+        </div>
+
+        <div class="box gotcha"><span class="tag">Never deploy <code>:latest</code></span>
+          <p><code>latest</code> is just a tag that moves; it doesn't mean "newest" and gives you no idea <em>what</em> is
+            running. Two machines pulling <code>:latest</code> a day apart can get different images &mdash; the exact
+            non-reproducibility containers exist to kill. Tag with an immutable version or the git commit SHA
+            (<code>myapp:1.4.0</code>, <code>myapp:git-9f2c1a</code>) so a running container maps to exact source.</p>
+        </div>
+
+        <div class="box note"><span class="tag">OCI: the standard underneath</span>
+          <p>"Docker image" is shorthand &mdash; the format is standardized by the <strong>Open Container Initiative
+            (OCI)</strong>, which is why images built with Docker run under other runtimes (containerd, CRI-O, Podman)
+            and on Kubernetes without Docker installed. You build to a spec, not to one vendor.</p>
+        </div>
+      </section>
+
+      <div class="part-label">Part III · Multi-Container &amp; Local Dev</div>
+
+      <!-- 9 -->
+      <section id="s9">
+        <div class="sec-head"><div class="sec-num">09</div><h2>Networking &amp; Volumes</h2></div>
+        <p>Two needs appear the moment you run more than a toy: containers must <strong>talk to each other</strong>, and
+          some data must <strong>outlive the container</strong>. Docker answers these with networks and volumes &mdash;
+          and both directly address gaps left by the isolation model (&sect;03) and the ephemeral writable layer (&sect;04).</p>
+
+        <h3>Networking &mdash; from isolated to connected</h3>
+        <p>By default each container has its own network namespace, so it can't see others. Put containers on the same
+          <strong>user-defined bridge network</strong> and Docker gives them a private virtual LAN <em>plus</em> built-in
+          DNS: a container reaches another simply by its name (<code>http://db:5432</code>). This is the foundation of
+          service discovery, and it's why Compose (&sect;10) and Kubernetes (&sect;15) let services address each other by
+          name instead of brittle IPs. Separately, <strong>port publishing</strong> (<code>-p 8080:8080</code>) pokes a
+          hole from the host into a container so the outside world can reach it.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Container networking</div>
+          <div class="viz-title">A user-defined network gives name-based discovery; a published port exposes one service</div>
+          <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="An API container and a database container on one bridge network reaching each other by name, with only the API port published to the host">
+            <rect x="60" y="40" width="520" height="130" rx="14" fill="#f3eee4" stroke="#d6ccba"/>
+            <text x="78" y="62" class="mono" font-size="10.5" font-weight="700" fill="#8f3415">bridge network: appnet</text>
+            <rect x="110" y="80" width="150" height="64" rx="10" fill="#e3efe0" stroke="#1f6f6f"/><text x="185" y="104" font-size="12" font-weight="700" fill="#1f6f6f" text-anchor="middle">api</text><text x="185" y="124" class="mono" font-size="9" fill="#4a443c" text-anchor="middle">:8080</text>
+            <rect x="380" y="80" width="150" height="64" rx="10" fill="#e3efe0" stroke="#1f6f6f"/><text x="455" y="104" font-size="12" font-weight="700" fill="#1f6f6f" text-anchor="middle">db</text><text x="455" y="124" class="mono" font-size="9" fill="#4a443c" text-anchor="middle">:5432</text>
+            <defs><marker id="na" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#1f6f6f"/></marker></defs>
+            <path d="M260 112 H378" stroke="#1f6f6f" stroke-width="1.8" marker-end="url(#na)"/><text x="319" y="104" class="mono" font-size="9.5" fill="#1f6f6f" text-anchor="middle">connect to "db"</text>
+            <!-- host + published port -->
+            <rect x="60" y="20" width="180" height="0" /> 
+            <defs><marker id="na2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#bc4b2b"/></marker></defs>
+            <text x="185" y="190" class="mono" font-size="10" fill="#bc4b2b" text-anchor="middle">host :8080 &rarr; api :8080 (published)</text>
+            <path d="M185 80 V40 C185 28 360 28 360 28" stroke="#bc4b2b" stroke-width="1.6" fill="none" stroke-dasharray="4 3" marker-end="url(#na2)"/>
+            <text x="470" y="32" font-size="10.5" fill="#a01f1f">db is NOT published &mdash; private to the network</text>
+          </svg>
+        </div>
+
+        <h3>Volumes &mdash; data that survives</h3>
+        <p>Because a container's writable layer is destroyed with the container (&sect;04), anything that must persist &mdash;
+          a database's files, user uploads &mdash; lives in a <strong>volume</strong>: storage managed by Docker (or the
+          host) and mounted into the container, decoupled from its lifecycle. Delete and recreate the container; the
+          volume and its data remain. There are two flavors: <strong>named volumes</strong> (Docker-managed, the default
+          for real data) and <strong>bind mounts</strong> (a host directory mapped in &mdash; handy in development to
+          live-edit code without rebuilding).</p>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Mechanism</th><th>Use it for</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Named volume</strong> <code>-v dbdata:/var/lib/postgresql/data</code></td><td>Persistent app data managed by Docker &mdash; databases, caches you want to keep.</td></tr>
+              <tr><td><strong>Bind mount</strong> <code>-v ./src:/app/src</code></td><td>Dev-time live reload &mdash; edit on the host, see changes in the container instantly.</td></tr>
+              <tr><td><strong>tmpfs</strong></td><td>Sensitive scratch data kept in RAM only, never written to disk.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="box gotcha"><span class="tag">Stateless containers, stateful volumes</span>
+          <p>Treat containers as disposable and keep all durable state in volumes or external managed services. In
+            Kubernetes especially, the prevailing pattern is <em>stateless</em> app containers (trivially scaled and
+            replaced &mdash; &sect;18) with state pushed to managed databases or persistent volumes. If killing a
+            container loses data, the design has leaked state into the wrong place.</p>
+        </div>
+      </section>
+
+      <!-- 10 -->
+      <section id="s10">
+        <div class="sec-head"><div class="sec-num">10</div><h2>Docker Compose</h2></div>
+        <p>Running a real app means several containers &mdash; API, database, cache, maybe a worker (the task-queue
+          chapter's setup) &mdash; with the right networks, volumes, env, and start order. Wiring that by hand with many
+          <code>docker run</code> commands is tedious and error-prone. <strong>Docker Compose</strong> declares the whole
+          local stack in one YAML file and brings it up with a single command. It's the standard for local development and
+          simple single-host deployments.</p>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">compose.yaml &mdash; an API (your Go or Python service), Postgres, and Redis</span></div>
+          <pre><code class="language-yaml">services:
+  api:
+    build: .                      # build the image from the local Dockerfile (§5/6)
+    ports:
+      - "8080:8080"               # publish to the host (§9)
+    environment:                  # config via env, not baked in (§16)
+      DATABASE_URL: postgres://app:secret@db:5432/app   # reach "db" by name (§9 DNS)
+      REDIS_URL: redis://cache:6379
+    depends_on:
+      db:
+        condition: service_healthy   # wait until the DB passes its healthcheck
+      cache:
+        condition: service_started
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: app
+    volumes:
+      - dbdata:/var/lib/postgresql/data   # named volume = data survives restarts (§9)
+    healthcheck:                          # so depends_on can wait for readiness
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+      retries: 5
+
+  cache:
+    image: redis:7
+
+volumes:
+  dbdata:                          # declared once, referenced above</code></pre>
+        </div>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">running the stack</span></div>
+          <pre><code class="language-bash">docker compose up -d        # build (if needed) + start everything in the background
+docker compose ps           # status of all services
+docker compose logs -f api  # tail one service's logs
+docker compose down         # stop & remove containers + network (volumes kept)
+docker compose down -v      # ...and delete the volumes too (fresh DB)</code></pre>
+        </div>
+
+        <div class="box note"><span class="tag">Compose vs Kubernetes</span>
+          <p>Compose is for <strong>one host</strong> &mdash; superb for local dev and small deployments, but it doesn't
+            schedule across machines, self-heal, or autoscale. The instant you need many nodes, automatic restarts,
+            rolling updates, and horizontal scaling, you've outgrown Compose and want an orchestrator (Part IV). The
+            mental model carries over: a Compose <code>service</code> maps closely to a Kubernetes Deployment + Service.</p>
+        </div>
+
+        <div class="viz">
+          <div class="viz-cap">Where we are</div>
+          <div class="viz-title">From one container to a fleet &mdash; the road into orchestration</div>
+          <svg viewBox="0 0 720 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Progression from a single container, to Compose on one host, to Kubernetes across many nodes">
+            <defs><marker id="pa" markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 Z" fill="#8f3415"/></marker></defs>
+            <rect x="20" y="40" width="180" height="50" rx="10" fill="#f7e9e2" stroke="#bc4b2b"/><text x="110" y="62" font-size="11.5" font-weight="700" fill="#8f3415" text-anchor="middle">1 container</text><text x="110" y="80" class="mono" font-size="9" fill="#4a443c" text-anchor="middle">docker run</text>
+            <path d="M202 65 H258" stroke="#8f3415" stroke-width="1.8" marker-end="url(#pa)"/>
+            <rect x="260" y="40" width="180" height="50" rx="10" fill="#fbf2dc" stroke="#9a7400"/><text x="350" y="62" font-size="11.5" font-weight="700" fill="#9a7400" text-anchor="middle">many, one host</text><text x="350" y="80" class="mono" font-size="9" fill="#4a443c" text-anchor="middle">docker compose</text>
+            <path d="M442 65 H498" stroke="#8f3415" stroke-width="1.8" marker-end="url(#pa)"/>
+            <rect x="500" y="40" width="200" height="50" rx="10" fill="#e3efe0" stroke="#1f6f6f"/><text x="600" y="62" font-size="11.5" font-weight="700" fill="#1f6f6f" text-anchor="middle">fleet, many nodes</text><text x="600" y="80" class="mono" font-size="9" fill="#4a443c" text-anchor="middle">Kubernetes &rarr; Part IV</text>
+          </svg>
+        </div>
+      </section>
+
+      <div class="part-label">Part IV · Kubernetes — Orchestration</div>
+
+      <!-- 11 -->
+      <section id="s11">
+        <div class="sec-head"><div class="sec-num">11</div><h2>Why Orchestration</h2></div>
+        <p>Docker gives you containers; it does not, by itself, run them reliably across many machines. The moment you
+          have dozens of containers on a fleet of servers, a new set of problems appears that no <code>docker run</code>
+          can solve &mdash; and <strong>orchestration</strong> is the layer that solves them. Kubernetes (often "K8s")
+          is the de-facto standard.</p>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>The problem at fleet scale</th><th>What an orchestrator does</th></tr></thead>
+            <tbody>
+              <tr><td>Which machine should each container run on?</td><td><strong>Scheduling</strong> &mdash; places containers on nodes by available CPU/memory.</td></tr>
+              <tr><td>A container (or a whole node) dies at 3am.</td><td><strong>Self-healing</strong> &mdash; restarts crashed containers, reschedules off dead nodes, automatically.</td></tr>
+              <tr><td>Traffic spikes; you need more copies, then fewer.</td><td><strong>Scaling</strong> &mdash; runs N replicas and adds/removes them on demand (&sect;18).</td></tr>
+              <tr><td>Containers come and go; their IPs change.</td><td><strong>Service discovery + load balancing</strong> &mdash; a stable address that fans out to healthy replicas (&sect;15).</td></tr>
+              <tr><td>Ship a new version without downtime.</td><td><strong>Rolling updates &amp; rollback</strong> &mdash; replace replicas gradually, revert on failure (&sect;18).</td></tr>
+              <tr><td>Config &amp; secrets differ per environment.</td><td><strong>Config management</strong> &mdash; inject settings/secrets without rebuilding the image (&sect;16).</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>The core idea: declarative, desired state</h3>
+        <p>The mindset shift that makes Kubernetes click: you don't issue imperative commands ("start a container here").
+          You <strong>declare the desired state</strong> ("I want 5 replicas of this image, reachable on this address")
+          and Kubernetes continuously works to make reality match. If a container dies, actual drops to 4, and a control
+          loop notices the gap and starts another &mdash; without you doing anything. You describe the <em>what</em>;
+          Kubernetes handles the <em>how</em> and keeps it true.</p>
+
+        <div class="analogy">Imperative is telling a driver every turn. Declarative is giving a destination to a
+          self-correcting autopilot: drift off course &mdash; a crash, a dead node &mdash; and it steers back on its own,
+          continuously, without new instructions.</div>
+
+        <div class="box key"><span class="tag">Reconciliation in one line</span>
+          <p>Everything in Kubernetes is a control loop comparing <strong>desired state</strong> (what you declared) to
+            <strong>actual state</strong> (what's running) and taking action to close the gap. Internalize that loop and
+            the entire system &mdash; Deployments, scaling, healing, rollouts &mdash; becomes one idea applied over and over.</p>
+        </div>
+      </section>
+
+      <!-- 12 -->
+      <section id="s12">
+        <div class="sec-head"><div class="sec-num">12</div><h2>Kubernetes Architecture</h2></div>
+        <p>A Kubernetes cluster is two kinds of machines: a <strong>control plane</strong> (the brain that decides what
+          should run) and a set of <strong>worker nodes</strong> (the muscle where containers actually run). You talk
+          only to the control plane &mdash; you submit desired state, and the cluster makes it happen.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Cluster anatomy</div>
+          <div class="viz-title">Control plane decides; nodes run; the reconciliation loop connects them</div>
+          <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Control plane with api-server, scheduler, controller-manager and etcd, talking to worker nodes each running a kubelet, kube-proxy and pods">
+            <!-- control plane -->
+            <rect x="20" y="40" width="320" height="170" rx="14" fill="#f3eee4" stroke="#bc4b2b"/>
+            <text x="180" y="62" class="mono" font-size="11" font-weight="700" fill="#8f3415" text-anchor="middle">CONTROL PLANE &mdash; the brain</text>
+            <rect x="40" y="74" width="135" height="44" rx="8" fill="#bc4b2b"/><text x="107" y="92" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">api-server</text><text x="107" y="108" class="mono" font-size="8" fill="#f4d9cf" text-anchor="middle">the one front door</text>
+            <rect x="185" y="74" width="135" height="44" rx="8" fill="#ece4d6" stroke="#bc4b2b"/><text x="252" y="92" font-size="11" font-weight="700" fill="#8f3415" text-anchor="middle">scheduler</text><text x="252" y="108" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">picks a node</text>
+            <rect x="40" y="126" width="135" height="44" rx="8" fill="#ece4d6" stroke="#bc4b2b"/><text x="107" y="144" font-size="10.5" font-weight="700" fill="#8f3415" text-anchor="middle">controller-mgr</text><text x="107" y="160" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">runs the loops</text>
+            <rect x="185" y="126" width="135" height="44" rx="8" fill="#1c1a17"/><text x="252" y="144" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">etcd</text><text x="252" y="160" class="mono" font-size="8" fill="#cfd2da" text-anchor="middle">the source of truth</text>
+            <text x="180" y="194" font-size="10" font-style="italic" fill="#4a443c" text-anchor="middle">all state lives in etcd; everything talks via the api-server</text>
+
+            <!-- nodes -->
+            <rect x="380" y="30" width="320" height="120" rx="12" fill="#f3eee4" stroke="#1f6f6f"/>
+            <text x="540" y="50" class="mono" font-size="10.5" font-weight="700" fill="#1f6f6f" text-anchor="middle">WORKER NODE 1 &mdash; the muscle</text>
+            <rect x="396" y="58" width="120" height="30" rx="6" fill="#1f6f6f"/><text x="456" y="78" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">kubelet</text>
+            <rect x="524" y="58" width="160" height="30" rx="6" fill="#e3efe0" stroke="#1f6f6f"/><text x="604" y="78" font-size="9.5" fill="#1f6f6f" text-anchor="middle">kube-proxy (networking)</text>
+            <rect x="396" y="96" width="84" height="44" rx="7" fill="#dbeede" stroke="#1f6f6f"/><text x="438" y="122" font-size="10" fill="#1f6f6f" text-anchor="middle">pod</text>
+            <rect x="488" y="96" width="84" height="44" rx="7" fill="#dbeede" stroke="#1f6f6f"/><text x="530" y="122" font-size="10" fill="#1f6f6f" text-anchor="middle">pod</text>
+            <rect x="580" y="96" width="104" height="44" rx="7" fill="#dbeede" stroke="#1f6f6f"/><text x="632" y="122" font-size="10" fill="#1f6f6f" text-anchor="middle">pod</text>
+
+            <rect x="380" y="160" width="320" height="58" rx="12" fill="#f3eee4" stroke="#1f6f6f"/>
+            <text x="540" y="180" class="mono" font-size="10.5" font-weight="700" fill="#1f6f6f" text-anchor="middle">WORKER NODE 2</text>
+            <rect x="396" y="188" width="84" height="22" rx="6" fill="#dbeede" stroke="#1f6f6f"/><text x="438" y="203" font-size="9" fill="#1f6f6f" text-anchor="middle">pod</text>
+            <rect x="488" y="188" width="84" height="22" rx="6" fill="#dbeede" stroke="#1f6f6f"/><text x="530" y="203" font-size="9" fill="#1f6f6f" text-anchor="middle">pod</text>
+            <rect x="580" y="188" width="104" height="22" rx="6" fill="#dbeede" stroke="#1f6f6f"/><text x="632" y="203" font-size="9" fill="#1f6f6f" text-anchor="middle">pod</text>
+
+            <defs><marker id="ka" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f3415"/></marker></defs>
+            <path d="M340 110 H378" stroke="#8f3415" stroke-width="1.6" marker-end="url(#ka)"/>
+            <!-- you -->
+            <rect x="20" y="244" width="150" height="40" rx="9" fill="#1c1a17"/><text x="95" y="263" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">you: kubectl apply</text><text x="95" y="278" class="mono" font-size="8.5" fill="#cfd2da" text-anchor="middle">desired state (YAML)</text>
+            <path d="M95 244 V214 C95 200 107 188 107 162" stroke="#8f3415" stroke-width="1.6" fill="none" marker-end="url(#ka)"/>
+            <text x="360" y="266" class="serif" font-size="12.5" font-style="italic" fill="#4a443c">api-server writes your desired state to etcd; controllers + scheduler reconcile it onto nodes; kubelets run the pods.</text>
+            <text x="360" y="300" class="serif" font-size="12.5" font-style="italic" fill="#4a443c">kubelets continuously report actual state back &mdash; closing the loop.</text>
+          </svg>
+        </div>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Component</th><th>Role</th></tr></thead>
+            <tbody>
+              <tr><td class="mono-cell">api-server</td><td>The single entry point. Every read/write of cluster state goes through it (your <code>kubectl</code>, every component).</td></tr>
+              <tr><td class="mono-cell">etcd</td><td>Distributed key-value store holding the entire cluster state &mdash; the source of truth.</td></tr>
+              <tr><td class="mono-cell">scheduler</td><td>Decides which node a new pod runs on, based on resource requests and constraints.</td></tr>
+              <tr><td class="mono-cell">controller-manager</td><td>Runs the reconciliation loops (the Deployment controller, etc.) that drive actual toward desired.</td></tr>
+              <tr><td class="mono-cell">kubelet</td><td>The agent on each node; starts/stops containers and reports their health up to the api-server.</td></tr>
+              <tr><td class="mono-cell">kube-proxy</td><td>Programs node networking so Service virtual IPs route to the right pods (&sect;15).</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="box note"><span class="tag">You rarely run this yourself</span>
+          <p>Managed Kubernetes (GKE, EKS, AKS) operates the control plane for you, so in practice you interact with the
+            cluster purely through the api-server via <code>kubectl</code> and YAML. Knowing the parts still matters for
+            debugging &mdash; "pod stuck in Pending" is usually the scheduler finding no node with room (&sect;17).</p>
+        </div>
+      </section>
+
+      <!-- 13 -->
+      <section id="s13">
+        <div class="sec-head"><div class="sec-num">13</div><h2>Pods</h2></div>
+        <p>The <strong>pod</strong> is Kubernetes' atomic unit &mdash; the smallest thing it schedules. Crucially, you do
+          <em>not</em> deploy containers directly; you deploy pods, and a pod wraps <em>one or more</em> containers that
+          are always co-located on the same node and <strong>share a network namespace and storage</strong>. Containers
+          in a pod reach each other on <code>localhost</code> and can share mounted volumes &mdash; they're a single
+          cooperating unit.</p>
+
+        <p>Usually a pod holds exactly one container (your app). The multi-container case is the <strong>sidecar</strong>
+          pattern: a helper alongside the main app &mdash; a log shipper, a metrics exporter, or a service-mesh proxy
+          (the Envoy from the gRPC chapter's &sect;19). The sidecar shares the pod's network so it can observe or proxy
+          the app's traffic transparently.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Pod internals</div>
+          <div class="viz-title">Containers in a pod share one network &amp; can share storage</div>
+          <svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A pod containing an app container and a sidecar sharing a single IP via localhost and a shared volume">
+            <rect x="120" y="30" width="480" height="130" rx="16" fill="#f3eee4" stroke="#1f6f6f" stroke-dasharray="6 4"/>
+            <text x="360" y="52" class="mono" font-size="11" font-weight="700" fill="#1f6f6f" text-anchor="middle">POD &mdash; shares one IP &amp; lifecycle</text>
+            <rect x="150" y="66" width="180" height="56" rx="10" fill="#e3efe0" stroke="#1f6f6f"/><text x="240" y="90" font-size="12" font-weight="700" fill="#1f6f6f" text-anchor="middle">app container</text><text x="240" y="108" class="mono" font-size="9" fill="#4a443c" text-anchor="middle">:8080</text>
+            <rect x="390" y="66" width="180" height="56" rx="10" fill="#fbf2dc" stroke="#9a7400"/><text x="480" y="90" font-size="12" font-weight="700" fill="#9a7400" text-anchor="middle">sidecar</text><text x="480" y="108" class="mono" font-size="9" fill="#4a443c" text-anchor="middle">log shipper / proxy</text>
+            <defs><marker id="poa" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#1f6f6f"/></marker></defs>
+            <path d="M330 94 H388" stroke="#1f6f6f" stroke-width="1.6" marker-end="url(#poa)"/><text x="359" y="86" class="mono" font-size="8.5" fill="#1f6f6f" text-anchor="middle">localhost</text>
+            <text x="360" y="146" font-size="11" font-style="italic" fill="#4a443c" text-anchor="middle">one pod IP &middot; same node &middot; live and die together</text>
+          </svg>
+        </div>
+
+        <div class="box gotcha"><span class="tag">Pods are mortal and disposable</span>
+          <p>A pod is <em>ephemeral</em>: it can be killed and replaced at any time (node failure, scaling down, a rollout),
+            and the replacement gets a <strong>new IP</strong>. So you never hard-code a pod's IP and never rely on a
+            specific pod surviving. This is exactly why Services exist (&sect;15) &mdash; to provide a stable address in
+            front of a constantly-churning set of pods &mdash; and why you let a Deployment manage pods rather than
+            creating them directly (&sect;14).</p>
+        </div>
+      </section>
+
+      <!-- 14 -->
+      <section id="s14">
+        <div class="sec-head"><div class="sec-num">14</div><h2>Deployments &amp; ReplicaSets</h2></div>
+        <p>You almost never create pods by hand &mdash; a bare pod isn't replaced if it dies. Instead you declare a
+          <strong>Deployment</strong>: "keep N replicas of this pod template running, always." The Deployment manages a
+          <strong>ReplicaSet</strong>, whose one job is to maintain the replica count, and the ReplicaSet manages the
+          pods. This is the reconciliation loop (&sect;11) made concrete: declare 5, a pod dies, actual becomes 4, the
+          controller starts a new one &mdash; self-healing, for free.</p>
+
+        <div class="viz">
+          <div class="viz-cap">The ownership chain</div>
+          <div class="viz-title">Deployment &rarr; ReplicaSet &rarr; Pods, kept at the desired count</div>
+          <svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A Deployment owning a ReplicaSet which maintains three pods; when one dies a replacement is created">
+            <rect x="40" y="80" width="150" height="56" rx="10" fill="#bc4b2b"/><text x="115" y="104" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">Deployment</text><text x="115" y="122" class="mono" font-size="9" fill="#f4d9cf" text-anchor="middle">replicas: 3</text>
+            <defs><marker id="oa" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f3415"/></marker></defs>
+            <path d="M192 108 H248" stroke="#8f3415" stroke-width="1.8" marker-end="url(#oa)"/><text x="220" y="100" class="mono" font-size="8" fill="#8f3415" text-anchor="middle">manages</text>
+            <rect x="250" y="80" width="150" height="56" rx="10" fill="#ece4d6" stroke="#bc4b2b"/><text x="325" y="104" font-size="12" font-weight="700" fill="#8f3415" text-anchor="middle">ReplicaSet</text><text x="325" y="122" class="mono" font-size="9" fill="#4a443c" text-anchor="middle">keeps count = 3</text>
+            <path d="M402 95 C450 70 470 64 510 60" stroke="#8f3415" stroke-width="1.6" fill="none" marker-end="url(#oa)"/>
+            <path d="M402 108 H510" stroke="#8f3415" stroke-width="1.6" marker-end="url(#oa)"/>
+            <path d="M402 121 C450 146 470 152 510 156" stroke="#8f3415" stroke-width="1.6" fill="none" marker-end="url(#oa)"/>
+            <rect x="512" y="40" width="170" height="40" rx="8" fill="#e3efe0" stroke="#1f6f6f"/><text x="597" y="64" font-size="10.5" fill="#1f6f6f" text-anchor="middle">pod &#10003; running</text>
+            <rect x="512" y="88" width="170" height="40" rx="8" fill="#e3efe0" stroke="#1f6f6f"/><text x="597" y="112" font-size="10.5" fill="#1f6f6f" text-anchor="middle">pod &#10003; running</text>
+            <rect x="512" y="136" width="170" height="40" rx="8" fill="#f6dada" stroke="#a01f1f" stroke-dasharray="4 3"/><text x="597" y="155" font-size="10.5" fill="#a01f1f" text-anchor="middle">pod &#10007; died &rarr;</text><text x="597" y="170" font-size="9" font-style="italic" fill="#3d7a2e" text-anchor="middle">controller recreates it</text>
+            <text x="360" y="200" class="serif" font-size="12.5" font-style="italic" fill="#4a443c" text-anchor="middle">Actual fell to 2, desired is 3 &rarr; the gap is detected and a fresh pod is started, automatically.</text>
+          </svg>
+        </div>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">deployment.yaml &mdash; declare 3 replicas of your image</span></div>
+          <pre><code class="language-yaml">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 3                 # desired state: always keep 3 pods
+  selector:
+    matchLabels: { app: api } # which pods this Deployment owns
+  template:                   # the POD TEMPLATE stamped out for each replica
+    metadata:
+      labels: { app: api }
+    spec:
+      containers:
+        - name: api
+          image: registry.example.com/team/myapp:1.4.0   # pinned tag, never :latest (§8)
+          ports:
+            - containerPort: 8080
+          # resources, env, and probes go here too — see §16 and §17</code></pre>
+        </div>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">driving it with kubectl</span></div>
+          <pre><code class="language-bash">kubectl apply -f deployment.yaml     # submit desired state (declarative)
+kubectl get pods -l app=api          # see the 3 pods it created
+kubectl scale deployment/api --replicas=10   # change desired count → controller adds 7
+kubectl rollout status deployment/api        # watch a new version roll out (§18)
+kubectl rollout undo  deployment/api          # roll back to the previous version (§18)</code></pre>
+        </div>
+
+        <div class="box note"><span class="tag">Other workload kinds</span>
+          <p>Deployment is for <em>stateless</em> apps (the common case). Siblings exist for other shapes:
+            <strong>StatefulSet</strong> for stateful apps needing stable identity/storage (databases),
+            <strong>DaemonSet</strong> to run one pod per node (log/metrics agents), and <strong>Job</strong>/<strong>CronJob</strong>
+            for run-to-completion and scheduled tasks (the batch side of the task-queue chapter). Same reconciliation
+            idea, different guarantees.</p>
+        </div>
+      </section>
+
+      <!-- 15 -->
+      <section id="s15">
+        <div class="sec-head"><div class="sec-num">15</div><h2>Services &amp; Ingress</h2></div>
+        <p>Pods are mortal and their IPs churn (&sect;13), so you can't point traffic at a pod. A <strong>Service</strong>
+          is the fix: a <em>stable</em> virtual IP and DNS name in front of a dynamic set of pods, with built-in load
+          balancing. It uses a <strong>label selector</strong> to track "all pods with <code>app: api</code>" &mdash; as
+          pods come and go, the Service's set of healthy endpoints updates automatically, and callers never notice. This
+          is Kubernetes' service discovery, and it's why one service addresses another by name (<code>http://api</code>),
+          exactly as Compose did on one host (&sect;9).</p>
+
+        <div class="viz">
+          <div class="viz-cap">Service abstraction</div>
+          <div class="viz-title">A stable address that load-balances across whatever pods currently match</div>
+          <svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A caller hitting one stable Service IP which load-balances across three matching pods, automatically dropping a dead one">
+            <rect x="20" y="80" width="120" height="50" rx="9" fill="#bc4b2b"/><text x="80" y="102" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">caller</text><text x="80" y="119" class="mono" font-size="8.5" fill="#f4d9cf" text-anchor="middle">http://api</text>
+            <defs><marker id="sa" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#1f6f6f"/></marker></defs>
+            <path d="M142 105 H218" stroke="#1f6f6f" stroke-width="1.8" marker-end="url(#sa)"/>
+            <rect x="220" y="74" width="150" height="62" rx="10" fill="#1f6f6f"/><text x="295" y="100" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">Service: api</text><text x="295" y="118" class="mono" font-size="8.5" fill="#dceeea" text-anchor="middle">stable IP + DNS · selector app=api</text>
+            <g stroke="#1f6f6f" stroke-width="1.5" fill="none"><path d="M372 90 C430 64 460 58 510 54" marker-end="url(#sa)"/><path d="M372 105 H510" marker-end="url(#sa)"/><path d="M372 120 C430 146 460 152 510 156" marker-end="url(#sa)"/></g>
+            <rect x="512" y="36" width="170" height="36" rx="8" fill="#e3efe0" stroke="#1f6f6f"/><text x="597" y="59" font-size="10" fill="#1f6f6f" text-anchor="middle">pod (app=api) &#10003;</text>
+            <rect x="512" y="86" width="170" height="36" rx="8" fill="#e3efe0" stroke="#1f6f6f"/><text x="597" y="109" font-size="10" fill="#1f6f6f" text-anchor="middle">pod (app=api) &#10003;</text>
+            <rect x="512" y="136" width="170" height="36" rx="8" fill="#f1eee8" stroke="#bbb" stroke-dasharray="4 3"/><text x="597" y="159" font-size="10" fill="#999" text-anchor="middle">pod removed &mdash; dropped</text>
+            <text x="360" y="198" class="serif" font-size="12.5" font-style="italic" fill="#4a443c" text-anchor="middle">Only <tspan font-style="normal" class="mono" font-size="11">Ready</tspan> pods (per readiness probe §17) receive traffic; the rest are pulled from rotation.</text>
+          </svg>
+        </div>
+
+        <h3>Service types &amp; Ingress</h3>
+        <p>A <code>ClusterIP</code> Service (the default) is reachable only inside the cluster &mdash; perfect for
+          service-to-service calls. To accept traffic from <em>outside</em>, you either use a <code>LoadBalancer</code>
+          Service (the cloud provisions an external load balancer, one per service &mdash; expensive at scale) or, far
+          more commonly for HTTP, an <strong>Ingress</strong>: a single L7 entry point that routes by host and path to
+          many backing Services. Ingress is where TLS termination and host/path routing live &mdash; the cluster's
+          public front door, and the natural home for the REST edge described in the gRPC chapter (&sect;18&ndash;19 there).</p>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Exposure</th><th>Reachable from</th><th>Use for</th></tr></thead>
+            <tbody>
+              <tr><td><code>ClusterIP</code></td><td>Inside the cluster only</td><td>Service-to-service (most internal services)</td></tr>
+              <tr><td><code>NodePort</code></td><td>A port on every node</td><td>Basic/dev external access</td></tr>
+              <tr><td><code>LoadBalancer</code></td><td>The internet (cloud LB)</td><td>One TCP/UDP service exposed directly</td></tr>
+              <tr><td><strong>Ingress</strong></td><td>The internet, via L7 rules</td><td>HTTP host/path routing + TLS for many services through one entry point</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">service.yaml + ingress.yaml</span></div>
+          <pre><code class="language-yaml">apiVersion: v1
+kind: Service
+metadata:
+  name: api               # other pods reach this as http://api (cluster DNS)
+spec:
+  selector: { app: api }  # front the pods labelled app=api (from the Deployment §14)
+  ports:
+    - port: 80            # the Service port callers use
+      targetPort: 8080    # the containerPort it forwards to
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: edge
+spec:
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api          # route external HTTP to the api Service
+                port: { number: 80 }</code></pre>
+        </div>
+
+        <div class="box note"><span class="tag">The full path of a request</span>
+          <p>External client &rarr; <strong>Ingress</strong> (TLS, host/path routing) &rarr; <strong>Service</strong>
+            (stable IP, load-balance) &rarr; a healthy <strong>Pod</strong> &rarr; your container. Each hop adds one
+            concern &mdash; routing, discovery, the actual work &mdash; and together they're how a packet from the
+            internet reaches one replica of your app.</p>
+        </div>
+      </section>
+
+      <!-- 16 -->
+      <section id="s16">
+        <div class="sec-head"><div class="sec-num">16</div><h2>Config, Secrets &amp; Environment</h2></div>
+        <p>An image must be <strong>environment-agnostic</strong>: the <em>same</em> tested image runs in dev, staging,
+          and prod &mdash; only the configuration differs (database URLs, feature flags, credentials). So configuration
+          is <em>injected at run time</em>, never baked into the image. This is the containerized form of the
+          config-management chapter's core rule, and the classic expression of twelve-factor "config in the environment."
+          Kubernetes provides two objects: <strong>ConfigMaps</strong> for non-secret settings and <strong>Secrets</strong>
+          for sensitive values.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Config injection</div>
+          <div class="viz-title">One image, many environments &mdash; config supplied from outside</div>
+          <svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="One image combined with different ConfigMaps and Secrets to run in dev, staging and production">
+            <rect x="280" y="20" width="160" height="40" rx="9" fill="#1c1a17"/><text x="360" y="38" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">one tested image</text><text x="360" y="53" class="mono" font-size="8.5" fill="#7fd1c4" text-anchor="middle">myapp:1.4.0</text>
+            <defs><marker id="ca" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#1f6f6f"/></marker></defs>
+            <g stroke="#1f6f6f" stroke-width="1.5" fill="none"><path d="M300 60 C220 80 180 92 140 100" marker-end="url(#ca)"/><path d="M360 62 V100" marker-end="url(#ca)"/><path d="M420 60 C500 80 540 92 580 100" marker-end="url(#ca)"/></g>
+            <rect x="40" y="104" width="200" height="58" rx="10" fill="#e3efe0" stroke="#1f6f6f"/><text x="140" y="126" font-size="11" font-weight="700" fill="#1f6f6f" text-anchor="middle">dev</text><text x="140" y="144" class="mono" font-size="8.5" fill="#4a443c" text-anchor="middle">+ ConfigMap-dev + Secret-dev</text>
+            <rect x="260" y="104" width="200" height="58" rx="10" fill="#fbf2dc" stroke="#9a7400"/><text x="360" y="126" font-size="11" font-weight="700" fill="#9a7400" text-anchor="middle">staging</text><text x="360" y="144" class="mono" font-size="8.5" fill="#4a443c" text-anchor="middle">+ ConfigMap-stg + Secret-stg</text>
+            <rect x="480" y="104" width="200" height="58" rx="10" fill="#f7e9e2" stroke="#bc4b2b"/><text x="580" y="126" font-size="11" font-weight="700" fill="#8f3415" text-anchor="middle">production</text><text x="580" y="144" class="mono" font-size="8.5" fill="#4a443c" text-anchor="middle">+ ConfigMap-prod + Secret-prod</text>
+          </svg>
+        </div>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">configmap + secret, injected as env vars</span></div>
+          <pre><code class="language-yaml">apiVersion: v1
+kind: ConfigMap
+metadata: { name: api-config }
+data:
+  LOG_LEVEL: "info"
+  FEATURE_NEW_CHECKOUT: "true"
+---
+apiVersion: v1
+kind: Secret
+metadata: { name: api-secrets }
+type: Opaque
+stringData:                       # plaintext here; stored base64-encoded in etcd
+  DATABASE_URL: "postgres://app:secret@db:5432/app"
+---
+# ...inside the Deployment's container spec (§14):
+#   envFrom:
+#     - configMapRef: { name: api-config }    # all keys → env vars
+#     - secretRef:    { name: api-secrets }   # secret keys → env vars
+# Your app then reads os.Getenv("LOG_LEVEL") / os.environ["DATABASE_URL"] (§config chapter)</code></pre>
+        </div>
+
+        <div class="box gotcha"><span class="tag">Secrets are not encrypted by default</span>
+          <p>A Kubernetes Secret is only <strong>base64-encoded</strong> in etcd, not encrypted &mdash; base64 is
+            encoding, not protection. For real safety enable <em>encryption at rest</em> for etcd, lock down RBAC so few
+            identities can read Secrets, and for sensitive systems use an external manager (Vault, cloud secret stores,
+            or the Secrets Store CSI driver). And never commit real secret values to Git &mdash; the same
+            never-leak-credentials discipline as the security and auth chapters.</p>
+        </div>
+      </section>
+
+      <!-- 17 -->
+      <section id="s17">
+        <div class="sec-head"><div class="sec-num">17</div><h2>Health Probes &amp; Resource Management</h2></div>
+        <p>For self-healing and zero-downtime to work, Kubernetes needs to know two things about every pod: <em>is it
+          alive?</em> and <em>is it ready for traffic?</em> It can't guess &mdash; your app must tell it, via
+          <strong>probes</strong>. And to schedule and isolate fairly, it needs to know how much CPU and memory each
+          container wants, via <strong>requests and limits</strong> (the cgroups of &sect;03, surfaced as config).</p>
+
+        <h3>Three probes, three questions</h3>
+        <ul>
+          <li><strong>Liveness</strong> &mdash; "is the process healthy, or wedged?" If it fails, Kubernetes
+            <em>restarts</em> the container. Catches deadlocks and hung states a crash wouldn't.</li>
+          <li><strong>Readiness</strong> &mdash; "can it serve requests right now?" If it fails, the pod is pulled from
+            its Service's rotation (&sect;15) but <em>not</em> restarted. This is what enables zero-downtime rollouts and
+            backpressure: a pod warming up or briefly overloaded stops receiving traffic until it recovers.</li>
+          <li><strong>Startup</strong> &mdash; "has a slow-starting app finished booting?" Guards the other probes so a
+            long cold start isn't mistaken for failure.</li>
+        </ul>
+
+        <div class="viz">
+          <div class="viz-cap">Liveness vs readiness</div>
+          <div class="viz-title">Restart on liveness failure; stop sending traffic on readiness failure</div>
+          <svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Liveness probe failure leads to a container restart; readiness probe failure leads to removal from the load balancer rotation">
+            <rect x="270" y="20" width="180" height="40" rx="9" fill="#1f6f6f"/><text x="360" y="38" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">kubelet probes the pod</text><text x="360" y="53" class="mono" font-size="8.5" fill="#dceeea" text-anchor="middle">GET /healthz · /ready</text>
+            <defs><marker id="ha" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f3415"/></marker></defs>
+            <path d="M320 60 C260 90 220 100 180 108" stroke="#a01f1f" stroke-width="1.6" fill="none" marker-end="url(#ha)"/>
+            <path d="M400 60 C460 90 500 100 540 108" stroke="#9a7400" stroke-width="1.6" fill="none" marker-end="url(#ha)"/>
+            <rect x="30" y="112" width="280" height="52" rx="10" fill="#f6dada" stroke="#a01f1f"/><text x="170" y="134" font-size="11" font-weight="700" fill="#a01f1f" text-anchor="middle">liveness fails</text><text x="170" y="152" font-size="10" fill="#4a443c" text-anchor="middle">&rarr; RESTART the container</text>
+            <rect x="410" y="112" width="280" height="52" rx="10" fill="#fbf2dc" stroke="#9a7400"/><text x="550" y="134" font-size="11" font-weight="700" fill="#9a7400" text-anchor="middle">readiness fails</text><text x="550" y="152" font-size="10" fill="#4a443c" text-anchor="middle">&rarr; remove from Service rotation</text>
+          </svg>
+        </div>
+
+        <h3>Requests &amp; limits</h3>
+        <p>A <strong>request</strong> is the amount the scheduler reserves for a container (and uses to pick a node); a
+          <strong>limit</strong> is the hard ceiling the runtime enforces via cgroups. Exceed a CPU limit and the
+          container is <em>throttled</em>; exceed a memory limit and it's <em>killed</em> (<code>OOMKilled</code>).
+          Setting these well is the difference between a stable cluster and noisy-neighbor chaos &mdash; and they feed
+          autoscaling (&sect;18).</p>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">probes + resources in the container spec</span></div>
+          <pre><code class="language-yaml"># ...inside the Deployment's containers: entry (§14)
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }   # wedged? → restart
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }      # ready for traffic? → in/out of rotation
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" } # scheduler reserves this
+            limits:   { cpu: "500m", memory: "256Mi" } # cgroup ceiling; over memory → OOMKilled</code></pre>
+        </div>
+
+        <div class="box note"><span class="tag">Probes pair with graceful shutdown</span>
+          <p>Probes are only half of clean lifecycle handling. The other half is the graceful-shutdown chapter: on a
+            rollout or scale-down, Kubernetes sends <code>SIGTERM</code> and waits a grace period before
+            <code>SIGKILL</code>. Your app should fail its readiness probe immediately (stop new traffic), finish
+            in-flight requests, then exit &mdash; so no request is dropped mid-flight. Probes decide what gets traffic;
+            graceful shutdown decides how a pod leaves.</p>
+        </div>
+      </section>
+
+      <!-- 18 -->
+      <section id="s18">
+        <div class="sec-head"><div class="sec-num">18</div><h2>Scaling &amp; Rollouts</h2></div>
+        <p>Two everyday operations close out orchestration: handling more load (<strong>scaling</strong>) and shipping new
+          versions without downtime (<strong>rollouts</strong>). Both lean on everything built so far &mdash; replicas,
+          Services, readiness probes &mdash; and both are the Kubernetes expression of topics from the scaling chapter.</p>
+
+        <h3>Horizontal scaling &amp; autoscaling</h3>
+        <p>Horizontal scaling means running more <em>pod replicas</em> (preferred over making one pod bigger &mdash; the
+          horizontal-vs-vertical theme from the scaling chapter). You can set the count manually, or hand it to the
+          <strong>Horizontal Pod Autoscaler (HPA)</strong>, which watches a metric (typically CPU) and adjusts replicas
+          to hold a target &mdash; scaling out under load and back in when it subsides. Because app pods are stateless
+          (&sect;9), any replica can serve any request, so adding pods just works.</p>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">hpa.yaml &mdash; autoscale on CPU</span></div>
+          <pre><code class="language-yaml">apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: api }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }  # keep avg CPU ~70%
+# Requires resource requests (§17) — utilization is measured against the request.</code></pre>
+        </div>
+
+        <h3>Rolling updates &amp; rollback</h3>
+        <p>When you change the image tag and re-apply, a Deployment performs a <strong>rolling update</strong> by default:
+          it brings up new-version pods a few at a time, waits for each to pass its <em>readiness</em> probe (&sect;17)
+          before sending it traffic, and only then retires old pods. At every moment enough healthy pods are serving, so
+          users see no downtime. If new pods fail readiness, the rollout stalls instead of taking the app down &mdash;
+          and one command rolls back to the last good version.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Rolling update</div>
+          <div class="viz-title">Replace replicas gradually &mdash; always keep a healthy serving set</div>
+          <svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A rolling update across three steps, old version pods being replaced one at a time by new version pods while capacity stays up">
+            <g font-family="JetBrains Mono" font-size="9">
+              <text x="60" y="24" fill="#4a443c" text-anchor="middle">start</text>
+              <rect x="20" y="32" width="26" height="40" rx="4" fill="#bc4b2b"/><rect x="50" y="32" width="26" height="40" rx="4" fill="#bc4b2b"/><rect x="80" y="32" width="26" height="40" rx="4" fill="#bc4b2b"/>
+              <text x="63" y="92" fill="#8f3415" text-anchor="middle">v1 v1 v1</text>
+
+              <text x="280" y="24" fill="#4a443c" text-anchor="middle">mid-rollout</text>
+              <rect x="220" y="32" width="26" height="40" rx="4" fill="#1f6f6f"/><rect x="250" y="32" width="26" height="40" rx="4" fill="#bc4b2b"/><rect x="280" y="32" width="26" height="40" rx="4" fill="#bc4b2b"/><rect x="310" y="32" width="26" height="40" rx="4" fill="#1f6f6f" opacity="0.5"/>
+              <text x="278" y="92" fill="#4a443c" text-anchor="middle">v2 v1 v1 (+v2 warming)</text>
+
+              <text x="560" y="24" fill="#4a443c" text-anchor="middle">done</text>
+              <rect x="520" y="32" width="26" height="40" rx="4" fill="#1f6f6f"/><rect x="550" y="32" width="26" height="40" rx="4" fill="#1f6f6f"/><rect x="580" y="32" width="26" height="40" rx="4" fill="#1f6f6f"/>
+              <text x="563" y="92" fill="#1f6f6f" text-anchor="middle">v2 v2 v2</text>
+            </g>
+            <defs><marker id="ru" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f3415"/></marker></defs>
+            <path d="M120 52 H214" stroke="#8f3415" stroke-width="1.6" marker-end="url(#ru)"/>
+            <path d="M350 52 H514" stroke="#8f3415" stroke-width="1.6" marker-end="url(#ru)"/>
+            <text x="360" y="128" class="serif" font-size="12.5" font-style="italic" fill="#4a443c" text-anchor="middle">A new pod only takes traffic after passing readiness; old pods drain gracefully (§17).</text>
+            <text x="360" y="150" class="serif" font-size="12.5" font-style="italic" fill="#4a443c" text-anchor="middle">If v2 never becomes Ready, the rollout halts &mdash; capacity is never sacrificed.</text>
+          </svg>
+        </div>
+
+        <div class="box key"><span class="tag">It all comes together here</span>
+          <p>Zero-downtime deploys aren't one feature &mdash; they're the <em>composition</em> of replicas (&sect;14),
+            readiness probes (&sect;17), graceful shutdown, and the Service abstraction (&sect;15) keeping a stable
+            address over a shifting pod set. Each piece earned its place; the rollout is where they pay off.</p>
+        </div>
+      </section>
+
+      <div class="part-label">Part V · CI/CD &amp; Production</div>
+
+      <!-- 19 -->
+      <section id="s19">
+        <div class="sec-head"><div class="sec-num">19</div><h2>CI/CD Pipelines</h2></div>
+        <p>Containers make the artifact reproducible; <strong>CI/CD</strong> makes the path from a code commit to that
+          artifact running in production <em>automatic</em>. <strong>CI (Continuous Integration)</strong> is the
+          build-and-verify half &mdash; on every push, build the image, run tests, scan it. <strong>CD (Continuous
+          Delivery/Deployment)</strong> is the ship half &mdash; push the image to a registry and roll it out. The whole
+          point is to remove manual, error-prone steps so deploys are frequent, small, and boring.</p>
+
+        <div class="viz">
+          <div class="viz-cap">The pipeline</div>
+          <div class="viz-title">From commit to running pod, with gates along the way</div>
+          <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A CI/CD pipeline: commit, build image, test, scan, push to registry, deploy to Kubernetes">
+            <defs><marker id="pp" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f3415"/></marker></defs>
+            <g font-family="Hanken Grotesk">
+              <rect x="14" y="50" width="92" height="48" rx="9" fill="#bc4b2b"/><text x="60" y="70" font-size="10.5" font-weight="700" fill="#fff" text-anchor="middle">commit</text><text x="60" y="86" class="mono" font-size="8" fill="#f4d9cf" text-anchor="middle">git push</text>
+              <rect x="126" y="50" width="92" height="48" rx="9" fill="#ece4d6" stroke="#bc4b2b"/><text x="172" y="70" font-size="10.5" font-weight="700" fill="#8f3415" text-anchor="middle">build</text><text x="172" y="86" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">image §6</text>
+              <rect x="238" y="50" width="92" height="48" rx="9" fill="#ece4d6" stroke="#bc4b2b"/><text x="284" y="70" font-size="10.5" font-weight="700" fill="#8f3415" text-anchor="middle">test</text><text x="284" y="86" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">unit/integ</text>
+              <rect x="350" y="50" width="92" height="48" rx="9" fill="#ece4d6" stroke="#bc4b2b"/><text x="396" y="70" font-size="10.5" font-weight="700" fill="#8f3415" text-anchor="middle">scan</text><text x="396" y="86" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">CVEs</text>
+              <rect x="462" y="50" width="100" height="48" rx="9" fill="#1c1a17"/><text x="512" y="70" font-size="10.5" font-weight="700" fill="#fff" text-anchor="middle">push</text><text x="512" y="86" class="mono" font-size="8" fill="#cfd2da" text-anchor="middle">registry §8</text>
+              <rect x="582" y="50" width="120" height="48" rx="9" fill="#1f6f6f"/><text x="642" y="70" font-size="10.5" font-weight="700" fill="#fff" text-anchor="middle">deploy</text><text x="642" y="86" class="mono" font-size="8" fill="#dceeea" text-anchor="middle">rollout §18</text>
+            </g>
+            <path d="M106 74 H124" stroke="#8f3415" stroke-width="1.6" marker-end="url(#pp)"/>
+            <path d="M218 74 H236" stroke="#8f3415" stroke-width="1.6" marker-end="url(#pp)"/>
+            <path d="M330 74 H348" stroke="#8f3415" stroke-width="1.6" marker-end="url(#pp)"/>
+            <path d="M442 74 H460" stroke="#8f3415" stroke-width="1.6" marker-end="url(#pp)"/>
+            <path d="M562 74 H580" stroke="#8f3415" stroke-width="1.6" marker-end="url(#pp)"/>
+            <text x="360" y="128" class="serif" font-size="12.5" font-style="italic" fill="#4a443c" text-anchor="middle">Each stage is a gate: a failed test or a critical CVE stops the pipeline before anything reaches production.</text>
+          </svg>
+        </div>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">.github/workflows/deploy.yaml &mdash; a representative pipeline</span></div>
+          <pre><code class="language-yaml">name: ci-cd
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests              # CI gate — must pass before we ship (§testing chapter)
+        run: make test               # go test ./...  |  pytest
+
+      - name: Build image
+        run: docker build -t $REGISTRY/myapp:${{ github.sha }} .   # tag = commit SHA (§8)
+
+      - name: Scan image for vulnerabilities
+        run: trivy image --severity HIGH,CRITICAL --exit-code 1 $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Push to registry
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u ci --password-stdin
+          docker push $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Deploy to Kubernetes   # update the Deployment's image → triggers a rolling update (§18)
+        run: kubectl set image deployment/api api=$REGISTRY/myapp:${{ github.sha }}
+</code></pre>
+        </div>
+
+        <div class="box note"><span class="tag">Why tag by commit SHA</span>
+          <p>Tagging the image with the git SHA (and deploying that exact tag) gives a precise, immutable link from a
+            running pod back to the source that built it &mdash; the reproducibility goal from &sect;8, end to end. When
+            something breaks in prod you know <em>exactly</em> which commit is running, and rollback (&sect;18) is
+            unambiguous.</p>
+        </div>
+      </section>
+
+      <!-- 20 -->
+      <section id="s20">
+        <div class="sec-head"><div class="sec-num">20</div><h2>Deployment Strategies &amp; GitOps</h2></div>
+        <p>The rolling update (&sect;18) is the default, but riskier releases call for strategies that limit blast radius,
+          and mature teams change <em>how</em> deploys are triggered altogether with GitOps.</p>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Strategy</th><th>How it works</th><th>Trade-off</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Rolling</strong></td><td>Replace pods gradually (the default)</td><td>Simple, zero-downtime; old + new run briefly together</td></tr>
+              <tr><td><strong>Blue-green</strong></td><td>Stand up the full new version (green) beside old (blue), then flip all traffic at once</td><td>Instant switch &amp; instant rollback; needs double the capacity during the cutover</td></tr>
+              <tr><td><strong>Canary</strong></td><td>Send a small % of traffic to the new version, watch metrics, then ramp up</td><td>Safest for risky changes; more orchestration/observability needed</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="viz">
+          <div class="viz-cap">Blue-green vs canary</div>
+          <div class="viz-title">Flip all at once, or trickle traffic and watch</div>
+          <svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Blue-green flipping all traffic from blue to green at once, versus canary sending a small percentage to the new version first">
+            <text x="180" y="22" class="mono" font-size="11" font-weight="700" fill="#1f6f6f" text-anchor="middle">blue-green &mdash; flip 100%</text>
+            <rect x="40" y="40" width="90" height="40" rx="8" fill="#2e6a7a"/><text x="85" y="64" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">blue v1</text>
+            <rect x="230" y="40" width="90" height="40" rx="8" fill="#3d7a2e"/><text x="275" y="64" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">green v2</text>
+            <defs><marker id="ga2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f3415"/></marker></defs>
+            <path d="M180 95 V120" stroke="#8f3415" stroke-width="2" marker-end="url(#ga2)"/>
+            <text x="180" y="138" font-size="11" font-style="italic" fill="#4a443c" text-anchor="middle">switch router blue&rarr;green instantly</text>
+            <text x="180" y="156" font-size="10" font-style="italic" fill="#a01f1f" text-anchor="middle">problem? flip back to blue at once</text>
+
+            <text x="540" y="22" class="mono" font-size="11" font-weight="700" fill="#bc4b2b" text-anchor="middle">canary &mdash; trickle then ramp</text>
+            <rect x="430" y="40" width="120" height="36" rx="8" fill="#2e6a7a"/><text x="490" y="63" font-size="10.5" font-weight="700" fill="#fff" text-anchor="middle">v1 &mdash; 95%</text>
+            <rect x="580" y="40" width="120" height="36" rx="8" fill="#bc4b2b"/><text x="640" y="63" font-size="10.5" font-weight="700" fill="#fff" text-anchor="middle">v2 &mdash; 5%</text>
+            <text x="565" y="100" font-size="11" font-style="italic" fill="#4a443c" text-anchor="middle">watch v2's error rate &amp; latency</text>
+            <text x="565" y="120" font-size="10.5" font-style="italic" fill="#3d7a2e" text-anchor="middle">healthy &rarr; 5% &rarr; 25% &rarr; 100%</text>
+            <text x="565" y="140" font-size="10.5" font-style="italic" fill="#a01f1f" text-anchor="middle">bad &rarr; route 0% back, blast radius tiny</text>
+          </svg>
+        </div>
+
+        <h3>GitOps &mdash; Git as the source of truth</h3>
+        <p>The pipeline in &sect;19 <em>pushes</em> changes to the cluster. <strong>GitOps</strong> inverts that: the
+          desired state of the cluster lives entirely in a Git repository (all those YAML manifests), and an in-cluster
+          agent (Argo CD, Flux) continuously <em>pulls</em> from Git and reconciles the cluster to match. This is the
+          reconciliation loop of &sect;11 extended to deployments themselves: Git is desired state, the cluster is actual
+          state, the agent closes the gap. You deploy by merging a pull request; you roll back with <code>git revert</code>;
+          and the repo is a complete, audited history of every change to production.</p>
+
+        <div class="box key"><span class="tag">The throughline</span>
+          <p>Notice the same idea at three scales: a container keeps the <em>artifact</em> identical, a Deployment keeps
+            the <em>running pods</em> matching a spec, and GitOps keeps the <em>whole cluster</em> matching Git. Declare
+            desired state, let a loop reconcile reality &mdash; it's containers and Kubernetes all the way down.</p>
+        </div>
+      </section>
+
+      <!-- 21 -->
+      <section id="s21">
+        <div class="sec-head"><div class="sec-num">21</div><h2>Production Cheat-Sheet</h2></div>
+        <p>The whole manual compressed to what you reach for under pressure.</p>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Concept</th><th>One-liner</th></tr></thead>
+            <tbody>
+              <tr><td>Container</td><td>An isolated process &mdash; namespaces (what it sees) + cgroups (what it uses) + an image filesystem.</td></tr>
+              <tr><td>vs VM</td><td>Containers share one host kernel; VMs each ship a full OS. Lighter, faster, weaker isolation.</td></tr>
+              <tr><td>Image vs container</td><td>Image = immutable template (class); container = running instance (object).</td></tr>
+              <tr><td>Layers</td><td>Images are stacked read-only layers, shared &amp; cached; the container's writable top is ephemeral.</td></tr>
+              <tr><td>Dockerfile</td><td>Recipe; each instruction = a layer. <code>RUN</code> at build time, <code>CMD</code> at run time.</td></tr>
+              <tr><td>Multi-stage</td><td>Build in a heavy stage, copy only the artifact into a tiny final image.</td></tr>
+              <tr><td>Cache order</td><td>Deps before code &mdash; a changed layer rebuilds everything below it.</td></tr>
+              <tr><td>Registry &amp; tags</td><td>Push/pull images by name:tag; pin a version or SHA, never <code>:latest</code>.</td></tr>
+              <tr><td>Volumes</td><td>Data that must survive lives in a volume, not the container's writable layer.</td></tr>
+              <tr><td>Compose</td><td>Declarative multi-container stack on <em>one</em> host &mdash; local dev.</td></tr>
+              <tr><td>Orchestration</td><td>Scheduling, self-healing, scaling, discovery, rollouts across many nodes.</td></tr>
+              <tr><td>Declarative</td><td>Declare desired state; a control loop reconciles actual toward it. The whole model.</td></tr>
+              <tr><td>Pod</td><td>Smallest unit; one+ containers sharing network &amp; storage. Mortal, gets a new IP when replaced.</td></tr>
+              <tr><td>Deployment</td><td>Keeps N replicas of a pod running; self-heals; does rolling updates.</td></tr>
+              <tr><td>Service</td><td>Stable IP/DNS load-balancing across matching pods &mdash; service discovery.</td></tr>
+              <tr><td>Ingress</td><td>One L7 entry point: host/path routing + TLS to many Services.</td></tr>
+              <tr><td>Config/Secrets</td><td>Inject at run time (ConfigMap/Secret); same image everywhere. Secrets aren't encrypted by default.</td></tr>
+              <tr><td>Probes</td><td>Liveness &rarr; restart; readiness &rarr; in/out of rotation; startup &rarr; guard slow boots.</td></tr>
+              <tr><td>Requests/limits</td><td>Request = reserved (scheduling); limit = cgroup ceiling. Over memory &rarr; OOMKilled.</td></tr>
+              <tr><td>Scaling</td><td>Run more replicas; HPA autoscales on a metric (needs requests set).</td></tr>
+              <tr><td>Rollout/rollback</td><td>Gradual replace gated by readiness; <code>kubectl rollout undo</code> reverts.</td></tr>
+              <tr><td>CI/CD</td><td>Commit &rarr; build &rarr; test &rarr; scan &rarr; push &rarr; deploy, automatically; tag by SHA.</td></tr>
+              <tr><td>Strategies</td><td>Rolling (default), blue-green (instant flip), canary (trickle &amp; watch).</td></tr>
+              <tr><td>GitOps</td><td>Git is desired state; an agent pulls &amp; reconciles. Deploy by PR, roll back by revert.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="foot">
+          <p><strong>The whole topic in one breath:</strong> a container packages your app with its entire environment so
+            "what runs in prod" equals "what you tested" (&sect;1) &mdash; achieved with Linux namespaces and cgroups, not
+            a heavy VM (&sect;2&ndash;3). You build an image as cached, shareable layers (&sect;4) from a Dockerfile
+            (&sect;5), shrink and harden it with multi-stage builds and good cache ordering (&sect;6&ndash;7), then push
+            a SHA-tagged image to a registry (&sect;8). Locally you wire several containers with networks, volumes, and
+            Compose (&sect;9&ndash;10). At fleet scale, Kubernetes reconciles declared desired state onto nodes
+            (&sect;11&ndash;12): Deployments keep replicas of pods alive and self-healing (&sect;13&ndash;14), Services
+            and Ingress give stable addressing and routing (&sect;15), ConfigMaps/Secrets inject per-environment config
+            (&sect;16), probes and resource requests/limits drive health and scheduling (&sect;17), and HPA plus rolling
+            updates deliver scaling and zero-downtime releases (&sect;18). CI/CD automates commit&rarr;build&rarr;test&rarr;
+            scan&rarr;push&rarr;deploy (&sect;19), and blue-green/canary/GitOps make releases safe and auditable (&sect;20).
+            One idea recurs at every layer: declare the desired state and let a loop keep reality matching it.</p>
+          <p style="margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;">
+            Grounded in the Docker &amp; Kubernetes docs &middot; OCI image-spec &middot; the Twelve-Factor App &middot;
+            Go 1.22+ / Python 3.11+ application examples.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+    hljs.highlightAll();
+    document.querySelectorAll('[data-cb]').forEach(block => {
+      const btns = block.querySelectorAll('.code-tabs button');
+      const panels = block.querySelectorAll('.code-panel');
+      btns.forEach(btn => btn.addEventListener('click', () => {
+        const lang = btn.dataset.lang;
+        btns.forEach(b => b.classList.toggle('on', b === btn));
+        panels.forEach(p => p.classList.toggle('on', p.dataset.panel === lang));
+      }));
+    });
+    const links = [...document.querySelectorAll('.toc nav a')];
+    const map = {}; links.forEach(l => map[l.getAttribute('href').slice(1)] = l);
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          links.forEach(l => l.classList.remove('active'));
+          if (map[e.target.id]) map[e.target.id].classList.add('active');
+        }
+      });
+    }, { rootMargin: '-10% 0px -80% 0px' });
+    document.querySelectorAll('section').forEach(s => obs.observe(s));
+    links.forEach(l => l.addEventListener('click', () => document.querySelector('.toc').classList.remove('open')));
+  </script>
+<!-- ============ CHAPTER NAVIGATION ============ -->
+<nav class="chapter-nav" id="chapterNav">
+  <a href="../../20.Concurrency & Parallelism: IO Bound vs CPU Bound/html_notes/notes.html" class="nav-chapter-link"><span class="nav-arrow">&larr;</span><span class="nav-label"><span class="nav-small">Chapter 20</span>Concurrency & Parallelism</span></a>
+  <a href="../../index.html" class="nav-indicator"><span class="nav-dot"></span> Chapter 21 <span class="nav-sep">/</span> 24</a>
+  <a href="../../22.Automated-Testing-Unit-Integration-and-E2E/html_notes/notes.html" class="nav-chapter-link nav-next"><span class="nav-label"><span class="nav-small">Chapter 22</span>Automated Testing</span><span class="nav-arrow">&rarr;</span></a>
+</nav>
+</body>
+
+</html>

@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Routing — The Backend Lens · Field Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,400;1,9..144,500;1,9..144,600&family=Spline+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f3ede2;
+    --paper-2:#ece3d4;
+    --paper-3:#e6dcca;
+    --ink:#211e1a;
+    --ink-soft:#5b5347;
+    --ink-faint:#8d8475;
+    --accent:#b8402e;
+    --accent-2:#8f2f20;
+    --green:#3f6f4e;
+    --blue:#37607f;
+    --gold:#b07d2b;
+    --line:#d8cfbe;
+    --line-strong:#c7bca6;
+    --code-bg:#232019;
+    --code-ink:#e9e2d3;
+    --code-faint:#9c948a;
+    --shadow:0 1px 0 rgba(0,0,0,.04), 0 18px 40px -28px rgba(40,30,20,.5);
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Spline Sans", sans-serif;
+    font-size:17px;
+    line-height:1.68;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(circle at 18% 12%, rgba(184,64,46,.04), transparent 45%),
+      radial-gradient(circle at 82% 78%, rgba(55,96,127,.04), transparent 42%);
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:.5;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.035'/%3E%3C/svg%3E");
+    mix-blend-mode:multiply;
+  }
+  #progress{position:fixed;top:0;left:0;height:3px;width:0;background:var(--accent);z-index:10000;transition:width .08s linear;}
+
+  .shell{display:grid;grid-template-columns:288px minmax(0,1fr);max-width:1500px;margin:0 auto;}
+
+  aside{
+    position:sticky;top:0;height:100vh;overflow-y:auto;
+    border-right:1px solid var(--line-strong);
+    background:linear-gradient(180deg,var(--paper-2),var(--paper));
+    padding:42px 30px 60px;
+  }
+  aside::-webkit-scrollbar{width:8px;}
+  aside::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:4px;}
+  .brand{font-family:"Fraunces",serif;font-weight:700;font-size:28px;line-height:1.05;letter-spacing:-.01em;}
+  .brand .slash{color:var(--accent);font-style:italic;}
+  .brand .sub{display:block;font-style:italic;font-weight:500;font-size:24px;color:var(--ink);}
+  .kicker{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-faint);margin-top:10px;}
+  .rule{height:1px;background:var(--line-strong);margin:26px 0 22px;}
+  nav a{
+    display:flex;gap:13px;align-items:baseline;text-decoration:none;color:var(--ink-soft);
+    font-size:14.5px;padding:7px 0;border-bottom:1px dotted transparent;transition:color .15s, transform .15s;
+  }
+  nav a .num{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--accent);font-weight:600;min-width:20px;}
+  nav a:hover{color:var(--ink);transform:translateX(3px);}
+  nav a.active{color:var(--accent);font-weight:600;}
+  nav .part{font-family:"JetBrains Mono",monospace;font-size:9.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-faint);margin:22px 0 6px;padding-top:14px;border-top:1px solid var(--line);}
+  nav .part:first-of-type{border-top:none;padding-top:0;margin-top:0;}
+  .aside-foot{margin-top:34px;font-family:"JetBrains Mono",monospace;font-size:10px;line-height:1.7;color:var(--ink-faint);letter-spacing:.04em;}
+  .aside-foot a{color:var(--accent);text-decoration:none;}
+
+  main{padding:54px clamp(28px,5vw,92px) 120px;max-width:1040px;}
+
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:var(--accent);font-weight:600;}
+  h1.title{font-family:"Fraunces",serif;font-weight:900;font-size:clamp(46px,8vw,92px);line-height:.95;letter-spacing:-.02em;margin:18px 0 0;}
+  h1.title em{font-style:italic;font-weight:600;color:var(--accent);}
+  .lede{font-size:21px;line-height:1.6;color:var(--ink-soft);max-width:740px;margin:26px 0 0;}
+  .lede em{font-style:italic;color:var(--ink);}
+  .tags{display:flex;flex-wrap:wrap;gap:11px;margin-top:34px;}
+  .tag{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink-soft);border:1px solid var(--line-strong);border-radius:40px;padding:8px 16px;background:rgba(255,255,255,.35);}
+  .tag b{color:var(--accent);font-weight:600;}
+  .hr-accent{height:2px;width:120px;background:var(--accent);margin:46px 0 0;}
+
+  .part-head{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--accent);margin:78px 0 4px;border-bottom:1px dashed var(--line-strong);padding-bottom:18px;display:flex;justify-content:space-between;}
+  .part-head span:last-child{color:var(--ink-faint);}
+
+  section{scroll-margin-top:24px;}
+  .sec-head{display:flex;align-items:center;gap:18px;margin:46px 0 8px;}
+  .badge{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:15px;color:#fff;background:var(--accent);border-radius:9px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -8px var(--accent);flex:none;}
+  h2{font-family:"Fraunces",serif;font-weight:700;font-size:clamp(28px,4vw,40px);line-height:1.05;letter-spacing:-.015em;margin:0;}
+  h3{font-family:"Fraunces",serif;font-weight:600;font-size:23px;letter-spacing:-.01em;margin:38px 0 6px;}
+  h4{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);margin:26px 0 8px;}
+  .sec-rule{height:1px;background:var(--line);margin:12px 0 22px;}
+
+  p{margin:0 0 18px;}
+  main a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(184,64,46,.3);}
+  main a:hover{border-bottom-color:var(--accent);}
+  strong{font-weight:600;color:var(--ink);}
+  em{color:var(--ink);}
+  code.ic{font-family:"JetBrains Mono",monospace;font-size:.86em;background:var(--paper-3);border:1px solid var(--line-strong);border-radius:5px;padding:1px 7px;color:var(--accent-2);}
+
+  ul.clean{margin:6px 0 20px;padding:0;list-style:none;}
+  ul.clean li{position:relative;padding-left:26px;margin-bottom:11px;}
+  ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:7px;height:7px;background:var(--accent);transform:rotate(45deg);}
+  ul.clean li b{color:var(--ink);}
+
+  .term{border-left:3px solid var(--accent);background:linear-gradient(90deg,rgba(184,64,46,.06),transparent);padding:14px 18px;margin:22px 0;border-radius:0 8px 8px 0;}
+  .term .t{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:600;display:block;margin-bottom:4px;}
+  .term p{margin:0;font-size:15.5px;color:var(--ink-soft);}
+
+  .note{background:rgba(255,255,255,.45);border:1px solid var(--line-strong);border-radius:12px;padding:20px 24px;margin:24px 0;box-shadow:var(--shadow);}
+  .note .h{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--blue);font-weight:600;margin-bottom:8px;}
+  .note.warn .h{color:var(--accent);}
+  .note.warn{border-color:rgba(184,64,46,.35);background:rgba(184,64,46,.05);}
+  .note p:last-child{margin-bottom:0;}
+
+  figure{margin:30px 0;background:rgba(255,255,255,.5);border:1px solid var(--line-strong);border-radius:14px;padding:26px 24px 18px;box-shadow:var(--shadow);overflow:hidden;}
+  figure svg{display:block;width:100%;height:auto;}
+  figcaption{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.05em;color:var(--ink-faint);margin-top:16px;border-top:1px dotted var(--line-strong);padding-top:12px;}
+  figcaption b{color:var(--accent);font-weight:600;}
+
+  .code{position:relative;background:var(--code-bg);border-radius:14px;margin:24px 0;box-shadow:0 22px 44px -30px rgba(20,15,10,.85);overflow:hidden;}
+  .code-bar{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.07);}
+  .code-bar .lang{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:9px;}
+  .code-bar .lang .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);}
+  .code-bar .file{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--code-faint);}
+  pre{margin:0;padding:20px 22px;overflow-x:auto;font-family:"JetBrains Mono",monospace;font-size:13px;line-height:1.72;color:var(--code-ink);}
+  pre::-webkit-scrollbar{height:9px;}
+  pre::-webkit-scrollbar-thumb{background:#4a443b;border-radius:5px;}
+  .c-kw{color:#e0795f;}
+  .c-fn{color:#d9b06a;}
+  .c-str{color:#9bbf7f;}
+  .c-com{color:#7d7568;font-style:italic;}
+  .c-oop{color:#7fb0cf;font-style:italic;}
+  .c-num{color:#c08fb8;}
+  .c-pun{color:#b6aec0;}
+
+  .tbl-wrap{overflow-x:auto;margin:24px 0;border:1px solid var(--line-strong);border-radius:12px;box-shadow:var(--shadow);}
+  table{border-collapse:collapse;width:100%;font-size:14.5px;background:rgba(255,255,255,.4);}
+  th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);background:var(--paper-3);}
+  tbody tr:last-child td{border-bottom:none;}
+  td code{font-family:"JetBrains Mono",monospace;font-size:12.5px;color:var(--accent-2);}
+
+  .pill{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.08em;padding:3px 9px;border-radius:20px;font-weight:600;}
+  .pill.get{background:rgba(63,111,78,.16);color:var(--green);}
+  .pill.post{background:rgba(176,125,43,.18);color:var(--gold);}
+  .pill.put{background:rgba(55,96,127,.16);color:var(--blue);}
+  .pill.del{background:rgba(184,64,46,.14);color:var(--accent);}
+
+  footer.doc{margin-top:90px;border-top:2px solid var(--accent);padding-top:30px;font-size:14px;color:var(--ink-soft);}
+  footer.doc .big{font-family:"Fraunces",serif;font-style:italic;font-size:26px;color:var(--ink);margin-bottom:10px;}
+  footer.doc a{color:var(--accent);}
+
+  @media (max-width:920px){
+    .shell{grid-template-columns:1fr;}
+    aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line-strong);}
+    nav{columns:2;column-gap:24px;}
+    main{padding:40px 22px 90px;}
+  }
+</style>
+<style>
+.chapter-nav{position:fixed;bottom:0;left:0;right:0;z-index:9998;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(16px,4vw,48px);background:rgba(243,237,226,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1.5px solid #c7bca6;box-shadow:0 -8px 32px -16px rgba(40,30,20,.18);font-family:"JetBrains Mono","Spline Sans",monospace;}
+.nav-chapter-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:#5b5347;padding:10px 18px;border-radius:10px;transition:all .2s ease;max-width:38%;}
+.nav-chapter-link:hover{background:rgba(184,64,46,.08);color:#b8402e;transform:translateY(-1px);}
+.nav-chapter-link.nav-next{text-align:right;flex-direction:row;}
+.nav-arrow{font-size:22px;color:#b8402e;font-weight:700;flex:none;}
+.nav-label{display:flex;flex-direction:column;gap:2px;font-size:13.5px;line-height:1.3;}
+.nav-small{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8d8475;font-weight:600;}
+.nav-indicator{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#b8402e;font-weight:700;text-decoration:none;padding:8px 16px;border:1.5px solid #c7bca6;border-radius:40px;background:rgba(255,255,255,.5);transition:all .2s;white-space:nowrap;}
+.nav-indicator:hover{background:#b8402e;color:#fff;border-color:#b8402e;}
+.nav-dot{display:inline-block;width:7px;height:7px;background:#b8402e;border-radius:50%;margin-right:4px;vertical-align:middle;}
+.nav-sep{color:#c7bca6;margin:0 2px;}
+.nav-disabled{visibility:hidden;pointer-events:none;}
+@media(max-width:700px){.nav-label{font-size:11.5px;}.nav-chapter-link{padding:8px 10px;max-width:42%;}.chapter-nav{padding:10px 12px;}}
+body{padding-bottom:80px;}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<div class="shell">
+
+<!-- ============ SIDEBAR ============ -->
+<aside>
+  <div class="brand">Routing <span class="slash">/</span><span class="sub">the backend lens</span></div>
+  <div class="kicker">Field Manual · v1</div>
+  <div class="rule"></div>
+  <nav id="nav">
+    <div class="part">Part I · The Model</div>
+    <a href="#s1"><span class="num">01</span><span>What Routing Is</span></a>
+    <a href="#s2"><span class="num">02</span><span>Method + Path → Handler</span></a>
+
+    <div class="part">Part II · Route Types</div>
+    <a href="#s3"><span class="num">03</span><span>Static Routes</span></a>
+    <a href="#s4"><span class="num">04</span><span>Dynamic Routes &amp; Path Params</span></a>
+    <a href="#s5"><span class="num">05</span><span>Query Parameters</span></a>
+    <a href="#s6"><span class="num">06</span><span>Path vs Query Params</span></a>
+    <a href="#s7"><span class="num">07</span><span>Nested Routes</span></a>
+
+    <div class="part">Part III · Lifecycle &amp; Evolution</div>
+    <a href="#s8"><span class="num">08</span><span>The Routing Lifecycle</span></a>
+    <a href="#s9"><span class="num">09</span><span>Versioning &amp; Deprecation</span></a>
+    <a href="#s10"><span class="num">10</span><span>Catch-All Routes</span></a>
+
+    <div class="part">Part IV · Implementation</div>
+    <a href="#s11"><span class="num">11</span><span>A Router in Go (OOP)</span></a>
+    <a href="#s12"><span class="num">12</span><span>A Router in Python (OOP)</span></a>
+    <a href="#s13"><span class="num">13</span><span>Routing Glossary</span></a>
+  </nav>
+  <div class="aside-foot">
+    SCOPE · routing only<br>
+    What → HTTP method<br>
+    Where → the route<br><br>
+    Code: Go 1.22+ · Python 3.11+
+  </div>
+</aside>
+
+<!-- ============ MAIN ============ -->
+<main>
+
+  <!-- HERO -->
+  <div class="eyebrow">A Detailed Backend Reference</div>
+  <h1 class="title">Routing, the <em>where</em><br>of every request.</h1>
+  <p class="lede">HTTP methods describe the <em>what</em> of a request — your intent. Routing describes the <em>where</em>: which resource on the server your intent is aimed at. This manual covers routing end to end — static and dynamic routes, path and query parameters, nesting, versioning, and catch-alls — with worked routers in Go and Python.</p>
+
+  <div class="tags">
+    <span class="tag">the <b>where</b> of a request</span>
+    <span class="tag">method <b>+</b> path → handler</span>
+    <span class="tag">13 sections</span>
+  </div>
+  <div class="hr-accent"></div>
+
+  <!-- ============================================================ PART I -->
+  <div class="part-head"><span>Part I — The Model</span><span>The core idea</span></div>
+
+  <!-- 01 -->
+  <section id="s1">
+    <div class="sec-head"><div class="badge">01</div><h2>What Routing Is</h2></div>
+    <div class="sec-rule"></div>
+    <p>Every request carries two things bundled together. The <strong>HTTP method</strong> answers <em>“what do I want to do?”</em> — fetch, add, update, or delete data. That is your <em>intent</em>, your action. The <strong>route</strong> answers <em>“where do I want to do it?”</em> — which resource, at which address on the server, you want to perform that action on.</p>
+    <p>You have to tell the server <em>where</em> to go. Send a <span class="pill get">GET</span> request (intent: fetch) to the route <code class="ic">/users</code> (the address), and the server replies with an array of users. Routing is the machinery that takes the <em>what</em> and the <em>where</em>, maps them to a particular handler, and lets that handler run the business logic and return the data.</p>
+
+    <div class="term">
+      <span class="t">Routing — definition</span>
+      <p>Routing is <strong>mapping URL paths (plus the HTTP method) to server-side logic</strong> — a handler that performs the business logic, database operations, and whatever else is needed, then returns a response. That is all there is to it.</p>
+    </div>
+
+    <h4>The words used in this manual</h4>
+    <ul class="clean">
+      <li><b>Intent / action</b> — what the request wants to do, expressed by the HTTP method (fetch, add, update, delete).</li>
+      <li><b>Resource</b> — the “thing” the request acts on, usually a noun in the path such as <code class="ic">books</code> or <code class="ic">users</code>. (Resources are studied properly under REST APIs; here we treat them simply as the route’s target.)</li>
+      <li><b>Route / route path / URL path</b> — the address part that says <em>where</em> on the server you are going, e.g. <code class="ic">/api/books</code>.</li>
+      <li><b>Handler</b> — the set of instructions the server runs when a request matches a route; it owns the logic for that endpoint.</li>
+    </ul>
+  </section>
+
+  <!-- 02 -->
+  <section id="s2">
+    <div class="sec-head"><div class="badge">02</div><h2>Method + Path → Handler</h2></div>
+    <div class="sec-rule"></div>
+    <p>This is the heart of routing. The server takes the <strong>method</strong> and the <strong>route</strong> and treats the two together as a <strong>unique key</strong> that maps to one handler. It checks the method first, then the route, concatenates them, and forms a unique routing path.</p>
+    <p>Consider two requests to the same address. <span class="pill get">GET</span> <code class="ic">/api/books</code> fetches the books; <span class="pill post">POST</span> <code class="ic">/api/books</code> creates one. The route is identical, but the method differs — so the keys are different and they route to different handlers. The methods differentiate between two otherwise identical routes, and the keys never clash.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 340" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="13">
+        <g>
+          <rect x="10" y="40" width="230" height="46" rx="9" fill="rgba(63,111,78,.12)" stroke="#3f6f4e"/>
+          <text x="28" y="60" fill="#3f6f4e" font-weight="700">GET</text>
+          <text x="70" y="60" fill="#211e1a">/api/books</text>
+          <text x="28" y="78" fill="#8d8475" font-size="11">intent: fetch the books</text>
+
+          <rect x="10" y="150" width="230" height="46" rx="9" fill="rgba(176,125,43,.14)" stroke="#b07d2b"/>
+          <text x="28" y="170" fill="#b07d2b" font-weight="700">POST</text>
+          <text x="78" y="170" fill="#211e1a">/api/books</text>
+          <text x="28" y="188" fill="#8d8475" font-size="11">intent: add a book</text>
+
+          <rect x="10" y="260" width="230" height="46" rx="9" fill="rgba(184,64,46,.12)" stroke="#b8402e"/>
+          <text x="28" y="280" fill="#b8402e" font-weight="700">DELETE</text>
+          <text x="98" y="280" fill="#211e1a">/api/books/9</text>
+          <text x="28" y="298" fill="#8d8475" font-size="11">intent: remove book 9</text>
+        </g>
+
+        <rect x="350" y="90" width="180" height="170" rx="14" fill="#232019"/>
+        <text x="440" y="120" fill="#e0795f" text-anchor="middle" font-weight="700" font-size="14">ROUTER</text>
+        <text x="440" y="142" fill="#9c948a" text-anchor="middle" font-size="10.5">method + path</text>
+        <text x="440" y="156" fill="#9c948a" text-anchor="middle" font-size="10.5">= unique key</text>
+        <g font-size="10.5" fill="#e9e2d3">
+          <text x="370" y="186">GET  /books</text>
+          <text x="370" y="208">POST /books</text>
+          <text x="370" y="230">DEL  /books/:id</text>
+        </g>
+
+        <g stroke-width="2" fill="none">
+          <path d="M240 63 C300 63 300 150 348 150" stroke="#3f6f4e" marker-end="url(#a)"/>
+          <path d="M240 173 L348 173" stroke="#b07d2b" marker-end="url(#a)"/>
+          <path d="M240 283 C300 283 300 210 348 210" stroke="#b8402e" marker-end="url(#a)"/>
+        </g>
+
+        <g>
+          <rect x="650" y="40" width="240" height="46" rx="9" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+          <text x="668" y="60" fill="#211e1a" font-weight="600">listBooks()</text>
+          <text x="668" y="78" fill="#8d8475" font-size="11">→ returns all books</text>
+
+          <rect x="650" y="150" width="240" height="46" rx="9" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+          <text x="668" y="170" fill="#211e1a" font-weight="600">createBook()</text>
+          <text x="668" y="188" fill="#8d8475" font-size="11">→ creates, returns books</text>
+
+          <rect x="650" y="260" width="240" height="46" rx="9" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+          <text x="668" y="280" fill="#211e1a" font-weight="600">deleteBook(id)</text>
+          <text x="668" y="298" fill="#8d8475" font-size="11">→ removes the book</text>
+        </g>
+        <g stroke-width="2" fill="none">
+          <path d="M530 150 C590 150 590 63 648 63" stroke="#3f6f4e" marker-end="url(#a)"/>
+          <path d="M530 175 L648 173" stroke="#b07d2b" marker-end="url(#a)"/>
+          <path d="M530 210 C590 210 590 283 648 283" stroke="#b8402e" marker-end="url(#a)"/>
+        </g>
+
+        <defs>
+          <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+            <path d="M0 0 L7 3 L0 6 Z" fill="#8d8475"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption><b>One key, one handler.</b> The server checks method, then route, concatenates them into a unique key, and dispatches to the matching handler. Same path + different method = different destination.</figcaption>
+    </figure>
+
+    <div class="note">
+      <div class="h">The method is the “what” (brief)</div>
+      <p>Routing only needs to know the method as the other half of the key. The common verbs and their intent: <span class="pill get">GET</span> fetch · <span class="pill post">POST</span> add/create · <span class="pill put">PUT</span> / <span class="pill put">PATCH</span> update · <span class="pill del">DELETE</span> remove. The deep study of methods belongs to the HTTP topic; here they simply pair with a route to form the key.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ PART II -->
+  <div class="part-head"><span>Part II — Route Types</span><span>Shapes a route can take</span></div>
+
+  <!-- 03 -->
+  <section id="s3">
+    <div class="sec-head"><div class="badge">03</div><h2>Static Routes</h2></div>
+    <div class="sec-rule"></div>
+    <p>A <strong>static route</strong> is a fixed path with <em>no variable parameters</em> inside it. <code class="ic">/api/books</code> is static: the string stays consistent — it is a constant. You always use that same string when you make the request, nothing in it changes, and it always returns the same <em>kind</em> of response. That is exactly why it is called “static.”</p>
+    <div class="term">
+      <span class="t">Static route</span>
+      <p>A constant path string with no dynamic segments, e.g. <code class="ic">/api/books</code>. The first two examples from the source — <span class="pill get">GET</span> and <span class="pill post">POST</span> on <code class="ic">/api/books</code> — are both static routes.</p>
+    </div>
+    <p>Matching a static route is a literal string comparison. Most APIs begin here: one endpoint that lists a collection and one that creates an item, both on the same constant path.</p>
+  </section>
+
+  <!-- 04 -->
+  <section id="s4">
+    <div class="sec-head"><div class="badge">04</div><h2>Dynamic Routes &amp; Path Parameters</h2></div>
+    <div class="sec-rule"></div>
+    <p>A <strong>dynamic route</strong> has a variable parameter inside the path, so one pattern can serve many specific resources. <span class="pill get">GET</span> <code class="ic">/api/users/123</code> fetches the details of <em>one</em> user — the <code class="ic">123</code> is the user’s ID, which the server extracts from the route to do its work (fetch that user from the database and return them).</p>
+
+    <p>On the server side, the route definition for this looks like a method plus a pattern. Written out, the matching part is something like:</p>
+    <div class="code">
+      <div class="code-bar"><span class="lang"><span class="dot"></span>route definition</span><span class="file">pattern</span></div>
+<pre>r.<span class="c-fn">get</span>(<span class="c-str">"/api/users/:id"</span>, handler)
+        <span class="c-com">//          └── ":id" = a dynamic parameter slot</span></pre>
+    </div>
+    <p>The method part matches <span class="pill get">GET</span>; the path part matches <code class="ic">/api/users/</code> followed by <em>any string</em>. The colon convention — <code class="ic">:id</code> — says “this segment is dynamic; the client supplies a value here.” You will find this <code class="ic">:name</code> convention across Node, Python, Go, Rust, and Java; it is an industry-wide practice.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 250" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="14">
+        <rect x="300" y="20" width="300" height="48" rx="10" fill="#232019"/>
+        <text x="318" y="50" fill="#e9e2d3">/api/users/</text>
+        <text x="445" y="50" fill="#e0795f" font-weight="700">:id</text>
+        <text x="450" y="88" fill="#8d8475" text-anchor="middle" font-size="11">pattern (the route definition)</text>
+
+        <g>
+          <rect x="40" y="150" width="180" height="42" rx="9" fill="rgba(63,111,78,.12)" stroke="#3f6f4e"/>
+          <text x="60" y="176" fill="#211e1a">/api/users/123</text>
+          <rect x="360" y="150" width="180" height="42" rx="9" fill="rgba(63,111,78,.12)" stroke="#3f6f4e"/>
+          <text x="380" y="176" fill="#211e1a">/api/users/abc</text>
+          <rect x="680" y="150" width="180" height="42" rx="9" fill="rgba(63,111,78,.12)" stroke="#3f6f4e"/>
+          <text x="700" y="176" fill="#211e1a">/api/users/9f2</text>
+        </g>
+        <g stroke="#c7bca6" stroke-width="2" fill="none" stroke-dasharray="4 4">
+          <path d="M450 68 L130 148" marker-end="url(#b)"/>
+          <path d="M450 68 L450 148" marker-end="url(#b)"/>
+          <path d="M450 68 L770 148" marker-end="url(#b)"/>
+        </g>
+        <text x="450" y="225" text-anchor="middle" fill="#8d8475" font-size="11">each binds → <tspan fill="#b8402e" font-weight="700">id</tspan> = "123" | "abc" | "9f2"</text>
+        <defs><marker id="b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#c7bca6"/></marker></defs>
+      </svg>
+      <figcaption><b>One pattern, many matches.</b> The dynamic segment <b>:id</b> matches any string in that position and binds it to a named value the handler reads.</figcaption>
+    </figure>
+
+    <div class="term">
+      <span class="t">Path parameter (route parameter)</span>
+      <p>A dynamic value that lives <strong>inside the path, right after a forward slash</strong>. Because it is part of the route, it is called a <em>path parameter</em> or <em>route parameter</em>, and it carries <strong>semantic meaning</strong> — it identifies <em>which</em> resource the request is about.</p>
+    </div>
+
+    <ul class="clean">
+      <li>Everything in a path arrives as a <b>string</b>. <code class="ic">123</code> looks like a number, but in route paths numbers and special characters are all treated as strings; the handler casts it if needed.</li>
+      <li>Read aloud, <code class="ic">GET /api/users/123</code> says “fetch the data of the user whose ID is 123.” That human-readable construct is the whole idea behind REST-style routing — it gives routes a clear semantic meaning.</li>
+    </ul>
+  </section>
+
+  <!-- 05 -->
+  <section id="s5">
+    <div class="sec-head"><div class="badge">05</div><h2>Query Parameters</h2></div>
+    <div class="sec-rule"></div>
+    <p>A <strong>query parameter</strong> is a key/value pair attached to the end of the route after a <strong>question mark</strong>. Multiple pairs are joined by an ampersand. For example, <code class="ic">/api/search?query=some+value</code> — the route is <code class="ic">/api/search</code>, and after the <code class="ic">?</code> comes the key <code class="ic">query</code> with the value <code class="ic">some+value</code>.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 180" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="16">
+        <text x="20" y="55" fill="#b8402e" font-weight="600">/api/search</text>
+        <text x="160" y="55" fill="#8f2f20" font-weight="700">?</text>
+        <text x="176" y="55" fill="#37607f">query</text>
+        <text x="240" y="55" fill="#8d8475">=</text>
+        <text x="252" y="55" fill="#3f6f4e">some+value</text>
+        <text x="380" y="55" fill="#8f2f20" font-weight="700">&amp;</text>
+        <text x="396" y="55" fill="#37607f">page</text>
+        <text x="448" y="55" fill="#8d8475">=</text>
+        <text x="460" y="55" fill="#3f6f4e">2</text>
+        <text x="480" y="55" fill="#8f2f20" font-weight="700">&amp;</text>
+        <text x="496" y="55" fill="#37607f">limit</text>
+        <text x="556" y="55" fill="#8d8475">=</text>
+        <text x="568" y="55" fill="#3f6f4e">20</text>
+
+        <g font-size="11.5">
+          <text x="20" y="95" fill="#b8402e">the route</text>
+          <text x="150" y="118" fill="#8f2f20">? begins the query</text>
+          <text x="176" y="140" fill="#37607f">keys</text>
+          <text x="252" y="160" fill="#3f6f4e">values</text>
+          <text x="380" y="95" fill="#8f2f20">&amp; joins pairs</text>
+        </g>
+        <g stroke="#c7bca6" stroke-width="1" stroke-dasharray="3 3" fill="none">
+          <path d="M190 60 L190 110"/>
+          <path d="M200 60 L200 132"/>
+          <path d="M290 60 L290 152"/>
+        </g>
+      </svg>
+      <figcaption><b>Structure.</b> First pair after <b>?</b>, the rest after <b>&amp;</b>, each a <b>key=value</b>. A space in a value is written as <b>+</b>.</figcaption>
+    </figure>
+
+    <h4>Why query parameters exist</h4>
+    <p><span class="pill post">POST</span> and <span class="pill put">PUT</span> requests have a <strong>body</strong> — a container for sending user-defined data to the server. But <span class="pill get">GET</span> requests, by REST convention, have no body. So how does a GET send extra values? Query parameters are the answer: they let a GET ship a set of key/value pairs carrying <strong>metadata about the request</strong> — not the identity of the resource, but instructions for shaping the response.</p>
+
+    <div class="term">
+      <span class="t">Query parameter</span>
+      <p>An optional <code class="ic">key=value</code> pair in the query string, used to <strong>filter, sort, paginate, or search</strong>. Typically used with GET requests because they have no body. Optional, repeatable, and order-independent.</p>
+    </div>
+
+    <h4>The main example: pagination</h4>
+    <p>Imagine an endpoint that returns a list of books in paged format. The first call, <code class="ic">/api/books</code>, takes the server defaults and returns a chunk of data plus some <em>metadata</em> describing the whole set:</p>
+    <div class="code">
+      <div class="code-bar"><span class="lang"><span class="dot"></span>JSON · response</span><span class="file">GET /api/books</span></div>
+<pre><span class="c-pun">{</span>
+  <span class="c-str">"data"</span>: <span class="c-pun">[</span> <span class="c-com">/* …the first 20 books (the default page)… */</span> <span class="c-pun">]</span>,
+  <span class="c-str">"total"</span>:        <span class="c-num">100</span>,   <span class="c-com">// how many books exist in total</span>
+  <span class="c-str">"currentPage"</span>:  <span class="c-num">1</span>,     <span class="c-com">// which page this is (default = 1)</span>
+  <span class="c-str">"limit"</span>:        <span class="c-num">20</span>,    <span class="c-com">// page size (default limit)</span>
+  <span class="c-str">"totalPages"</span>:   <span class="c-num">5</span>      <span class="c-com">// 100 / 20 = 5 pages</span>
+<span class="c-pun">}</span></pre>
+    </div>
+    <p>The client uses this response metadata to make the next request. The default needed no parameter; to get page two the client sends <code class="ic">/api/books?page=2</code>. The same mechanism carries filters (e.g. filter by a user-defined value) and sort order (ascending or descending) — all as key/value pairs in the query.</p>
+  </section>
+
+  <!-- 06 -->
+  <section id="s6">
+    <div class="sec-head"><div class="badge">06</div><h2>Path vs Query Parameters</h2></div>
+    <div class="sec-rule"></div>
+    <p>Both put data in the URL, and it is easy to confuse them, so it is worth being precise. They serve different purposes.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="15">
+        <text x="20" y="60" fill="#b8402e" font-weight="600">/api/users/123</text>
+        <text x="218" y="60" fill="#8f2f20" font-weight="600">?sort=name&amp;page=2</text>
+
+        <rect x="14" y="80" width="190" height="3" fill="#b8402e"/>
+        <rect x="214" y="80" width="270" height="3" fill="#8f2f20"/>
+
+        <g font-size="13">
+          <text x="20" y="120" fill="#b8402e" font-weight="700">PATH PARAMETER</text>
+          <text x="20" y="146" fill="#5b5347">Identifies WHICH resource.</text>
+          <text x="20" y="168" fill="#5b5347">Part of the route. Semantic.</text>
+          <text x="20" y="190" fill="#5b5347">e.g. user whose ID is 123.</text>
+
+          <text x="360" y="120" fill="#8f2f20" font-weight="700">QUERY PARAMETER</text>
+          <text x="360" y="146" fill="#5b5347">Shapes HOW it's returned.</text>
+          <text x="360" y="168" fill="#5b5347">After the route. Metadata.</text>
+          <text x="360" y="190" fill="#5b5347">filter · sort · paginate · search.</text>
+        </g>
+      </svg>
+      <figcaption><b>Rule of thumb.</b> If it decides <b>which thing</b> you get → path parameter. If it only changes <b>the shape or subset</b> of the response → query parameter.</figcaption>
+    </figure>
+
+    <p>Path parameters serve a particular purpose: a semantic expression of <em>which</em> resource — “the user whose ID is 123.” You <em>could</em> technically push a search value into the path (<code class="ic">/api/search/some+value</code>), but it is hard to maintain and defeats the whole purpose of giving routes a clear semantic meaning. Metadata like a search term belongs in the query string instead: <code class="ic">/api/search?query=some+value</code>.</p>
+  </section>
+
+  <!-- 07 -->
+  <section id="s7">
+    <div class="sec-head"><div class="badge">07</div><h2>Nested Routes</h2></div>
+    <div class="sec-rule"></div>
+    <p>Nesting is not really a separate <em>type</em> of route — it is a practice you will see everywhere. In REST-style APIs, you often nest different resources to express a semantic relationship. Each deeper level narrows the meaning and maps to its own handler, returning a different granularity of data.</p>
+
+    <figure>
+      <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="14">
+        <g>
+          <rect x="40" y="20" width="300" height="40" rx="8" fill="rgba(255,255,255,.55)" stroke="#c7bca6"/>
+          <text x="58" y="46" fill="#211e1a">/api/users</text>
+          <text x="360" y="46" fill="#8d8475" font-size="12">→ list all users</text>
+
+          <rect x="90" y="86" width="300" height="40" rx="8" fill="rgba(255,255,255,.55)" stroke="#c7bca6"/>
+          <text x="108" y="112" fill="#211e1a">/api/users/<tspan fill="#b8402e" font-weight="700">123</tspan></text>
+          <text x="410" y="112" fill="#8d8475" font-size="12">→ one user</text>
+
+          <rect x="140" y="152" width="320" height="40" rx="8" fill="rgba(255,255,255,.55)" stroke="#c7bca6"/>
+          <text x="158" y="178" fill="#211e1a">/api/users/<tspan fill="#b8402e" font-weight="700">123</tspan>/posts</text>
+          <text x="480" y="178" fill="#8d8475" font-size="12">→ that user's posts</text>
+
+          <rect x="190" y="218" width="380" height="40" rx="8" fill="rgba(184,64,46,.1)" stroke="#b8402e"/>
+          <text x="208" y="244" fill="#211e1a">/api/users/<tspan fill="#b8402e" font-weight="700">123</tspan>/posts/<tspan fill="#b8402e" font-weight="700">456</tspan></text>
+          <text x="590" y="244" fill="#8d8475" font-size="12">→ one post</text>
+        </g>
+        <g stroke="#c7bca6" stroke-width="2" fill="none">
+          <path d="M70 60 L70 86 L88 86" marker-end="url(#c)"/>
+          <path d="M120 126 L120 152 L138 152" marker-end="url(#c)"/>
+          <path d="M170 192 L170 218 L188 218" marker-end="url(#c)"/>
+        </g>
+        <defs><marker id="c" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#c7bca6"/></marker></defs>
+      </svg>
+      <figcaption><b>Each level is its own endpoint.</b> Stop at any rung and you get a different response: all users, one user, that user's posts, or one specific post.</figcaption>
+    </figure>
+
+    <p>Walking the deepest example, <code class="ic">/api/users/123/posts/456</code>:</p>
+    <ul class="clean">
+      <li><code class="ic">/api/users</code> — a <b>static</b> part; on its own it returns the list of all users.</li>
+      <li><code class="ic">123</code> — a <b>path parameter</b> for the user ID; <code class="ic">/api/users/123</code> returns that one user.</li>
+      <li><code class="ic">posts</code> — a <b>static</b> part naming a sub-collection; <code class="ic">/api/users/123/posts</code> returns all posts of that user.</li>
+      <li><code class="ic">456</code> — a <b>path parameter</b> for a specific post; the full route fetches “the post with ID 456 belonging to the user with ID 123.”</li>
+    </ul>
+    <p>That is why it is called a nested route — you nest different types of information at different levels to express different semantic meanings, and each produces a different response. You will see this used pretty much everywhere once an API has even medium complexity.</p>
+  </section>
+
+  <!-- ============================================================ PART III -->
+  <div class="part-head"><span>Part III — Lifecycle &amp; Evolution</span><span>At run-time &amp; over time</span></div>
+
+  <!-- 08 -->
+  <section id="s8">
+    <div class="sec-head"><div class="badge">08</div><h2>The Routing Lifecycle</h2></div>
+    <div class="sec-rule"></div>
+    <p>Putting the pieces together, here is the path a single request travels — the routing step in context.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 260" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="12">
+        <defs>
+          <marker id="d" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#b8402e"/></marker>
+        </defs>
+        <g>
+          <rect x="20" y="40" width="150" height="64" rx="11" fill="rgba(63,111,78,.12)" stroke="#3f6f4e"/>
+          <text x="95" y="68" text-anchor="middle" fill="#3f6f4e" font-weight="700">1 · ARRIVE</text>
+          <text x="95" y="86" text-anchor="middle" fill="#5b5347">GET /api/users/123</text>
+
+          <rect x="200" y="40" width="150" height="64" rx="11" fill="rgba(55,96,127,.1)" stroke="#37607f"/>
+          <text x="275" y="68" text-anchor="middle" fill="#37607f" font-weight="700">2 · READ</text>
+          <text x="275" y="86" text-anchor="middle" fill="#5b5347">split route / query</text>
+
+          <rect x="380" y="40" width="150" height="64" rx="11" fill="rgba(184,64,46,.1)" stroke="#b8402e"/>
+          <text x="455" y="68" text-anchor="middle" fill="#b8402e" font-weight="700">3 · MATCH</text>
+          <text x="455" y="86" text-anchor="middle" fill="#5b5347">method+route → route</text>
+
+          <rect x="560" y="40" width="150" height="64" rx="11" fill="rgba(176,125,43,.13)" stroke="#b07d2b"/>
+          <text x="635" y="68" text-anchor="middle" fill="#b07d2b" font-weight="700">4 · EXTRACT</text>
+          <text x="635" y="86" text-anchor="middle" fill="#5b5347">id = 123</text>
+
+          <rect x="380" y="160" width="150" height="64" rx="11" fill="#232019" stroke="#232019"/>
+          <text x="455" y="188" text-anchor="middle" fill="#e0795f" font-weight="700">5 · HANDLER</text>
+          <text x="455" y="206" text-anchor="middle" fill="#9c948a">business logic · DB</text>
+
+          <rect x="200" y="160" width="150" height="64" rx="11" fill="rgba(63,111,78,.12)" stroke="#3f6f4e"/>
+          <text x="275" y="188" text-anchor="middle" fill="#3f6f4e" font-weight="700">6 · RESPOND</text>
+          <text x="275" y="206" text-anchor="middle" fill="#5b5347">return the data</text>
+        </g>
+        <g stroke="#b8402e" stroke-width="2" fill="none">
+          <path d="M170 72 L198 72" marker-end="url(#d)"/>
+          <path d="M350 72 L378 72" marker-end="url(#d)"/>
+          <path d="M530 72 L558 72" marker-end="url(#d)"/>
+          <path d="M635 104 C635 150 555 150 533 168" marker-end="url(#d)"/>
+          <path d="M380 192 L352 192" marker-end="url(#d)"/>
+        </g>
+      </svg>
+      <figcaption><b>Six beats.</b> Arrive → read the route → <b>match</b> (the routing step) → extract parameters → run the handler → return the response.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 09 -->
+  <section id="s9">
+    <div class="sec-head"><div class="badge">09</div><h2>Versioning &amp; Deprecation</h2></div>
+    <div class="sec-rule"></div>
+    <p><strong>Route versioning</strong> is a very common practice for managing change in API endpoints. You put a version keyword in the route — <code class="ic">/api/v1/products</code> and <code class="ic">/api/v2/products</code>. It looks like an ordinary route with a <code class="ic">v1</code> or <code class="ic">v2</code> segment added.</p>
+
+    <p>Why bother? Suppose v1 returns each product as <code class="ic">{ id, name, price }</code>. Later, new requirements arrive — say you now serve a mobile app and must change the response shape, renaming <code class="ic">name</code> to <code class="ic">title</code>. If you mutate the live route, you break every existing client. Versioning lets both shapes live at once:</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>/api/v1/products</th><th>/api/v2/products</th></tr></thead>
+        <tbody>
+          <tr><td><code>{ id, name, price }</code></td><td><code>{ id, title, price }</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>This does two things. It expresses intent clearly — v1 of the response and v2 of the response side by side. And it means you did not have to change the whole route (you didn’t need a <code class="ic">/api/new-products</code>); you just bumped the version.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="12">
+        <line x1="40" y1="180" x2="860" y2="180" stroke="#c7bca6" stroke-width="2"/>
+        <text x="40" y="205" fill="#8d8475">time →</text>
+        <rect x="40" y="60" width="560" height="34" rx="8" fill="rgba(55,96,127,.18)" stroke="#37607f"/>
+        <text x="60" y="82" fill="#37607f" font-weight="700">/api/v1/products — live</text>
+        <rect x="360" y="110" width="500" height="34" rx="8" fill="rgba(63,111,78,.18)" stroke="#3f6f4e"/>
+        <text x="380" y="132" fill="#3f6f4e" font-weight="700">/api/v2/products — live</text>
+        <rect x="360" y="50" width="240" height="100" fill="rgba(184,64,46,.07)" stroke="#b8402e" stroke-dasharray="5 4"/>
+        <text x="480" y="42" text-anchor="middle" fill="#b8402e" font-weight="700">MIGRATION WINDOW</text>
+        <circle cx="360" cy="180" r="5" fill="#3f6f4e"/>
+        <text x="360" y="170" text-anchor="middle" fill="#3f6f4e">v2 ships</text>
+        <circle cx="600" cy="180" r="5" fill="#b8402e"/>
+        <text x="600" y="170" text-anchor="middle" fill="#b8402e">v1 deprecated → removed</text>
+      </svg>
+      <figcaption><b>The safe workflow.</b> v2 ships beside v1; clients get a window to migrate; then v1 is deprecated and removed. Eventually v2 may be promoted to the default.</figcaption>
+    </figure>
+
+    <div class="term">
+      <span class="t">Deprecation</span>
+      <p>Announcing that an endpoint (e.g. v1) is going away once v2 is released. Engineers get a defined <strong>migration window</strong> to move their requests over to v2; only after that does the team remove v1. Versioning plus deprecation gives a stable workflow for shipping <strong>breaking changes without breaking clients in the moment.</strong></p>
+    </div>
+  </section>
+
+  <!-- 10 -->
+  <section id="s10">
+    <div class="sec-head"><div class="badge">10</div><h2>Catch-All Routes</h2></div>
+    <div class="sec-rule"></div>
+    <p>A <strong>catch-all route</strong> handles requests for routes the server does not actually serve. Suppose a request comes in for <code class="ic">/api/v3/products</code> but there is no handler for it. The server places a catch-all <em>last</em>, after all the specific routes and methods — typically written with a wildcard, <code class="ic">/*</code>. Any request that falls through every earlier match lands there.</p>
+
+    <figure>
+      <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="13">
+        <text x="40" y="34" fill="#5b5347">incoming: <tspan fill="#211e1a" font-weight="700">GET /api/v3/products</tspan>  (no handler exists)</text>
+        <g>
+          <rect x="40" y="50" width="380" height="34" rx="7" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+          <text x="58" y="72" fill="#5b5347">match GET /api/v1/products ?</text>
+          <text x="390" y="72" fill="#b8402e" font-weight="700">✗</text>
+          <rect x="40" y="92" width="380" height="34" rx="7" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+          <text x="58" y="114" fill="#5b5347">match GET /api/v2/products ?</text>
+          <text x="390" y="114" fill="#b8402e" font-weight="700">✗</text>
+          <rect x="40" y="134" width="380" height="34" rx="7" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+          <text x="58" y="156" fill="#5b5347">match GET /api/users/:id ?</text>
+          <text x="390" y="156" fill="#b8402e" font-weight="700">✗</text>
+          <rect x="40" y="180" width="380" height="40" rx="7" fill="rgba(184,64,46,.12)" stroke="#b8402e"/>
+          <text x="58" y="205" fill="#b8402e" font-weight="700">match  /*  (catch-all)</text>
+          <text x="388" y="205" fill="#3f6f4e" font-weight="700">✓</text>
+        </g>
+        <path d="M450 67 L450 198 L468 198" stroke="#b8402e" stroke-width="2" fill="none" stroke-dasharray="4 4" marker-end="url(#e)"/>
+        <rect x="500" y="150" width="340" height="70" rx="11" fill="#232019"/>
+        <text x="670" y="180" text-anchor="middle" fill="#e0795f" font-weight="700">friendly 404</text>
+        <text x="670" y="202" text-anchor="middle" fill="#9c948a" font-size="11">"this route does not exist"</text>
+        <defs><marker id="e" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#b8402e"/></marker></defs>
+      </svg>
+      <figcaption><b>Fall-through.</b> Because it sits last, the catch-all only fires when nothing else matched — turning a confusing default into a clear "not found".</figcaption>
+    </figure>
+
+    <p>Without catch-all handling, the default behaviour is often a null response, which is confusing. With it, the handler returns a user-friendly message — “this route does not exist” / “route not found” — so the client clearly understands the server does not cater to that endpoint.</p>
+
+    <div class="term">
+      <span class="t">Wildcard &amp; ordering</span>
+      <p>The <code class="ic">*</code> wildcard matches anything, which is exactly why the catch-all must be registered <strong>last</strong>. Placed early, it would intercept every request before the real routes get a turn. The reliable rule: specific routes first, the catch-all at the very end.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ PART IV -->
+  <div class="part-head"><span>Part IV — Implementation</span><span>Build a router, with the OOP showing</span></div>
+
+  <!-- 11 -->
+  <section id="s11">
+    <div class="sec-head"><div class="badge">11</div><h2>A Router in Go</h2></div>
+    <div class="sec-rule"></div>
+    <p>A router is, at bottom, a small object-oriented dispatch problem: a table from “method + route” to a handler. Go expresses the four OOP pillars through interfaces (abstraction + polymorphism), unexported fields (encapsulation), and struct embedding (composition — Go’s form of inheritance). The comments tagged <span style="color:var(--blue);font-style:italic;">OOP</span> point out each one.</p>
+
+    <div class="code">
+      <div class="code-bar"><span class="lang"><span class="dot"></span>Go 1.22+</span><span class="file">router.go</span></div>
+<pre><span class="c-kw">package</span> main
+
+<span class="c-kw">import</span> (<span class="c-str">"fmt"</span>; <span class="c-str">"strings"</span>)
+
+<span class="c-oop">// ABSTRACTION: Handler is an interface — it names a capability</span>
+<span class="c-oop">// ("be able to Handle a request") without saying how. Any type</span>
+<span class="c-oop">// with a Handle method IS-A Handler. The router depends only on</span>
+<span class="c-oop">// this contract, never on a concrete type.</span>
+<span class="c-kw">type</span> <span class="c-fn">Handler</span> <span class="c-kw">interface</span> {
+    <span class="c-fn">Handle</span>(req <span class="c-fn">Request</span>) <span class="c-fn">Response</span>
+}
+
+<span class="c-kw">type</span> <span class="c-fn">Request</span> <span class="c-kw">struct</span> {
+    Method string
+    Path   string
+    Params map[string]string <span class="c-com">// extracted path params (:id)</span>
+    Query  map[string]string <span class="c-com">// query params (?page=2)</span>
+}
+<span class="c-kw">type</span> <span class="c-fn">Response</span> <span class="c-kw">struct</span> { Status int; Body string }
+
+<span class="c-oop">// ENCAPSULATION: "routes" is lowercase => unexported => private to</span>
+<span class="c-oop">// the package. Outsiders cannot touch the table directly; they go</span>
+<span class="c-oop">// through the methods we expose (Register / Dispatch).</span>
+<span class="c-kw">type</span> <span class="c-fn">Router</span> <span class="c-kw">struct</span> {
+    routes map[string]<span class="c-fn">Handler</span> <span class="c-com">// key = "METHOD /route"</span>
+}
+
+<span class="c-kw">func</span> <span class="c-fn">NewRouter</span>() *<span class="c-fn">Router</span> {
+    <span class="c-kw">return</span> &<span class="c-fn">Router</span>{routes: <span class="c-kw">make</span>(map[string]<span class="c-fn">Handler</span>)}
+}
+
+<span class="c-com">// Register binds method + route -> handler (the dispatch table).</span>
+<span class="c-kw">func</span> (r *<span class="c-fn">Router</span>) <span class="c-fn">Register</span>(method, pattern string, h <span class="c-fn">Handler</span>) {
+    r.routes[method+<span class="c-str">" "</span>+pattern] = h <span class="c-com">// method + path = the unique key</span>
+}
+
+<span class="c-oop">// POLYMORPHISM: Dispatch calls h.Handle(req) without knowing which</span>
+<span class="c-oop">// concrete type h is. Same call, different behaviour per handler.</span>
+<span class="c-kw">func</span> (r *<span class="c-fn">Router</span>) <span class="c-fn">Dispatch</span>(req <span class="c-fn">Request</span>) <span class="c-fn">Response</span> {
+    <span class="c-kw">for</span> key, h := <span class="c-kw">range</span> r.routes {
+        method, pattern, _ := strings.<span class="c-fn">Cut</span>(key, <span class="c-str">" "</span>)
+        <span class="c-kw">if</span> method == req.Method && <span class="c-fn">match</span>(pattern, req.Path, &req) {
+            <span class="c-kw">return</span> h.<span class="c-fn">Handle</span>(req) <span class="c-com">// polymorphic dispatch</span>
+        }
+    }
+    <span class="c-kw">return</span> <span class="c-fn">Response</span>{<span class="c-num">404</span>, <span class="c-str">"route not found"</span>} <span class="c-com">// catch-all fallback</span>
+}
+
+<span class="c-com">// match compares "/users/:id" against "/users/123", filling Params.</span>
+<span class="c-kw">func</span> <span class="c-fn">match</span>(pattern, path string, req *<span class="c-fn">Request</span>) bool {
+    p, q := strings.<span class="c-fn">Split</span>(pattern, <span class="c-str">"/"</span>), strings.<span class="c-fn">Split</span>(path, <span class="c-str">"/"</span>)
+    <span class="c-kw">if</span> <span class="c-kw">len</span>(p) != <span class="c-kw">len</span>(q) { <span class="c-kw">return</span> false }
+    <span class="c-kw">for</span> i := <span class="c-kw">range</span> p {
+        <span class="c-kw">if</span> strings.<span class="c-fn">HasPrefix</span>(p[i], <span class="c-str">":"</span>) { <span class="c-com">// dynamic segment</span>
+            req.Params[p[i][<span class="c-num">1</span>:]] = q[i] <span class="c-com">// bind :id => "123"</span>
+        } <span class="c-kw">else if</span> p[i] != q[i] { <span class="c-com">// static segment must match exactly</span>
+            <span class="c-kw">return</span> false
+        }
+    }
+    <span class="c-kw">return</span> true
+}
+
+<span class="c-oop">// "INHERITANCE" via COMPOSITION: BaseHandler holds shared logic;</span>
+<span class="c-oop">// concrete handlers EMBED it and reuse its methods.</span>
+<span class="c-kw">type</span> <span class="c-fn">BaseHandler</span> <span class="c-kw">struct</span>{ Name string }
+
+<span class="c-kw">func</span> (b <span class="c-fn">BaseHandler</span>) <span class="c-fn">log</span>(req <span class="c-fn">Request</span>) {
+    fmt.<span class="c-fn">Printf</span>(<span class="c-str">"[%s] %s %s\n"</span>, b.Name, req.Method, req.Path)
+}
+
+<span class="c-com">// GetUser embeds BaseHandler (composition) and satisfies Handler.</span>
+<span class="c-kw">type</span> <span class="c-fn">GetUser</span> <span class="c-kw">struct</span>{ <span class="c-fn">BaseHandler</span> }
+<span class="c-kw">func</span> (h <span class="c-fn">GetUser</span>) <span class="c-fn">Handle</span>(req <span class="c-fn">Request</span>) <span class="c-fn">Response</span> {
+    h.<span class="c-fn">log</span>(req) <span class="c-com">// reused (inherited) behaviour</span>
+    <span class="c-kw">return</span> <span class="c-fn">Response</span>{<span class="c-num">200</span>, <span class="c-str">"user id = "</span> + req.Params[<span class="c-str">"id"</span>]}
+}
+
+<span class="c-kw">type</span> <span class="c-fn">ListBooks</span> <span class="c-kw">struct</span>{ <span class="c-fn">BaseHandler</span> }
+<span class="c-kw">func</span> (h <span class="c-fn">ListBooks</span>) <span class="c-fn">Handle</span>(req <span class="c-fn">Request</span>) <span class="c-fn">Response</span> {
+    h.<span class="c-fn">log</span>(req)
+    page := req.Query[<span class="c-str">"page"</span>] <span class="c-com">// query param drives pagination</span>
+    <span class="c-kw">if</span> page == <span class="c-str">""</span> { page = <span class="c-str">"1"</span> }
+    <span class="c-kw">return</span> <span class="c-fn">Response</span>{<span class="c-num">200</span>, <span class="c-str">"books page "</span> + page}
+}
+
+<span class="c-kw">func</span> <span class="c-fn">main</span>() {
+    r := <span class="c-fn">NewRouter</span>()
+    r.<span class="c-fn">Register</span>(<span class="c-str">"GET"</span>, <span class="c-str">"/api/users/:id"</span>, <span class="c-fn">GetUser</span>{<span class="c-fn">BaseHandler</span>{<span class="c-str">"users"</span>}})
+    r.<span class="c-fn">Register</span>(<span class="c-str">"GET"</span>, <span class="c-str">"/api/books"</span>,     <span class="c-fn">ListBooks</span>{<span class="c-fn">BaseHandler</span>{<span class="c-str">"books"</span>}})
+
+    req := <span class="c-fn">Request</span>{Method: <span class="c-str">"GET"</span>, Path: <span class="c-str">"/api/users/123"</span>,
+        Params: map[string]string{}, Query: map[string]string{}}
+    fmt.<span class="c-fn">Println</span>(r.<span class="c-fn">Dispatch</span>(req).Body) <span class="c-com">// => user id = 123</span>
+}</pre>
+    </div>
+  </section>
+
+  <!-- 12 -->
+  <section id="s12">
+    <div class="sec-head"><div class="badge">12</div><h2>A Router in Python</h2></div>
+    <div class="sec-rule"></div>
+    <p>The same architecture in classic class syntax: an abstract base class for the contract (abstraction), real subclassing (inheritance), overridden methods (polymorphism), and a name-mangled private attribute (encapsulation).</p>
+
+    <div class="code">
+      <div class="code-bar"><span class="lang"><span class="dot"></span>Python 3.11+</span><span class="file">router.py</span></div>
+<pre><span class="c-kw">from</span> abc <span class="c-kw">import</span> ABC, abstractmethod
+<span class="c-kw">from</span> dataclasses <span class="c-kw">import</span> dataclass, field
+<span class="c-kw">from</span> urllib.parse <span class="c-kw">import</span> urlsplit, parse_qs
+
+<span class="c-oop"># ABSTRACTION: Handler is an Abstract Base Class. @abstractmethod</span>
+<span class="c-oop"># forces every subclass to define handle(). You cannot create a</span>
+<span class="c-oop"># Handler directly — it is a pure contract.</span>
+<span class="c-kw">class</span> <span class="c-fn">Handler</span>(ABC):
+    <span class="c-fn">@abstractmethod</span>
+    <span class="c-kw">def</span> <span class="c-fn">handle</span>(self, req: <span class="c-str">"Request"</span>) -> <span class="c-str">"Response"</span>: ...
+
+<span class="c-fn">@dataclass</span>
+<span class="c-kw">class</span> <span class="c-fn">Request</span>:
+    method: str
+    path: str
+    params: dict = field(default_factory=dict)  <span class="c-com"># path params (:id)</span>
+    query: dict = field(default_factory=dict)   <span class="c-com"># query params (?page=2)</span>
+
+<span class="c-fn">@dataclass</span>
+<span class="c-kw">class</span> <span class="c-fn">Response</span>:
+    status: int
+    body: str
+
+<span class="c-oop"># INHERITANCE: BaseHandler is a concrete parent holding shared</span>
+<span class="c-oop"># behaviour (logging). Subclasses inherit and reuse _log().</span>
+<span class="c-kw">class</span> <span class="c-fn">BaseHandler</span>(Handler):
+    <span class="c-kw">def</span> <span class="c-fn">__init__</span>(self, name): self._name = name   <span class="c-com"># protected by convention</span>
+    <span class="c-kw">def</span> <span class="c-fn">_log</span>(self, req): print(f<span class="c-str">"[{self._name}] {req.method} {req.path}"</span>)
+
+<span class="c-oop"># POLYMORPHISM: each subclass OVERRIDES handle() differently, yet</span>
+<span class="c-oop"># the router calls them all identically — handler.handle(req).</span>
+<span class="c-kw">class</span> <span class="c-fn">GetUser</span>(BaseHandler):           <span class="c-com"># IS-A BaseHandler IS-A Handler</span>
+    <span class="c-kw">def</span> <span class="c-fn">handle</span>(self, req):
+        self._log(req)              <span class="c-com"># inherited from parent</span>
+        <span class="c-kw">return</span> Response(<span class="c-num">200</span>, f<span class="c-str">"user id = {req.params['id']}"</span>)
+
+<span class="c-kw">class</span> <span class="c-fn">ListBooks</span>(BaseHandler):
+    <span class="c-kw">def</span> <span class="c-fn">handle</span>(self, req):
+        self._log(req)
+        page = req.query.get(<span class="c-str">"page"</span>, [<span class="c-str">"1"</span>])[<span class="c-num">0</span>]   <span class="c-com"># query param</span>
+        <span class="c-kw">return</span> Response(<span class="c-num">200</span>, f<span class="c-str">"books page {page}"</span>)
+
+<span class="c-oop"># ENCAPSULATION: self.__routes is name-mangled to _Router__routes,</span>
+<span class="c-oop"># so it is effectively private. The public surface is register()</span>
+<span class="c-oop"># and dispatch(); the table stays hidden.</span>
+<span class="c-kw">class</span> <span class="c-fn">Router</span>:
+    <span class="c-kw">def</span> <span class="c-fn">__init__</span>(self):
+        self.__routes: dict[tuple[str, str], Handler] = {}
+
+    <span class="c-kw">def</span> <span class="c-fn">register</span>(self, method, pattern, handler):
+        self.__routes[(method, pattern)] = handler  <span class="c-com"># method + path key</span>
+
+    <span class="c-kw">def</span> <span class="c-fn">dispatch</span>(self, method, url):
+        parts = urlsplit(url)
+        query = parse_qs(parts.query)               <span class="c-com"># ?a=1&amp;b=2 -> dict</span>
+        <span class="c-kw">for</span> (m, pattern), handler <span class="c-kw">in</span> self.__routes.items():
+            params = self.__match(pattern, parts.path)
+            <span class="c-kw">if</span> m == method <span class="c-kw">and</span> params <span class="c-kw">is not None</span>:
+                <span class="c-kw">return</span> handler.handle(
+                    Request(method, parts.path, params, query))  <span class="c-com"># polymorphic</span>
+        <span class="c-kw">return</span> Response(<span class="c-num">404</span>, <span class="c-str">"route not found"</span>)       <span class="c-com"># catch-all</span>
+
+    <span class="c-fn">@staticmethod</span>
+    <span class="c-kw">def</span> <span class="c-fn">__match</span>(pattern, path):
+        p = pattern.strip(<span class="c-str">"/"</span>).split(<span class="c-str">"/"</span>)
+        q = path.strip(<span class="c-str">"/"</span>).split(<span class="c-str">"/"</span>)
+        <span class="c-kw">if</span> len(p) != len(q): <span class="c-kw">return None</span>
+        params = {}
+        <span class="c-kw">for</span> seg, val <span class="c-kw">in</span> zip(p, q):
+            <span class="c-kw">if</span> seg.startswith(<span class="c-str">":"</span>):       <span class="c-com"># dynamic segment</span>
+                params[seg[<span class="c-num">1</span>:]] = val    <span class="c-com"># bind :id -> "123"</span>
+            <span class="c-kw">elif</span> seg != val:            <span class="c-com"># static must match exactly</span>
+                <span class="c-kw">return None</span>
+        <span class="c-kw">return</span> params
+
+<span class="c-kw">if</span> __name__ == <span class="c-str">"__main__"</span>:
+    r = Router()
+    r.register(<span class="c-str">"GET"</span>, <span class="c-str">"/api/users/:id"</span>, GetUser(<span class="c-str">"users"</span>))
+    r.register(<span class="c-str">"GET"</span>, <span class="c-str">"/api/books"</span>,     ListBooks(<span class="c-str">"books"</span>))
+    print(r.dispatch(<span class="c-str">"GET"</span>, <span class="c-str">"/api/users/123"</span>).body)   <span class="c-com"># user id = 123</span>
+    print(r.dispatch(<span class="c-str">"GET"</span>, <span class="c-str">"/api/books?page=2"</span>).body) <span class="c-com"># books page 2</span></pre>
+    </div>
+    <div class="note">
+      <div class="h">Same architecture, two languages</div>
+      <p>Go reaches it through interfaces + embedding; Python through ABCs + class inheritance. Both are a private dispatch table keyed on <b>method + route</b>, an abstract <b>handler</b> contract, polymorphic dispatch, and a catch-all fallback — the whole routing model from this manual, in code.</p>
+    </div>
+  </section>
+
+  <!-- 13 -->
+  <section id="s13">
+    <div class="sec-head"><div class="badge">13</div><h2>Routing Glossary</h2></div>
+    <div class="sec-rule"></div>
+    <p>Every routing term used above, in one place.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><b>Routing</b></td><td>Mapping a URL path (+ HTTP method) to a server-side handler / logic.</td></tr>
+          <tr><td><b>Intent / action</b></td><td>What the request wants to do — fetch, add, update, delete (the HTTP method).</td></tr>
+          <tr><td><b>Route / route path</b></td><td>The address part saying <em>where</em> on the server — e.g. <code>/api/books</code>.</td></tr>
+          <tr><td><b>Handler</b></td><td>The instructions that run when a route matches; runs the business logic.</td></tr>
+          <tr><td><b>Resource</b></td><td>The "thing" a route targets — a noun like <code>users</code> or <code>books</code>.</td></tr>
+          <tr><td><b>Unique key</b></td><td>Method + route concatenated; what the server looks a handler up by.</td></tr>
+          <tr><td><b>Static route</b></td><td>Fixed, constant path with no variable parameters.</td></tr>
+          <tr><td><b>Dynamic route</b></td><td>Route with a variable parameter in the path.</td></tr>
+          <tr><td><b>Path parameter</b></td><td>A dynamic value inside the path (<code>:id</code>); identifies <em>which</em> resource. Also "route parameter".</td></tr>
+          <tr><td><b>Query parameter</b></td><td>A <code>key=value</code> pair after <code>?</code>; metadata for filter/sort/paginate/search.</td></tr>
+          <tr><td><b>Pagination</b></td><td>Returning a list in pages, driven by query params like <code>page</code> and <code>limit</code>.</td></tr>
+          <tr><td><b>Nested route</b></td><td>Hierarchy of segments expressing ownership — <code>/users/123/posts/456</code>.</td></tr>
+          <tr><td><b>Semantic meaning</b></td><td>A route written so it reads like a clear, human-readable statement (the goal of REST routing).</td></tr>
+          <tr><td><b>Versioning</b></td><td>Putting <code>/v1/</code>, <code>/v2/</code> in the route to evolve an API safely.</td></tr>
+          <tr><td><b>Deprecation</b></td><td>Marking an old version as going away; clients get a migration window.</td></tr>
+          <tr><td><b>Catch-all route</b></td><td>Last-resort <code>/*</code> route returning a friendly "route not found".</td></tr>
+          <tr><td><b>Wildcard</b></td><td>A token (<code>*</code>) that matches anything; lives in the catch-all.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <div class="h">The whole model in one breath</div>
+      <p>A request bundles a <b>method</b> (the what) and a <b>route</b> (the where). The server joins them into a unique key, matches it against its table — static routes first, dynamic next, catch-all last — extracts any <b>path params</b> from the route and <b>query params</b> from the query string, then calls the matched <b>handler</b>. Version the route to evolve, deprecate to retire, and catch-all to fail gracefully.</p>
+    </div>
+  </section>
+
+  <footer class="doc">
+    <div class="big">That’s routing — the <em>where</em>, fully mapped.</div>
+    <p>Scope held to routing only: what routing is, the method + route key, static and dynamic routes, path and query parameters, nesting, versioning &amp; deprecation, and catch-alls — plus a worked router in Go and Python. Code targets Go 1.22+ and Python 3.11+.</p>
+  </footer>
+
+</main>
+</div>
+
+<script>
+  const bar = document.getElementById('progress');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    bar.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  }, {passive:true});
+
+  const links = [...document.querySelectorAll('#nav a')];
+  const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const a = map.get(e.target.id);
+        if (a) a.classList.add('active');
+      }
+    });
+  }, {rootMargin: '-20% 0px -70% 0px'});
+  document.querySelectorAll('section[id]').forEach(s => io.observe(s));
+</script>
+<!-- ============ CHAPTER NAVIGATION ============ -->
+<nav class="chapter-nav" id="chapterNav">
+  <a href="../../1.HTTP-AND-CORS/html_notes/notes.html" class="nav-chapter-link"><span class="nav-arrow">&larr;</span><span class="nav-label"><span class="nav-small">Chapter 1</span>HTTP & CORS</span></a>
+  <a href="../../index.html" class="nav-indicator"><span class="nav-dot"></span> Chapter 2 <span class="nav-sep">/</span> 24</a>
+  <a href="../../3.Serialization-and-Deserialization-or-backend-engineers/html_notes/notes.html" class="nav-chapter-link nav-next"><span class="nav-label"><span class="nav-small">Chapter 3</span>Serialization & Deserialization</span><span class="nav-arrow">&rarr;</span></a>
+</nav>
+</body>
+</html>

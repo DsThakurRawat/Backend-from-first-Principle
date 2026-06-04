@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Serialization &amp; Deserialization — The Backend Lens · Field Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,400;1,9..144,500;1,9..144,600&family=Spline+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f3ede2;--paper-2:#ece3d4;--paper-3:#e6dcca;
+    --ink:#211e1a;--ink-soft:#5b5347;--ink-faint:#8d8475;
+    --accent:#b8402e;--accent-2:#8f2f20;
+    --green:#3f6f4e;--blue:#37607f;--gold:#b07d2b;
+    --line:#d8cfbe;--line-strong:#c7bca6;
+    --code-bg:#232019;--code-ink:#e9e2d3;--code-faint:#9c948a;
+    --shadow:0 1px 0 rgba(0,0,0,.04), 0 18px 40px -28px rgba(40,30,20,.5);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:"Spline Sans", sans-serif;font-size:17px;line-height:1.68;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(circle at 18% 12%, rgba(184,64,46,.04), transparent 45%),radial-gradient(circle at 82% 78%, rgba(55,96,127,.04), transparent 42%);
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:.5;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.035'/%3E%3C/svg%3E");
+    mix-blend-mode:multiply;
+  }
+  #progress{position:fixed;top:0;left:0;height:3px;width:0;background:var(--accent);z-index:10000;transition:width .08s linear;}
+
+  .shell{display:grid;grid-template-columns:300px minmax(0,1fr);max-width:1500px;margin:0 auto;}
+
+  aside{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid var(--line-strong);background:linear-gradient(180deg,var(--paper-2),var(--paper));padding:42px 28px 60px;}
+  aside::-webkit-scrollbar{width:8px;}
+  aside::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:4px;}
+  .brand{font-family:"Fraunces",serif;font-weight:700;font-size:24px;line-height:1.05;letter-spacing:-.01em;}
+  .brand .slash{color:var(--accent);font-style:italic;}
+  .brand .sub{display:block;font-style:italic;font-weight:500;font-size:22px;color:var(--ink);}
+  .kicker{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-faint);margin-top:10px;}
+  .rule{height:1px;background:var(--line-strong);margin:26px 0 22px;}
+  nav a{display:flex;gap:13px;align-items:baseline;text-decoration:none;color:var(--ink-soft);font-size:14.5px;padding:7px 0;transition:color .15s, transform .15s;}
+  nav a .num{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--accent);font-weight:600;min-width:20px;}
+  nav a:hover{color:var(--ink);transform:translateX(3px);}
+  nav a.active{color:var(--accent);font-weight:600;}
+  nav .part{font-family:"JetBrains Mono",monospace;font-size:9.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-faint);margin:22px 0 6px;padding-top:14px;border-top:1px solid var(--line);}
+  nav .part:first-of-type{border-top:none;padding-top:0;margin-top:0;}
+  .aside-foot{margin-top:34px;font-family:"JetBrains Mono",monospace;font-size:10px;line-height:1.7;color:var(--ink-faint);letter-spacing:.04em;}
+
+  main{padding:54px clamp(28px,5vw,92px) 120px;max-width:1040px;}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:var(--accent);font-weight:600;}
+  h1.title{font-family:"Fraunces",serif;font-weight:900;font-size:clamp(40px,7vw,84px);line-height:.96;letter-spacing:-.02em;margin:18px 0 0;}
+  h1.title em{font-style:italic;font-weight:600;color:var(--accent);}
+  .lede{font-size:21px;line-height:1.6;color:var(--ink-soft);max-width:760px;margin:26px 0 0;}
+  .lede em{font-style:italic;color:var(--ink);}
+  .tags{display:flex;flex-wrap:wrap;gap:11px;margin-top:34px;}
+  .tag{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink-soft);border:1px solid var(--line-strong);border-radius:40px;padding:8px 16px;background:rgba(255,255,255,.35);}
+  .tag b{color:var(--accent);font-weight:600;}
+  .hr-accent{height:2px;width:120px;background:var(--accent);margin:46px 0 0;}
+
+  .part-head{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--accent);margin:78px 0 4px;border-bottom:1px dashed var(--line-strong);padding-bottom:18px;display:flex;justify-content:space-between;}
+  .part-head span:last-child{color:var(--ink-faint);}
+
+  section{scroll-margin-top:24px;}
+  .sec-head{display:flex;align-items:center;gap:18px;margin:46px 0 8px;}
+  .badge{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:15px;color:#fff;background:var(--accent);border-radius:9px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -8px var(--accent);flex:none;}
+  h2{font-family:"Fraunces",serif;font-weight:700;font-size:clamp(28px,4vw,40px);line-height:1.05;letter-spacing:-.015em;margin:0;}
+  h3{font-family:"Fraunces",serif;font-weight:600;font-size:23px;letter-spacing:-.01em;margin:38px 0 6px;}
+  h4{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);margin:26px 0 8px;}
+  .sec-rule{height:1px;background:var(--line);margin:12px 0 22px;}
+
+  p{margin:0 0 18px;}
+  main a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(184,64,46,.3);}
+  strong{font-weight:600;color:var(--ink);}
+  em{color:var(--ink);}
+  code.ic{font-family:"JetBrains Mono",monospace;font-size:.86em;background:var(--paper-3);border:1px solid var(--line-strong);border-radius:5px;padding:1px 7px;color:var(--accent-2);}
+
+  ul.clean{margin:6px 0 20px;padding:0;list-style:none;}
+  ul.clean li{position:relative;padding-left:26px;margin-bottom:11px;}
+  ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:7px;height:7px;background:var(--accent);transform:rotate(45deg);}
+  ul.clean li b{color:var(--ink);}
+
+  .term{border-left:3px solid var(--accent);background:linear-gradient(90deg,rgba(184,64,46,.06),transparent);padding:14px 18px;margin:22px 0;border-radius:0 8px 8px 0;}
+  .term .t{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:600;display:block;margin-bottom:4px;}
+  .term p{margin:0;font-size:15.5px;color:var(--ink-soft);}
+
+  .note{background:rgba(255,255,255,.45);border:1px solid var(--line-strong);border-radius:12px;padding:20px 24px;margin:24px 0;box-shadow:var(--shadow);}
+  .note .h{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--blue);font-weight:600;margin-bottom:8px;}
+  .note.warn .h{color:var(--accent);}
+  .note.warn{border-color:rgba(184,64,46,.35);background:rgba(184,64,46,.05);}
+  .note p:last-child{margin-bottom:0;}
+
+  figure{margin:30px 0;background:rgba(255,255,255,.5);border:1px solid var(--line-strong);border-radius:14px;padding:26px 24px 18px;box-shadow:var(--shadow);overflow:hidden;}
+  figure svg{display:block;width:100%;height:auto;}
+  figcaption{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.05em;color:var(--ink-faint);margin-top:16px;border-top:1px dotted var(--line-strong);padding-top:12px;}
+  figcaption b{color:var(--accent);font-weight:600;}
+
+  .code{position:relative;background:var(--code-bg);border-radius:14px;margin:24px 0;box-shadow:0 22px 44px -30px rgba(20,15,10,.85);overflow:hidden;}
+  .code-bar{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.07);}
+  .code-bar .lang{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:9px;}
+  .code-bar .lang .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);}
+  .code-bar .file{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--code-faint);}
+  pre{margin:0;padding:20px 22px;overflow-x:auto;font-family:"JetBrains Mono",monospace;font-size:13px;line-height:1.72;color:var(--code-ink);}
+  pre::-webkit-scrollbar{height:9px;}
+  pre::-webkit-scrollbar-thumb{background:#4a443b;border-radius:5px;}
+  .c-kw{color:#e0795f;}.c-fn{color:#d9b06a;}.c-str{color:#9bbf7f;}
+  .c-com{color:#7d7568;font-style:italic;}.c-oop{color:#7fb0cf;font-style:italic;}
+  .c-num{color:#c08fb8;}.c-pun{color:#b6aec0;}.c-key{color:#e0795f;}
+
+  .tbl-wrap{overflow-x:auto;margin:24px 0;border:1px solid var(--line-strong);border-radius:12px;box-shadow:var(--shadow);}
+  table{border-collapse:collapse;width:100%;font-size:14.5px;background:rgba(255,255,255,.4);}
+  th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);background:var(--paper-3);}
+  tbody tr:last-child td{border-bottom:none;}
+  td code{font-family:"JetBrains Mono",monospace;font-size:12.5px;color:var(--accent-2);}
+
+  footer.doc{margin-top:90px;border-top:2px solid var(--accent);padding-top:30px;font-size:14px;color:var(--ink-soft);}
+  footer.doc .big{font-family:"Fraunces",serif;font-style:italic;font-size:26px;color:var(--ink);margin-bottom:10px;}
+
+  @media (max-width:920px){
+    .shell{grid-template-columns:1fr;}
+    aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line-strong);}
+    nav{columns:2;column-gap:24px;}
+    main{padding:40px 22px 90px;}
+  }
+</style>
+<style>
+.chapter-nav{position:fixed;bottom:0;left:0;right:0;z-index:9998;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(16px,4vw,48px);background:rgba(243,237,226,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1.5px solid #c7bca6;box-shadow:0 -8px 32px -16px rgba(40,30,20,.18);font-family:"JetBrains Mono","Spline Sans",monospace;}
+.nav-chapter-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:#5b5347;padding:10px 18px;border-radius:10px;transition:all .2s ease;max-width:38%;}
+.nav-chapter-link:hover{background:rgba(184,64,46,.08);color:#b8402e;transform:translateY(-1px);}
+.nav-chapter-link.nav-next{text-align:right;flex-direction:row;}
+.nav-arrow{font-size:22px;color:#b8402e;font-weight:700;flex:none;}
+.nav-label{display:flex;flex-direction:column;gap:2px;font-size:13.5px;line-height:1.3;}
+.nav-small{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8d8475;font-weight:600;}
+.nav-indicator{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#b8402e;font-weight:700;text-decoration:none;padding:8px 16px;border:1.5px solid #c7bca6;border-radius:40px;background:rgba(255,255,255,.5);transition:all .2s;white-space:nowrap;}
+.nav-indicator:hover{background:#b8402e;color:#fff;border-color:#b8402e;}
+.nav-dot{display:inline-block;width:7px;height:7px;background:#b8402e;border-radius:50%;margin-right:4px;vertical-align:middle;}
+.nav-sep{color:#c7bca6;margin:0 2px;}
+.nav-disabled{visibility:hidden;pointer-events:none;}
+@media(max-width:700px){.nav-label{font-size:11.5px;}.nav-chapter-link{padding:8px 10px;max-width:42%;}.chapter-nav{padding:10px 12px;}}
+body{padding-bottom:80px;}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<div class="shell">
+
+<!-- ============ SIDEBAR ============ -->
+<aside>
+  <div class="brand">Serialization <span class="slash">/</span><span class="sub">the backend lens</span></div>
+  <div class="kicker">Field Manual · v1</div>
+  <div class="rule"></div>
+  <nav id="nav">
+    <div class="part">Part I · The Problem</div>
+    <a href="#s1"><span class="num">01</span><span>The Language Barrier</span></a>
+    <a href="#s2"><span class="num">02</span><span>Serialize &amp; Deserialize</span></a>
+
+    <div class="part">Part II · The Standards</div>
+    <a href="#s3"><span class="num">03</span><span>Agreeing on a Common Standard</span></a>
+    <a href="#s4"><span class="num">04</span><span>Text-based vs Binary Formats</span></a>
+    <a href="#s5"><span class="num">05</span><span>JSON — the Industry Standard</span></a>
+    <a href="#s6"><span class="num">06</span><span>JSON Syntax Rules</span></a>
+
+    <div class="part">Part III · Under the Hood</div>
+    <a href="#s7"><span class="num">07</span><span>The OSI Mental Model</span></a>
+    <a href="#s8"><span class="num">08</span><span>The End-to-End Workflow</span></a>
+
+    <div class="part">Part IV · Implementation</div>
+    <a href="#s9"><span class="num">09</span><span>In Go (OOP)</span></a>
+    <a href="#s10"><span class="num">10</span><span>In Python (OOP)</span></a>
+    <a href="#s11"><span class="num">11</span><span>Glossary</span></a>
+  </nav>
+  <div class="aside-foot">
+    SCOPE · serialization only<br>
+    native data ⇄ common format<br>
+    language- &amp; domain-agnostic<br><br>
+    Code: Go 1.22+ · Python 3.11+
+  </div>
+</aside>
+
+<!-- ============ MAIN ============ -->
+<main>
+
+  <!-- HERO -->
+  <div class="eyebrow">A Detailed Backend Reference</div>
+  <h1 class="title">Serialization, the <em>shared language</em> of machines.</h1>
+  <p class="lede">A JavaScript client and a Rust server have nothing in common at the level of data types. Serialization is how they talk anyway: both convert their native data <em>to and from</em> one agreed format for the trip across the network. This manual covers the whole idea — the language barrier, the common standard, text vs binary formats, JSON in depth, the OSI mental model, and the full client⇄server round-trip — with worked code in Go and Python.</p>
+
+  <div class="tags">
+    <span class="tag">native data <b>⇄</b> common format</span>
+    <span class="tag"><b>language</b>-agnostic</span>
+    <span class="tag">JSON · ~80%</span>
+    <span class="tag">11 sections</span>
+  </div>
+  <div class="hr-accent"></div>
+
+  <!-- ============================================================ PART I -->
+  <div class="part-head"><span>Part I — The Problem</span><span>Why this exists</span></div>
+
+  <!-- 01 -->
+  <section id="s1">
+    <div class="sec-head"><div class="badge">01</div><h2>The Language Barrier</h2></div>
+    <div class="sec-rule"></div>
+    <p>A typical web application is two machines in different places, connected over the internet. The <strong>client</strong> — the frontend, often a JavaScript app (React, Angular, Vue) running in a browser like Chrome — talks to a <strong>server</strong>, the backend, which may run on localhost or somewhere remote in AWS, GCP, or Azure. They communicate through some network protocol: HTTP (traditional REST APIs), or gRPC, or WebSocket. This manual assumes HTTP/REST, since it is still the most common.</p>
+
+    <p>Here is the catch. The client might be JavaScript and the server might be Rust — and those two languages handle data <em>completely differently</em>:</p>
+    <ul class="clean">
+      <li><b>JavaScript</b> is dynamic and not compiled — types are loose and decided at runtime.</li>
+      <li><b>Rust</b> is compiled and extremely strict about types.</li>
+    </ul>
+    <p>So when a JavaScript client sends an object like <code class="ic">{ name: "..." }</code> in the request body, the Rust server <em>cannot natively understand</em> a JavaScript data structure — its own data types are nothing like JavaScript’s. The same problem runs in reverse for the response. Two machines, two incompatible internal worlds, one wire between them.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 230" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="13">
+        <!-- client -->
+        <rect x="20" y="40" width="240" height="150" rx="14" fill="rgba(176,125,43,.10)" stroke="#b07d2b"/>
+        <text x="140" y="68" text-anchor="middle" fill="#b07d2b" font-weight="700" font-size="14">CLIENT · JavaScript</text>
+        <text x="140" y="86" text-anchor="middle" fill="#8d8475" font-size="11">dynamic · not compiled</text>
+        <rect x="46" y="104" width="188" height="68" rx="8" fill="#232019"/>
+        <text x="62" y="126" fill="#e9e2d3">{</text>
+        <text x="78" y="146" fill="#7fb0cf">name</text>
+        <text x="118" y="146" fill="#e9e2d3">: </text>
+        <text x="132" y="146" fill="#9bbf7f">"Ada"</text>
+        <text x="62" y="164" fill="#e9e2d3">}</text>
+
+        <!-- server -->
+        <rect x="640" y="40" width="240" height="150" rx="14" fill="rgba(55,96,127,.10)" stroke="#37607f"/>
+        <text x="760" y="68" text-anchor="middle" fill="#37607f" font-weight="700" font-size="14">SERVER · Rust</text>
+        <text x="760" y="86" text-anchor="middle" fill="#8d8475" font-size="11">compiled · strict types</text>
+        <rect x="666" y="104" width="188" height="68" rx="8" fill="#232019"/>
+        <text x="682" y="126" fill="#e0795f">struct</text>
+        <text x="742" y="126" fill="#d9b06a"> User {</text>
+        <text x="698" y="146" fill="#7fb0cf">name</text>
+        <text x="738" y="146" fill="#e9e2d3">: String</text>
+        <text x="682" y="164" fill="#e9e2d3">}</text>
+
+        <!-- gap -->
+        <text x="450" y="100" text-anchor="middle" fill="#b8402e" font-weight="700" font-size="40">?</text>
+        <text x="450" y="135" text-anchor="middle" fill="#8d8475" font-size="11">incompatible data types</text>
+        <path d="M270 130 L420 130" stroke="#b8402e" stroke-width="2" stroke-dasharray="5 5" fill="none"/>
+        <path d="M480 130 L630 130" stroke="#b8402e" stroke-width="2" stroke-dasharray="5 5" fill="none"/>
+      </svg>
+      <figcaption><b>The barrier.</b> A Rust server can't natively parse a JavaScript object. They need a <b>universal language</b> for the trip across the network.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 02 -->
+  <section id="s2">
+    <div class="sec-head"><div class="badge">02</div><h2>Serialize &amp; Deserialize</h2></div>
+    <div class="sec-rule"></div>
+    <p>The solution: both sides agree on a single, common, standard format for data on the wire. Each machine converts <em>into</em> that format before sending, and <em>out of</em> it after receiving.</p>
+
+    <div class="term">
+      <span class="t">Serialization</span>
+      <p>Converting <strong>native data</strong> (a JavaScript object, a Rust struct, a Go struct, a Python object) <strong>into the common standard format</strong> before sending it over the network (or storing it).</p>
+    </div>
+    <div class="term">
+      <span class="t">Deserialization</span>
+      <p>The exact reverse: taking data <em>in</em> the common format and <strong>parsing it back into the machine’s own native data type</strong>, so it can run its business logic.</p>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 900 200" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="13">
+        <rect x="40" y="70" width="200" height="60" rx="11" fill="rgba(176,125,43,.12)" stroke="#b07d2b"/>
+        <text x="140" y="95" text-anchor="middle" fill="#211e1a" font-weight="600">native data</text>
+        <text x="140" y="115" text-anchor="middle" fill="#8d8475" font-size="11">object · struct</text>
+
+        <rect x="350" y="70" width="200" height="60" rx="11" fill="#232019"/>
+        <text x="450" y="95" text-anchor="middle" fill="#e0795f" font-weight="700">common format</text>
+        <text x="450" y="115" text-anchor="middle" fill="#9c948a" font-size="11">e.g. JSON text</text>
+
+        <rect x="660" y="70" width="200" height="60" rx="11" fill="rgba(55,96,127,.12)" stroke="#37607f"/>
+        <text x="760" y="95" text-anchor="middle" fill="#211e1a" font-weight="600">native data</text>
+        <text x="760" y="115" text-anchor="middle" fill="#8d8475" font-size="11">struct · object</text>
+
+        <path d="M242 90 L348 90" stroke="#b8402e" stroke-width="2" fill="none" marker-end="url(#a)"/>
+        <text x="295" y="80" text-anchor="middle" fill="#b8402e" font-weight="700" font-size="11">serialize →</text>
+
+        <path d="M552 110 L658 110" stroke="#37607f" stroke-width="2" fill="none" marker-end="url(#a2)"/>
+        <text x="605" y="128" text-anchor="middle" fill="#37607f" font-weight="700" font-size="11">→ deserialize</text>
+
+        <defs>
+          <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#b8402e"/></marker>
+          <marker id="a2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#37607f"/></marker>
+        </defs>
+      </svg>
+      <figcaption><b>Two directions, one format.</b> Serialize = native → common. Deserialize = common → native. The format in the middle is what travels.</figcaption>
+    </figure>
+
+    <div class="term">
+      <span class="t">Language-agnostic &amp; domain-agnostic</span>
+      <p>Because the format is neutral, <strong>any machine can talk to any other machine</strong> regardless of the languages or technologies underneath. “Language-agnostic” = it doesn’t care whether you’re JS or Rust. “Domain-agnostic” = it doesn’t care which environment or technology stack you run.</p>
+    </div>
+
+    <div class="note">
+      <div class="h">Not only for the network</div>
+      <p>The same convert-to-and-from-a-common-format idea also applies to <strong>storage</strong> — writing data to disk or a config/log file and reading it back later. Transmission is the focus here, but the phenomenon is the same.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ PART II -->
+  <div class="part-head"><span>Part II — The Standards</span><span>Which format to agree on</span></div>
+
+  <!-- 03 -->
+  <section id="s3">
+    <div class="sec-head"><div class="badge">03</div><h2>Agreeing on a Common Standard</h2></div>
+    <div class="sec-rule"></div>
+    <p>If you were handed this problem cold — two machines in different locations, connected over the internet, that must exchange data in a way that is <em>language-agnostic</em> — the obvious solution is to define a <strong>common standard</strong>.</p>
+    <div class="term">
+      <span class="t">A “standard” / “format”</span>
+      <p>Just a fancy word for an agreed <strong>set of rules</strong> describing how data must be written. Both client and server promise: “we will send and receive data shaped like <em>this</em>.”</p>
+    </div>
+    <p>With that agreement in place, the client converts its native logic (say, from JavaScript) into the standard before sending; the server reads the standard and converts it into <em>its</em> native type (say, a Rust struct); it does its work, converts the response back into the standard, and sends it; and the client parses it back into JavaScript. That round-trip <em>is</em> serialization and deserialization. In one line: <strong>converting data to and from a common format during transmission (or storage), so it is understandable across languages and domains.</strong></p>
+  </section>
+
+  <!-- 04 -->
+  <section id="s4">
+    <div class="sec-head"><div class="badge">04</div><h2>Text-based vs Binary Formats</h2></div>
+    <div class="sec-rule"></div>
+    <p>There are many serialization standards, but they fall into two families.</p>
+
+    <figure>
+      <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="13">
+        <rect x="330" y="20" width="220" height="44" rx="10" fill="#232019"/>
+        <text x="440" y="47" text-anchor="middle" fill="#e0795f" font-weight="700">Serialization standards</text>
+
+        <!-- text branch -->
+        <rect x="80" y="110" width="300" height="44" rx="10" fill="rgba(63,111,78,.14)" stroke="#3f6f4e"/>
+        <text x="230" y="131" text-anchor="middle" fill="#3f6f4e" font-weight="700">TEXT-BASED</text>
+        <text x="230" y="148" text-anchor="middle" fill="#5b5347" font-size="11">human-readable</text>
+
+        <rect x="80" y="180" width="90" height="40" rx="8" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+        <text x="125" y="205" text-anchor="middle" fill="#211e1a" font-weight="600">JSON</text>
+        <rect x="185" y="180" width="90" height="40" rx="8" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+        <text x="230" y="205" text-anchor="middle" fill="#211e1a">YAML</text>
+        <rect x="290" y="180" width="90" height="40" rx="8" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+        <text x="335" y="205" text-anchor="middle" fill="#211e1a">XML</text>
+
+        <!-- binary branch -->
+        <rect x="500" y="110" width="300" height="44" rx="10" fill="rgba(55,96,127,.14)" stroke="#37607f"/>
+        <text x="650" y="131" text-anchor="middle" fill="#37607f" font-weight="700">BINARY FORMAT</text>
+        <text x="650" y="148" text-anchor="middle" fill="#5b5347" font-size="11">compact · efficient · not human-readable</text>
+
+        <rect x="520" y="180" width="120" height="40" rx="8" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+        <text x="580" y="205" text-anchor="middle" fill="#211e1a">Protobuf</text>
+        <rect x="655" y="180" width="120" height="40" rx="8" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+        <text x="715" y="205" text-anchor="middle" fill="#211e1a">Avro</text>
+
+        <g stroke="#c7bca6" stroke-width="2" fill="none">
+          <path d="M420 64 L230 108" marker-end="url(#b)"/>
+          <path d="M460 64 L650 108" marker-end="url(#b)"/>
+        </g>
+        <defs><marker id="b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#c7bca6"/></marker></defs>
+      </svg>
+      <figcaption><b>Two families.</b> Text-based formats are readable by humans; binary formats compile to raw bytes for compact, efficient transmission.</figcaption>
+    </figure>
+
+    <ul class="clean">
+      <li><b>Text-based formats</b> — human-readable. <code class="ic">JSON</code>, <code class="ic">YAML</code>, and <code class="ic">XML</code>. You can open the payload and read it.</li>
+      <li><b>Binary formats</b> — compiled into raw binary for highly efficient, compact transmission. <code class="ic">Protobuf</code> (Protocol Buffers) and <code class="ic">Avro</code> are the popular ones. Not meant to be read by eye.</li>
+    </ul>
+    <p>YAML and XML are still used for serialization, but not so often for HTTP communication. For traditional HTTP REST APIs, the default choice is JSON.</p>
+  </section>
+
+  <!-- 05 -->
+  <section id="s5">
+    <div class="sec-head"><div class="badge">05</div><h2>JSON — the Industry Standard</h2></div>
+    <div class="sec-rule"></div>
+    <p>For traditional HTTP REST API communication, <strong>JSON</strong> is the most popular serialization standard — used something like <strong>80% of the time</strong>.</p>
+
+    <div class="term">
+      <span class="t">JSON</span>
+      <p><strong>J</strong>ava<strong>S</strong>cript <strong>O</strong>bject <strong>N</strong>otation. Named because it looks and behaves much like a JavaScript object — but despite the name it is <strong>not limited to JavaScript</strong> and is used everywhere, across every language.</p>
+    </div>
+
+    <h4>Why it won</h4>
+    <ul class="clean">
+      <li><b>Human-readable.</b> JSON was designed to be read by people; you can glance at a payload and understand it. That is one of its strongest selling points.</li>
+      <li><b>Fundamental data types.</b> Its value types map cleanly onto concepts every programmer already knows.</li>
+    </ul>
+
+    <h4>Where you’ll meet it</h4>
+    <ul class="clean">
+      <li><b>HTTP transmission</b> — the request/response bodies of REST APIs (the focus here).</li>
+      <li><b>Logging</b> — a very popular choice for application and server logs at runtime.</li>
+      <li><b>Configuration files</b> — app and tool config.</li>
+    </ul>
+  </section>
+
+  <!-- 06 -->
+  <section id="s6">
+    <div class="sec-head"><div class="badge">06</div><h2>JSON Syntax Rules</h2></div>
+    <div class="sec-rule"></div>
+    <p>JSON has very few rules — that is the whole point. Here is a typical object, annotated with every rule the source calls out:</p>
+
+    <figure>
+      <svg viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="15">
+        <rect x="30" y="20" width="560" height="280" rx="12" fill="#232019"/>
+        <g>
+          <text x="55" y="56" fill="#b6aec0">{</text>
+          <text x="80" y="86" fill="#7fb0cf">"name"</text>
+          <text x="150" y="86" fill="#b6aec0">:</text>
+          <text x="166" y="86" fill="#9bbf7f">"Ada"</text>
+          <text x="226" y="86" fill="#b6aec0">,</text>
+
+          <text x="80" y="116" fill="#7fb0cf">"age"</text>
+          <text x="138" y="116" fill="#b6aec0">:</text>
+          <text x="154" y="116" fill="#c08fb8">30</text>
+          <text x="180" y="116" fill="#b6aec0">,</text>
+
+          <text x="80" y="146" fill="#7fb0cf">"active"</text>
+          <text x="166" y="146" fill="#b6aec0">:</text>
+          <text x="182" y="146" fill="#e0795f">true</text>
+          <text x="226" y="146" fill="#b6aec0">,</text>
+
+          <text x="80" y="176" fill="#7fb0cf">"tags"</text>
+          <text x="146" y="176" fill="#b6aec0">:</text>
+          <text x="162" y="176" fill="#b6aec0">[</text>
+          <text x="174" y="176" fill="#9bbf7f">"a"</text>
+          <text x="200" y="176" fill="#b6aec0">,</text>
+          <text x="212" y="176" fill="#9bbf7f">"b"</text>
+          <text x="238" y="176" fill="#b6aec0">],</text>
+
+          <text x="80" y="206" fill="#7fb0cf">"address"</text>
+          <text x="178" y="206" fill="#b6aec0">: {</text>
+          <text x="110" y="236" fill="#7fb0cf">"country"</text>
+          <text x="208" y="236" fill="#b6aec0">:</text>
+          <text x="224" y="236" fill="#9bbf7f">"India"</text>
+          <text x="296" y="236" fill="#b6aec0">,</text>
+          <text x="110" y="266" fill="#7fb0cf">"phone"</text>
+          <text x="186" y="266" fill="#b6aec0">:</text>
+          <text x="202" y="266" fill="#c08fb8">123456</text>
+          <text x="80" y="286" fill="#b6aec0">}</text>
+        </g>
+
+        <!-- annotations -->
+        <g font-size="11.5">
+          <text x="615" y="50" fill="#b8402e" font-weight="700">opening brace {</text>
+          <text x="615" y="90" fill="#37607f" font-weight="700">key — string, in</text>
+          <text x="615" y="106" fill="#37607f">double quotes</text>
+          <text x="615" y="140" fill="#3f6f4e" font-weight="700">values: string,</text>
+          <text x="615" y="156" fill="#3f6f4e">number, boolean,</text>
+          <text x="615" y="172" fill="#3f6f4e">array …</text>
+          <text x="615" y="212" fill="#b07d2b" font-weight="700">… or a NESTED</text>
+          <text x="615" y="228" fill="#b07d2b">object (same rules)</text>
+          <text x="615" y="296" fill="#b8402e" font-weight="700">closing brace }</text>
+        </g>
+        <g stroke="#c7bca6" stroke-width="1" stroke-dasharray="3 3" fill="none">
+          <path d="M70 50 L610 46"/>
+          <path d="M150 82 L610 92"/>
+          <path d="M260 130 L610 150"/>
+          <path d="M300 206 L610 212"/>
+          <path d="M95 282 L610 292"/>
+        </g>
+      </svg>
+      <figcaption><b>Every rule in one object.</b> Braces wrap it; keys are quoted strings; values are simple types or nested objects.</figcaption>
+    </figure>
+
+    <h4>The rules, spelled out</h4>
+    <ul class="clean">
+      <li>A JSON object <b>starts with <code class="ic">{</code> and ends with <code class="ic">}</code></b>.</li>
+      <li><b>Keys must be strings wrapped in double quotes</b> — e.g. <code class="ic">"name":</code>. No other data type can be a key. (Double quotes, always — not single.)</li>
+      <li><b>Values</b> are limited to fundamental types: a <b>string</b>, a <b>number</b>, a <b>boolean</b>, an <b>array</b>, or another <b>nested object</b>.</li>
+      <li>A <b>nested object</b> follows the exact same rules recursively: braces, quoted string keys, and values of those same fundamental types. JSON can nest as deep as you like.</li>
+    </ul>
+    <div class="note">
+      <div class="h">That's the whole spec, basically</div>
+      <p>There isn't much more to memorise. Braces around the object, double-quoted string keys, and values that are strings, numbers, booleans, arrays, or nested objects — each nested object obeying the same characteristics. That is all there is to JSON.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ PART III -->
+  <div class="part-head"><span>Part III — Under the Hood</span><span>What to ignore, and what not to</span></div>
+
+  <!-- 07 -->
+  <section id="s7">
+    <div class="sec-head"><div class="badge">07</div><h2>The OSI Mental Model</h2></div>
+    <div class="sec-rule"></div>
+    <p>When data crosses the internet it passes through many network layers — the <strong>OSI model</strong>. You do <em>not</em> need to master IP packets and data frames to be a backend engineer; a high-level picture is enough. The two ends of the stack are the <strong>application layer</strong> (top) and the <strong>physical layer</strong> (bottom); there are several layers in between, and the same stack exists on both client and server.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="12">
+        <!-- client stack -->
+        <text x="140" y="28" text-anchor="middle" fill="#b07d2b" font-weight="700">CLIENT</text>
+        <rect x="40" y="40" width="200" height="42" rx="7" fill="rgba(184,64,46,.14)" stroke="#b8402e"/>
+        <text x="140" y="60" text-anchor="middle" fill="#b8402e" font-weight="700">Application — JSON</text>
+        <text x="140" y="75" text-anchor="middle" fill="#8d8475" font-size="10">you live here</text>
+        <rect x="40" y="92" width="200" height="34" rx="7" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+        <text x="140" y="114" text-anchor="middle" fill="#5b5347">…transport / network…</text>
+        <rect x="40" y="136" width="200" height="34" rx="7" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+        <text x="140" y="158" text-anchor="middle" fill="#5b5347">data frames · IP packets</text>
+        <rect x="40" y="180" width="200" height="42" rx="7" fill="#232019"/>
+        <text x="140" y="200" text-anchor="middle" fill="#e0795f" font-weight="700">Physical — bits</text>
+        <text x="140" y="215" text-anchor="middle" fill="#9c948a" font-size="10">0 1 0 1 0 1</text>
+
+        <!-- server stack -->
+        <text x="760" y="28" text-anchor="middle" fill="#37607f" font-weight="700">SERVER</text>
+        <rect x="660" y="40" width="200" height="42" rx="7" fill="rgba(184,64,46,.14)" stroke="#b8402e"/>
+        <text x="760" y="60" text-anchor="middle" fill="#b8402e" font-weight="700">Application — JSON</text>
+        <text x="760" y="75" text-anchor="middle" fill="#8d8475" font-size="10">you live here too</text>
+        <rect x="660" y="92" width="200" height="34" rx="7" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+        <text x="760" y="114" text-anchor="middle" fill="#5b5347">…transport / network…</text>
+        <rect x="660" y="136" width="200" height="34" rx="7" fill="rgba(255,255,255,.5)" stroke="#c7bca6"/>
+        <text x="760" y="158" text-anchor="middle" fill="#5b5347">data frames · IP packets</text>
+        <rect x="660" y="180" width="200" height="42" rx="7" fill="#232019"/>
+        <text x="760" y="200" text-anchor="middle" fill="#e0795f" font-weight="700">Physical — bits</text>
+        <text x="760" y="215" text-anchor="middle" fill="#9c948a" font-size="10">0 1 0 1 0 1</text>
+
+        <!-- the wire -->
+        <path d="M240 201 C400 280 500 280 660 201" stroke="#b8402e" stroke-width="2" fill="none" stroke-dasharray="5 4"/>
+        <text x="450" y="300" text-anchor="middle" fill="#8d8475">the wire — electrical / optical signals carrying 0s and 1s</text>
+
+        <!-- down/up labels -->
+        <text x="290" y="130" fill="#8d8475" font-size="10" transform="rotate(90 290 130)">JSON → bits</text>
+        <text x="610" y="100" fill="#8d8475" font-size="10" transform="rotate(-90 610 100)">bits → JSON</text>
+      </svg>
+      <figcaption><b>The abstraction.</b> Your data starts and ends as JSON at the application layer. In between it becomes frames, packets, and bits — but that is not your concern.</figcaption>
+    </figure>
+
+    <div class="term">
+      <span class="t">The backend engineer’s mental model</span>
+      <p>You only focus on the <strong>application layer</strong>. Assume your client serializes data into JSON and sends it. Under the hood the network turns that JSON into data frames → IP packets → physical bits (<code class="ic">0</code>s and <code class="ic">1</code>s) sent as electrical or optical signals. Before your server ever touches the data, the network reassembles those bits back into the <em>exact same JSON</em> the client sent. <strong>You never deal with the intermediate conversions — only the JSON.</strong></p>
+    </div>
+  </section>
+
+  <!-- 08 -->
+  <section id="s8">
+    <div class="sec-head"><div class="badge">08</div><h2>The End-to-End Workflow</h2></div>
+    <div class="sec-rule"></div>
+    <p>Putting every piece together, here is the complete round-trip in a real request — the phenomenon that, as a whole, <em>is</em> serialization &amp; deserialization.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace" font-size="12">
+        <defs><marker id="w" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#b8402e"/></marker></defs>
+
+        <!-- client column -->
+        <text x="150" y="28" text-anchor="middle" fill="#b07d2b" font-weight="700">CLIENT (JavaScript)</text>
+        <rect x="40" y="42" width="220" height="40" rx="9" fill="rgba(176,125,43,.12)" stroke="#b07d2b"/>
+        <text x="150" y="66" text-anchor="middle" fill="#211e1a">1 · gather user input</text>
+        <rect x="40" y="92" width="220" height="40" rx="9" fill="rgba(176,125,43,.12)" stroke="#b07d2b"/>
+        <text x="150" y="110" text-anchor="middle" fill="#211e1a" font-weight="600">2 · SERIALIZE → JSON</text>
+        <text x="150" y="124" text-anchor="middle" fill="#8d8475" font-size="10">attach to HTTP body</text>
+
+        <!-- transmission -->
+        <rect x="320" y="92" width="260" height="40" rx="9" fill="#232019"/>
+        <text x="450" y="110" text-anchor="middle" fill="#e0795f" font-weight="700">3 · TRANSMIT</text>
+        <text x="450" y="124" text-anchor="middle" fill="#9c948a" font-size="10">JSON → bits → across the internet</text>
+
+        <!-- server column -->
+        <text x="750" y="28" text-anchor="middle" fill="#37607f" font-weight="700">SERVER (Rust)</text>
+        <rect x="640" y="92" width="220" height="40" rx="9" fill="rgba(55,96,127,.12)" stroke="#37607f"/>
+        <text x="750" y="110" text-anchor="middle" fill="#211e1a" font-weight="600">4 · DESERIALIZE</text>
+        <text x="750" y="124" text-anchor="middle" fill="#8d8475" font-size="10">JSON → Rust struct</text>
+        <rect x="640" y="160" width="220" height="40" rx="9" fill="rgba(55,96,127,.12)" stroke="#37607f"/>
+        <text x="750" y="184" text-anchor="middle" fill="#211e1a">5 · PROCESS · save to DB</text>
+        <rect x="640" y="210" width="220" height="40" rx="9" fill="rgba(55,96,127,.12)" stroke="#37607f"/>
+        <text x="750" y="228" text-anchor="middle" fill="#211e1a" font-weight="600">6 · SERIALIZE → JSON</text>
+        <text x="750" y="242" text-anchor="middle" fill="#8d8475" font-size="10">the HTTP response</text>
+
+        <!-- return transmission -->
+        <rect x="320" y="210" width="260" height="40" rx="9" fill="#232019"/>
+        <text x="450" y="228" text-anchor="middle" fill="#e0795f" font-weight="700">transmit back</text>
+        <text x="450" y="242" text-anchor="middle" fill="#9c948a" font-size="10">JSON → bits → across the internet</text>
+
+        <!-- client receive -->
+        <rect x="40" y="210" width="220" height="40" rx="9" fill="rgba(176,125,43,.12)" stroke="#b07d2b"/>
+        <text x="150" y="228" text-anchor="middle" fill="#211e1a" font-weight="600">7 · DESERIALIZE</text>
+        <text x="150" y="242" text-anchor="middle" fill="#8d8475" font-size="10">JSON → JS object</text>
+        <rect x="40" y="290" width="220" height="40" rx="9" fill="rgba(176,125,43,.12)" stroke="#b07d2b"/>
+        <text x="150" y="314" text-anchor="middle" fill="#211e1a">update the UI</text>
+
+        <!-- arrows -->
+        <g stroke="#b8402e" stroke-width="2" fill="none">
+          <path d="M150 82 L150 90" marker-end="url(#w)"/>
+          <path d="M260 112 L318 112" marker-end="url(#w)"/>
+          <path d="M580 112 L638 112" marker-end="url(#w)"/>
+          <path d="M750 132 L750 158" marker-end="url(#w)"/>
+          <path d="M750 200 L750 208" marker-end="url(#w)"/>
+          <path d="M638 230 L582 230" marker-end="url(#w)"/>
+          <path d="M318 230 L262 230" marker-end="url(#w)"/>
+          <path d="M150 250 L150 288" marker-end="url(#w)"/>
+        </g>
+      </svg>
+      <figcaption><b>The full round-trip.</b> Serialize on each side before sending; deserialize on each side after receiving. Four conversions per request/response cycle.</figcaption>
+    </figure>
+
+    <p>In words: the client gathers input, <strong>serializes</strong> it to a JSON string in the request body, and ships it; the bits cross the internet; the server <strong>deserializes</strong> the JSON into its native type, runs business logic (e.g. saves to a database), <strong>serializes</strong> its response back to JSON, and sends it; the client <strong>deserializes</strong> that JSON into a JavaScript object and updates the UI. That whole flow is what we call serialization and deserialization — a phenomenon you mostly just need to know <em>exists</em>; it has very few concepts of its own.</p>
+  </section>
+
+  <!-- ============================================================ PART IV -->
+  <div class="part-head"><span>Part IV — Implementation</span><span>Serialize for real, with the OOP showing</span></div>
+
+  <!-- 09 -->
+  <section id="s9">
+    <div class="sec-head"><div class="badge">09</div><h2>Serialization in Go</h2></div>
+    <div class="sec-rule"></div>
+    <p>Go serializes to/from JSON with the standard <code class="ic">encoding/json</code> package: <code class="ic">Marshal</code> = serialize, <code class="ic">Unmarshal</code> = deserialize. The pillars show up through interfaces (abstraction + polymorphism), unexported fields + struct tags (encapsulation), and embedding (composition — Go’s inheritance). Pillars are tagged <span style="color:var(--blue);font-style:italic;">OOP</span>.</p>
+
+    <div class="code">
+      <div class="code-bar"><span class="lang"><span class="dot"></span>Go 1.22+</span><span class="file">serialize.go</span></div>
+<pre><span class="c-kw">package</span> main
+
+<span class="c-kw">import</span> (<span class="c-str">"encoding/json"</span>; <span class="c-str">"fmt"</span>; <span class="c-str">"time"</span>)
+
+<span class="c-oop">// ABSTRACTION: Serializer names a capability — "turn data into</span>
+<span class="c-oop">// bytes and back" — without binding to a concrete format. Code</span>
+<span class="c-oop">// depends on this contract, so JSON could be swapped for another</span>
+<span class="c-oop">// format with zero changes to callers.</span>
+<span class="c-kw">type</span> <span class="c-fn">Serializer</span> <span class="c-kw">interface</span> {
+    <span class="c-fn">Serialize</span>(v any) ([]byte, error)   <span class="c-com">// native -> common format</span>
+    <span class="c-fn">Deserialize</span>(data []byte, v any) error <span class="c-com">// common format -> native</span>
+}
+
+<span class="c-oop">// POLYMORPHISM: JSONSerializer implements Serializer. Any other</span>
+<span class="c-oop">// format (YAML, Protobuf) could implement the same interface and</span>
+<span class="c-oop">// be used interchangeably through a Serializer variable.</span>
+<span class="c-kw">type</span> <span class="c-fn">JSONSerializer</span> <span class="c-kw">struct</span>{}
+
+<span class="c-kw">func</span> (JSONSerializer) <span class="c-fn">Serialize</span>(v any) ([]byte, error) {
+    <span class="c-kw">return</span> json.<span class="c-fn">Marshal</span>(v)   <span class="c-com">// SERIALIZE: struct -> JSON bytes</span>
+}
+<span class="c-kw">func</span> (JSONSerializer) <span class="c-fn">Deserialize</span>(data []byte, v any) error {
+    <span class="c-kw">return</span> json.<span class="c-fn">Unmarshal</span>(data, v) <span class="c-com">// DESERIALIZE: JSON bytes -> struct</span>
+}
+
+<span class="c-oop">// "INHERITANCE" via COMPOSITION: BaseModel holds shared fields;</span>
+<span class="c-oop">// embedding it into User reuses them (and their json tags).</span>
+<span class="c-kw">type</span> <span class="c-fn">BaseModel</span> <span class="c-kw">struct</span> {
+    ID        int       <span class="c-str">`json:"id"`</span>         <span class="c-com">// tag = the JSON key name</span>
+    CreatedAt time.Time <span class="c-str">`json:"created_at"`</span>
+}
+
+<span class="c-oop">// ENCAPSULATION: an exported struct whose JSON shape is controlled</span>
+<span class="c-oop">// by tags. "password" is unexported (lowercase) -> private AND</span>
+<span class="c-oop">// invisible to the JSON encoder, so it never leaks over the wire.</span>
+<span class="c-kw">type</span> <span class="c-fn">User</span> <span class="c-kw">struct</span> {
+    <span class="c-fn">BaseModel</span>            <span class="c-com">// embedded -> inherits ID, CreatedAt</span>
+    Name    string      <span class="c-str">`json:"name"`</span>
+    Active  bool        <span class="c-str">`json:"active"`</span>
+    Address <span class="c-fn">Address</span>     <span class="c-str">`json:"address"`</span> <span class="c-com">// nested object</span>
+    password string     <span class="c-com">// unexported: hidden from JSON output</span>
+}
+
+<span class="c-kw">type</span> <span class="c-fn">Address</span> <span class="c-kw">struct</span> {
+    Country string <span class="c-str">`json:"country"`</span>
+    Phone   int    <span class="c-str">`json:"phone"`</span>
+}
+
+<span class="c-kw">func</span> <span class="c-fn">main</span>() {
+    <span class="c-kw">var</span> codec <span class="c-fn">Serializer</span> = <span class="c-fn">JSONSerializer</span>{} <span class="c-com">// program to the interface</span>
+
+    u := <span class="c-fn">User</span>{
+        BaseModel: <span class="c-fn">BaseModel</span>{ID: <span class="c-num">1</span>, CreatedAt: time.<span class="c-fn">Now</span>()},
+        Name:      <span class="c-str">"Ada"</span>, Active: true,
+        Address:   <span class="c-fn">Address</span>{Country: <span class="c-str">"India"</span>, Phone: <span class="c-num">123456</span>},
+    }
+
+    <span class="c-com">// SERIALIZE — native Go struct into the common JSON format</span>
+    out, _ := codec.<span class="c-fn">Serialize</span>(u)
+    fmt.<span class="c-fn">Println</span>(string(out))
+    <span class="c-com">// {"id":1,"created_at":"...","name":"Ada","active":true,</span>
+    <span class="c-com">//  "address":{"country":"India","phone":123456}}</span>
+
+    <span class="c-com">// DESERIALIZE — JSON received over HTTP back into a Go struct</span>
+    incoming := []byte(<span class="c-str">`{"name":"Lin","address":{"country":"IN","phone":42}}`</span>)
+    <span class="c-kw">var</span> back <span class="c-fn">User</span>
+    codec.<span class="c-fn">Deserialize</span>(incoming, &back)
+    fmt.<span class="c-fn">Println</span>(back.Name, back.Address.Country) <span class="c-com">// Lin IN</span>
+}</pre>
+    </div>
+  </section>
+
+  <!-- 10 -->
+  <section id="s10">
+    <div class="sec-head"><div class="badge">10</div><h2>Serialization in Python</h2></div>
+    <div class="sec-rule"></div>
+    <p>Python uses the built-in <code class="ic">json</code> module: <code class="ic">json.dumps</code> = serialize (dump to string), <code class="ic">json.loads</code> = deserialize (load from string). The same OOP architecture: an ABC contract, inheritance, polymorphism, and a private attribute.</p>
+
+    <div class="code">
+      <div class="code-bar"><span class="lang"><span class="dot"></span>Python 3.11+</span><span class="file">serialize.py</span></div>
+<pre><span class="c-kw">import</span> json
+<span class="c-kw">from</span> abc <span class="c-kw">import</span> ABC, abstractmethod
+<span class="c-kw">from</span> dataclasses <span class="c-kw">import</span> dataclass, asdict, field
+
+<span class="c-oop"># ABSTRACTION: Serializer is an Abstract Base Class. The</span>
+<span class="c-oop"># @abstractmethod forces subclasses to implement both directions.</span>
+<span class="c-oop"># You cannot instantiate Serializer itself — it is a pure contract.</span>
+<span class="c-kw">class</span> <span class="c-fn">Serializer</span>(ABC):
+    <span class="c-fn">@abstractmethod</span>
+    <span class="c-kw">def</span> <span class="c-fn">serialize</span>(self, obj) -> str: ...      <span class="c-com"># native -> common</span>
+    <span class="c-fn">@abstractmethod</span>
+    <span class="c-kw">def</span> <span class="c-fn">deserialize</span>(self, data: str): ...      <span class="c-com"># common -> native</span>
+
+<span class="c-oop"># INHERITANCE + POLYMORPHISM: JSONSerializer IS-A Serializer and</span>
+<span class="c-oop"># overrides both methods. A YamlSerializer could subclass the same</span>
+<span class="c-oop"># ABC and be dropped in wherever a Serializer is expected.</span>
+<span class="c-kw">class</span> <span class="c-fn">JSONSerializer</span>(Serializer):
+    <span class="c-kw">def</span> <span class="c-fn">serialize</span>(self, obj) -> str:
+        <span class="c-kw">return</span> json.dumps(obj)               <span class="c-com"># SERIALIZE: dict -> JSON text</span>
+    <span class="c-kw">def</span> <span class="c-fn">deserialize</span>(self, data: str):
+        <span class="c-kw">return</span> json.loads(data)              <span class="c-com"># DESERIALIZE: JSON text -> dict</span>
+
+<span class="c-oop"># INHERITANCE: BaseModel is a shared parent (id, timestamps).</span>
+<span class="c-fn">@dataclass</span>
+<span class="c-kw">class</span> <span class="c-fn">BaseModel</span>:
+    id: int = <span class="c-num">0</span>
+
+<span class="c-fn">@dataclass</span>
+<span class="c-kw">class</span> <span class="c-fn">Address</span>:
+    country: str
+    phone: int                              <span class="c-com"># nested object</span>
+
+<span class="c-oop"># ENCAPSULATION: __password is name-mangled (-> _User__password),</span>
+<span class="c-oop"># effectively private, and to_dict() chooses what leaves the</span>
+<span class="c-oop"># object — the secret never appears in the serialized output.</span>
+<span class="c-fn">@dataclass</span>
+<span class="c-kw">class</span> <span class="c-fn">User</span>(BaseModel):                     <span class="c-com"># IS-A BaseModel</span>
+    name: str = <span class="c-str">""</span>
+    active: bool = True
+    address: Address | <span class="c-kw">None</span> = <span class="c-kw">None</span>
+    __password: str = <span class="c-str">""</span>                  <span class="c-com"># private; excluded below</span>
+
+    <span class="c-kw">def</span> <span class="c-fn">to_dict</span>(self) -> dict:
+        d = asdict(self)
+        d.pop(<span class="c-str">"_User__password"</span>, <span class="c-kw">None</span>)        <span class="c-com"># keep the secret out</span>
+        <span class="c-kw">return</span> d
+
+<span class="c-kw">if</span> __name__ == <span class="c-str">"__main__"</span>:
+    codec: Serializer = JSONSerializer()    <span class="c-com"># program to the contract</span>
+
+    user = User(id=<span class="c-num">1</span>, name=<span class="c-str">"Ada"</span>,
+                address=Address(<span class="c-str">"India"</span>, <span class="c-num">123456</span>))
+
+    <span class="c-com"># SERIALIZE — native object into the common JSON format</span>
+    payload = codec.serialize(user.to_dict())
+    print(payload)
+    <span class="c-com"># {"id": 1, "name": "Ada", "active": true,</span>
+    <span class="c-com">#  "address": {"country": "India", "phone": 123456}}</span>
+
+    <span class="c-com"># DESERIALIZE — JSON received over HTTP back into native data</span>
+    incoming = <span class="c-str">'{"name": "Lin", "address": {"country": "IN", "phone": 42}}'</span>
+    data = codec.deserialize(incoming)
+    print(data[<span class="c-str">"name"</span>], data[<span class="c-str">"address"</span>][<span class="c-str">"country"</span>])  <span class="c-com"># Lin IN</span></pre>
+    </div>
+    <div class="note">
+      <div class="h">Same shape, two languages</div>
+      <p>Both define a <b>Serializer</b> contract (abstraction), implement it for JSON (polymorphism), share fields through a base model (inheritance / composition), and keep secrets out of the wire format (encapsulation). The verbs are universal: <b>serialize</b> = native → JSON (Go <code class="ic">Marshal</code>, Python <code class="ic">dumps</code>); <b>deserialize</b> = JSON → native (Go <code class="ic">Unmarshal</code>, Python <code class="ic">loads</code>).</p>
+    </div>
+  </section>
+
+  <!-- 11 -->
+  <section id="s11">
+    <div class="sec-head"><div class="badge">11</div><h2>Glossary</h2></div>
+    <div class="sec-rule"></div>
+    <p>Every term from the source, in one place.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><b>Serialization</b></td><td>Converting native data (object/struct) into a common standard format to send or store.</td></tr>
+          <tr><td><b>Deserialization</b></td><td>The reverse — parsing the common format back into the machine's native data type.</td></tr>
+          <tr><td><b>Client / frontend</b></td><td>The app sending requests, often a JavaScript app in a browser.</td></tr>
+          <tr><td><b>Server / backend</b></td><td>The machine receiving requests and running business logic (e.g. a Rust app).</td></tr>
+          <tr><td><b>Native data type</b></td><td>A language's own internal representation — a JS object, a Rust/Go struct, a Python object.</td></tr>
+          <tr><td><b>Parse</b></td><td>To read a format and turn it into something the machine can use.</td></tr>
+          <tr><td><b>Common standard / format</b></td><td>An agreed set of rules for how data is written, so both sides understand it.</td></tr>
+          <tr><td><b>Language-agnostic</b></td><td>Works regardless of which programming language each side uses.</td></tr>
+          <tr><td><b>Domain-agnostic</b></td><td>Works regardless of the environment / technology stack on each side.</td></tr>
+          <tr><td><b>Text-based format</b></td><td>Human-readable serialization — JSON, YAML, XML.</td></tr>
+          <tr><td><b>Binary format</b></td><td>Compact, efficient, non-readable serialization — Protobuf, Avro.</td></tr>
+          <tr><td><b>JSON</b></td><td>JavaScript Object Notation; the ~80% choice for HTTP REST; human-readable; not JS-only.</td></tr>
+          <tr><td><b>Key / value</b></td><td>JSON keys are quoted strings; values are string, number, boolean, array, or nested object.</td></tr>
+          <tr><td><b>Nested object</b></td><td>A JSON object inside another, following the same rules recursively.</td></tr>
+          <tr><td><b>OSI model</b></td><td>The layered model of network communication, from application layer down to physical layer.</td></tr>
+          <tr><td><b>Application layer</b></td><td>The top layer — where you, the backend engineer, work in JSON.</td></tr>
+          <tr><td><b>Physical layer</b></td><td>The bottom layer — raw bits (0s and 1s) as electrical/optical signals.</td></tr>
+          <tr><td><b>Data frames / IP packets</b></td><td>Intermediate forms the data takes between application and physical layers.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <div class="h">The whole idea in one breath</div>
+      <p>Two machines with incompatible native data types agree on a <b>common format</b> (usually <b>JSON</b>). Each <b>serializes</b> its data into that format before sending and <b>deserializes</b> it back after receiving — so communication is <b>language- and domain-agnostic</b>. The network turns JSON into bits and back; at the <b>application layer</b> you only ever deal with the JSON.</p>
+    </div>
+  </section>
+
+  <footer class="doc">
+    <div class="big">That’s serialization — one format, every machine.</div>
+    <p>Scope held to serialization &amp; deserialization only: the language barrier, the common standard, text vs binary formats, JSON in depth, the OSI mental model, and the full client⇄server round-trip — plus worked serializers in Go and Python. Code targets Go 1.22+ and Python 3.11+.</p>
+  </footer>
+
+</main>
+</div>
+
+<script>
+  const bar = document.getElementById('progress');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    bar.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  }, {passive:true});
+  const links = [...document.querySelectorAll('#nav a')];
+  const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const a = map.get(e.target.id);
+        if (a) a.classList.add('active');
+      }
+    });
+  }, {rootMargin: '-20% 0px -70% 0px'});
+  document.querySelectorAll('section[id]').forEach(s => io.observe(s));
+</script>
+<!-- ============ CHAPTER NAVIGATION ============ -->
+<nav class="chapter-nav" id="chapterNav">
+  <a href="../../2.Routing-in-backend/html_notes/notes.html" class="nav-chapter-link"><span class="nav-arrow">&larr;</span><span class="nav-label"><span class="nav-small">Chapter 2</span>Routing in Backend</span></a>
+  <a href="../../index.html" class="nav-indicator"><span class="nav-dot"></span> Chapter 3 <span class="nav-sep">/</span> 24</a>
+  <a href="../../4.Authentication and authorization for backend engineers/html_notes/notes.html" class="nav-chapter-link nav-next"><span class="nav-label"><span class="nav-small">Chapter 4</span>Authentication & Authorization</span><span class="nav-arrow">&rarr;</span></a>
+</nav>
+</body>
+</html>

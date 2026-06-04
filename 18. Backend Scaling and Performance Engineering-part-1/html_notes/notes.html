@@ -1,0 +1,2082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scaling &amp; Performance · The Backend Lens</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&family=Libre+Franklin:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ede4d3;
+    --bg-sidebar: #e6dcc9;
+    --bg-code: #ddd3c0;
+    --bg-card: #e8dece;
+    --text: #2c2420;
+    --text-muted: #6b5d52;
+    --text-light: #8a7b6e;
+    --accent: #b22222;
+    --accent-dark: #8b1a1a;
+    --border: #c9b99a;
+    --border-light: #d9cdb5;
+    --highlight: #f5e6c8;
+    --code-green: #4a7c59;
+    --code-blue: #3a6b8c;
+    --code-orange: #b5651d;
+    --code-purple: #7b4d8e;
+    --code-red: #b22222;
+    --diagram-bg: #f2e8d5;
+    --diagram-stroke: #5c4a3a;
+    --diagram-fill: #e8dbc4;
+    --diagram-accent: #b22222;
+    --diagram-blue: #4a708b;
+    --diagram-green: #5b8a5e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    font-size: 17px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Serif 4', 'Georgia', serif;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    min-height: 100vh;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    padding: 2.5rem 1.5rem;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .sidebar-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.35rem;
+    font-weight: 900;
+    line-height: 1.25;
+    margin-bottom: 0.15rem;
+  }
+
+  .sidebar-title em {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--accent);
+  }
+
+  .sidebar-subtitle {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--text-light);
+    margin-bottom: 2rem;
+  }
+
+  .sidebar-nav { list-style: none; }
+
+  .sidebar-nav li {
+    margin-bottom: 0.15rem;
+  }
+
+  .sidebar-nav a {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.4rem 0.5rem;
+    text-decoration: none;
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 400;
+    border-radius: 4px;
+    transition: background 0.2s, color 0.2s;
+    line-height: 1.4;
+  }
+
+  .sidebar-nav a:hover {
+    background: var(--bg);
+    color: var(--accent-dark);
+  }
+
+  .nav-num {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 1.3rem;
+    text-align: right;
+  }
+
+  .sidebar-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 1.2rem 0;
+  }
+
+  .sidebar-label {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--text-light);
+    padding: 0.4rem 0.5rem 0.2rem;
+  }
+
+  /* ── Main Content ── */
+  .main {
+    max-width: 780px;
+    padding: 3rem 3.5rem 6rem;
+  }
+
+  .chapter-label {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+  }
+
+  .chapter-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.8rem;
+    font-weight: 900;
+    line-height: 1.12;
+    margin-bottom: 1.5rem;
+    color: var(--text);
+  }
+
+  .chapter-intro {
+    font-size: 1.05rem;
+    color: var(--text-muted);
+    line-height: 1.8;
+    margin-bottom: 2.5rem;
+  }
+
+  hr.section-rule {
+    border: none;
+    height: 1px;
+    background: var(--border);
+    margin: 3rem 0;
+  }
+
+  /* ── Section Headings ── */
+  .section-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .section-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    background: var(--accent);
+    color: #fff;
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .section-heading h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.65rem;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 2.2rem 0 0.8rem;
+    line-height: 1.3;
+  }
+
+  h4 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 1.8rem 0 0.6rem;
+    color: var(--text);
+  }
+
+  p {
+    margin-bottom: 1rem;
+  }
+
+  strong {
+    font-weight: 600;
+  }
+
+  em {
+    font-style: italic;
+  }
+
+  a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-color: var(--border);
+    text-underline-offset: 2px;
+    transition: text-decoration-color 0.2s;
+  }
+
+  a:hover {
+    text-decoration-color: var(--accent);
+  }
+
+  /* ── Code ── */
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    background: var(--bg-code);
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    color: var(--accent-dark);
+  }
+
+  pre {
+    background: #2c2420;
+    color: #e8dbc4;
+    padding: 1.4rem 1.6rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2rem 0 1.6rem;
+    line-height: 1.6;
+    font-size: 0.82rem;
+    position: relative;
+    border: 1px solid #3d3028;
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+  }
+
+  .code-label {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: var(--accent);
+    color: #fff;
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    padding: 0.25rem 0.7rem;
+    border-radius: 0 6px 0 4px;
+  }
+
+  .syn-kw { color: #e8a87c; }
+  .syn-fn { color: #82b1c6; }
+  .syn-str { color: #a8c97f; }
+  .syn-cm { color: #7a6d60; font-style: italic; }
+  .syn-num { color: #d4a574; }
+  .syn-type { color: #c9a0dc; }
+  .syn-op { color: #c9b99a; }
+  .syn-builtin { color: #e8c170; }
+
+  /* ── Callouts ── */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--bg-card);
+    padding: 1.1rem 1.4rem;
+    margin: 1.5rem 0;
+    border-radius: 0 5px 5px 0;
+    font-size: 0.95rem;
+  }
+
+  .callout-title {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 0.4rem;
+  }
+
+  .callout.info {
+    border-left-color: var(--diagram-blue);
+  }
+  .callout.info .callout-title {
+    color: var(--diagram-blue);
+  }
+
+  .callout.warn {
+    border-left-color: var(--code-orange);
+  }
+  .callout.warn .callout-title {
+    color: var(--code-orange);
+  }
+
+  /* ── Diagrams ── */
+  .diagram-container {
+    background: var(--diagram-bg);
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 1.5rem;
+    margin: 1.5rem 0 2rem;
+    overflow-x: auto;
+  }
+
+  .diagram-caption {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-light);
+    text-align: center;
+    margin-top: 0.8rem;
+  }
+
+  .diagram-container svg {
+    display: block;
+    margin: 0 auto;
+  }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2rem 0 1.6rem;
+    font-size: 0.9rem;
+  }
+
+  th {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    text-align: left;
+    padding: 0.7rem 1rem;
+    border-bottom: 2px solid var(--border);
+    color: var(--text-muted);
+  }
+
+  td {
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  /* ── Comparison cards ── */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1.2rem 0 1.6rem;
+  }
+
+  .compare-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 1.2rem 1.3rem;
+  }
+
+  .compare-card h5 {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+    margin-bottom: 0.6rem;
+    color: var(--accent);
+  }
+
+  .compare-card ul {
+    list-style: none;
+    font-size: 0.9rem;
+  }
+
+  .compare-card li {
+    padding: 0.2rem 0;
+    padding-left: 1rem;
+    position: relative;
+  }
+
+  .compare-card li::before {
+    content: '›';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  /* ── Reference links ── */
+  .ref-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: 5px;
+    padding: 0.8rem 1.2rem;
+    margin: 1.2rem 0;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .ref-box .ref-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+
+  /* ── Keyword underline ── */
+  .keyword {
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+    font-weight: 600;
+  }
+
+  /* ── Formula ── */
+  .formula {
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: 5px;
+    padding: 1rem 1.4rem;
+    margin: 1.2rem 0;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.95rem;
+    color: var(--accent-dark);
+    letter-spacing: 0.03em;
+  }
+
+  /* ── Back to top ── */
+  .back-to-top {
+    display: block;
+    text-align: center;
+    padding: 2rem 0;
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-light);
+    text-decoration: none;
+    margin-top: 3rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .back-to-top:hover {
+    color: var(--accent);
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar {
+      position: relative;
+      height: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      padding: 1.5rem;
+    }
+    .main { padding: 2rem 1.5rem 4rem; }
+    .chapter-title { font-size: 2rem; }
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+</style>
+<style>
+.chapter-nav{position:fixed;bottom:0;left:0;right:0;z-index:9998;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(16px,4vw,48px);background:rgba(243,237,226,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1.5px solid #c7bca6;box-shadow:0 -8px 32px -16px rgba(40,30,20,.18);font-family:"JetBrains Mono","Spline Sans",monospace;}
+.nav-chapter-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:#5b5347;padding:10px 18px;border-radius:10px;transition:all .2s ease;max-width:38%;}
+.nav-chapter-link:hover{background:rgba(184,64,46,.08);color:#b8402e;transform:translateY(-1px);}
+.nav-chapter-link.nav-next{text-align:right;flex-direction:row;}
+.nav-arrow{font-size:22px;color:#b8402e;font-weight:700;flex:none;}
+.nav-label{display:flex;flex-direction:column;gap:2px;font-size:13.5px;line-height:1.3;}
+.nav-small{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8d8475;font-weight:600;}
+.nav-indicator{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#b8402e;font-weight:700;text-decoration:none;padding:8px 16px;border:1.5px solid #c7bca6;border-radius:40px;background:rgba(255,255,255,.5);transition:all .2s;white-space:nowrap;}
+.nav-indicator:hover{background:#b8402e;color:#fff;border-color:#b8402e;}
+.nav-dot{display:inline-block;width:7px;height:7px;background:#b8402e;border-radius:50%;margin-right:4px;vertical-align:middle;}
+.nav-sep{color:#c7bca6;margin:0 2px;}
+.nav-disabled{visibility:hidden;pointer-events:none;}
+@media(max-width:700px){.nav-label{font-size:11.5px;}.nav-chapter-link{padding:8px 10px;max-width:42%;}.chapter-nav{padding:10px 12px;}}
+body{padding-bottom:80px;}
+</style>
+</head>
+<body>
+<div class="layout" id="top">
+
+<!-- ════════════════ SIDEBAR ════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-title">Scaling <em>/ the</em><br>backend lens</div>
+  <div class="sidebar-subtitle">Field Manual · V1</div>
+  <nav>
+    <ul class="sidebar-nav">
+      <li class="sidebar-label">Foundations</li>
+      <li><a href="#s1"><span class="nav-num">01</span> What Is Performance?</a></li>
+      <li><a href="#s2"><span class="nav-num">02</span> Latency Deep Dive</a></li>
+      <li><a href="#s3"><span class="nav-num">03</span> Percentiles: P50, P90, P99</a></li>
+      <li><a href="#s4"><span class="nav-num">04</span> Throughput</a></li>
+      <li><a href="#s5"><span class="nav-num">05</span> Utilization &amp; Queuing</a></li>
+      <div class="sidebar-sep"></div>
+      <li class="sidebar-label">Diagnosis</li>
+      <li><a href="#s6"><span class="nav-num">06</span> Finding Bottlenecks</a></li>
+      <li><a href="#s7"><span class="nav-num">07</span> Profiling &amp; Flame Graphs</a></li>
+      <li><a href="#s8"><span class="nav-num">08</span> Distributed Tracing</a></li>
+      <div class="sidebar-sep"></div>
+      <li class="sidebar-label">Database Performance</li>
+      <li><a href="#s9"><span class="nav-num">09</span> N+1 Query Problem</a></li>
+      <li><a href="#s10"><span class="nav-num">10</span> Indexes &amp; Query Plans</a></li>
+      <li><a href="#s11"><span class="nav-num">11</span> Connection Pooling</a></li>
+      <div class="sidebar-sep"></div>
+      <li class="sidebar-label">Caching</li>
+      <li><a href="#s12"><span class="nav-num">12</span> Caching Fundamentals</a></li>
+      <li><a href="#s13"><span class="nav-num">13</span> Cache Invalidation</a></li>
+      <li><a href="#s14"><span class="nav-num">14</span> Caching Patterns</a></li>
+      <li><a href="#s15"><span class="nav-num">15</span> Cache Hit Rate</a></li>
+      <div class="sidebar-sep"></div>
+      <li class="sidebar-label">Scaling</li>
+      <li><a href="#s16"><span class="nav-num">16</span> Vertical Scaling</a></li>
+      <li><a href="#s17"><span class="nav-num">17</span> Horizontal Scaling</a></li>
+      <li><a href="#s18"><span class="nav-num">18</span> Load Balancing</a></li>
+    </ul>
+  </nav>
+</aside>
+
+<!-- ════════════════ MAIN CONTENT ════════════════ -->
+<main class="main">
+
+<div class="chapter-label">Chapter · Scaling &amp; Performance</div>
+<h1 class="chapter-title">Mastering Scaling<br>&amp; Performance</h1>
+<p class="chapter-intro">
+  Performance engineering is the discipline of understanding <em>how</em> systems behave under load, <em>where</em> bottlenecks hide, and <em>how</em> to think clearly when everything seems to be falling apart. This chapter builds intuition layer by layer — from the raw definition of "fast" through latency measurement, database tuning, caching strategy, and the two fundamental modes of scaling. Everything is grounded in practical backend engineering.
+</p>
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 01 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s1" class="section-heading">
+  <span class="section-num">01</span>
+  <h2>What Do We Mean by "Fast"?</h2>
+</div>
+
+<p>
+  When a user clicks a button on your web app, a cascade of events fires: the browser packages an HTTP request, that request traverses the internet to your server, the server processes it (possibly hitting a database, calling an external API, or sending an email), and finally the server assembles a response — typically JSON — which travels back across the internet. The browser then parses the response and renders the result on screen.
+</p>
+
+<p>
+  The total elapsed time between the click and the final render is what the user <em>perceives</em> as speed. When someone says "your app is slow," they're describing this end-to-end duration — even if they've never heard the word <span class="keyword">latency</span>.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg" style="max-width:700px;width:100%">
+    <!-- User -->
+    <rect x="20" y="65" width="90" height="65" rx="5" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.5"/>
+    <text x="65" y="95" text-anchor="middle" font-family="'Source Serif 4',serif" font-size="12" font-weight="600" fill="#2c2420">User</text>
+    <text x="65" y="112" text-anchor="middle" font-family="'Source Serif 4',serif" font-size="10" fill="#6b5d52">Browser</text>
+
+    <!-- Arrow 1 -->
+    <line x1="110" y1="82" x2="210" y2="82" stroke="#b22222" stroke-width="1.5" marker-end="url(#arrowR)"/>
+    <text x="160" y="74" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#6b5d52">HTTP Request</text>
+
+    <!-- Server -->
+    <rect x="210" y="55" width="110" height="85" rx="5" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.5"/>
+    <text x="265" y="85" text-anchor="middle" font-family="'Source Serif 4',serif" font-size="12" font-weight="600" fill="#2c2420">Server</text>
+    <text x="265" y="102" text-anchor="middle" font-family="'Source Serif 4',serif" font-size="10" fill="#6b5d52">Process</text>
+    <text x="265" y="118" text-anchor="middle" font-family="'Source Serif 4',serif" font-size="10" fill="#6b5d52">Logic</text>
+
+    <!-- Arrow to DB -->
+    <line x1="320" y1="80" x2="400" y2="80" stroke="#4a708b" stroke-width="1.3" marker-end="url(#arrowB)"/>
+    <text x="360" y="72" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#6b5d52">Query</text>
+
+    <!-- DB -->
+    <rect x="400" y="55" width="100" height="50" rx="5" fill="#e8dbc4" stroke="#4a708b" stroke-width="1.5"/>
+    <text x="450" y="82" text-anchor="middle" font-family="'Source Serif 4',serif" font-size="12" font-weight="600" fill="#2c2420">Database</text>
+
+    <!-- External API -->
+    <rect x="400" y="120" width="100" height="45" rx="5" fill="#e8dbc4" stroke="#5b8a5e" stroke-width="1.5"/>
+    <text x="450" y="147" text-anchor="middle" font-family="'Source Serif 4',serif" font-size="11" font-weight="600" fill="#2c2420">External API</text>
+    <line x1="305" y1="140" x2="400" y2="142" stroke="#5b8a5e" stroke-width="1.3" marker-end="url(#arrowG)"/>
+
+    <!-- Return Arrow -->
+    <line x1="210" y1="115" x2="110" y2="115" stroke="#b22222" stroke-width="1.5" marker-end="url(#arrowR)"/>
+    <text x="160" y="132" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#6b5d52">JSON Response</text>
+
+    <!-- Latency Bracket -->
+    <line x1="30" y1="160" x2="30" y2="175" stroke="#b22222" stroke-width="1"/>
+    <line x1="30" y1="175" x2="490" y2="175" stroke="#b22222" stroke-width="1" stroke-dasharray="4,3"/>
+    <line x1="490" y1="160" x2="490" y2="175" stroke="#b22222" stroke-width="1"/>
+    <text x="260" y="192" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="10" font-weight="600" fill="#b22222" letter-spacing="0.1em">TOTAL LATENCY</text>
+
+    <defs>
+      <marker id="arrowR" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#b22222"/></marker>
+      <marker id="arrowB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#4a708b"/></marker>
+      <marker id="arrowG" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#5b8a5e"/></marker>
+    </defs>
+  </svg>
+  <div class="diagram-caption">Fig 1 · Request lifecycle — every millisecond adds up</div>
+</div>
+
+<p>
+  Performance is not a vague, subjective quality. It can — and must — be expressed in numbers. The three fundamental metrics are <strong>latency</strong> (how long one request takes), <strong>throughput</strong> (how many requests per unit time), and <strong>utilization</strong> (what percentage of capacity is in use). Together, they form the vocabulary of performance engineering.
+</p>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 02 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s2" class="section-heading">
+  <span class="section-num">02</span>
+  <h2>Latency Deep Dive</h2>
+</div>
+
+<p>
+  <span class="keyword">Latency</span> is the time elapsed from the moment a request is sent to the moment a response is received. It is the single most user-visible performance metric — the number your customers <em>feel</em> in their fingers.
+</p>
+
+<h3>Latency is not a single number</h3>
+
+<p>
+  A common mistake is to treat latency as one fixed value like "our API responds in 200ms." In reality, latency varies from request to request because of many real-world factors:
+</p>
+
+<p>
+  <strong>Cache hits vs. misses</strong> — a request served from a CDN or an in-memory cache like Redis may return in 5ms, while the same request hitting the database cold takes 200ms. <strong>Server load</strong> — when your server is idle, it picks up each request immediately; when it's processing 50 concurrent requests, the new arrival waits in a queue. <strong>Network conditions</strong> — packet loss, route changes, and geographic distance all introduce variability. <strong>Request complexity</strong> — fetching a user profile is faster than generating a monthly analytics report.
+</p>
+
+<div class="callout warn">
+  <div class="callout-title">Why averages lie</div>
+  <p>Imagine 1,000 requests: 990 complete in 50ms and 10 take 5,000ms. The average is ~100ms — which sounds healthy. But those 10 outlier requests represent real users staring at a loading spinner for 5 seconds. At 1 million requests/day, that's <strong>10,000 terrible user experiences</strong> per day — completely invisible to the average.</p>
+</div>
+
+<p>
+  Because averages absorb variation, they are nearly useless for performance analysis. What we need instead is a way to talk about the <em>distribution</em> of latencies — which brings us to percentiles.
+</p>
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 03 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s3" class="section-heading">
+  <span class="section-num">03</span>
+  <h2>Percentiles: P50, P90, P99</h2>
+</div>
+
+<p>
+  A <span class="keyword">percentile</span> tells you the latency threshold below which a certain percentage of requests fall. The three percentiles you'll encounter constantly are:
+</p>
+
+<table>
+  <thead>
+    <tr><th>Percentile</th><th>Meaning</th><th>Example</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>P50</strong> (median)</td>
+      <td>50% of requests are faster than this value</td>
+      <td>P50 = 80ms → half your users see ≤80ms</td>
+    </tr>
+    <tr>
+      <td><strong>P90</strong></td>
+      <td>90% faster; <strong>10% of users</strong> experience this or worse</td>
+      <td>P90 = 400ms → 1 in 10 users waits 400ms+</td>
+    </tr>
+    <tr>
+      <td><strong>P99</strong></td>
+      <td>99% faster; <strong>1% of users</strong> experience this or worse</td>
+      <td>P99 = 2s → 1 in 100 users waits 2 seconds+</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 660 260" xmlns="http://www.w3.org/2000/svg" style="max-width:660px;width:100%">
+    <!-- Axes -->
+    <line x1="60" y1="210" x2="620" y2="210" stroke="#5c4a3a" stroke-width="1.5"/>
+    <line x1="60" y1="210" x2="60" y2="30" stroke="#5c4a3a" stroke-width="1.5"/>
+    <text x="340" y="250" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="11" fill="#5c4a3a" letter-spacing="0.05em">Latency →</text>
+    <text x="22" y="120" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="11" fill="#5c4a3a" transform="rotate(-90,22,120)">Requests</text>
+
+    <!-- Distribution curve -->
+    <path d="M80,208 C120,205 140,170 180,80 C200,40 230,38 260,80 C290,130 320,170 360,190 C400,200 450,206 520,208 C560,209 600,209 620,210"
+          fill="none" stroke="#b22222" stroke-width="2.5"/>
+    <path d="M80,208 C120,205 140,170 180,80 C200,40 230,38 260,80 C290,130 320,170 360,190 C400,200 450,206 520,208 C560,209 600,209 620,210 L620,210 L80,210 Z"
+          fill="#b22222" fill-opacity="0.08"/>
+
+    <!-- P50 line -->
+    <line x1="220" y1="210" x2="220" y2="50" stroke="#4a708b" stroke-width="1.2" stroke-dasharray="5,3"/>
+    <text x="220" y="28" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="10" font-weight="700" fill="#4a708b">P50</text>
+
+    <!-- P90 line -->
+    <line x1="370" y1="210" x2="370" y2="50" stroke="#5b8a5e" stroke-width="1.2" stroke-dasharray="5,3"/>
+    <text x="370" y="28" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="10" font-weight="700" fill="#5b8a5e">P90</text>
+
+    <!-- P99 line -->
+    <line x1="520" y1="210" x2="520" y2="50" stroke="#b22222" stroke-width="1.2" stroke-dasharray="5,3"/>
+    <text x="520" y="28" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="10" font-weight="700" fill="#b22222">P99</text>
+
+    <!-- Annotations -->
+    <text x="220" y="228" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#4a708b">80ms</text>
+    <text x="370" y="228" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5b8a5e">400ms</text>
+    <text x="520" y="228" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#b22222">2000ms</text>
+  </svg>
+  <div class="diagram-caption">Fig 2 · Latency distribution with percentile markers</div>
+</div>
+
+<h3>Why P99 and P95 matter most</h3>
+
+<p>
+  Backend engineers focus on tail latencies (P95/P99) for two reasons. First, the requests that land in the tail are typically the most <em>complex</em> — they involve the heaviest business logic, the most joins, or the most service-to-service calls. Second, these requests often represent your most <em>valuable</em> users: someone making a purchase, generating a report, or completing a checkout flow — exactly the workflows where a 5-second hang loses revenue and trust.
+</p>
+
+<h3>Measuring percentiles in Go</h3>
+
+<p>
+  The Go standard library doesn't ship a percentile calculator, but you can compute them from sorted slices or use a library. Here's a simple implementation from scratch:
+</p>
+
+<pre><code><span class="code-label">Go</span>
+<span class="syn-kw">package</span> main
+
+<span class="syn-kw">import</span> (
+    <span class="syn-str">"fmt"</span>
+    <span class="syn-str">"math"</span>
+    <span class="syn-str">"sort"</span>
+    <span class="syn-str">"time"</span>
+)
+
+<span class="syn-cm">// Percentile returns the p-th percentile from a slice of durations.</span>
+<span class="syn-cm">// p must be between 0 and 100.</span>
+<span class="syn-kw">func</span> <span class="syn-fn">Percentile</span>(latencies []<span class="syn-type">time.Duration</span>, p <span class="syn-type">float64</span>) <span class="syn-type">time.Duration</span> {
+    <span class="syn-kw">if</span> len(latencies) == <span class="syn-num">0</span> {
+        <span class="syn-kw">return</span> <span class="syn-num">0</span>
+    }
+    sorted := <span class="syn-builtin">make</span>([]<span class="syn-type">time.Duration</span>, len(latencies))
+    <span class="syn-builtin">copy</span>(sorted, latencies)
+    sort.<span class="syn-fn">Slice</span>(sorted, <span class="syn-kw">func</span>(i, j <span class="syn-type">int</span>) <span class="syn-type">bool</span> {
+        <span class="syn-kw">return</span> sorted[i] < sorted[j]
+    })
+
+    rank := (p / <span class="syn-num">100.0</span>) * <span class="syn-type">float64</span>(len(sorted)<span class="syn-num">-1</span>)
+    idx  := <span class="syn-type">int</span>(math.<span class="syn-fn">Ceil</span>(rank))
+    <span class="syn-kw">return</span> sorted[idx]
+}
+
+<span class="syn-kw">func</span> <span class="syn-fn">main</span>() {
+    <span class="syn-cm">// Simulated latency samples</span>
+    samples := []<span class="syn-type">time.Duration</span>{
+        <span class="syn-num">12</span> * time.Millisecond, <span class="syn-num">15</span> * time.Millisecond,
+        <span class="syn-num">22</span> * time.Millisecond, <span class="syn-num">48</span> * time.Millisecond,
+        <span class="syn-num">95</span> * time.Millisecond, <span class="syn-num">110</span> * time.Millisecond,
+        <span class="syn-num">340</span> * time.Millisecond, <span class="syn-num">890</span> * time.Millisecond,
+        <span class="syn-num">1200</span> * time.Millisecond, <span class="syn-num">4800</span> * time.Millisecond,
+    }
+
+    fmt.<span class="syn-fn">Printf</span>(<span class="syn-str">"P50:  %v\n"</span>, <span class="syn-fn">Percentile</span>(samples, <span class="syn-num">50</span>))
+    fmt.<span class="syn-fn">Printf</span>(<span class="syn-str">"P90:  %v\n"</span>, <span class="syn-fn">Percentile</span>(samples, <span class="syn-num">90</span>))
+    fmt.<span class="syn-fn">Printf</span>(<span class="syn-str">"P99:  %v\n"</span>, <span class="syn-fn">Percentile</span>(samples, <span class="syn-num">99</span>))
+}</code></pre>
+
+<h3>Measuring percentiles in Python</h3>
+
+<pre><code><span class="code-label">Python</span>
+<span class="syn-kw">import</span> numpy <span class="syn-kw">as</span> np
+
+<span class="syn-cm"># Simulated latency samples (in milliseconds)</span>
+samples = [<span class="syn-num">12</span>, <span class="syn-num">15</span>, <span class="syn-num">22</span>, <span class="syn-num">48</span>, <span class="syn-num">95</span>, <span class="syn-num">110</span>, <span class="syn-num">340</span>, <span class="syn-num">890</span>, <span class="syn-num">1200</span>, <span class="syn-num">4800</span>]
+
+<span class="syn-builtin">print</span>(<span class="syn-str">f"P50:  </span>{np.<span class="syn-fn">percentile</span>(samples, <span class="syn-num">50</span>):.0f}<span class="syn-str">ms"</span>)
+<span class="syn-builtin">print</span>(<span class="syn-str">f"P90:  </span>{np.<span class="syn-fn">percentile</span>(samples, <span class="syn-num">90</span>):.0f}<span class="syn-str">ms"</span>)
+<span class="syn-builtin">print</span>(<span class="syn-str">f"P99:  </span>{np.<span class="syn-fn">percentile</span>(samples, <span class="syn-num">99</span>):.0f}<span class="syn-str">ms"</span>)
+<span class="syn-builtin">print</span>(<span class="syn-str">f"P99.9:</span>{np.<span class="syn-fn">percentile</span>(samples, <span class="syn-num">99.9</span>):.0f}<span class="syn-str">ms"</span>)</code></pre>
+
+<div class="ref-box">
+  <span class="ref-icon">📖</span>
+  <span><strong>Reference:</strong> <a href="https://prometheus.io/docs/practices/histograms/" target="_blank">Prometheus — Histograms &amp; Summaries</a> — the industry standard for collecting percentile data in production.</span>
+</div>
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 04 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s4" class="section-heading">
+  <span class="section-num">04</span>
+  <h2>Throughput</h2>
+</div>
+
+<p>
+  While latency describes the duration of a single request, <span class="keyword">throughput</span> measures how many requests your system can handle in a given time window — typically expressed as <strong>requests per second (RPS)</strong> or <strong>requests per minute (RPM)</strong>.
+</p>
+
+<p>
+  The two metrics are deeply intertwined but not in a simple, linear way. Your system might show excellent latency at 10 RPS — say 50ms per request. But at 5,000 RPS, latency might spike to 2 seconds. Understanding throughput alongside latency lets you answer critical operational questions: Can we survive the Black Friday traffic spike? How many concurrent users can we support before we need more resources? What happens if we get featured on a popular podcast tomorrow?
+</p>
+
+<div class="formula">
+  Throughput = Requests Handled / Time Period
+</div>
+
+<h3>The latency–throughput curve</h3>
+
+<p>
+  As throughput increases, latency increases slowly at first but then <em>dramatically</em> — it follows a curve, not a line. At low throughput, the server is mostly idle and each request gets served instantly. As throughput climbs toward capacity, requests begin queuing and contending for CPU, memory, and I/O. Near saturation, latency explodes exponentially.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 560 280" xmlns="http://www.w3.org/2000/svg" style="max-width:560px;width:100%">
+    <!-- Axes -->
+    <line x1="60" y1="230" x2="520" y2="230" stroke="#5c4a3a" stroke-width="1.5"/>
+    <line x1="60" y1="230" x2="60" y2="30" stroke="#5c4a3a" stroke-width="1.5"/>
+    <text x="290" y="268" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="11" fill="#5c4a3a">Throughput (RPS) →</text>
+    <text x="22" y="130" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="11" fill="#5c4a3a" transform="rotate(-90,22,130)">Latency →</text>
+
+    <!-- Linear expectation (dashed) -->
+    <line x1="60" y1="220" x2="500" y2="60" stroke="#4a708b" stroke-width="1.2" stroke-dasharray="6,4"/>
+    <text x="430" y="55" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#4a708b">Expected (linear)</text>
+
+    <!-- Actual curve (exponential) -->
+    <path d="M60,220 C120,218 200,215 280,210 C340,205 380,195 420,160 C450,125 470,80 490,40"
+          fill="none" stroke="#b22222" stroke-width="2.5"/>
+    <text x="500" y="38" font-family="'Libre Franklin',sans-serif" font-size="9" font-weight="700" fill="#b22222">Actual</text>
+
+    <!-- Safe zone annotation -->
+    <rect x="65" y="195" width="260" height="30" fill="#5b8a5e" fill-opacity="0.1" rx="3"/>
+    <text x="195" y="215" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#5b8a5e">Safe operating zone (60–80%)</text>
+
+    <!-- Danger zone -->
+    <rect x="380" y="35" width="120" height="190" fill="#b22222" fill-opacity="0.06" rx="3"/>
+    <text x="440" y="230" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#b22222">Danger zone</text>
+  </svg>
+  <div class="diagram-caption">Fig 3 · Latency grows exponentially as throughput approaches capacity</div>
+</div>
+
+<p>
+  This relationship is governed by <strong>queuing theory</strong> — specifically the M/M/1 queue model from operations research. As utilization <em>ρ</em> approaches 1.0, the average wait time tends toward infinity:
+</p>
+
+<div class="formula">
+  W = S / (1 − ρ) &nbsp;&nbsp;where S = service time, ρ = utilization
+</div>
+
+<div class="ref-box">
+  <span class="ref-icon">📖</span>
+  <span><strong>Reference:</strong> <a href="https://developer.mozilla.org/en-US/docs/Web/Performance" target="_blank">MDN — Web Performance</a> — Mozilla's comprehensive guide to front-to-back performance measurement.</span>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 05 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s5" class="section-heading">
+  <span class="section-num">05</span>
+  <h2>Utilization &amp; Queuing</h2>
+</div>
+
+<p>
+  <span class="keyword">Utilization</span> is the percentage of your system's total capacity that is actively in use. At 0% the system is idle; at 100% every resource is saturated and nothing new can be processed.
+</p>
+
+<h3>The ice cream shop analogy</h3>
+
+<p>
+  Imagine an ice cream shop with one worker. On a quiet Sunday evening, you walk in, order, and get served instantly — low utilization, low latency. On Tuesday lunchtime, there's a long queue. The worker prepares each cone at the <em>exact same speed</em>, but your wait time has skyrocketed because you must wait for everyone ahead of you. The worker's throughput hasn't changed. Your perceived latency has.
+</p>
+
+<p>
+  Backend systems behave identically: when CPU and memory utilization are low, requests are served instantly. As more requests arrive, each one waits for the requests ahead of it to complete — forming a queue. The higher the utilization, the longer the queue, and the longer each request waits.
+</p>
+
+<h3>The highway analogy</h3>
+
+<p>
+  Think of a highway at different capacity levels. At <strong>50%</strong>, traffic flows smoothly and cars maintain speed. At <strong>80%</strong>, lane changes require more caution and speeds begin to drop. At <strong>90%</strong>, the system becomes chaotic — sometimes flowing, sometimes jamming. Every brake tap creates a ripple effect. At <strong>100%</strong>, total gridlock: no one moves.
+</p>
+
+<h3>The exponential relationship</h3>
+
+<p>
+  The relationship between utilization and latency is <em>not</em> linear. We intuitively expect doubling utilization to double latency, but the reality is far worse. Latency stays relatively flat until roughly 70% utilization, then curves sharply upward, and near 100% goes nearly vertical — approaching infinity.
+</p>
+
+<div class="callout">
+  <div class="callout-title">Key Takeaway</div>
+  <p>You can <strong>never</strong> run your systems at 100% utilization and expect them to perform. Production systems typically target <strong>60–80% utilization</strong>, reserving 20–40% as headroom for traffic bursts. Traffic is <em>bursty</em> by nature — it arrives in waves, not at a steady rate — and your buffer is what absorbs those spikes.</p>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 06 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s6" class="section-heading">
+  <span class="section-num">06</span>
+  <h2>Finding Bottlenecks</h2>
+</div>
+
+<p>
+  When your system is slow, <em>something specific</em> is causing the slowness. That something is called the <span class="keyword">bottleneck</span>. The most critical discipline in performance engineering is identifying the actual bottleneck before applying a fix — not guessing.
+</p>
+
+<h3>The trap of jumping to solutions</h3>
+
+<p>
+  When engineers encounter a slow API, the instinct is to reach for standard by-the-book remedies: add Redis caching, upgrade Postgres, throw more servers at it. Sometimes you get lucky. But more often, you spend days or weeks implementing a solution to a problem you don't actually have, while the real bottleneck sits untouched.
+</p>
+
+<h3>A real-world example</h3>
+
+<p>
+  Consider a <code>GET /products/:id</code> endpoint that feels slow. The knee-jerk reaction: the database must be the problem. You spend a week building a Redis caching layer. You deploy. The API is still slow.
+</p>
+
+<p>
+  Now you add timing measurements throughout the code and discover: the database query takes 10ms, the new Redis lookup takes 5ms, but a <em>synchronous logging call</em> to a remote Elasticsearch service takes 500ms — blocking the request while it waits for a network response. The database was never the problem.
+</p>
+
+<div class="callout warn">
+  <div class="callout-title">The golden rule</div>
+  <p><strong>Never guess. Always measure.</strong> Common hidden bottlenecks include: synchronous logging to remote services, JSON/XML serialization of large payloads, external API calls in loops, large response payloads causing slow network transmission, and middleware that runs on every request.</p>
+</div>
+
+<h3>Timing middleware in Go</h3>
+
+<p>
+  Here's a practical middleware that logs per-request timing, so you can start identifying slow endpoints:
+</p>
+
+<pre><code><span class="code-label">Go</span>
+<span class="syn-kw">package</span> middleware
+
+<span class="syn-kw">import</span> (
+    <span class="syn-str">"log"</span>
+    <span class="syn-str">"net/http"</span>
+    <span class="syn-str">"time"</span>
+)
+
+<span class="syn-cm">// TimingMiddleware logs the duration of every HTTP request.</span>
+<span class="syn-kw">func</span> <span class="syn-fn">TimingMiddleware</span>(next <span class="syn-type">http.Handler</span>) <span class="syn-type">http.Handler</span> {
+    <span class="syn-kw">return</span> http.<span class="syn-fn">HandlerFunc</span>(<span class="syn-kw">func</span>(w <span class="syn-type">http.ResponseWriter</span>, r *<span class="syn-type">http.Request</span>) {
+        start := time.<span class="syn-fn">Now</span>()
+
+        <span class="syn-cm">// Wrap the ResponseWriter to capture the status code</span>
+        rw := &statusWriter{ResponseWriter: w, status: <span class="syn-num">200</span>}
+        next.<span class="syn-fn">ServeHTTP</span>(rw, r)
+
+        duration := time.<span class="syn-fn">Since</span>(start)
+        log.<span class="syn-fn">Printf</span>(
+            <span class="syn-str">"method=%s path=%s status=%d duration=%v"</span>,
+            r.Method, r.URL.Path, rw.status, duration,
+        )
+    })
+}
+
+<span class="syn-kw">type</span> statusWriter <span class="syn-kw">struct</span> {
+    <span class="syn-type">http.ResponseWriter</span>
+    status <span class="syn-type">int</span>
+}
+
+<span class="syn-kw">func</span> (w *statusWriter) <span class="syn-fn">WriteHeader</span>(code <span class="syn-type">int</span>) {
+    w.status = code
+    w.ResponseWriter.<span class="syn-fn">WriteHeader</span>(code)
+}</code></pre>
+
+<h3>Timing decorator in Python (FastAPI)</h3>
+
+<pre><code><span class="code-label">Python</span>
+<span class="syn-kw">import</span> time
+<span class="syn-kw">import</span> logging
+<span class="syn-kw">from</span> fastapi <span class="syn-kw">import</span> Request
+<span class="syn-kw">from</span> starlette.middleware.base <span class="syn-kw">import</span> BaseHTTPMiddleware
+
+logger = logging.<span class="syn-fn">getLogger</span>(<span class="syn-str">"perf"</span>)
+
+<span class="syn-kw">class</span> <span class="syn-type">TimingMiddleware</span>(BaseHTTPMiddleware):
+    <span class="syn-kw">async def</span> <span class="syn-fn">dispatch</span>(self, request: Request, call_next):
+        start = time.<span class="syn-fn">perf_counter</span>()
+        response = <span class="syn-kw">await</span> <span class="syn-fn">call_next</span>(request)
+        duration_ms = (time.<span class="syn-fn">perf_counter</span>() - start) * <span class="syn-num">1000</span>
+
+        logger.<span class="syn-fn">info</span>(
+            <span class="syn-str">f"method=</span>{request.method} <span class="syn-str">path=</span>{request.url.path} "
+            <span class="syn-str">f"status=</span>{response.status_code} <span class="syn-str">duration=</span>{duration_ms:.1f}<span class="syn-str">ms"</span>
+        )
+        <span class="syn-kw">return</span> response</code></pre>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 07 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s7" class="section-heading">
+  <span class="section-num">07</span>
+  <h2>Profiling &amp; Flame Graphs</h2>
+</div>
+
+<p>
+  <span class="keyword">Profiling</span> is the practice of measuring exactly where your application spends its time. A profiler attaches to your running application, samples the call stack at regular intervals, and records which functions are executing, how long they run, and how much CPU or memory they consume.
+</p>
+
+<h3>How a profiler works</h3>
+
+<p>
+  CPU profilers (like Go's built-in <code>pprof</code> or Python's <code>cProfile</code>) periodically interrupt the program and capture a snapshot of the current call stack. After thousands of samples, a statistical picture emerges showing which functions dominate execution time.
+</p>
+
+<h3>Flame graphs</h3>
+
+<p>
+  Raw profiler output can list thousands of functions, each accounting for some fraction of total time. <span class="keyword">Flame graphs</span> make this data visual: each function is a horizontal bar, wider bars indicate more time spent, and functions called by other functions are stacked vertically. One glance at a flame graph tells you where your application's hotspots are.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 600 180" xmlns="http://www.w3.org/2000/svg" style="max-width:600px;width:100%">
+    <!-- Level 0 - root -->
+    <rect x="10" y="140" width="580" height="28" rx="3" fill="#b22222" fill-opacity="0.2" stroke="#b22222" stroke-width="1"/>
+    <text x="300" y="158" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" fill="#5c4a3a">main.handleRequest() — 100%</text>
+
+    <!-- Level 1 -->
+    <rect x="10" y="108" width="90" height="28" rx="3" fill="#4a708b" fill-opacity="0.25" stroke="#4a708b" stroke-width="1"/>
+    <text x="55" y="126" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#3a6b8c">parseJSON</text>
+    <text x="55" y="136" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#6b5d52">8%</text>
+
+    <rect x="100" y="108" width="60" height="28" rx="3" fill="#5b8a5e" fill-opacity="0.25" stroke="#5b8a5e" stroke-width="1"/>
+    <text x="130" y="126" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#4a7c59">auth</text>
+    <text x="130" y="136" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#6b5d52">5%</text>
+
+    <rect x="160" y="108" width="140" height="28" rx="3" fill="#b22222" fill-opacity="0.2" stroke="#b22222" stroke-width="1"/>
+    <text x="230" y="126" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#8b1a1a">db.QueryProducts</text>
+    <text x="230" y="136" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#6b5d52">12%</text>
+
+    <rect x="300" y="108" width="260" height="28" rx="3" fill="#b22222" fill-opacity="0.4" stroke="#b22222" stroke-width="1.5"/>
+    <text x="430" y="126" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" font-weight="600" fill="#8b1a1a">logging.SendRemote ⚠</text>
+    <text x="430" y="136" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#b22222" font-weight="600">70% ← BOTTLENECK</text>
+
+    <!-- Level 2 inside logging -->
+    <rect x="300" y="76" width="180" height="28" rx="3" fill="#b5651d" fill-opacity="0.2" stroke="#b5651d" stroke-width="1"/>
+    <text x="390" y="94" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#b5651d">net.http.Post</text>
+    <text x="390" y="104" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#6b5d52">55%</text>
+
+    <rect x="480" y="76" width="80" height="28" rx="3" fill="#7b4d8e" fill-opacity="0.2" stroke="#7b4d8e" stroke-width="1"/>
+    <text x="520" y="94" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#7b4d8e">serialize</text>
+    <text x="520" y="104" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#6b5d52">15%</text>
+
+    <!-- Level 3 -->
+    <rect x="300" y="44" width="120" height="28" rx="3" fill="#b5651d" fill-opacity="0.15" stroke="#b5651d" stroke-width="1"/>
+    <text x="360" y="62" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#b5651d">tcp.Dial</text>
+    <text x="360" y="72" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="#6b5d52">40%</text>
+  </svg>
+  <div class="diagram-caption">Fig 4 · Flame graph — wider bars = more time; the logging call dominates</div>
+</div>
+
+<h3>CPU profiling in Go with pprof</h3>
+
+<pre><code><span class="code-label">Go</span>
+<span class="syn-kw">import</span> (
+    <span class="syn-str">"net/http"</span>
+    _ <span class="syn-str">"net/http/pprof"</span>  <span class="syn-cm">// side-effect import: registers /debug/pprof/</span>
+)
+
+<span class="syn-kw">func</span> <span class="syn-fn">main</span>() {
+    <span class="syn-cm">// Your normal app setup...</span>
+    <span class="syn-cm">// pprof endpoints are now accessible at /debug/pprof/</span>
+    <span class="syn-cm">// Collect a 30-second CPU profile:</span>
+    <span class="syn-cm">//   go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30</span>
+    <span class="syn-cm">//   (pprof) web   ← opens flame graph in browser</span>
+    http.<span class="syn-fn">ListenAndServe</span>(<span class="syn-str">":6060"</span>, <span class="syn-kw">nil</span>)
+}</code></pre>
+
+<h3>CPU profiling in Python</h3>
+
+<pre><code><span class="code-label">Python</span>
+<span class="syn-kw">import</span> cProfile
+<span class="syn-kw">import</span> pstats
+
+<span class="syn-cm"># Profile a function and print the top 20 slowest calls</span>
+<span class="syn-kw">with</span> cProfile.<span class="syn-fn">Profile</span>() <span class="syn-kw">as</span> pr:
+    <span class="syn-fn">handle_request</span>()  <span class="syn-cm"># your function under test</span>
+
+stats = pstats.<span class="syn-fn">Stats</span>(pr)
+stats.<span class="syn-fn">sort_stats</span>(<span class="syn-str">"cumulative"</span>)
+stats.<span class="syn-fn">print_stats</span>(<span class="syn-num">20</span>)
+
+<span class="syn-cm"># For flame graphs, use py-spy (external tool):</span>
+<span class="syn-cm">#   pip install py-spy</span>
+<span class="syn-cm">#   py-spy record -o profile.svg -- python app.py</span></code></pre>
+
+<h3>CPU-bound vs I/O-bound bottlenecks</h3>
+
+<p>
+  Profilers excel at finding <strong>CPU-bound</strong> bottlenecks — functions that consume excessive computation cycles (image processing, machine learning inference, heavy math). However, most backend applications are <strong>I/O-bound</strong>: the time is spent waiting for database responses, external API calls, file reads, or message queue acknowledgments. CPU profilers are less effective here because the CPU isn't working — it's <em>waiting</em>. For I/O-bound work, you need distributed tracing.
+</p>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 08 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s8" class="section-heading">
+  <span class="section-num">08</span>
+  <h2>Distributed Tracing</h2>
+</div>
+
+<p>
+  <span class="keyword">Distributed tracing</span> follows a single request as it flows through your entire system — across services, databases, caches, and external APIs — recording timestamps at every boundary. The output is a <em>trace</em>: a tree of "spans," each representing a timed operation.
+</p>
+
+<p>
+  Where a profiler shows <em>what the CPU did</em>, a trace shows <em>where the clock ticked</em>. For example, a trace of <code>GET /products/5</code> might reveal: 2ms in your API logic, 800ms in the database query, and 50ms in serialization. Now you know exactly where to focus.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 620 210" xmlns="http://www.w3.org/2000/svg" style="max-width:620px;width:100%">
+    <!-- Timeline header -->
+    <text x="130" y="20" font-family="'JetBrains Mono',monospace" font-size="9" fill="#6b5d52">0ms</text>
+    <text x="230" y="20" font-family="'JetBrains Mono',monospace" font-size="9" fill="#6b5d52">200ms</text>
+    <text x="350" y="20" font-family="'JetBrains Mono',monospace" font-size="9" fill="#6b5d52">400ms</text>
+    <text x="470" y="20" font-family="'JetBrains Mono',monospace" font-size="9" fill="#6b5d52">600ms</text>
+    <text x="570" y="20" font-family="'JetBrains Mono',monospace" font-size="9" fill="#6b5d52">800ms</text>
+
+    <!-- Grid lines -->
+    <line x1="130" y1="28" x2="130" y2="190" stroke="#c9b99a" stroke-width="0.5" stroke-dasharray="3,3"/>
+    <line x1="250" y1="28" x2="250" y2="190" stroke="#c9b99a" stroke-width="0.5" stroke-dasharray="3,3"/>
+    <line x1="370" y1="28" x2="370" y2="190" stroke="#c9b99a" stroke-width="0.5" stroke-dasharray="3,3"/>
+    <line x1="490" y1="28" x2="490" y2="190" stroke="#c9b99a" stroke-width="0.5" stroke-dasharray="3,3"/>
+
+    <!-- Span: Total request -->
+    <text x="10" y="52" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Request</text>
+    <rect x="130" y="38" width="480" height="22" rx="3" fill="#b22222" fill-opacity="0.15" stroke="#b22222" stroke-width="1"/>
+    <text x="370" y="53" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#8b1a1a">852ms total</text>
+
+    <!-- Span: Auth -->
+    <text x="10" y="87" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Auth</text>
+    <rect x="130" y="73" width="24" height="22" rx="3" fill="#5b8a5e" fill-opacity="0.3" stroke="#5b8a5e" stroke-width="1"/>
+    <text x="162" y="88" font-family="'JetBrains Mono',monospace" font-size="8" fill="#4a7c59">5ms</text>
+
+    <!-- Span: DB Query -->
+    <text x="10" y="122" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">DB Query</text>
+    <rect x="154" y="108" width="406" height="22" rx="3" fill="#b22222" fill-opacity="0.35" stroke="#b22222" stroke-width="1.5"/>
+    <text x="357" y="123" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" font-weight="600" fill="#8b1a1a">800ms ← BOTTLENECK</text>
+
+    <!-- Span: Serialize -->
+    <text x="10" y="157" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Serialize</text>
+    <rect x="560" y="143" width="50" height="22" rx="3" fill="#4a708b" fill-opacity="0.25" stroke="#4a708b" stroke-width="1"/>
+    <text x="585" y="158" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#3a6b8c">42ms</text>
+
+    <!-- Span: Response -->
+    <text x="10" y="190" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Response</text>
+    <rect x="560" y="178" width="20" height="16" rx="3" fill="#5b8a5e" fill-opacity="0.25" stroke="#5b8a5e" stroke-width="1"/>
+    <text x="585" y="190" font-family="'JetBrains Mono',monospace" font-size="8" fill="#4a7c59">5ms</text>
+  </svg>
+  <div class="diagram-caption">Fig 5 · Distributed trace — the DB query dominates this request's timeline</div>
+</div>
+
+<p>
+  Popular tracing tools include <strong>Jaeger</strong>, <strong>Zipkin</strong>, and <strong>OpenTelemetry</strong> (the emerging standard that unifies tracing, metrics, and logging). OpenTelemetry provides SDKs for Go, Python, Java, and most major languages.
+</p>
+
+<div class="ref-box">
+  <span class="ref-icon">📖</span>
+  <span><strong>Reference:</strong> <a href="https://opentelemetry.io/docs/" target="_blank">OpenTelemetry Documentation</a> — the vendor-neutral standard for distributed tracing, metrics, and logs.</span>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 09 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s9" class="section-heading">
+  <span class="section-num">09</span>
+  <h2>The N+1 Query Problem</h2>
+</div>
+
+<p>
+  The <span class="keyword">N+1 query problem</span> is one of the most notorious performance anti-patterns in backend engineering. It occurs when you make 1 query to fetch a list of N items, then N additional queries to fetch a related piece of data for each item — totaling N+1 database round-trips.
+</p>
+
+<h3>How it happens</h3>
+
+<p>
+  Imagine a blog application. To render the homepage, you need 20 blog posts with each post's author name. The naive approach: query for all 20 posts, then loop through and make a separate query for each post's author. That's 21 database queries. For 1,000 posts, it's 1,001 queries. Even at 5ms per query, 1,001 queries take over 5 seconds.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 580 200" xmlns="http://www.w3.org/2000/svg" style="max-width:580px;width:100%">
+    <!-- Bad: N+1 -->
+    <text x="20" y="22" font-family="'Libre Franklin',sans-serif" font-size="10" font-weight="700" fill="#b22222" letter-spacing="0.08em">N+1 PATTERN (BAD)</text>
+    <rect x="20" y="32" width="240" height="24" rx="3" fill="#b22222" fill-opacity="0.1" stroke="#b22222" stroke-width="1"/>
+    <text x="140" y="48" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#8b1a1a">SELECT * FROM posts (1 query)</text>
+
+    <rect x="20" y="62" width="240" height="16" rx="2" fill="#b22222" fill-opacity="0.08" stroke="#b22222" stroke-width="0.8"/>
+    <text x="140" y="74" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#8b1a1a">SELECT author WHERE id=1</text>
+    <rect x="20" y="80" width="240" height="16" rx="2" fill="#b22222" fill-opacity="0.08" stroke="#b22222" stroke-width="0.8"/>
+    <text x="140" y="92" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#8b1a1a">SELECT author WHERE id=2</text>
+    <rect x="20" y="98" width="240" height="16" rx="2" fill="#b22222" fill-opacity="0.08" stroke="#b22222" stroke-width="0.8"/>
+    <text x="140" y="110" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#8b1a1a">... (× 20 more)</text>
+
+    <text x="140" y="138" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="600" fill="#b22222">21 queries = 105ms</text>
+
+    <!-- Good: Bulk -->
+    <text x="320" y="22" font-family="'Libre Franklin',sans-serif" font-size="10" font-weight="700" fill="#5b8a5e" letter-spacing="0.08em">BULK FETCH (GOOD)</text>
+    <rect x="320" y="32" width="240" height="24" rx="3" fill="#5b8a5e" fill-opacity="0.1" stroke="#5b8a5e" stroke-width="1"/>
+    <text x="440" y="48" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#4a7c59">SELECT * FROM posts (1 query)</text>
+
+    <rect x="320" y="62" width="240" height="24" rx="3" fill="#5b8a5e" fill-opacity="0.1" stroke="#5b8a5e" stroke-width="1"/>
+    <text x="440" y="78" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#4a7c59">SELECT * FROM users WHERE id IN (...)</text>
+
+    <text x="440" y="110" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="600" fill="#5b8a5e">2 queries = 10ms</text>
+
+    <!-- Speedup -->
+    <text x="300" y="185" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="11" font-weight="700" fill="#5c4a3a">10× faster by eliminating the loop</text>
+  </svg>
+  <div class="diagram-caption">Fig 6 · N+1 queries vs. bulk fetch — same data, vastly different performance</div>
+</div>
+
+<h3>The fix: batch fetching</h3>
+
+<p>
+  Instead of querying in a loop, collect all the IDs you need and fetch them in a single query using <code>WHERE id IN (...)</code>. The result: always 2 queries regardless of the number of items — one for the list, one for the related data.
+</p>
+
+<h4>Go — solving N+1 with a batch query</h4>
+
+<pre><code><span class="code-label">Go</span>
+<span class="syn-kw">func</span> <span class="syn-fn">GetPostsWithAuthors</span>(ctx <span class="syn-type">context.Context</span>, db *<span class="syn-type">sql.DB</span>) ([]<span class="syn-type">PostWithAuthor</span>, <span class="syn-type">error</span>) {
+    <span class="syn-cm">// Query 1: fetch all posts</span>
+    posts, err := <span class="syn-fn">queryPosts</span>(ctx, db)
+    <span class="syn-kw">if</span> err != <span class="syn-kw">nil</span> {
+        <span class="syn-kw">return</span> <span class="syn-kw">nil</span>, err
+    }
+
+    <span class="syn-cm">// Collect unique author IDs</span>
+    authorIDSet := <span class="syn-builtin">make</span>(<span class="syn-kw">map</span>[<span class="syn-type">int64</span>]<span class="syn-kw">struct</span>{})
+    <span class="syn-kw">for</span> _, p := <span class="syn-kw">range</span> posts {
+        authorIDSet[p.AuthorID] = <span class="syn-kw">struct</span>{}{}
+    }
+    authorIDs := <span class="syn-builtin">make</span>([]<span class="syn-type">int64</span>, <span class="syn-num">0</span>, <span class="syn-builtin">len</span>(authorIDSet))
+    <span class="syn-kw">for</span> id := <span class="syn-kw">range</span> authorIDSet {
+        authorIDs = <span class="syn-builtin">append</span>(authorIDs, id)
+    }
+
+    <span class="syn-cm">// Query 2: fetch ALL authors in one batch</span>
+    authors, err := <span class="syn-fn">queryAuthorsByIDs</span>(ctx, db, authorIDs)
+    <span class="syn-kw">if</span> err != <span class="syn-kw">nil</span> {
+        <span class="syn-kw">return</span> <span class="syn-kw">nil</span>, err
+    }
+
+    <span class="syn-cm">// Build lookup map and merge</span>
+    authorMap := <span class="syn-builtin">make</span>(<span class="syn-kw">map</span>[<span class="syn-type">int64</span>]<span class="syn-type">Author</span>)
+    <span class="syn-kw">for</span> _, a := <span class="syn-kw">range</span> authors {
+        authorMap[a.ID] = a
+    }
+
+    result := <span class="syn-builtin">make</span>([]<span class="syn-type">PostWithAuthor</span>, len(posts))
+    <span class="syn-kw">for</span> i, p := <span class="syn-kw">range</span> posts {
+        result[i] = <span class="syn-type">PostWithAuthor</span>{Post: p, Author: authorMap[p.AuthorID]}
+    }
+    <span class="syn-kw">return</span> result, <span class="syn-kw">nil</span>
+}</code></pre>
+
+<h4>Python (Django) — select_related &amp; prefetch_related</h4>
+
+<pre><code><span class="code-label">Python</span>
+<span class="syn-cm"># BAD — N+1 queries (Django ORM)</span>
+posts = Post.objects.<span class="syn-fn">all</span>()
+<span class="syn-kw">for</span> post <span class="syn-kw">in</span> posts:
+    <span class="syn-builtin">print</span>(post.author.name)  <span class="syn-cm"># Each access fires a separate query!</span>
+
+<span class="syn-cm"># GOOD — 1 query with JOIN (ForeignKey)</span>
+posts = Post.objects.<span class="syn-fn">select_related</span>(<span class="syn-str">"author"</span>).<span class="syn-fn">all</span>()
+
+<span class="syn-cm"># GOOD — 2 queries (ManyToMany or reverse FK)</span>
+posts = Post.objects.<span class="syn-fn">prefetch_related</span>(<span class="syn-str">"tags"</span>).<span class="syn-fn">all</span>()
+</code></pre>
+
+<p>
+  Every modern ORM provides bulk-fetch primitives: Django has <code>select_related</code> / <code>prefetch_related</code>, Ruby on Rails has <code>includes</code>, Prisma and Drizzle offer <code>leftJoin</code> and relation loading. If you're writing raw SQL, the answer is <code>JOIN</code>. The pattern to avoid is any loop that fires a query per iteration.
+</p>
+
+<div class="callout info">
+  <div class="callout-title">Pro tip</div>
+  <p>Most modern ORMs have a "print generated SQL" mode. Enable it during development to catch N+1 patterns before they reach production. In Django: <code>settings.LOGGING</code> with the <code>django.db.backends</code> logger. In Go's GORM: <code>db.Debug()</code>.</p>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 10 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s10" class="section-heading">
+  <span class="section-num">10</span>
+  <h2>Indexes &amp; Query Plans</h2>
+</div>
+
+<p>
+  The most common source of database performance problems is the <em>absence</em> of appropriate indexes. An <span class="keyword">index</span> is a data structure — typically a B-tree — that maintains a sorted copy of the values in one or more columns, along with pointers back to the full rows. It transforms a slow sequential scan (examining every row) into a fast lookup.
+</p>
+
+<h3>The library analogy</h3>
+
+<p>
+  Imagine a library with a million books but no catalog. Finding all books by John Green requires walking every shelf, examining every book — a full table scan. Now add a catalog sorted by author name with shelf locations. You look up "Green, John," find three shelf references, walk directly to those shelves, and return in minutes instead of days. That catalog is the index.
+</p>
+
+<h3>Sequential scan vs. index scan</h3>
+
+<p>
+  Without an index, your database performs a <span class="keyword">sequential scan</span> (also called a full table scan) — it reads every row to check the <code>WHERE</code> clause. For a million rows, this can take several seconds. With a B-tree index, the database performs a logarithmic lookup — finding matching rows in a few milliseconds regardless of table size.
+</p>
+
+<div class="formula">
+  Sequential scan: O(n) → Index scan: O(log n)
+</div>
+
+<h3>Creating indexes</h3>
+
+<pre><code><span class="code-label">SQL</span>
+<span class="syn-cm">-- Basic single-column index</span>
+<span class="syn-kw">CREATE INDEX</span> idx_posts_author_id <span class="syn-kw">ON</span> posts (author_id);
+
+<span class="syn-cm">-- Composite index: order matters!</span>
+<span class="syn-cm">-- This helps queries filtering by user_id, or user_id + created_at</span>
+<span class="syn-cm">-- It does NOT help queries filtering ONLY by created_at</span>
+<span class="syn-kw">CREATE INDEX</span> idx_orders_user_created <span class="syn-kw">ON</span> orders (user_id, created_at);
+
+<span class="syn-cm">-- Covering index: all needed data lives IN the index</span>
+<span class="syn-cm">-- The query never touches the main table at all</span>
+<span class="syn-kw">CREATE INDEX</span> idx_departments_name <span class="syn-kw">ON</span> departments (name) <span class="syn-kw">INCLUDE</span> (id);</code></pre>
+
+<h3>Composite vs. Covering indexes</h3>
+
+<div class="compare-grid">
+  <div class="compare-card">
+    <h5>Composite Index</h5>
+    <ul>
+      <li>Indexes <strong>multiple columns</strong> together</li>
+      <li>Optimizes queries that filter on those columns</li>
+      <li>Column <strong>order matters</strong> — leftmost prefix rule</li>
+      <li>Index on <code>(A, B)</code> helps <code>WHERE A=...</code> and <code>WHERE A=... AND B=...</code> but not <code>WHERE B=...</code> alone</li>
+    </ul>
+  </div>
+  <div class="compare-card">
+    <h5>Covering Index</h5>
+    <ul>
+      <li>Includes all columns needed by a query</li>
+      <li>Database serves data <strong>entirely from the index</strong></li>
+      <li>Eliminates the "heap lookup" (going back to the table)</li>
+      <li>Uses <code>INCLUDE</code> clause in Postgres to add non-key columns</li>
+    </ul>
+  </div>
+</div>
+
+<h3>The cost of indexes</h3>
+
+<p>
+  Indexes are not free. Each index consumes disk space (and ideally fits in memory). More critically, every <code>INSERT</code>, <code>UPDATE</code>, or <code>DELETE</code> must update all associated indexes. If you blindly index every column, your write operations slow dramatically. The guideline: index columns that appear in <code>WHERE</code>, <code>JOIN</code>, and <code>ORDER BY</code> clauses of your most frequent queries, and leave the rest alone.
+</p>
+
+<h3>EXPLAIN ANALYZE — reading the query plan</h3>
+
+<p>
+  To discover whether your queries use indexes, Postgres provides the <code>EXPLAIN ANALYZE</code> command. It runs the query and shows the exact execution plan — which tables were scanned, which indexes were used, and how long each step took.
+</p>
+
+<pre><code><span class="code-label">SQL</span>
+<span class="syn-kw">EXPLAIN ANALYZE</span>
+<span class="syn-kw">SELECT</span> p.*, u.name <span class="syn-kw">AS</span> author_name
+<span class="syn-kw">FROM</span> posts p
+<span class="syn-kw">JOIN</span> users u <span class="syn-kw">ON</span> u.id = p.author_id
+<span class="syn-kw">WHERE</span> p.published = <span class="syn-kw">true</span>
+<span class="syn-kw">ORDER BY</span> p.created_at <span class="syn-kw">DESC</span>
+<span class="syn-kw">LIMIT</span> <span class="syn-num">20</span>;
+
+<span class="syn-cm">-- Look for "Seq Scan" in the output — that means no index is being used.</span>
+<span class="syn-cm">-- After adding an index, re-run and confirm it shows "Index Scan".</span></code></pre>
+
+<div class="ref-box">
+  <span class="ref-icon">📖</span>
+  <span><strong>Reference:</strong> <a href="https://www.postgresql.org/docs/current/using-explain.html" target="_blank">PostgreSQL — Using EXPLAIN</a> — official documentation on reading query execution plans.</span>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 11 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s11" class="section-heading">
+  <span class="section-num">11</span>
+  <h2>Connection Pooling</h2>
+</div>
+
+<p>
+  Establishing a database connection is expensive. Each new connection involves a TCP three-way handshake, authentication, encryption negotiation, session state setup, and memory allocation on the database server (typically several MB per connection). If your application opens a new connection for every query and closes it immediately, you're paying this cost on every single request.
+</p>
+
+<h3>The two problems</h3>
+
+<p>
+  <strong>Problem 1: Latency overhead.</strong> Each connection setup adds tens of milliseconds of overhead — wasted time before any actual query runs. <strong>Problem 2: Connection exhaustion.</strong> Databases have hard limits on simultaneous connections (Postgres defaults to ~100, often configured to 300–500). During traffic spikes, your backend can exhaust the connection limit and crash the database.
+</p>
+
+<h3>Connection pooling</h3>
+
+<p>
+  A <span class="keyword">connection pool</span> maintains a set of pre-established, reusable connections. Instead of creating a new connection for each query, your application borrows a connection from the pool, uses it, and returns it. The connection stays open for reuse by the next request. This eliminates both the latency overhead and the risk of connection exhaustion.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 620 220" xmlns="http://www.w3.org/2000/svg" style="max-width:620px;width:100%">
+    <!-- Server instances -->
+    <rect x="20" y="30" width="80" height="50" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.2"/>
+    <text x="60" y="58" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server 1</text>
+    <rect x="20" y="90" width="80" height="50" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.2"/>
+    <text x="60" y="118" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server 2</text>
+    <rect x="20" y="150" width="80" height="50" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.2"/>
+    <text x="60" y="178" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server 3</text>
+
+    <!-- Arrows to pool -->
+    <line x1="100" y1="55" x2="230" y2="110" stroke="#5c4a3a" stroke-width="1" marker-end="url(#arrowD)"/>
+    <line x1="100" y1="115" x2="230" y2="115" stroke="#5c4a3a" stroke-width="1" marker-end="url(#arrowD)"/>
+    <line x1="100" y1="175" x2="230" y2="120" stroke="#5c4a3a" stroke-width="1" marker-end="url(#arrowD)"/>
+
+    <!-- External Pool -->
+    <rect x="230" y="70" width="150" height="90" rx="6" fill="#5b8a5e" fill-opacity="0.1" stroke="#5b8a5e" stroke-width="1.5"/>
+    <text x="305" y="92" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="9" font-weight="700" fill="#4a7c59" letter-spacing="0.08em">EXTERNAL POOL</text>
+    <text x="305" y="107" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">(e.g. PgBouncer)</text>
+
+    <!-- Connection slots -->
+    <rect x="245" y="118" width="18" height="18" rx="3" fill="#5b8a5e" fill-opacity="0.3" stroke="#5b8a5e" stroke-width="0.8"/>
+    <rect x="268" y="118" width="18" height="18" rx="3" fill="#5b8a5e" fill-opacity="0.3" stroke="#5b8a5e" stroke-width="0.8"/>
+    <rect x="291" y="118" width="18" height="18" rx="3" fill="#5b8a5e" fill-opacity="0.3" stroke="#5b8a5e" stroke-width="0.8"/>
+    <rect x="314" y="118" width="18" height="18" rx="3" fill="#5b8a5e" fill-opacity="0.3" stroke="#5b8a5e" stroke-width="0.8"/>
+    <rect x="337" y="118" width="18" height="18" rx="3" fill="#5b8a5e" fill-opacity="0.3" stroke="#5b8a5e" stroke-width="0.8"/>
+    <text x="305" y="150" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">max: 250 conns</text>
+
+    <!-- Arrow to DB -->
+    <line x1="380" y1="115" x2="470" y2="115" stroke="#4a708b" stroke-width="1.5" marker-end="url(#arrowB2)"/>
+
+    <!-- Database -->
+    <rect x="470" y="80" width="120" height="70" rx="6" fill="#e8dbc4" stroke="#4a708b" stroke-width="1.5"/>
+    <text x="530" y="112" text-anchor="middle" font-family="'Source Serif 4',serif" font-size="12" font-weight="600" fill="#2c2420">PostgreSQL</text>
+    <text x="530" y="132" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#6b5d52">max: 300</text>
+
+    <defs>
+      <marker id="arrowD" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#5c4a3a"/></marker>
+      <marker id="arrowB2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#4a708b"/></marker>
+    </defs>
+  </svg>
+  <div class="diagram-caption">Fig 7 · External connection pool (PgBouncer) sits between servers and database</div>
+</div>
+
+<h3>Internal vs. external pooling</h3>
+
+<div class="compare-grid">
+  <div class="compare-card">
+    <h5>Internal Pool</h5>
+    <ul>
+      <li>Pool lives <strong>inside</strong> each server instance</li>
+      <li>Each instance maintains its own connections</li>
+      <li>Simple setup; most DB drivers include one</li>
+      <li><strong>Risk:</strong> 3 instances × 150 connections = 450, which can exceed DB limit of 300</li>
+    </ul>
+  </div>
+  <div class="compare-card">
+    <h5>External Pool</h5>
+    <ul>
+      <li>Standalone process (PgBouncer, PgCat)</li>
+      <li><strong>All</strong> server instances share one pool</li>
+      <li>Total connections to DB are centrally controlled</li>
+      <li>Preferred for <strong>horizontally scaled</strong> production systems</li>
+    </ul>
+  </div>
+</div>
+
+<h4>Connection pooling in Go</h4>
+
+<pre><code><span class="code-label">Go</span>
+<span class="syn-kw">import</span> <span class="syn-str">"database/sql"</span>
+
+db, err := sql.<span class="syn-fn">Open</span>(<span class="syn-str">"postgres"</span>, connStr)
+<span class="syn-kw">if</span> err != <span class="syn-kw">nil</span> {
+    log.<span class="syn-fn">Fatal</span>(err)
+}
+
+<span class="syn-cm">// Configure the built-in connection pool</span>
+db.<span class="syn-fn">SetMaxOpenConns</span>(<span class="syn-num">25</span>)                  <span class="syn-cm">// max open connections to the DB</span>
+db.<span class="syn-fn">SetMaxIdleConns</span>(<span class="syn-num">10</span>)                  <span class="syn-cm">// max idle connections kept ready</span>
+db.<span class="syn-fn">SetConnMaxLifetime</span>(<span class="syn-num">5</span> * time.Minute)  <span class="syn-cm">// recycle connections after 5 min</span>
+db.<span class="syn-fn">SetConnMaxIdleTime</span>(<span class="syn-num">1</span> * time.Minute)  <span class="syn-cm">// close idle connections after 1 min</span></code></pre>
+
+<h4>Connection pooling in Python (SQLAlchemy)</h4>
+
+<pre><code><span class="code-label">Python</span>
+<span class="syn-kw">from</span> sqlalchemy <span class="syn-kw">import</span> create_engine
+
+engine = <span class="syn-fn">create_engine</span>(
+    <span class="syn-str">"postgresql://user:pass@host/db"</span>,
+    pool_size=<span class="syn-num">20</span>,          <span class="syn-cm"># number of persistent connections</span>
+    max_overflow=<span class="syn-num">10</span>,       <span class="syn-cm"># extra connections allowed during spikes</span>
+    pool_timeout=<span class="syn-num">30</span>,       <span class="syn-cm"># seconds to wait for a free connection</span>
+    pool_recycle=<span class="syn-num">1800</span>,     <span class="syn-cm"># recycle connections every 30 minutes</span>
+    pool_pre_ping=<span class="syn-kw">True</span>,    <span class="syn-cm"># test connection health before use</span>
+)</code></pre>
+
+<div class="ref-box">
+  <span class="ref-icon">📖</span>
+  <span><strong>Reference:</strong> <a href="https://www.pgbouncer.org/" target="_blank">PgBouncer</a> — lightweight connection pooler for PostgreSQL, the de facto standard for production Postgres deployments.</span>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 12 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s12" class="section-heading">
+  <span class="section-num">12</span>
+  <h2>Caching Fundamentals</h2>
+</div>
+
+<p>
+  <span class="keyword">Caching</span> is the practice of storing the result of an expensive operation in a faster storage layer so that subsequent requests for the same data can be served without repeating the expensive work. The idea is beautifully simple: compute once, serve many.
+</p>
+
+<p>
+  In practice, you place a cache (typically Redis, Memcached, or Valkey) in front of your database. When a request arrives, you first check the cache. On a <strong>cache hit</strong>, you return the cached data immediately — often in under 5ms. On a <strong>cache miss</strong>, you query the database, store the result in the cache, and then return it. A single move can reduce perceived latency from 800ms to 50ms.
+</p>
+
+<h3>Local vs. distributed caching</h3>
+
+<div class="compare-grid">
+  <div class="compare-card">
+    <h5>Local Cache</h5>
+    <ul>
+      <li>In-process memory (dictionary/map)</li>
+      <li>Fastest possible access: 1–3ms</li>
+      <li>Private to each server instance</li>
+      <li><strong>Problem:</strong> cache inconsistency across instances</li>
+    </ul>
+  </div>
+  <div class="compare-card">
+    <h5>Distributed Cache</h5>
+    <ul>
+      <li>External service (Redis, Memcached, Valkey)</li>
+      <li>Shared across all server instances</li>
+      <li>No inconsistency between servers</li>
+      <li><strong>Con:</strong> network round-trip adds ~5–50ms</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Tiered caching</h3>
+
+<p>
+  Many production systems use both: a small local cache for the "hottest" data (most frequently accessed items) backed by a larger distributed cache. A request checks the local cache first (sub-millisecond), then falls back to the distributed cache (a few milliseconds), and only hits the database on a full miss.
+</p>
+
+<h4>Simple Redis caching in Go</h4>
+
+<pre><code><span class="code-label">Go</span>
+<span class="syn-kw">import</span> (
+    <span class="syn-str">"context"</span>
+    <span class="syn-str">"encoding/json"</span>
+    <span class="syn-str">"time"</span>
+    <span class="syn-str">"github.com/redis/go-redis/v9"</span>
+)
+
+<span class="syn-kw">var</span> rdb = redis.<span class="syn-fn">NewClient</span>(&redis.Options{Addr: <span class="syn-str">"localhost:6379"</span>})
+
+<span class="syn-kw">func</span> <span class="syn-fn">GetProduct</span>(ctx <span class="syn-type">context.Context</span>, id <span class="syn-type">string</span>) (*<span class="syn-type">Product</span>, <span class="syn-type">error</span>) {
+    cacheKey := <span class="syn-str">"product:"</span> + id
+
+    <span class="syn-cm">// 1. Try cache first</span>
+    cached, err := rdb.<span class="syn-fn">Get</span>(ctx, cacheKey).<span class="syn-fn">Result</span>()
+    <span class="syn-kw">if</span> err == <span class="syn-kw">nil</span> {
+        <span class="syn-kw">var</span> p <span class="syn-type">Product</span>
+        json.<span class="syn-fn">Unmarshal</span>([]<span class="syn-kw">byte</span>(cached), &p)
+        <span class="syn-kw">return</span> &p, <span class="syn-kw">nil</span>  <span class="syn-cm">// Cache HIT — ~2ms</span>
+    }
+
+    <span class="syn-cm">// 2. Cache miss — query database</span>
+    p, err := <span class="syn-fn">queryProductFromDB</span>(ctx, id)
+    <span class="syn-kw">if</span> err != <span class="syn-kw">nil</span> {
+        <span class="syn-kw">return</span> <span class="syn-kw">nil</span>, err
+    }
+
+    <span class="syn-cm">// 3. Store in cache with TTL</span>
+    data, _ := json.<span class="syn-fn">Marshal</span>(p)
+    rdb.<span class="syn-fn">Set</span>(ctx, cacheKey, data, <span class="syn-num">10</span>*time.Minute)
+
+    <span class="syn-kw">return</span> p, <span class="syn-kw">nil</span>
+}</code></pre>
+
+<h4>Simple Redis caching in Python</h4>
+
+<pre><code><span class="code-label">Python</span>
+<span class="syn-kw">import</span> json, redis
+
+r = redis.<span class="syn-fn">Redis</span>(host=<span class="syn-str">"localhost"</span>, port=<span class="syn-num">6379</span>, decode_responses=<span class="syn-kw">True</span>)
+
+<span class="syn-kw">def</span> <span class="syn-fn">get_product</span>(product_id: <span class="syn-type">str</span>) -> <span class="syn-type">dict</span>:
+    cache_key = <span class="syn-str">f"product:</span>{product_id}<span class="syn-str">"</span>
+
+    <span class="syn-cm"># 1. Try cache</span>
+    cached = r.<span class="syn-fn">get</span>(cache_key)
+    <span class="syn-kw">if</span> cached:
+        <span class="syn-kw">return</span> json.<span class="syn-fn">loads</span>(cached)  <span class="syn-cm"># Cache HIT</span>
+
+    <span class="syn-cm"># 2. Cache miss — query database</span>
+    product = <span class="syn-fn">query_product_from_db</span>(product_id)
+
+    <span class="syn-cm"># 3. Store with 10-minute TTL</span>
+    r.<span class="syn-fn">setex</span>(cache_key, <span class="syn-num">600</span>, json.<span class="syn-fn">dumps</span>(product))
+    <span class="syn-kw">return</span> product</code></pre>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 13 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s13" class="section-heading">
+  <span class="section-num">13</span>
+  <h2>Cache Invalidation</h2>
+</div>
+
+<p>
+  There's a famous saying in computer science: <em>"There are only two hard problems in programming: naming things, cache invalidation, and off-by-one errors."</em> Cache invalidation — keeping cached data in sync with the source of truth — is genuinely one of the hardest problems in distributed systems.
+</p>
+
+<h3>Time-based expiration (TTL)</h3>
+
+<p>
+  The simplest approach: set a <strong>Time To Live (TTL)</strong> on each cache entry. After the TTL expires, the entry is automatically deleted. The next request triggers a fresh database query. The challenge is choosing the right TTL — too short and you lose most caching benefit; too long and users see stale data.
+</p>
+
+<h3>Event-based invalidation</h3>
+
+<p>
+  Instead of waiting for a timer, you explicitly delete or update the cache entry whenever the underlying data changes. For example, when a user updates their profile, the update handler also deletes the cached profile entry. The next read request will fetch fresh data from the database and repopulate the cache.
+</p>
+
+<p>
+  The advantage: data is always fresh. The risk: if you forget to invalidate at even one code path that modifies the data, you serve stale results. This requires discipline and thorough code review.
+</p>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 14 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s14" class="section-heading">
+  <span class="section-num">14</span>
+  <h2>Caching Patterns</h2>
+</div>
+
+<p>
+  The caching <em>pattern</em> determines when and how data enters the cache. Three primary patterns dominate backend engineering:
+</p>
+
+<h3>1. Cache-Aside (Lazy Loading)</h3>
+
+<p>
+  The most common pattern. Your application code manages the cache explicitly: check cache → on miss, query DB → store result in cache → return. On write, invalidate or delete the cache entry.
+</p>
+
+<div class="callout">
+  <div class="callout-title">Cache-Aside Flow</div>
+  <p><strong>Read:</strong> Check cache → hit? Return. Miss? Query DB → write to cache → return.<br>
+  <strong>Write:</strong> Update DB → delete cache entry (next read repopulates).</p>
+</div>
+
+<h3>2. Write-Through</h3>
+
+<p>
+  Every write operation updates <em>both</em> the cache and the database simultaneously. Reads always find fresh data in the cache — there are no cache misses after the first write. The tradeoff: write latency increases because you're writing to two systems before returning a success response.
+</p>
+
+<h3>3. Write-Behind (Write-Back)</h3>
+
+<p>
+  The write updates only the cache and returns immediately. The database update happens asynchronously in the background. This gives the fastest write latency but introduces risk: if the cache fails before the async write completes, data is lost. The cache and database may be temporarily inconsistent.
+</p>
+
+<table>
+  <thead><tr><th>Pattern</th><th>Read Speed</th><th>Write Speed</th><th>Consistency</th><th>Complexity</th></tr></thead>
+  <tbody>
+    <tr><td>Cache-Aside</td><td>Fast (after first miss)</td><td>Normal</td><td>Good (explicit invalidation)</td><td>Low</td></tr>
+    <tr><td>Write-Through</td><td>Always fast</td><td>Slower (dual write)</td><td>Strong</td><td>Medium</td></tr>
+    <tr><td>Write-Behind</td><td>Always fast</td><td>Fastest</td><td>Eventual (risk of loss)</td><td>High</td></tr>
+  </tbody>
+</table>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 15 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s15" class="section-heading">
+  <span class="section-num">15</span>
+  <h2>Cache Hit Rate</h2>
+</div>
+
+<p>
+  The <span class="keyword">cache hit rate</span> measures what percentage of requests are successfully served from the cache rather than falling through to the database. A 90% hit rate means 9 out of 10 requests are served from cache; only 10% touch the database. A 20% hit rate means your caching layer is barely working.
+</p>
+
+<div class="formula">
+  Cache Hit Rate = Cache Hits / (Cache Hits + Cache Misses) × 100%
+</div>
+
+<h3>Factors that affect hit rate</h3>
+
+<p>
+  <strong>TTL duration:</strong> Longer TTLs keep items in the cache longer, increasing hit rate but risking staleness. <strong>Cache size:</strong> A larger cache holds more entries, naturally increasing the probability of a hit. <strong>Data access patterns:</strong> If your traffic is highly concentrated on a small set of "hot" items (power-law distribution), caching is extremely effective. If traffic is spread evenly across millions of unique keys, hit rates will be lower. <strong>Eviction policy:</strong> Algorithms like LRU (Least Recently Used) and LFU (Least Frequently Used) determine which entries are evicted when the cache is full — choosing the right one depends on your access patterns.
+</p>
+
+<div class="callout info">
+  <div class="callout-title">Target hit rates</div>
+  <p>For most web applications, a <strong>70–95%</strong> hit rate is considered healthy. Below 50% suggests a fundamental mismatch between your caching strategy and your actual access patterns — time to re-examine your TTLs, cache keys, and eviction policy.</p>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 16 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s16" class="section-heading">
+  <span class="section-num">16</span>
+  <h2>Vertical Scaling</h2>
+</div>
+
+<p>
+  <span class="keyword">Vertical scaling</span> (also called "scaling up") means replacing your server with a more powerful machine — more CPU cores, more RAM, faster storage, better network cards. Your code doesn't change. Your architecture doesn't change. You simply upgrade the hardware.
+</p>
+
+<h3>Why it's appealing</h3>
+
+<p>
+  Vertical scaling is the simplest form of scaling. A server with 2× the CPU cores handles roughly 2× the requests. A server with 2× the RAM can hold 2× the cached data. You avoid the entire category of distributed systems complexity: no load balancers, no state synchronization, no network partition handling. Economically, a single machine with 2× power often costs less than two machines of half its size, and you skip the operational overhead of managing a fleet.
+</p>
+
+<h3>Hard limits of vertical scaling</h3>
+
+<p>
+  <strong>Hardware ceiling:</strong> Cloud providers offer machines up to a certain size. Once you've maxed out the largest available instance (e.g., 96 cores, 384 GB RAM), you simply cannot scale further. <strong>Single point of failure:</strong> One machine means one failure domain. If it crashes, your entire service goes offline. <strong>No geographic distribution:</strong> A single server in one data center means users on the other side of the world experience high latency — physics imposes a speed-of-light floor on cross-continental round trips (~100ms US↔India).
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 580 170" xmlns="http://www.w3.org/2000/svg" style="max-width:580px;width:100%">
+    <!-- Small server -->
+    <rect x="30" y="60" width="80" height="80" rx="5" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.2"/>
+    <text x="70" y="90" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">2 cores</text>
+    <text x="70" y="105" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">4 GB</text>
+    <text x="70" y="120" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">50 GB</text>
+    <text x="70" y="155" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#6b5d52">$50/mo</text>
+
+    <!-- Arrow -->
+    <text x="175" y="105" text-anchor="middle" font-family="'Source Serif 4',serif" font-size="22" fill="#b22222">→</text>
+
+    <!-- Medium server -->
+    <rect x="220" y="45" width="100" height="95" rx="5" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.2"/>
+    <text x="270" y="78" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">8 cores</text>
+    <text x="270" y="93" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">32 GB</text>
+    <text x="270" y="108" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">500 GB SSD</text>
+    <text x="270" y="155" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#6b5d52">$320/mo</text>
+
+    <!-- Arrow -->
+    <text x="385" y="105" text-anchor="middle" font-family="'Source Serif 4',serif" font-size="22" fill="#b22222">→</text>
+
+    <!-- Big server -->
+    <rect x="420" y="25" width="130" height="115" rx="5" fill="#e8dbc4" stroke="#b22222" stroke-width="1.5"/>
+    <text x="485" y="60" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">32 cores</text>
+    <text x="485" y="75" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">96 GB RAM</text>
+    <text x="485" y="90" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">2 TB NVMe</text>
+    <text x="485" y="105" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">10 Gbps NIC</text>
+    <text x="485" y="155" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="9" fill="#6b5d52">$2,400/mo</text>
+
+    <!-- Ceiling label -->
+    <line x1="420" y1="18" x2="550" y2="18" stroke="#b22222" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="485" y="12" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="8" font-weight="700" fill="#b22222" letter-spacing="0.1em">HARDWARE CEILING</text>
+  </svg>
+  <div class="diagram-caption">Fig 8 · Vertical scaling — bigger machines, same architecture, hard ceiling</div>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 17 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s17" class="section-heading">
+  <span class="section-num">17</span>
+  <h2>Horizontal Scaling</h2>
+</div>
+
+<p>
+  <span class="keyword">Horizontal scaling</span> (also called "scaling out") takes the opposite approach: instead of making one machine bigger, you add more machines of similar size that work together to handle the load.
+</p>
+
+<h3>Advantages</h3>
+
+<p>
+  <strong>No hard ceiling:</strong> Need more capacity? Add more servers. There's no limit on how many instances you can run. <strong>Redundancy:</strong> If one server fails, the others continue serving traffic — the failure is absorbed, not catastrophic. <strong>Geographic distribution:</strong> You can place servers in multiple data centers around the world, routing users to the nearest one for minimal latency.
+</p>
+
+<h3>The complexity cost</h3>
+
+<p>
+  Horizontal scaling introduces an entirely new category of problems — the problems of distributed systems:
+</p>
+
+<p>
+  <strong>Request distribution:</strong> How do you decide which server handles each request? You need a load balancer — a new component in your infrastructure. <strong>State synchronization:</strong> If user A updates their profile on Server 1, how does Server 2 know about it? <strong>Network partitions:</strong> What happens when the network connecting your servers fails? Servers may make conflicting decisions. <strong>Health checking:</strong> How do you detect when a server is down, and how do you reroute traffic away from it and back to it when it recovers?
+</p>
+
+<p>
+  All these problems have solutions — load balancers, shared databases, consensus algorithms, health checks — but each solution adds complexity and requires careful engineering. Distributed systems don't eliminate problems; they <em>transform</em> one set of problems into a different set, and you must evaluate which set of problems is more manageable for your situation.
+</p>
+
+<div class="compare-grid">
+  <div class="compare-card">
+    <h5>Vertical Scaling</h5>
+    <ul>
+      <li>Simple — no architectural changes</li>
+      <li>No distributed systems complexity</li>
+      <li>Economically efficient at small scale</li>
+      <li>Hard hardware ceiling</li>
+      <li>Single point of failure</li>
+      <li>No geographic distribution</li>
+    </ul>
+  </div>
+  <div class="compare-card">
+    <h5>Horizontal Scaling</h5>
+    <ul>
+      <li>No capacity ceiling</li>
+      <li>Built-in redundancy</li>
+      <li>Geographic distribution possible</li>
+      <li>Requires load balancing</li>
+      <li>State synchronization needed</li>
+      <li>Operationally complex</li>
+    </ul>
+  </div>
+</div>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 18 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="s18" class="section-heading">
+  <span class="section-num">18</span>
+  <h2>Load Balancing</h2>
+</div>
+
+<p>
+  The moment you have more than one server, you need a mechanism to distribute incoming requests across them. That mechanism is the <span class="keyword">load balancer</span>. It sits in front of your servers, receives all incoming traffic, and forwards each request to one of the available backend instances based on a chosen algorithm.
+</p>
+
+<h3>Common algorithms</h3>
+
+<p>
+  <strong>Round Robin:</strong> Requests are distributed sequentially — server 1, server 2, server 3, repeat. Simple and even. <strong>Least Connections:</strong> Each request goes to the server currently handling the fewest active connections. Better for requests with varying duration. <strong>IP Hash:</strong> The client's IP address determines which server receives the request, ensuring the same client always hits the same server (useful for session affinity). <strong>Weighted Round Robin:</strong> Servers with more capacity receive proportionally more requests.
+</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 600 210" xmlns="http://www.w3.org/2000/svg" style="max-width:600px;width:100%">
+    <!-- Users -->
+    <rect x="20" y="70" width="65" height="70" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.2"/>
+    <text x="52" y="100" text-anchor="middle" font-family="'Source Serif 4',serif" font-size="10" fill="#5c4a3a">Users</text>
+    <text x="52" y="118" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">10K RPS</text>
+
+    <!-- Arrow to LB -->
+    <line x1="85" y1="105" x2="160" y2="105" stroke="#5c4a3a" stroke-width="1.2" marker-end="url(#arrowD2)"/>
+
+    <!-- Load Balancer -->
+    <rect x="160" y="55" width="110" height="100" rx="6" fill="#b22222" fill-opacity="0.1" stroke="#b22222" stroke-width="1.5"/>
+    <text x="215" y="85" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="9" font-weight="700" fill="#b22222" letter-spacing="0.06em">LOAD</text>
+    <text x="215" y="100" text-anchor="middle" font-family="'Libre Franklin',sans-serif" font-size="9" font-weight="700" fill="#b22222" letter-spacing="0.06em">BALANCER</text>
+    <text x="215" y="120" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">Nginx / HAProxy</text>
+    <text x="215" y="140" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">ALB / Traefik</text>
+
+    <!-- Arrows to servers -->
+    <line x1="270" y1="80" x2="370" y2="40" stroke="#5c4a3a" stroke-width="1" marker-end="url(#arrowD2)"/>
+    <line x1="270" y1="105" x2="370" y2="105" stroke="#5c4a3a" stroke-width="1" marker-end="url(#arrowD2)"/>
+    <line x1="270" y1="130" x2="370" y2="170" stroke="#5c4a3a" stroke-width="1" marker-end="url(#arrowD2)"/>
+
+    <!-- Servers -->
+    <rect x="370" y="18" width="90" height="42" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.2"/>
+    <text x="415" y="38" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server 1</text>
+    <text x="415" y="52" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">US-East</text>
+
+    <rect x="370" y="84" width="90" height="42" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.2"/>
+    <text x="415" y="104" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server 2</text>
+    <text x="415" y="118" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">EU-West</text>
+
+    <rect x="370" y="150" width="90" height="42" rx="4" fill="#e8dbc4" stroke="#5c4a3a" stroke-width="1.2"/>
+    <text x="415" y="170" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#5c4a3a">Server 3</text>
+    <text x="415" y="184" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#6b5d52">AP-South</text>
+
+    <!-- RPS labels -->
+    <text x="520" y="42" font-family="'JetBrains Mono',monospace" font-size="8" fill="#5b8a5e">~3.3K RPS</text>
+    <text x="520" y="108" font-family="'JetBrains Mono',monospace" font-size="8" fill="#5b8a5e">~3.3K RPS</text>
+    <text x="520" y="174" font-family="'JetBrains Mono',monospace" font-size="8" fill="#5b8a5e">~3.3K RPS</text>
+
+    <defs>
+      <marker id="arrowD2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#5c4a3a"/></marker>
+    </defs>
+  </svg>
+  <div class="diagram-caption">Fig 9 · Load balancer distributes traffic across geographically distributed servers</div>
+</div>
+
+<h3>Load balancer in practice (Nginx config)</h3>
+
+<pre><code><span class="code-label">Nginx</span>
+<span class="syn-kw">upstream</span> backend {
+    <span class="syn-cm"># Least connections algorithm</span>
+    <span class="syn-kw">least_conn</span>;
+
+    <span class="syn-kw">server</span> <span class="syn-str">10.0.1.10:8080</span> <span class="syn-kw">weight</span>=<span class="syn-num">3</span>;   <span class="syn-cm"># stronger machine</span>
+    <span class="syn-kw">server</span> <span class="syn-str">10.0.1.11:8080</span> <span class="syn-kw">weight</span>=<span class="syn-num">2</span>;
+    <span class="syn-kw">server</span> <span class="syn-str">10.0.1.12:8080</span> <span class="syn-kw">weight</span>=<span class="syn-num">2</span>;
+    <span class="syn-kw">server</span> <span class="syn-str">10.0.1.13:8080</span> <span class="syn-kw">backup</span>;     <span class="syn-cm"># only used if others are down</span>
+}
+
+<span class="syn-kw">server</span> {
+    <span class="syn-kw">listen</span> <span class="syn-num">443</span> ssl;
+    <span class="syn-kw">server_name</span> api.example.com;
+
+    <span class="syn-kw">location</span> / {
+        <span class="syn-kw">proxy_pass</span> http://backend;
+        <span class="syn-kw">proxy_set_header</span> Host $host;
+        <span class="syn-kw">proxy_set_header</span> X-Real-IP $remote_addr;
+    }
+}</code></pre>
+
+<h3>Health checks</h3>
+
+<p>
+  Load balancers periodically send health check probes (HTTP requests to a <code>/health</code> endpoint) to each backend. If a server fails to respond, the load balancer stops routing traffic to it. When the server recovers, traffic resumes. This is the mechanism that provides the redundancy benefit of horizontal scaling.
+</p>
+
+<h4>Simple health endpoint in Go</h4>
+
+<pre><code><span class="code-label">Go</span>
+http.<span class="syn-fn">HandleFunc</span>(<span class="syn-str">"/health"</span>, <span class="syn-kw">func</span>(w <span class="syn-type">http.ResponseWriter</span>, r *<span class="syn-type">http.Request</span>) {
+    <span class="syn-cm">// Check database connectivity</span>
+    <span class="syn-kw">if</span> err := db.<span class="syn-fn">PingContext</span>(r.<span class="syn-fn">Context</span>()); err != <span class="syn-kw">nil</span> {
+        w.<span class="syn-fn">WriteHeader</span>(http.StatusServiceUnavailable)
+        json.<span class="syn-fn">NewEncoder</span>(w).<span class="syn-fn">Encode</span>(<span class="syn-kw">map</span>[<span class="syn-type">string</span>]<span class="syn-type">string</span>{
+            <span class="syn-str">"status"</span>: <span class="syn-str">"unhealthy"</span>,
+            <span class="syn-str">"reason"</span>: <span class="syn-str">"database unreachable"</span>,
+        })
+        <span class="syn-kw">return</span>
+    }
+    w.<span class="syn-fn">WriteHeader</span>(http.StatusOK)
+    json.<span class="syn-fn">NewEncoder</span>(w).<span class="syn-fn">Encode</span>(<span class="syn-kw">map</span>[<span class="syn-type">string</span>]<span class="syn-type">string</span>{
+        <span class="syn-str">"status"</span>: <span class="syn-str">"healthy"</span>,
+    })
+})</code></pre>
+
+
+<hr class="section-rule">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- FINAL SUMMARY -->
+<!-- ═══════════════════════════════════════════ -->
+
+<div class="section-heading">
+  <span class="section-num" style="background:#5c4a3a">∑</span>
+  <h2>Summary &amp; Key Principles</h2>
+</div>
+
+<p>
+  Performance engineering is not about memorizing a checklist of techniques. It's about building mental models for how systems behave under load and applying the right tool at the right time. Here are the core principles:
+</p>
+
+<p>
+  <strong>1. Measure, don't guess.</strong> Never assume where the bottleneck is. Use timing middleware, distributed tracing, profilers, and <code>EXPLAIN ANALYZE</code> to identify the actual problem before investing in a solution.
+</p>
+
+<p>
+  <strong>2. Think in percentiles, not averages.</strong> P50 tells you the typical experience. P99 tells you the worst experience — and it often represents your most valuable users doing your most complex operations.
+</p>
+
+<p>
+  <strong>3. Respect the utilization curve.</strong> Latency grows exponentially as utilization approaches 100%. Keep headroom for traffic bursts. Target 60–80% utilization in production.
+</p>
+
+<p>
+  <strong>4. Fix the database first.</strong> Eliminate N+1 queries, add appropriate indexes (but not too many), and use connection pooling. These low-hanging optimizations often provide the biggest gains.
+</p>
+
+<p>
+  <strong>5. Cache strategically.</strong> Understand your access patterns. Choose the right caching pattern (cache-aside, write-through, write-behind). Monitor your cache hit rate. Remember that cache invalidation is genuinely hard — respect it.
+</p>
+
+<p>
+  <strong>6. Scale appropriately.</strong> Start with vertical scaling — it's simpler and cheaper. Move to horizontal scaling when you hit hardware limits, need redundancy, or need geographic distribution. Understand that horizontal scaling transforms your problems rather than eliminating them.
+</p>
+
+<div class="ref-box">
+  <span class="ref-icon">📖</span>
+  <span><strong>Further reading:</strong>
+    <a href="https://developer.mozilla.org/en-US/docs/Web/Performance" target="_blank">MDN Web Performance</a> ·
+    <a href="https://www.postgresql.org/docs/current/performance-tips.html" target="_blank">Postgres Performance Tips</a> ·
+    <a href="https://opentelemetry.io/docs/" target="_blank">OpenTelemetry Docs</a> ·
+    <a href="https://redis.io/docs/latest/" target="_blank">Redis Documentation</a>
+  </span>
+</div>
+
+<a href="#top" class="back-to-top">↑ Back to top</a>
+
+</main>
+</div>
+<!-- ============ CHAPTER NAVIGATION ============ -->
+<nav class="chapter-nav" id="chapterNav">
+  <a href="../../17.Backend Security: Everything You Need to Know/html_notes/notes.html" class="nav-chapter-link"><span class="nav-arrow">&larr;</span><span class="nav-label"><span class="nav-small">Chapter 17</span>Backend Security</span></a>
+  <a href="../../index.html" class="nav-indicator"><span class="nav-dot"></span> Chapter 18 <span class="nav-sep">/</span> 24</a>
+  <a href="../../19.Backend Scaling and Performance Engineering: Part-2/html_notes/notes.html" class="nav-chapter-link nav-next"><span class="nav-label"><span class="nav-small">Chapter 19</span>Scaling & Performance (Part 2)</span><span class="nav-arrow">&rarr;</span></a>
+</nav>
+</body>
+</html>

@@ -1,0 +1,2138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-time Communication with WebSockets — Field Manual</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    rel="stylesheet">
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/http.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+
+  <style>
+    :root {
+      --paper: #f4efe6;
+      --paper-2: #ece4d6;
+      --ink: #1c1a17;
+      --ink-soft: #4a443c;
+      --rust: #bc4b2b;
+      --rust-deep: #8f3415;
+      --gold: #b8860b;
+      --teal: #1f6f6f;
+      --line: #d6ccba;
+      --code-bg: #1a1c22;
+      --code-bar: #11131a;
+      --shadow: rgba(38, 28, 18, .14);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 24px
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: 'Hanken Grotesk', sans-serif;
+      font-size: 17px;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+      background-image: radial-gradient(circle at 12% 8%, rgba(188, 75, 43, .05), transparent 38%), radial-gradient(circle at 88% 92%, rgba(31, 111, 111, .05), transparent 42%);
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 312px minmax(0, 1fr);
+      max-width: 1480px;
+      margin: 0 auto;
+    }
+
+    .toc {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 38px 24px 60px;
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--paper-2), var(--paper));
+    }
+
+    .content {
+      padding: 64px clamp(22px, 5vw, 86px) 140px;
+      min-width: 0;
+    }
+
+    .toc .brand {
+      font-family: 'Fraunces', serif;
+      font-weight: 900;
+      font-size: 21px;
+      line-height: 1.1;
+      letter-spacing: -.01em;
+      margin-bottom: 4px;
+    }
+
+    .toc .brand span {
+      color: var(--rust);
+    }
+
+    .toc .brand-sub {
+      font-size: 11px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+      margin-bottom: 26px;
+      font-weight: 600;
+    }
+
+    .toc nav a {
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+      text-decoration: none;
+      color: var(--ink-soft);
+      font-size: 13.5px;
+      font-weight: 500;
+      padding: 6px 9px;
+      border-radius: 7px;
+      margin-bottom: 1px;
+      transition: .16s;
+      border-left: 2px solid transparent;
+    }
+
+    .toc nav a:hover {
+      background: rgba(188, 75, 43, .09);
+      color: var(--ink);
+    }
+
+    .toc nav a.active {
+      color: var(--rust-deep);
+      background: rgba(188, 75, 43, .1);
+      border-left-color: var(--rust);
+      font-weight: 700;
+    }
+
+    .toc nav a .n {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px;
+      color: var(--rust);
+      min-width: 20px;
+      font-weight: 700;
+    }
+
+    .hero {
+      margin-bottom: 64px;
+    }
+
+    .kicker {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      letter-spacing: .3em;
+      text-transform: uppercase;
+      color: var(--rust);
+      font-weight: 700;
+      margin-bottom: 20px;
+    }
+
+    .hero h1 {
+      font-family: 'Fraunces', serif;
+      font-weight: 900;
+      font-size: clamp(40px, 6.5vw, 78px);
+      line-height: .95;
+      letter-spacing: -.025em;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 em {
+      font-style: italic;
+      color: var(--rust);
+      font-weight: 500;
+    }
+
+    .hero .lede {
+      font-size: 19px;
+      max-width: 64ch;
+      color: var(--ink-soft);
+      line-height: 1.6;
+    }
+
+    .hero .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 32px;
+    }
+
+    .hero .meta span {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      background: var(--paper-2);
+      padding: 6px 13px;
+      border-radius: 30px;
+      color: var(--ink-soft);
+    }
+
+    .hero .rule {
+      height: 3px;
+      width: 120px;
+      background: var(--rust);
+      margin-top: 38px;
+    }
+
+    .part-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      color: var(--rust);
+      font-weight: 700;
+      margin: 64px 0 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px dashed var(--line);
+    }
+
+    .part-label:first-of-type {
+      margin-top: 0;
+    }
+
+    section {
+      margin-bottom: 72px;
+      scroll-margin-top: 20px;
+    }
+
+    .sec-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+
+    .sec-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+      background: var(--rust);
+      border-radius: 8px;
+      padding: 7px 11px;
+      line-height: 1;
+      margin-top: 8px;
+      white-space: nowrap;
+      box-shadow: 0 3px 10px rgba(188, 75, 43, .3);
+    }
+
+    h2 {
+      font-family: 'Fraunces', serif;
+      font-weight: 600;
+      font-size: clamp(27px, 3.6vw, 38px);
+      line-height: 1.06;
+      letter-spacing: -.015em;
+    }
+
+    h3 {
+      font-family: 'Fraunces', serif;
+      font-weight: 600;
+      font-size: 22px;
+      margin: 34px 0 12px;
+      letter-spacing: -.01em;
+    }
+
+    h4 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--rust-deep);
+      margin: 24px 0 9px;
+    }
+
+    p {
+      margin-bottom: 15px;
+      max-width: 76ch;
+    }
+
+    .content a {
+      color: var(--rust-deep);
+      text-underline-offset: 3px;
+    }
+
+    strong {
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    ul,
+    ol {
+      margin: 0 0 17px 0;
+      padding-left: 0;
+      max-width: 76ch;
+    }
+
+    li {
+      margin: 0 0 9px 28px;
+    }
+
+    li::marker {
+      color: var(--rust);
+      font-weight: 700;
+    }
+
+    code:not(pre code) {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .85em;
+      background: var(--paper-2);
+      border: 1px solid var(--line);
+      padding: .12em .42em;
+      border-radius: 5px;
+      color: var(--rust-deep);
+      white-space: nowrap;
+    }
+
+    .box {
+      border-radius: 12px;
+      padding: 18px 22px;
+      margin: 22px 0;
+      border: 1px solid var(--line);
+      background: var(--paper-2);
+    }
+
+    .box .tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-bottom: 7px;
+      display: block;
+    }
+
+    .box p:last-child {
+      margin-bottom: 0;
+    }
+
+    .box.key {
+      background: linear-gradient(180deg, rgba(184, 134, 11, .1), rgba(184, 134, 11, .04));
+      border-color: rgba(184, 134, 11, .4);
+    }
+
+    .box.key .tag {
+      color: var(--gold);
+    }
+
+    .box.gotcha {
+      background: linear-gradient(180deg, rgba(188, 75, 43, .1), rgba(188, 75, 43, .03));
+      border-color: rgba(188, 75, 43, .4);
+    }
+
+    .box.gotcha .tag {
+      color: var(--rust);
+    }
+
+    .box.note {
+      background: linear-gradient(180deg, rgba(31, 111, 111, .09), rgba(31, 111, 111, .03));
+      border-color: rgba(31, 111, 111, .4);
+    }
+
+    .box.note .tag {
+      color: var(--teal);
+    }
+
+    .analogy {
+      font-style: italic;
+      color: var(--ink-soft);
+      font-family: 'Fraunces', serif;
+      font-size: 18px;
+      line-height: 1.55;
+      border-left: 3px solid var(--gold);
+      padding: 6px 0 6px 22px;
+      margin: 20px 0;
+    }
+
+    .tbl-wrap {
+      overflow-x: auto;
+      margin: 22px 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 11px 15px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--paper-2);
+      font-weight: 700;
+      font-size: 11.5px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--rust-deep);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    td code {
+      white-space: nowrap;
+    }
+
+    .mono-cell {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      color: var(--rust-deep);
+      font-size: 13px;
+    }
+
+    .yes {
+      color: #3d7a2e;
+      font-weight: 700;
+    }
+
+    .no {
+      color: #b9461f;
+      font-weight: 700;
+    }
+
+    .cond {
+      color: #9a7400;
+      font-weight: 700;
+    }
+
+    .sc {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .sc.s1 {
+      background: #e4eef0;
+      color: #1f6f6f;
+    }
+
+    .sc.s2 {
+      background: #e3efe0;
+      color: #3d7a2e;
+    }
+
+    .sc.s3 {
+      background: #fbf2dc;
+      color: #9a7400;
+    }
+
+    .sc.s4 {
+      background: #f7e3da;
+      color: #b9461f;
+    }
+
+    .sc.s5 {
+      background: #f6dada;
+      color: #a01f1f;
+    }
+
+    .codeblock {
+      margin: 20px 0;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 14px 30px -16px var(--shadow);
+      border: 1px solid #2a2d36;
+    }
+
+    .code-bar {
+      display: flex;
+      align-items: center;
+      background: var(--code-bar);
+      padding: 0 14px;
+      border-bottom: 1px solid #2a2d36;
+    }
+
+    .code-bar .dots {
+      display: flex;
+      gap: 7px;
+      margin-right: 14px;
+    }
+
+    .code-bar .dots i {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      display: block;
+    }
+
+    .dots i:nth-child(1) {
+      background: #e0644b;
+    }
+
+    .dots i:nth-child(2) {
+      background: #dca838;
+    }
+
+    .dots i:nth-child(3) {
+      background: #5aa75a;
+    }
+
+    .code-tabs {
+      display: flex;
+    }
+
+    .code-tabs button {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      font-weight: 600;
+      background: none;
+      border: none;
+      color: #7d818c;
+      padding: 13px 18px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: .15s;
+    }
+
+    .code-tabs button:hover {
+      color: #cfd2da;
+    }
+
+    .code-tabs button.on {
+      color: #fff;
+      border-bottom-color: var(--rust);
+    }
+
+    .lang-go {
+      color: #5dc9e2;
+    }
+
+    .lang-py {
+      color: #ffd23f;
+    }
+
+    .code-panel {
+      display: none;
+    }
+
+    .code-panel.on {
+      display: block;
+    }
+
+    .codeblock pre {
+      margin: 0;
+    }
+
+    .codeblock pre code {
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 13px;
+      line-height: 1.6;
+      padding: 18px 20px !important;
+      display: block;
+      overflow-x: auto;
+      background: var(--code-bg) !important;
+    }
+
+    .code-cap {
+      font-size: 13px;
+      color: var(--ink-soft);
+      font-style: italic;
+      margin: -8px 2px 22px;
+      font-family: 'Fraunces', serif;
+    }
+
+    .codeblock.single .code-bar .filename {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      color: #9da1ab;
+      padding: 13px 4px;
+    }
+
+    .flow {
+      margin: 22px 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--paper-2);
+      padding: 24px 22px;
+    }
+
+    .flow .step {
+      display: flex;
+      gap: 15px;
+      align-items: flex-start;
+      padding: 9px 0;
+    }
+
+    .flow .step .b {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 12px;
+      background: var(--ink);
+      color: var(--paper);
+      min-width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+
+    .flow .step.srv .b {
+      background: var(--teal);
+    }
+
+    .flow .step.cli .b {
+      background: var(--rust);
+    }
+
+    .flow .step .t {
+      padding-top: 3px;
+      font-size: 14.5px;
+    }
+
+    .flow .arrow {
+      color: var(--line);
+      text-align: center;
+      font-size: 18px;
+      line-height: .4;
+      margin: 0 0 0 14px;
+    }
+
+    /* method card */
+    .method {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      margin: 26px 0;
+      overflow: hidden;
+      background: var(--paper-2);
+    }
+
+    .method-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 22px;
+      background: linear-gradient(180deg, rgba(28, 26, 23, .04), transparent);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .method-top .verb {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 18px;
+      color: #fff;
+      background: var(--ink);
+      padding: 6px 14px;
+      border-radius: 8px;
+    }
+
+    .method-top .verb.get {
+      background: #3d7a2e;
+    }
+
+    .method-top .verb.post {
+      background: var(--rust);
+    }
+
+    .method-top .verb.put {
+      background: #7a5a1e;
+    }
+
+    .method-top .verb.patch {
+      background: #9a7400;
+    }
+
+    .method-top .verb.delete {
+      background: #a01f1f;
+    }
+
+    .method-top .verb.head {
+      background: #2e6a7a;
+    }
+
+    .method-top .verb.options {
+      background: var(--teal);
+    }
+
+    .method-top .verb.connect {
+      background: #5a3a7a;
+    }
+
+    .method-top .verb.trace {
+      background: #6a6a6a;
+    }
+
+    .method-top .props {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      margin-left: auto;
+    }
+
+    .method-top .props span {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 9px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+    }
+
+    .method-top .props .y {
+      color: #3d7a2e;
+      border-color: #bcdcb2;
+    }
+
+    .method-top .props .n {
+      color: #b9461f;
+      border-color: #e8c5b8;
+    }
+
+    .method-top .props .c {
+      color: #9a7400;
+      border-color: #e8d8a8;
+    }
+
+    .method-body {
+      padding: 6px 22px 20px;
+    }
+
+    .method-body .gloss {
+      font-family: 'Fraunces', serif;
+      font-style: italic;
+      font-size: 17px;
+      color: var(--ink-soft);
+      margin: 14px 0;
+    }
+
+    .foot {
+      border-top: 3px solid var(--rust);
+      margin-top: 56px;
+      padding-top: 28px;
+      color: var(--ink-soft);
+      font-size: 14px;
+    }
+
+    .foot strong {
+      color: var(--ink);
+    }
+
+    .toc-toggle {
+      display: none;
+    }
+
+    /* ============ VISUALIZATION STYLES (added) ============ */
+    .viz {
+      margin: 30px 0;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #fbf8f1, var(--paper-2));
+      padding: 24px 22px 18px;
+      box-shadow: 0 10px 26px -18px var(--shadow);
+    }
+
+    .viz-cap {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--rust);
+      font-weight: 700;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .viz-cap::before {
+      content: "";
+      width: 18px;
+      height: 2px;
+      background: var(--rust);
+      display: inline-block;
+    }
+
+    .viz-title {
+      font-family: 'Fraunces', serif;
+      font-weight: 600;
+      font-size: 18px;
+      letter-spacing: -.01em;
+      margin-bottom: 16px;
+      color: var(--ink);
+    }
+
+    .viz svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      overflow: visible;
+    }
+
+    .viz svg text {
+      font-family: 'Hanken Grotesk', sans-serif;
+    }
+
+    .viz svg .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .viz svg .serif {
+      font-family: 'Fraunces', serif;
+    }
+
+    .viz-note {
+      font-size: 12.5px;
+      color: var(--ink-soft);
+      font-style: italic;
+      font-family: 'Fraunces', serif;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--line);
+    }
+
+    @media(max-width:980px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .toc {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 286px;
+        z-index: 50;
+        transform: translateX(-100%);
+        transition: .28s;
+        box-shadow: 0 0 40px rgba(0, 0, 0, .3);
+      }
+
+      .toc.open {
+        transform: translateX(0);
+      }
+
+      .toc-toggle {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        z-index: 60;
+        background: var(--ink);
+        color: var(--paper);
+        border: none;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 11px 16px;
+        border-radius: 10px;
+        cursor: pointer;
+        box-shadow: 0 6px 18px var(--shadow);
+      }
+
+      .content {
+        padding: 80px 22px 100px;
+      }
+
+      .method-top .props {
+        margin-left: 0;
+        width: 100%;
+      }
+    }
+
+    @media(max-width:560px) {
+      body {
+        font-size: 16px;
+      }
+    }
+
+    ::selection {
+      background: var(--rust);
+      color: #fff;
+    }
+  </style>
+<style>
+.chapter-nav{position:fixed;bottom:0;left:0;right:0;z-index:9998;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(16px,4vw,48px);background:rgba(243,237,226,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1.5px solid #c7bca6;box-shadow:0 -8px 32px -16px rgba(40,30,20,.18);font-family:"JetBrains Mono","Spline Sans",monospace;}
+.nav-chapter-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:#5b5347;padding:10px 18px;border-radius:10px;transition:all .2s ease;max-width:38%;}
+.nav-chapter-link:hover{background:rgba(184,64,46,.08);color:#b8402e;transform:translateY(-1px);}
+.nav-chapter-link.nav-next{text-align:right;flex-direction:row;}
+.nav-arrow{font-size:22px;color:#b8402e;font-weight:700;flex:none;}
+.nav-label{display:flex;flex-direction:column;gap:2px;font-size:13.5px;line-height:1.3;}
+.nav-small{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8d8475;font-weight:600;}
+.nav-indicator{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#b8402e;font-weight:700;text-decoration:none;padding:8px 16px;border:1.5px solid #c7bca6;border-radius:40px;background:rgba(255,255,255,.5);transition:all .2s;white-space:nowrap;}
+.nav-indicator:hover{background:#b8402e;color:#fff;border-color:#b8402e;}
+.nav-dot{display:inline-block;width:7px;height:7px;background:#b8402e;border-radius:50%;margin-right:4px;vertical-align:middle;}
+.nav-sep{color:#c7bca6;margin:0 2px;}
+.nav-disabled{visibility:hidden;pointer-events:none;}
+@media(max-width:700px){.nav-label{font-size:11.5px;}.nav-chapter-link{padding:8px 10px;max-width:42%;}.chapter-nav{padding:10px 12px;}}
+body{padding-bottom:80px;}
+</style>
+</head>
+
+<body>
+
+  <button class="toc-toggle" onclick="document.querySelector('.toc').classList.toggle('open')">☰ Contents</button>
+
+  <div class="shell">
+    <aside class="toc">
+      <div class="brand">WebSockets <span>/</span> the backend lens</div>
+      <div class="brand-sub">Field Manual · v2</div>
+      <nav>
+        <a href="#s1"><span class="n">01</span> The Problem They Solve</a>
+        <a href="#s2"><span class="n">02</span> The Real-Time Spectrum</a>
+        <a href="#s3"><span class="n">03</span> What a WebSocket Is</a>
+        <a href="#s4"><span class="n">04</span> The Upgrade Handshake</a>
+        <a href="#s5"><span class="n">05</span> Frames — the Wire Format</a>
+        <a href="#s6"><span class="n">06</span> The Connection Lifecycle</a>
+        <a href="#s7"><span class="n">07</span> Ping/Pong &amp; Heartbeats</a>
+        <a href="#s8"><span class="n">08</span> A WebSocket Server</a>
+        <a href="#s9"><span class="n">09</span> A WebSocket Client</a>
+        <a href="#s10"><span class="n">10</span> Connection Management</a>
+        <a href="#s11"><span class="n">11</span> Broadcasting &amp; Rooms</a>
+        <a href="#s12"><span class="n">12</span> Backpressure &amp; Slow Consumers</a>
+        <a href="#s13"><span class="n">13</span> Authentication</a>
+        <a href="#s14"><span class="n">14</span> Security</a>
+        <a href="#s15"><span class="n">15</span> Scaling — the Backplane</a>
+        <a href="#s16"><span class="n">16</span> Load Balancing &amp; Sticky Sessions</a>
+        <a href="#s17"><span class="n">17</span> Reconnection &amp; Resilience</a>
+        <a href="#s18"><span class="n">18</span> WebSockets vs SSE vs Streaming</a>
+        <a href="#s19"><span class="n">19</span> Common Pitfalls</a>
+        <a href="#s20"><span class="n">20</span> Designing Real-Time Systems</a>
+        <a href="#s21"><span class="n">21</span> Cheat-Sheet</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+
+      <header class="hero">
+        <div class="kicker">A detailed backend reference</div>
+        <h1>WebSockets, a <em>two-way</em><br>pipe the server can push down.</h1>
+        <p class="lede">A first-principles walkthrough of real-time backend communication &mdash; from <em>why</em> HTTP's
+          request&ndash;response shape can't push, through the WebSocket upgrade handshake, frames, and connection
+          lifecycle, into building a server, managing thousands of connections, handling backpressure, and the hard part:
+          <em>scaling</em> stateful connections across many instances with a pub/sub backplane. Written to explain not
+          just <em>what</em> each piece does but <em>why</em> it exists and <em>how</em> it works underneath. Server and
+          client code in both Go and Python.</p>
+        <div class="meta">
+          <span>Full-duplex over TCP</span>
+          <span>Upgrade from HTTP</span>
+          <span>Go 1.22+ · Python 3.11+</span>
+          <span>21 sections</span>
+        </div>
+        <div class="rule"></div>
+      </header>
+
+      <div class="part-label">Part I · Why &amp; What</div>
+
+      <!-- 1 -->
+      <section id="s1">
+        <div class="sec-head"><div class="sec-num">01</div><h2>The Problem WebSockets Solve</h2></div>
+        <p>Plain HTTP has one shape: the <strong>client asks, the server answers</strong> (the HTTP chapter's request&ndash;
+          response model). The server can never speak first &mdash; it has no way to push data to a client that hasn't
+          just asked for it. That's fine for fetching a page or calling an API, but it breaks down the moment you need
+          <em>the server</em> to notify <em>the client</em> as things happen: a new chat message, a live price tick, a
+          notification, a collaborator's cursor moving, a match found. The server <em>has</em> the update; HTTP gives it
+          no channel to deliver it.</p>
+
+        <p>Before WebSockets, you faked server push by having the client ask <em>repeatedly</em> &mdash; <strong>polling</strong>.
+          Every few seconds the client sends "anything new?" and usually hears "no." This is wasteful on every axis: a
+          flood of requests that mostly return nothing, the full overhead of HTTP headers and connection setup on each
+          one, and latency bounded by your polling interval (poll every 5s and an event can sit undelivered for nearly
+          5s). WebSockets exist to replace that hack with a real <strong>persistent, two-way connection</strong> where
+          either side can send at any time.</p>
+
+        <div class="analogy">Polling is calling the post office every ten minutes to ask if mail arrived. A WebSocket is
+          a direct phone line left open between you and them &mdash; either party simply speaks the instant there's
+          something to say, with no redialing and no "anything yet?" overhead.</div>
+
+        <div class="viz">
+          <div class="viz-cap">The core problem</div>
+          <div class="viz-title">Polling wastes round-trips; a WebSocket pushes the instant data exists</div>
+          <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Left: repeated polling requests mostly returning empty. Right: one persistent WebSocket connection over which the server pushes immediately when an event occurs">
+            <text x="180" y="22" class="mono" font-size="11" font-weight="700" fill="#a01f1f" text-anchor="middle">POLLING &mdash; ask over and over</text>
+            <rect x="40" y="36" width="80" height="28" rx="6" fill="#f6dada" stroke="#a01f1f"/><text x="80" y="55" font-size="9.5" fill="#a01f1f" text-anchor="middle">client</text>
+            <rect x="250" y="36" width="80" height="28" rx="6" fill="#f6dada" stroke="#a01f1f"/><text x="290" y="55" font-size="9.5" fill="#a01f1f" text-anchor="middle">server</text>
+            <defs><marker id="pa1" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="#a01f1f"/></marker></defs>
+            <g class="mono" font-size="8" fill="#a01f1f">
+              <path d="M120 78 H248" stroke="#a01f1f" stroke-width="1" marker-end="url(#pa1)"/><text x="184" y="74" text-anchor="middle">any new? </text>
+              <path d="M250 92 H122" stroke="#bbb" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#pa1)"/><text x="186" y="104" text-anchor="middle" fill="#999">no</text>
+              <path d="M120 118 H248" stroke="#a01f1f" stroke-width="1" marker-end="url(#pa1)"/><text x="184" y="114" text-anchor="middle">any new? </text>
+              <path d="M250 132 H122" stroke="#bbb" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#pa1)"/><text x="186" y="144" text-anchor="middle" fill="#999">no</text>
+              <path d="M120 158 H248" stroke="#a01f1f" stroke-width="1" marker-end="url(#pa1)"/><text x="184" y="154" text-anchor="middle">any new? </text>
+              <path d="M250 172 H122" stroke="#3d7a2e" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#pa1)"/><text x="186" y="184" text-anchor="middle" fill="#3d7a2e">finally!</text>
+            </g>
+            <text x="180" y="208" font-size="10" font-style="italic" fill="#a01f1f" text-anchor="middle">wasted requests · latency up to one interval</text>
+
+            <line x1="360" y1="30" x2="360" y2="220" stroke="#d6ccba" stroke-dasharray="4 4"/>
+
+            <text x="545" y="22" class="mono" font-size="11" font-weight="700" fill="#1f6f6f" text-anchor="middle">WEBSOCKET &mdash; one open pipe</text>
+            <rect x="420" y="36" width="80" height="28" rx="6" fill="#e3efe0" stroke="#1f6f6f"/><text x="460" y="55" font-size="9.5" fill="#1f6f6f" text-anchor="middle">client</text>
+            <rect x="620" y="36" width="80" height="28" rx="6" fill="#e3efe0" stroke="#1f6f6f"/><text x="660" y="55" font-size="9.5" fill="#1f6f6f" text-anchor="middle">server</text>
+            <line x1="460" y1="64" x2="460" y2="200" stroke="#1f6f6f" stroke-width="3"/><line x1="660" y1="64" x2="660" y2="200" stroke="#1f6f6f" stroke-width="3"/>
+            <text x="560" y="80" class="mono" font-size="8.5" fill="#1f6f6f" text-anchor="middle">connection stays open</text>
+            <defs><marker id="pa2" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="#3d7a2e"/></marker></defs>
+            <g class="mono" font-size="8" fill="#3d7a2e">
+              <path d="M658 120 H462" stroke="#3d7a2e" stroke-width="1.2" marker-end="url(#pa2)"/><text x="560" y="114" text-anchor="middle">event 1 &darr; (pushed instantly)</text>
+              <path d="M462 150 H658" stroke="#8f3415" stroke-width="1.2" marker-end="url(#pa2)"/><text x="560" y="144" text-anchor="middle" fill="#8f3415">client sends too</text>
+              <path d="M658 180 H462" stroke="#3d7a2e" stroke-width="1.2" marker-end="url(#pa2)"/><text x="560" y="174" text-anchor="middle">event 2 &darr;</text>
+            </g>
+            <text x="540" y="212" font-size="10" font-style="italic" fill="#3d7a2e" text-anchor="middle">zero polling · near-zero latency · both directions</text>
+          </svg>
+          <div class="viz-note">One connection, opened once, over which messages flow both ways the moment they exist &mdash;
+            that's the entire value proposition.</div>
+        </div>
+
+        <div class="box key"><span class="tag">The one idea</span>
+          <p>HTTP can't let the server initiate. WebSockets establish a <strong>single, long-lived, full-duplex
+            connection</strong> so <em>either</em> side can send a message at <em>any</em> time, with no per-message
+            request overhead and no polling delay. Everything else is how that pipe is opened, framed, managed, and
+            scaled.</p>
+        </div>
+      </section>
+
+      <!-- 2 -->
+      <section id="s2">
+        <div class="sec-head"><div class="sec-num">02</div><h2>The Real-Time Spectrum</h2></div>
+        <p>WebSockets aren't the only way to get server-to-client updates, and reaching for them reflexively is a common
+          mistake. There's a spectrum of techniques, each a different point on the trade-off between simplicity and
+          capability. Knowing all four lets you pick the <em>simplest</em> thing that meets the need (the full decision
+          guide is &sect;18).</p>
+
+        <div class="viz">
+          <div class="viz-cap">Four approaches</div>
+          <div class="viz-title">From crude polling to full-duplex WebSockets</div>
+          <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Four techniques laid out: short polling, long polling, server-sent events one-way, and WebSockets two-way, increasing in capability">
+            <rect x="20" y="40" width="160" height="150" rx="11" fill="#f6dada" stroke="#a01f1f"/>
+            <text x="100" y="62" font-size="11.5" font-weight="700" fill="#a01f1f" text-anchor="middle">Short polling</text>
+            <text x="100" y="84" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">ask every N sec</text>
+            <text x="100" y="104" font-size="9" fill="#4a443c" text-anchor="middle">client &harr; server</text>
+            <text x="100" y="124" font-size="9" font-style="italic" fill="#a01f1f" text-anchor="middle">wasteful, laggy</text>
+            <text x="100" y="146" font-size="8.5" fill="#4a443c" text-anchor="middle">but dead simple</text>
+
+            <rect x="195" y="40" width="160" height="150" rx="11" fill="#fbf2dc" stroke="#9a7400"/>
+            <text x="275" y="62" font-size="11.5" font-weight="700" fill="#9a7400" text-anchor="middle">Long polling</text>
+            <text x="275" y="84" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">hold req until data</text>
+            <text x="275" y="104" font-size="9" fill="#4a443c" text-anchor="middle">client &harr; server</text>
+            <text x="275" y="124" font-size="9" font-style="italic" fill="#9a7400" text-anchor="middle">less waste, complex</text>
+            <text x="275" y="146" font-size="8.5" fill="#4a443c" text-anchor="middle">works everywhere</text>
+
+            <rect x="370" y="40" width="160" height="150" rx="11" fill="#e4eef0" stroke="#1f6f6f"/>
+            <text x="450" y="62" font-size="11.5" font-weight="700" fill="#1f6f6f" text-anchor="middle">SSE</text>
+            <text x="450" y="84" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">server-sent events</text>
+            <text x="450" y="104" font-size="9" font-weight="700" fill="#1f6f6f" text-anchor="middle">server &rarr; client only</text>
+            <text x="450" y="124" font-size="9" font-style="italic" fill="#1f6f6f" text-anchor="middle">one-way push, over HTTP</text>
+            <text x="450" y="146" font-size="8.5" fill="#4a443c" text-anchor="middle">auto-reconnect built in</text>
+
+            <rect x="545" y="40" width="160" height="150" rx="11" fill="#e3efe0" stroke="#3d7a2e"/>
+            <text x="625" y="62" font-size="11.5" font-weight="700" fill="#3d7a2e" text-anchor="middle">WebSocket</text>
+            <text x="625" y="84" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">persistent socket</text>
+            <text x="625" y="104" font-size="9" font-weight="700" fill="#3d7a2e" text-anchor="middle">client &harr; server</text>
+            <text x="625" y="124" font-size="9" font-style="italic" fill="#3d7a2e" text-anchor="middle">full-duplex, low latency</text>
+            <text x="625" y="146" font-size="8.5" fill="#4a443c" text-anchor="middle">most capable, most work</text>
+            <defs><marker id="sp" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#4a443c"/></marker></defs>
+            <line x1="40" y1="212" x2="700" y2="212" stroke="#4a443c" stroke-width="1.2" marker-end="url(#sp)"/>
+            <text x="370" y="232" class="mono" font-size="9.5" fill="#4a443c" text-anchor="middle">simpler &amp; more limited &nbsp;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&rarr; more capable &amp; more complex</text>
+          </svg>
+        </div>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Technique</th><th>Direction</th><th>How it works</th><th>Best when</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Short polling</strong></td><td>client pulls</td><td>Repeated requests on a timer</td><td>Updates are rare &amp; latency tolerance is high; you want zero infrastructure</td></tr>
+              <tr><td><strong>Long polling</strong></td><td>client pulls</td><td>Server holds the request open until it has data, then the client re-asks</td><td>You need push-like behavior but must work through any old proxy/client</td></tr>
+              <tr><td><strong>SSE</strong></td><td>server &rarr; client</td><td>A single long-lived HTTP response streaming text events</td><td>One-way server push (feeds, notifications) &mdash; simpler than WS</td></tr>
+              <tr><td><strong>WebSocket</strong></td><td>both ways</td><td>Persistent full-duplex connection upgraded from HTTP</td><td>True bidirectional, low-latency interaction (chat, games, collaboration)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="box gotcha"><span class="tag">Don't reach for WebSockets by default</span>
+          <p>WebSockets are the most capable option <em>and</em> the most operationally demanding &mdash; persistent
+            stateful connections that complicate scaling, load balancing, and deployment (Parts III&ndash;IV). If you
+            only need the <em>server</em> to push to the client (a live feed, notifications, progress), <strong>SSE</strong>
+            is dramatically simpler: it's just HTTP, it auto-reconnects, and it sails through proxies. Use the full
+            duplex of WebSockets only when the client genuinely needs to send frequently too (&sect;18).</p>
+        </div>
+      </section>
+
+      <!-- 3 -->
+      <section id="s3">
+        <div class="sec-head"><div class="sec-num">03</div><h2>What a WebSocket Actually Is</h2></div>
+        <p>A WebSocket is a <strong>persistent, bidirectional, full-duplex communication channel over a single TCP
+          connection</strong>, established through an HTTP request and then kept open. Unpack each word: <em>persistent</em>
+          &mdash; opened once and held for the session, not per message; <em>bidirectional / full-duplex</em> &mdash; both
+          sides can send simultaneously and independently, not taking turns; <em>single TCP connection</em> &mdash; one
+          socket carries everything, on the same ports as HTTP (80/443), so it traverses firewalls that allow web
+          traffic.</p>
+
+        <p>The clever design choice is that a WebSocket <strong>starts life as an HTTP request</strong> and then
+          <em>upgrades</em> (&sect;4). This isn't an accident &mdash; it's what lets WebSockets reuse the existing web
+          infrastructure (ports, TLS, proxies, the same origin) instead of requiring a new port or protocol that
+          firewalls would block. Once upgraded, the connection stops speaking HTTP and starts speaking the WebSocket
+          framing protocol (&sect;5). The URL scheme reflects this: <code>ws://</code> (like <code>http://</code>) and
+          <code>wss://</code> (TLS, like <code>https://</code>).</p>
+
+        <div class="viz">
+          <div class="viz-cap">From HTTP to a persistent pipe</div>
+          <div class="viz-title">One TCP connection: born as HTTP, upgraded, then full-duplex frames</div>
+          <svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A single TCP connection timeline: an HTTP upgrade request and 101 response, then a persistent full-duplex WebSocket carrying frames in both directions">
+            <rect x="30" y="40" width="660" height="100" rx="12" fill="#f3eee4" stroke="#d6ccba"/>
+            <text x="44" y="60" class="mono" font-size="10" font-weight="700" fill="#4a443c">ONE TCP connection (port 443)</text>
+            <rect x="50" y="74" width="180" height="50" rx="9" fill="#bc4b2b"/><text x="140" y="95" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">1 · HTTP handshake</text><text x="140" y="113" class="mono" font-size="8.5" fill="#f4d9cf" text-anchor="middle">GET Upgrade → 101 (§4)</text>
+            <defs><marker id="wa3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f3415"/></marker></defs>
+            <path d="M232 99 H290" stroke="#8f3415" stroke-width="1.8" marker-end="url(#wa3)"/><text x="261" y="92" class="mono" font-size="8" fill="#8f3415">upgrade</text>
+            <rect x="292" y="74" width="380" height="50" rx="9" fill="#1f6f6f"/><text x="482" y="95" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">2 · WebSocket &mdash; persistent, full-duplex</text><text x="482" y="113" class="mono" font-size="8.5" fill="#dceeea" text-anchor="middle">frames flow both directions until close (§5–6)</text>
+          </svg>
+          <div class="viz-note">The same socket transitions from a normal HTTP exchange into a long-lived WebSocket &mdash;
+            no second connection, no new port.</div>
+        </div>
+
+        <div class="box note"><span class="tag">Relationship to HTTP/2 &amp; gRPC streaming</span>
+          <p>WebSockets predate and sit alongside HTTP/2. HTTP/2 has its own multiplexed streams (the gRPC chapter), and
+            gRPC bidirectional streaming covers similar ground for <em>service-to-service</em> use. WebSockets remain the
+            standard for <strong>browser</strong>-to-server real-time, precisely because browsers expose a clean
+            WebSocket API but not raw HTTP/2 framing (the same reason browsers can't speak native gRPC &mdash; gRPC
+            &sect;19). The comparison across all of these is &sect;18.</p>
+        </div>
+      </section>
+
+      <div class="part-label">Part II · The Protocol</div>
+
+      <!-- 4 -->
+      <section id="s4">
+        <div class="sec-head"><div class="sec-num">04</div><h2>The Upgrade Handshake</h2></div>
+        <p>Every WebSocket begins with a single, special HTTP request &mdash; the <strong>upgrade handshake</strong> (the
+          HTTP chapter's &sect;19, in full). The client sends a normal-looking <code>GET</code> with headers that say "I'd
+          like to switch this connection to the WebSocket protocol." If the server agrees, it replies with status
+          <strong><code>101 Switching Protocols</code></strong> &mdash; not <code>200</code> &mdash; and from that instant
+          the connection is no longer HTTP; it's a raw WebSocket carrying frames (&sect;5).</p>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">the handshake on the wire</span></div>
+          <pre><code class="language-http">GET /ws/chat HTTP/1.1
+Host: api.example.com
+Upgrade: websocket                              ← "switch this connection"
+Connection: Upgrade                             ← the Upgrade header is meaningful
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==     ← a random client nonce (base64)
+Sec-WebSocket-Version: 13                        ← the protocol version
+Sec-WebSocket-Protocol: chat.v1                  ← optional subprotocol(s) offered
+Origin: https://app.example.com                  ← the browser sends this; SERVER must check (§14)
+
+HTTP/1.1 101 Switching Protocols                ← NOT 200 — the upgrade succeeded
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=  ← proves the server spoke WebSocket
+Sec-WebSocket-Protocol: chat.v1                  ← the subprotocol the server picked
+
+# After 101, both sides stop speaking HTTP and start exchanging WebSocket frames.</code></pre>
+        </div>
+
+        <h4>What <code>Sec-WebSocket-Accept</code> proves</h4>
+        <p>The server computes <code>Accept</code> by concatenating the client's <code>Sec-WebSocket-Key</code> with a
+          fixed, magic GUID defined by the spec, SHA-1 hashing it, and base64-encoding the result. This isn't security &mdash;
+          the GUID is public &mdash; it's a <strong>proof of protocol understanding</strong>: it confirms the responder is
+          a genuine WebSocket server and not some cache or proxy blindly echoing a <code>101</code>. The client verifies
+          the value matches before treating the connection as a working WebSocket. Libraries do this for you; you almost
+          never compute it by hand.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Handshake flow</div>
+          <div class="viz-title">A GET that asks to upgrade, answered by 101</div>
+          <svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Client sends an HTTP GET with Upgrade websocket headers, server validates and responds 101 Switching Protocols, then the WebSocket is open">
+            <rect x="40" y="60" width="140" height="44" rx="9" fill="#bc4b2b"/><text x="110" y="86" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">client</text>
+            <rect x="540" y="60" width="140" height="44" rx="9" fill="#1f6f6f"/><text x="610" y="86" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">server</text>
+            <defs><marker id="ha4" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f3415"/></marker><marker id="ha4b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#1f6f6f"/></marker></defs>
+            <path d="M180 74 H538" stroke="#8f3415" stroke-width="1.8" marker-end="url(#ha4)"/><text x="360" y="66" class="mono" font-size="9.5" fill="#8f3415" text-anchor="middle">GET /ws · Upgrade: websocket · Sec-WebSocket-Key</text>
+            <path d="M538 94 H182" stroke="#1f6f6f" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#ha4b)"/><text x="360" y="110" class="mono" font-size="9.5" fill="#1f6f6f" text-anchor="middle">101 Switching Protocols · Sec-WebSocket-Accept</text>
+            <text x="360" y="146" class="serif" font-size="12.5" font-style="italic" fill="#3d7a2e" text-anchor="middle">&#10003; connection is now an open WebSocket &mdash; frames flow freely</text>
+          </svg>
+        </div>
+
+        <div class="box note"><span class="tag">Subprotocols &amp; the header constraint</span>
+          <p><code>Sec-WebSocket-Protocol</code> lets client and server negotiate an application-level subprotocol (e.g.
+            <code>chat.v1</code>, or a standard like <code>graphql-ws</code>) &mdash; a clean versioning seam. Note one
+            important limitation that shapes auth (&sect;13): the <em>browser</em> WebSocket API doesn't let you set
+            arbitrary HTTP headers on the handshake (you can't add <code>Authorization: Bearer</code>), so credentials
+            must travel another way &mdash; a query parameter, a cookie, the subprotocol field, or a first message after
+            connect.</p>
+        </div>
+      </section>
+
+      <!-- 5 -->
+      <section id="s5">
+        <div class="sec-head"><div class="sec-num">05</div><h2>Frames — the Wire Format</h2></div>
+        <p>After the handshake, data doesn't flow as a raw byte stream &mdash; it's chopped into <strong>frames</strong>,
+          small structured units with a compact header. Framing is what lets one connection carry discrete messages (so
+          the receiver knows where one ends and the next begins), distinguish text from binary, send control signals like
+          close and ping, and split a large message across multiple frames. You rarely touch frames directly &mdash;
+          libraries expose "send message / receive message" &mdash; but understanding the structure explains masking,
+          message types, and control frames.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Frame structure</div>
+          <div class="viz-title">A few header bits, then the payload</div>
+          <svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A WebSocket frame: FIN bit, opcode, MASK bit, payload length, masking key, then payload bytes">
+            <rect x="20" y="40" width="60" height="40" rx="5" fill="#bc4b2b"/><text x="50" y="58" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">FIN</text><text x="50" y="73" class="mono" font-size="7.5" fill="#f4d9cf" text-anchor="middle">last?</text>
+            <rect x="82" y="40" width="90" height="40" rx="5" fill="#9a7400"/><text x="127" y="58" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">opcode</text><text x="127" y="73" class="mono" font-size="7.5" fill="#fff" text-anchor="middle">text/bin/ctrl</text>
+            <rect x="174" y="40" width="60" height="40" rx="5" fill="#1f6f6f"/><text x="204" y="58" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">MASK</text><text x="204" y="73" class="mono" font-size="7.5" fill="#dceeea" text-anchor="middle">c&rarr;s only</text>
+            <rect x="236" y="40" width="100" height="40" rx="5" fill="#ece4d6" stroke="#9a7400"/><text x="286" y="58" font-size="9.5" font-weight="700" fill="#7a5a1e" text-anchor="middle">payload len</text><text x="286" y="73" class="mono" font-size="7.5" fill="#4a443c" text-anchor="middle">7 / 16 / 64-bit</text>
+            <rect x="338" y="40" width="110" height="40" rx="5" fill="#ece4d6" stroke="#9a7400"/><text x="393" y="58" font-size="9.5" font-weight="700" fill="#7a5a1e" text-anchor="middle">masking key</text><text x="393" y="73" class="mono" font-size="7.5" fill="#4a443c" text-anchor="middle">if MASK=1</text>
+            <rect x="450" y="40" width="250" height="40" rx="5" fill="#1a1c22"/><text x="575" y="58" font-size="10" font-weight="700" fill="#7fd1c4" text-anchor="middle">payload data</text><text x="575" y="73" class="mono" font-size="7.5" fill="#9da1ab" text-anchor="middle">your message bytes</text>
+            <g class="mono" font-size="9" fill="#4a443c">
+              <text x="20" y="108">opcodes: 0x1 text · 0x2 binary · 0x8 close · 0x9 ping · 0xA pong · 0x0 continuation</text>
+              <text x="20" y="130">FIN = 0 means "more frames coming" &mdash; a big message can be fragmented across frames</text>
+            </g>
+            <text x="360" y="160" class="serif" font-size="12" font-style="italic" fill="#4a443c" text-anchor="middle">Control frames (close/ping/pong) are interleaved with data frames to manage the connection itself.</text>
+          </svg>
+        </div>
+
+        <h4>Text vs binary, and why client frames are masked</h4>
+        <ul>
+          <li><strong>Two data types.</strong> A frame is either <strong>text</strong> (UTF-8 &mdash; JSON usually rides
+            here) or <strong>binary</strong> (raw bytes &mdash; Protobuf, images, custom formats). The library hands you
+            a string or bytes accordingly.</li>
+          <li><strong>Masking is mandatory client&rarr;server, forbidden server&rarr;client.</strong> Browsers XOR-mask
+            every frame they send with a random key. This isn't encryption (use <code>wss://</code> for that &mdash;
+            &sect;14); it's a <em>security mitigation</em> so a malicious page can't craft bytes that confuse old
+            intermediary proxies into mis-parsing the stream as something else (cache poisoning). Server frames are never
+            masked. Libraries handle this automatically.</li>
+          <li><strong>Fragmentation.</strong> A large message can be split into a sequence of frames (FIN=0 on all but the
+            last, opcode <code>0x0</code> continuation on the middle ones), letting senders stream without buffering the
+            whole thing first.</li>
+        </ul>
+
+        <div class="box gotcha"><span class="tag">Message boundaries are preserved &mdash; unlike raw TCP</span>
+          <p>A key convenience over raw TCP: WebSockets are <em>message</em>-oriented, not byte-stream-oriented. You send
+            a message and the other side receives <em>that message</em> whole, not an arbitrary chunk of a byte stream
+            you have to re-delimit yourself. Framing does the delimiting. (Under the hood it's still TCP, so the bytes are
+            ordered and reliable &mdash; you just get message boundaries on top.)</p>
+        </div>
+      </section>
+
+      <!-- 6 -->
+      <section id="s6">
+        <div class="sec-head"><div class="sec-num">06</div><h2>The Connection Lifecycle</h2></div>
+        <p>A WebSocket has a clear life: <strong>open &rarr; exchange messages &rarr; close</strong>, with events at each
+          stage your code hooks into. The open completes after the handshake (&sect;4). Then messages flow freely. Closing
+          is itself a small handshake: one side sends a <strong>close frame</strong> (opcode <code>0x8</code>) carrying a
+          status code and optional reason, the other echoes a close frame, and both then shut the TCP connection. A clean
+          close lets each side know <em>why</em> the connection ended.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Lifecycle</div>
+          <div class="viz-title">Open, message, close — with a close-code on the way out</div>
+          <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="The states of a WebSocket: connecting, open and exchanging messages, closing handshake, closed">
+            <defs><marker id="la6" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f3415"/></marker></defs>
+            <rect x="20" y="55" width="120" height="44" rx="9" fill="#fbf2dc" stroke="#9a7400"/><text x="80" y="77" font-size="11" font-weight="700" fill="#9a7400" text-anchor="middle">CONNECTING</text><text x="80" y="92" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">handshake</text>
+            <path d="M142 77 H188" stroke="#8f3415" stroke-width="1.6" marker-end="url(#la6)"/>
+            <rect x="190" y="55" width="160" height="44" rx="9" fill="#e3efe0" stroke="#3d7a2e"/><text x="270" y="77" font-size="11" font-weight="700" fill="#3d7a2e" text-anchor="middle">OPEN</text><text x="270" y="92" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">send/recv messages</text>
+            <path d="M352 77 H398" stroke="#8f3415" stroke-width="1.6" marker-end="url(#la6)"/>
+            <rect x="400" y="55" width="140" height="44" rx="9" fill="#f7e9e2" stroke="#bc4b2b"/><text x="470" y="77" font-size="11" font-weight="700" fill="#8f3415" text-anchor="middle">CLOSING</text><text x="470" y="92" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">close frames exchanged</text>
+            <path d="M542 77 H588" stroke="#8f3415" stroke-width="1.6" marker-end="url(#la6)"/>
+            <rect x="590" y="55" width="110" height="44" rx="9" fill="#f1eee8" stroke="#999"/><text x="645" y="77" font-size="11" font-weight="700" fill="#666" text-anchor="middle">CLOSED</text><text x="645" y="92" class="mono" font-size="8" fill="#4a443c" text-anchor="middle">TCP shut</text>
+            <text x="360" y="130" class="serif" font-size="12" font-style="italic" fill="#4a443c" text-anchor="middle">Either side can initiate the close; the code (1000 normal, 1001 going away, 1011 server error&hellip;) explains it.</text>
+          </svg>
+        </div>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Close code</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>1000</code></td><td>Normal closure &mdash; done as intended</td></tr>
+              <tr><td><code>1001</code></td><td>Going away &mdash; server shutting down or client navigating away</td></tr>
+              <tr><td><code>1006</code></td><td>Abnormal &mdash; connection dropped with <em>no</em> close frame (network died, crash). You never send this; you observe it.</td></tr>
+              <tr><td><code>1011</code></td><td>Internal server error</td></tr>
+              <tr><td><code>1008 / 1009</code></td><td>Policy violation / message too big</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="box gotcha"><span class="tag">Connections die silently &mdash; plan for 1006</span>
+          <p>The clean close handshake only happens when both sides cooperate. In reality connections drop ungracefully
+            all the time &mdash; a laptop sleeps, Wi-Fi flaps, a phone switches networks, a NAT times out &mdash; and you
+            get <em>no</em> close frame, just a dead socket (code <code>1006</code> or a read error, often noticed only
+            much later). You cannot rely on a clean close to detect a gone client. That's exactly why heartbeats exist
+            (&sect;7) and why clients must reconnect (&sect;17).</p>
+        </div>
+      </section>
+
+      <!-- 7 -->
+      <section id="s7">
+        <div class="sec-head"><div class="sec-num">07</div><h2>Ping/Pong &amp; Heartbeats</h2></div>
+        <p>Because a dead connection often looks identical to an idle one (no bytes either way), you need an active way to
+          tell "still alive" from "silently gone." The protocol provides <strong>ping</strong> and <strong>pong</strong>
+          control frames for exactly this: one side sends a ping, the other must answer with a pong. A
+          <strong>heartbeat</strong> is the pattern of sending pings on a timer and treating a missed pong (within a
+          deadline) as a dead connection to be closed and cleaned up. This is the same liveness problem as Kubernetes
+          probes (containerization &sect;17) and Kafka consumer keepalive, solved with the same idea: don't assume
+          health, verify it.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Heartbeat</div>
+          <div class="viz-title">Ping on a timer; a missed pong means the connection is dead</div>
+          <svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Server pinging a client which pongs back twice, then a third ping gets no pong within the deadline and the server declares the connection dead and cleans up">
+            <rect x="40" y="60" width="120" height="40" rx="9" fill="#1f6f6f"/><text x="100" y="84" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">server</text>
+            <rect x="560" y="60" width="120" height="40" rx="9" fill="#bc4b2b"/><text x="620" y="84" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">client</text>
+            <defs><marker id="hb" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#1f6f6f"/></marker><marker id="hb2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#bc4b2b"/></marker></defs>
+            <g class="mono" font-size="9">
+              <path d="M160 50 H558" stroke="#1f6f6f" stroke-width="1.2" marker-end="url(#hb)"/><text x="360" y="45" fill="#1f6f6f" text-anchor="middle">ping &rarr;</text>
+              <path d="M558 66 H162" stroke="#bc4b2b" stroke-width="1.2" marker-end="url(#hb2)"/><text x="360" y="78" fill="#bc4b2b" text-anchor="middle">&larr; pong &#10003;</text>
+              <path d="M160 96 H558" stroke="#1f6f6f" stroke-width="1.2" marker-end="url(#hb)"/><text x="360" y="91" fill="#1f6f6f" text-anchor="middle">ping &rarr;</text>
+              <path d="M558 112 H162" stroke="#bc4b2b" stroke-width="1.2" marker-end="url(#hb2)"/><text x="360" y="124" fill="#bc4b2b" text-anchor="middle">&larr; pong &#10003;</text>
+              <path d="M160 142 H420" stroke="#1f6f6f" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#hb)"/><text x="290" y="137" fill="#1f6f6f" text-anchor="middle">ping &rarr;</text>
+            </g>
+            <text x="500" y="146" font-size="10" font-weight="700" fill="#a01f1f">no pong in time &rarr; close + clean up</text>
+          </svg>
+          <div class="viz-note">Heartbeats also keep idle connections alive through proxies/NATs that would otherwise
+            close a "silent" connection after a timeout &mdash; they serve double duty: liveness detection <em>and</em>
+            keepalive.</div>
+        </div>
+
+        <div class="box key"><span class="tag">Always run heartbeats</span>
+          <p>A real-time server without heartbeats slowly fills with <strong>zombie connections</strong> &mdash; clients
+            that vanished but whose sockets the server still holds, leaking memory and goroutines/tasks (&sect;19). Set a
+            ping interval and a pong deadline, drop connections that miss it, and free their resources. It's not optional
+            for production; it's how you keep the connection table honest.</p>
+        </div>
+      </section>
+
+      <div class="part-label">Part III · Building It</div>
+
+      <!-- 8 -->
+      <section id="s8">
+        <div class="sec-head"><div class="sec-num">08</div><h2>A WebSocket Server</h2></div>
+        <p>A server endpoint does three things: accept the upgrade (&sect;4), then run a loop reading messages and a way
+          to write them. In Go the standard library doesn't ship a WebSocket implementation, so you use a library &mdash;
+          <code>gorilla/websocket</code> (the long-time standard) or <code>coder/websocket</code> (<code>nhooyr</code>).
+          In Python, frameworks like FastAPI/Starlette expose WebSockets directly, and the <code>websockets</code> library
+          is the standalone standard. Here is a minimal echo server &mdash; the "hello world" of WebSockets.</p>
+
+        <div class="codeblock" data-cb>
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div>
+            <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-go">&#9679;</span> Go</button><button data-lang="py"><span class="lang-py">&#9679;</span> Python</button></div></div>
+          <div class="code-panel on" data-panel="go"><pre><code class="language-go">// github.com/gorilla/websocket
+var upgrader = websocket.Upgrader{
+    // CheckOrigin guards against cross-site hijacking — DO NOT leave it open (§14).
+    CheckOrigin: func(r *http.Request) bool {
+        return r.Header.Get("Origin") == "https://app.example.com"
+    },
+}
+
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+    conn, err := upgrader.Upgrade(w, r, nil) // performs the 101 handshake (§4)
+    if err != nil {
+        return // upgrader already wrote an HTTP error
+    }
+    defer conn.Close() // always close → frees the socket (§19)
+
+    for { // the READ LOOP — one per connection
+        mt, msg, err := conn.ReadMessage()
+        if err != nil {
+            break // client closed or connection died (§6) → exit, cleanup via defer
+        }
+        // echo it straight back
+        if err := conn.WriteMessage(mt, msg); err != nil {
+            break
+        }
+    }
+}
+
+func main() {
+    http.HandleFunc("/ws", wsHandler) // a normal HTTP route that upgrades
+    http.ListenAndServe(":8080", nil)
+}</code></pre></div>
+          <div class="code-panel" data-panel="py"><pre><code class="language-python"># FastAPI / Starlette expose WebSockets natively (the `websockets` lib is an alternative).
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+app = FastAPI()
+
+@app.websocket("/ws")
+async def ws_handler(ws: WebSocket):
+    # Validate origin yourself before accepting (§14); then complete the handshake.
+    await ws.accept()                      # performs the 101 handshake (§4)
+    try:
+        while True:                        # the READ LOOP — one coroutine per connection
+            msg = await ws.receive_text()  # awaits the next message
+            await ws.send_text(msg)        # echo it straight back
+    except WebSocketDisconnect:
+        pass                               # client closed or connection died (§6)
+    # FastAPI cleans up the connection when the coroutine returns
+
+# uvicorn app:app  — uvicorn speaks the WebSocket protocol for you</code></pre></div>
+        </div>
+        <p class="code-cap">Go gives each connection a goroutine running a blocking read loop; Python gives each
+          connection an async coroutine awaiting messages. Same structure &mdash; accept, loop reading, write &mdash;
+          expressed in each language's concurrency model.</p>
+
+        <div class="box gotcha"><span class="tag">The read loop and the write must be coordinated</span>
+          <p>A subtle but critical rule (especially in Go with gorilla): <strong>concurrent writes to one connection are
+            not safe</strong>, and you typically want one goroutine reading and another writing. The standard pattern is
+            a dedicated <em>writer</em> goroutine fed by a channel, so all writes are serialized. Don't write to the same
+            connection from multiple goroutines without synchronization &mdash; it corrupts the frame stream. The hub
+            pattern (&sect;10) builds exactly this structure.</p>
+        </div>
+      </section>
+
+      <!-- 9 -->
+      <section id="s9">
+        <div class="sec-head"><div class="sec-num">09</div><h2>A WebSocket Client</h2></div>
+        <p>A backend is often a WebSocket <em>client</em> too &mdash; consuming a real-time feed from another service,
+          bridging systems, or in tests. The client side: dial the <code>ws://</code>/<code>wss://</code> URL (which does
+          the handshake), then read and write messages. The shape mirrors the server.</p>
+
+        <div class="codeblock" data-cb>
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div>
+            <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-go">&#9679;</span> Go</button><button data-lang="py"><span class="lang-py">&#9679;</span> Python</button></div></div>
+          <div class="code-panel on" data-panel="go"><pre><code class="language-go">// github.com/gorilla/websocket
+func runClient() {
+    // Dial performs the upgrade handshake; header carries auth where allowed (§13).
+    h := http.Header{"Authorization": {"Bearer " + token}}
+    conn, _, err := websocket.DefaultDialer.Dial("wss://api.example.com/ws", h)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer conn.Close()
+
+    // reader goroutine
+    go func() {
+        for {
+            _, msg, err := conn.ReadMessage()
+            if err != nil {
+                return
+            }
+            log.Printf("recv: %s", msg)
+        }
+    }()
+
+    // send a message
+    conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"hello"}`))
+
+    // graceful close: send a close frame, then the socket shuts (§6)
+    conn.WriteMessage(websocket.CloseMessage,
+        websocket.FormatCloseMessage(websocket.CloseNormalClosure, "bye"))
+}</code></pre></div>
+          <div class="code-panel" data-panel="py"><pre><code class="language-python"># `websockets` library — clean async client
+import asyncio, websockets
+
+async def run_client():
+    # extra_headers carries auth where the runtime allows it (§13);
+    # browsers can't set headers, but a backend client can.
+    async with websockets.connect(
+        "wss://api.example.com/ws",
+        extra_headers={"Authorization": f"Bearer {token}"},
+    ) as ws:                                 # context manager → handshake + clean close
+        await ws.send('{"type":"hello"}')    # send a message
+
+        async for msg in ws:                 # iterate incoming messages
+            print("recv:", msg)
+    # leaving the `async with` block sends a close frame and shuts down (§6)
+
+asyncio.run(run_client())</code></pre></div>
+        </div>
+
+        <div class="box note"><span class="tag">Backend client = consumer of a stream</span>
+          <p>When your service is the client, treat the feed like any unreliable upstream: the connection <em>will</em>
+            drop (&sect;6), so wrap the connect-and-read in a reconnect loop with backoff (&sect;17), and make processing
+            idempotent if the feed can re-deliver on reconnect (the same at-least-once discipline as the Kafka chapter).
+            A backend WebSocket client without reconnection logic silently stops receiving the first time the network
+            hiccups.</p>
+        </div>
+      </section>
+
+      <!-- 10 -->
+      <section id="s10">
+        <div class="sec-head"><div class="sec-num">10</div><h2>Connection Management</h2></div>
+        <p>One connection is trivial; the real work is managing <em>many</em>. A server holding thousands of live
+          connections needs a central place that tracks who's connected so it can route and broadcast messages. The
+          canonical solution is the <strong>hub</strong> (or "connection manager"): a single owner of the set of active
+          connections, with channels/locks to register, unregister, and send &mdash; sidestepping the concurrent-write
+          hazard from &sect;8 by funneling everything through one coordinator.</p>
+
+        <div class="viz">
+          <div class="viz-cap">The hub pattern</div>
+          <div class="viz-title">A central registry owns the connections; clients register and receive broadcasts</div>
+          <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A hub in the center connected to a register channel, an unregister channel, a broadcast channel, and a set of client connections each with its own send queue">
+            <rect x="280" y="74" width="160" height="56" rx="12" fill="#1c1a17"/><text x="360" y="98" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">Hub</text><text x="360" y="116" class="mono" font-size="8.5" fill="#cfd2da" text-anchor="middle">owns clients{} set</text>
+            <defs><marker id="hb10" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#8f3415"/></marker></defs>
+            <rect x="40" y="30" width="150" height="30" rx="7" fill="#e3efe0" stroke="#3d7a2e"/><text x="115" y="50" font-size="9.5" fill="#3d7a2e" text-anchor="middle">register (new conn)</text>
+            <rect x="40" y="88" width="150" height="30" rx="7" fill="#f7e9e2" stroke="#bc4b2b"/><text x="115" y="108" font-size="9.5" fill="#8f3415" text-anchor="middle">unregister (gone)</text>
+            <rect x="40" y="146" width="150" height="30" rx="7" fill="#e4eef0" stroke="#1f6f6f"/><text x="115" y="166" font-size="9.5" fill="#1f6f6f" text-anchor="middle">broadcast (message)</text>
+            <path d="M190 45 C230 52 250 78 278 88" stroke="#8f3415" stroke-width="1.4" fill="none" marker-end="url(#hb10)"/>
+            <path d="M190 103 H278" stroke="#8f3415" stroke-width="1.4" marker-end="url(#hb10)"/>
+            <path d="M190 161 C230 154 250 126 278 116" stroke="#8f3415" stroke-width="1.4" fill="none" marker-end="url(#hb10)"/>
+            <rect x="540" y="34" width="150" height="30" rx="7" fill="#fbf2dc" stroke="#9a7400"/><text x="615" y="54" font-size="9" fill="#7a5a1e" text-anchor="middle">client A + send queue</text>
+            <rect x="540" y="86" width="150" height="30" rx="7" fill="#fbf2dc" stroke="#9a7400"/><text x="615" y="106" font-size="9" fill="#7a5a1e" text-anchor="middle">client B + send queue</text>
+            <rect x="540" y="138" width="150" height="30" rx="7" fill="#fbf2dc" stroke="#9a7400"/><text x="615" y="158" font-size="9" fill="#7a5a1e" text-anchor="middle">client C + send queue</text>
+            <g stroke="#9a7400" stroke-width="1.4" fill="none"><path d="M440 92 C490 70 510 58 538 50" marker-end="url(#hb10)"/><path d="M440 102 H538" marker-end="url(#hb10)"/><path d="M440 112 C490 134 510 146 538 153" marker-end="url(#hb10)"/></g>
+            <text x="360" y="190" class="serif" font-size="11.5" font-style="italic" fill="#4a443c" text-anchor="middle">All access to the connection set goes through the hub &mdash; one owner, no data races.</text>
+          </svg>
+        </div>
+
+        <div class="codeblock" data-cb>
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div>
+            <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-go">&#9679;</span> Go</button><button data-lang="py"><span class="lang-py">&#9679;</span> Python</button></div></div>
+          <div class="code-panel on" data-panel="go"><pre><code class="language-go">type Hub struct {
+    clients    map[*Client]bool
+    register   chan *Client
+    unregister chan *Client
+    broadcast  chan []byte
+}
+
+// One goroutine owns the map → all mutation is serialized here (no locks needed).
+func (h *Hub) Run() {
+    for {
+        select {
+        case c := <-h.register:
+            h.clients[c] = true
+        case c := <-h.unregister:
+            if _, ok := h.clients[c]; ok {
+                delete(h.clients, c)
+                close(c.send) // tell the client's writer goroutine to stop
+            }
+        case msg := <-h.broadcast:
+            for c := range h.clients {
+                select {
+                case c.send <- msg:        // queue into the client's buffered channel
+                default:                   // buffer full → slow client; drop it (§12)
+                    delete(h.clients, c)
+                    close(c.send)
+                }
+            }
+        }
+    }
+}</code></pre></div>
+          <div class="code-panel" data-panel="py"><pre><code class="language-python">import asyncio
+
+class Hub:
+    def __init__(self):
+        self.clients: set[WebSocket] = set()   # the active connection set
+
+    async def register(self, ws: WebSocket):
+        await ws.accept()
+        self.clients.add(ws)
+
+    def unregister(self, ws: WebSocket):
+        self.clients.discard(ws)               # idempotent removal
+
+    async def broadcast(self, message: str):
+        dead = []
+        for ws in self.clients:
+            try:
+                await ws.send_text(message)     # fan out to everyone
+            except Exception:
+                dead.append(ws)                 # send failed → connection is gone
+        for ws in dead:
+            self.unregister(ws)                 # clean up on the way out
+
+hub = Hub()
+# (asyncio is single-threaded, so the set needs no lock; just don't mutate
+#  it while iterating — collect dead ones, remove after.)</code></pre></div>
+        </div>
+
+        <div class="box gotcha"><span class="tag">Concurrency &amp; cleanup are the whole game</span>
+          <p>Two things separate a toy from a real server. <strong>Concurrency safety</strong>: never touch the shared
+            connection set from many goroutines/tasks without coordination (Go: one owner goroutine + per-client send
+            channel; Python asyncio: single-threaded, but don't mutate while iterating). <strong>Cleanup</strong>: every
+            path that ends a connection must remove it from the registry and free its resources, or you leak (&sect;19).
+            Register on connect, <em>always</em> unregister on disconnect &mdash; including error and panic paths.</p>
+        </div>
+      </section>
+
+      <!-- 11 -->
+      <section id="s11">
+        <div class="sec-head"><div class="sec-num">11</div><h2>Broadcasting &amp; Rooms</h2></div>
+        <p>Real apps rarely send to <em>everyone</em> &mdash; they send to a relevant subset: the members of one chat
+          room, the subscribers to one stock symbol, the players in one game. The pattern is <strong>rooms</strong> (a.k.a.
+          channels or topics): connections subscribe to named groups, and you broadcast to a group rather than the whole
+          server. Concretely, the hub holds a map from room name to the set of connections in it.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Rooms</div>
+          <div class="viz-title">Connections grouped; a message goes only to its room</div>
+          <svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A message to room sports going to the two connections subscribed to sports, while connections in room news are unaffected">
+            <rect x="20" y="80" width="120" height="40" rx="9" fill="#bc4b2b"/><text x="80" y="100" font-size="10.5" font-weight="700" fill="#fff" text-anchor="middle">msg to</text><text x="80" y="115" class="mono" font-size="8.5" fill="#f4d9cf" text-anchor="middle">room "sports"</text>
+            <defs><marker id="rm11" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#3d7a2e"/></marker></defs>
+            <rect x="250" y="34" width="200" height="58" rx="11" fill="#e3efe0" stroke="#3d7a2e" stroke-dasharray="5 3"/><text x="350" y="52" class="mono" font-size="9.5" font-weight="700" fill="#3d7a2e" text-anchor="middle">room: sports</text>
+            <rect x="266" y="60" width="80" height="24" rx="5" fill="#dbeede" stroke="#3d7a2e"/><text x="306" y="76" font-size="8.5" fill="#3d7a2e" text-anchor="middle">conn 1</text>
+            <rect x="356" y="60" width="80" height="24" rx="5" fill="#dbeede" stroke="#3d7a2e"/><text x="396" y="76" font-size="8.5" fill="#3d7a2e" text-anchor="middle">conn 2</text>
+            <rect x="250" y="108" width="200" height="58" rx="11" fill="#f1eee8" stroke="#bbb" stroke-dasharray="5 3"/><text x="350" y="126" class="mono" font-size="9.5" font-weight="700" fill="#999" text-anchor="middle">room: news (unaffected)</text>
+            <rect x="266" y="134" width="80" height="24" rx="5" fill="#eee" stroke="#bbb"/><text x="306" y="150" font-size="8.5" fill="#999" text-anchor="middle">conn 3</text>
+            <rect x="356" y="134" width="80" height="24" rx="5" fill="#eee" stroke="#bbb"/><text x="396" y="150" font-size="8.5" fill="#999" text-anchor="middle">conn 4</text>
+            <path d="M140 92 C200 72 220 66 264 64" stroke="#3d7a2e" stroke-width="1.4" fill="none" marker-end="url(#rm11)"/>
+            <path d="M140 100 C200 90 220 76 354 70" stroke="#3d7a2e" stroke-width="1.4" fill="none" marker-end="url(#rm11)"/>
+            <text x="560" y="96" class="serif" font-size="11.5" font-style="italic" fill="#4a443c" text-anchor="middle">only sports' members receive it;</text>
+            <text x="560" y="114" class="serif" font-size="11.5" font-style="italic" fill="#4a443c" text-anchor="middle">news connections are skipped</text>
+          </svg>
+        </div>
+
+        <div class="box note"><span class="tag">Rooms are just a grouping &mdash; until you scale out</span>
+          <p>On a single server, a room is simply <code>map[roomName] &rarr; set of connections</code>, and broadcasting
+            iterates that set. The catch arrives with multiple servers (&sect;15): a room's members may be spread across
+            <em>different</em> instances, so a message produced on one server must reach members connected to another. The
+            in-memory room map alone can't do that &mdash; which is the whole reason the backplane exists. Build rooms
+            simply first; reach for the backplane when you outgrow one instance.</p>
+        </div>
+      </section>
+
+      <!-- 12 -->
+      <section id="s12">
+        <div class="sec-head"><div class="sec-num">12</div><h2>Backpressure &amp; Slow Consumers</h2></div>
+        <p>A failure mode unique to push systems: what happens when you produce messages <em>faster</em> than a client
+          can receive them? A phone on a weak connection, a browser tab throttled in the background &mdash; the client
+          drains slowly while the server keeps generating data for it. Without a plan, that data piles up in a per-client
+          buffer that grows without bound, and one slow client can exhaust the server's memory. This is
+          <strong>backpressure</strong>, and you must decide a policy.</p>
+
+        <div class="viz">
+          <div class="viz-cap">The slow consumer</div>
+          <div class="viz-title">A bounded send buffer; when it fills, drop or disconnect — never grow forever</div>
+          <svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="The server producing fast into a bounded per-client buffer that a slow client drains; when the buffer is full the server drops messages or disconnects the client rather than buffering unboundedly">
+            <rect x="20" y="70" width="130" height="44" rx="9" fill="#1f6f6f"/><text x="85" y="90" font-size="10.5" font-weight="700" fill="#fff" text-anchor="middle">server</text><text x="85" y="106" class="mono" font-size="8" fill="#dceeea" text-anchor="middle">produces fast</text>
+            <defs><marker id="bp" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#8f3415"/></marker></defs>
+            <path d="M150 92 H210" stroke="#8f3415" stroke-width="1.8" marker-end="url(#bp)"/>
+            <rect x="212" y="64" width="220" height="56" rx="10" fill="#ece4d6" stroke="#9a7400"/><text x="322" y="50" class="mono" font-size="9" fill="#7a5a1e" text-anchor="middle">bounded send buffer (e.g. 256)</text>
+            <g><rect x="224" y="78" width="26" height="28" rx="3" fill="#9a7400"/><rect x="254" y="78" width="26" height="28" rx="3" fill="#9a7400"/><rect x="284" y="78" width="26" height="28" rx="3" fill="#9a7400"/><rect x="314" y="78" width="26" height="28" rx="3" fill="#cbb98a"/><rect x="344" y="78" width="26" height="28" rx="3" fill="#e3d6b0"/><rect x="374" y="78" width="26" height="28" rx="3" fill="#efe7d6"/><rect x="404" y="78" width="20" height="28" rx="3" fill="#efe7d6"/></g>
+            <path d="M434 92 H494" stroke="#8f3415" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#bp)"/><text x="464" y="84" class="mono" font-size="8" fill="#8f3415">drains slow</text>
+            <rect x="496" y="70" width="130" height="44" rx="9" fill="#bc4b2b"/><text x="561" y="90" font-size="10.5" font-weight="700" fill="#fff" text-anchor="middle">slow client</text><text x="561" y="106" class="mono" font-size="8" fill="#f4d9cf" text-anchor="middle">weak network</text>
+            <text x="360" y="146" class="serif" font-size="11.5" font-style="italic" fill="#a01f1f" text-anchor="middle">When the buffer fills: DROP messages (lossy ok) or DISCONNECT the client (correctness-critical).</text>
+            <text x="360" y="166" class="serif" font-size="11.5" font-style="italic" fill="#4a443c" text-anchor="middle">What you must NOT do is let the buffer grow without limit &mdash; that's how one client OOMs the server.</text>
+          </svg>
+        </div>
+
+        <p>The standard implementation (visible in the hub of &sect;10): give each client a <em>bounded</em> send queue.
+          When you try to enqueue and it's full, you don't block the broadcaster (that would let one slow client stall
+          everyone) &mdash; instead you apply a policy:</p>
+        <ul>
+          <li><strong>Drop messages</strong> &mdash; for lossy data where only the latest matters (a live position, a
+            ticker), discard the overflow or keep only the newest. The slow client misses some updates but the server
+            stays healthy.</li>
+          <li><strong>Disconnect the client</strong> &mdash; for data where gaps are unacceptable, close the slow
+            connection and let it reconnect and re-sync (&sect;17). Better to drop one client than degrade all.</li>
+          <li><strong>Conflate / batch</strong> &mdash; collapse multiple pending updates into one (send the latest
+            snapshot rather than every intermediate step).</li>
+        </ul>
+
+        <div class="box key"><span class="tag">A bounded buffer is non-negotiable</span>
+          <p>The cardinal rule of push systems: <strong>never buffer unboundedly per connection.</strong> Every client
+            gets a fixed-size queue and an explicit overflow policy (drop, disconnect, or conflate). This is the
+            real-time analogue of Kafka's slow-consumer handling and the backpressure concerns in any streaming system &mdash;
+            one slow consumer must never be able to take down the producer.</p>
+        </div>
+      </section>
+
+      <div class="part-label">Part IV · Production</div>
+
+      <!-- 13 -->
+      <section id="s13">
+        <div class="sec-head"><div class="sec-num">13</div><h2>Authentication</h2></div>
+        <p>Authenticating a WebSocket is trickier than a normal request because of a browser limitation from &sect;4: the
+          JavaScript <code>WebSocket</code> constructor <strong>can't set custom headers</strong>, so the usual
+          <code>Authorization: Bearer</code> isn't available from a browser. You authenticate at the <em>handshake</em>
+          (it's still an HTTP request &mdash; the server can read cookies, the URL, and the subprotocol) and you do it
+          <strong>before</strong> calling <code>Upgrade</code>/<code>accept</code>. The principle from the auth chapter
+          holds: verify identity at the door; an unauthenticated socket should never be upgraded.</p>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Approach</th><th>How</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Cookie / session</strong></td><td>Browser sends the auth cookie on the handshake automatically</td><td>Natural for same-site web apps; pair with strict origin checks (§14) to resist CSWSH</td></tr>
+              <tr><td><strong>Token in query string</strong></td><td><code>wss://host/ws?token=JWT</code></td><td>Works everywhere, but the token can land in logs/history &mdash; use short-lived tokens</td></tr>
+              <tr><td><strong>Subprotocol field</strong></td><td>Smuggle the token in <code>Sec-WebSocket-Protocol</code></td><td>Avoids the URL; a common JWT-over-WS trick</td></tr>
+              <tr><td><strong>First message</strong></td><td>Connect, then send an auth message before anything else</td><td>Flexible; the server must reject/close if auth doesn't arrive promptly</td></tr>
+              <tr><td><strong>Header (non-browser)</strong></td><td>Backend clients <em>can</em> set <code>Authorization</code> (§9)</td><td>Cleanest &mdash; but only for non-browser clients</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="codeblock" data-cb>
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div>
+            <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-go">&#9679;</span> Go</button><button data-lang="py"><span class="lang-py">&#9679;</span> Python</button></div></div>
+          <div class="code-panel on" data-panel="go"><pre><code class="language-go">func wsHandler(w http.ResponseWriter, r *http.Request) {
+    // AUTHENTICATE FIRST — before upgrading. Reject with a normal HTTP error.
+    token := r.URL.Query().Get("token")          // or read a cookie / subprotocol
+    user, err := verifyJWT(token)                 // your auth logic (auth chapter)
+    if err != nil {
+        http.Error(w, "unauthorized", http.StatusUnauthorized) // 401, no upgrade
+        return
+    }
+    // Only now perform the upgrade; attach the identity to the connection.
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil {
+        return
+    }
+    serve(conn, user) // every message from this conn is now tied to `user`
+}</code></pre></div>
+          <div class="code-panel" data-panel="py"><pre><code class="language-python">@app.websocket("/ws")
+async def ws_handler(ws: WebSocket):
+    # AUTHENTICATE FIRST — before accept(). Close with a policy code if it fails.
+    token = ws.query_params.get("token")          # or a cookie / subprotocol
+    user = verify_jwt(token)                       # your auth logic (auth chapter)
+    if user is None:
+        await ws.close(code=1008)                  # 1008 = policy violation; no accept
+        return
+    await ws.accept()                              # only now complete the handshake
+    await serve(ws, user)                          # messages are tied to `user`</code></pre></div>
+        </div>
+
+        <div class="box gotcha"><span class="tag">Authorize on every message, not just at connect</span>
+          <p>Authentication at the handshake establishes <em>who</em> the connection belongs to. But a long-lived socket
+            outlives a single action, so you must still <strong>authorize each message</strong> against what that user is
+            allowed to do (can they post to <em>this</em> room? send <em>this</em> command?) &mdash; the same authz-on-
+            every-action rule as REST. Also consider that a token can <em>expire</em> mid-connection: long sessions need
+            a re-auth or token-refresh strategy, or you'll have a connection authenticated by a credential that's no
+            longer valid.</p>
+        </div>
+      </section>
+
+      <!-- 14 -->
+      <section id="s14">
+        <div class="sec-head"><div class="sec-num">14</div><h2>Security</h2></div>
+        <p>WebSockets inherit the web's threat model plus a few of their own. The security chapter's principles apply
+          directly; these are the WebSocket-specific essentials.</p>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Concern</th><th>What &amp; why</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Use <code>wss://</code> (TLS)</strong></td><td>Plain <code>ws://</code> is unencrypted &mdash; readable and tamperable on the wire. Always use <code>wss://</code> in production, exactly as HTTPS for HTTP (TLS, the HTTP chapter &sect;20).</td></tr>
+              <tr><td><strong>Validate <code>Origin</code> (CSWSH)</strong></td><td>The browser sends an <code>Origin</code> header on the handshake; the server <em>must</em> check it. Skipping this enables <strong>Cross-Site WebSocket Hijacking</strong> &mdash; a malicious site opening an authenticated socket using the victim's cookies (the WS cousin of CSRF). Allowlist your own origins.</td></tr>
+              <tr><td><strong>Validate every message</strong></td><td>Treat inbound frames as untrusted input (the validation chapter): check structure, types, sizes; reject malformed messages. The connection being authenticated doesn't make its payloads safe.</td></tr>
+              <tr><td><strong>Cap message size</strong></td><td>Set a max frame/message size so a client can't send a giant payload to exhaust memory (close with <code>1009</code> if exceeded).</td></tr>
+              <tr><td><strong>Rate-limit</strong></td><td>A persistent connection can flood you with messages; rate-limit per connection/user to prevent abuse and accidental loops.</td></tr>
+              <tr><td><strong>Bound connections per user</strong></td><td>Limit concurrent connections per identity so one client can't open thousands and exhaust the connection table (§19).</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="box gotcha"><span class="tag">The default <code>CheckOrigin</code> is a trap</span>
+          <p>The single most common WebSocket security hole: leaving origin checking disabled. Gorilla's default
+            <code>CheckOrigin</code> rejects cross-origin requests, but countless tutorials tell you to override it with
+            <code>return true</code> &mdash; which opens you to Cross-Site WebSocket Hijacking for any cookie-authenticated
+            endpoint. <strong>Always allowlist the specific origins you trust</strong> (as in the &sect;8 server), never
+            blanket-allow. If you authenticate with bearer tokens rather than cookies the risk is lower, but origin
+            validation is still the right default.</p>
+        </div>
+      </section>
+
+      <!-- 15 -->
+      <section id="s15">
+        <div class="sec-head"><div class="sec-num">15</div><h2>Scaling — the Backplane</h2></div>
+        <p>This is the defining hard problem of WebSockets, and the reason they complicate architecture far more than
+          stateless HTTP. A WebSocket connection is <strong>stateful and pinned to one server</strong>: the socket lives
+          in the memory of the specific instance the client connected to. The moment you run more than one instance &mdash;
+          which you must, for capacity and availability &mdash; a painful question appears: <em>if user A is connected to
+          server 1 and user B (in the same chat room) is connected to server 2, how does A's message reach B?</em>
+          Server 1 has no access to server 2's connections.</p>
+
+        <div class="viz">
+          <div class="viz-cap">The scaling problem &amp; its fix</div>
+          <div class="viz-title">Connections are stranded on different instances; a pub/sub backplane bridges them</div>
+          <svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="Top: user A on server 1 cannot reach user B on server 2 directly. Bottom: server 1 publishes to a pub/sub backplane which all servers subscribe to, so server 2 delivers the message to user B">
+            <text x="20" y="22" class="mono" font-size="10.5" font-weight="700" fill="#a01f1f">the problem &mdash; connections stranded per instance</text>
+            <rect x="30" y="34" width="60" height="30" rx="6" fill="#bc4b2b"/><text x="60" y="54" font-size="9" fill="#fff" text-anchor="middle">user A</text>
+            <rect x="130" y="30" width="120" height="40" rx="9" fill="#e3efe0" stroke="#1f6f6f"/><text x="190" y="54" font-size="10" font-weight="700" fill="#1f6f6f" text-anchor="middle">server 1</text>
+            <rect x="470" y="30" width="120" height="40" rx="9" fill="#e3efe0" stroke="#1f6f6f"/><text x="530" y="54" font-size="10" font-weight="700" fill="#1f6f6f" text-anchor="middle">server 2</text>
+            <rect x="630" y="34" width="60" height="30" rx="6" fill="#bc4b2b"/><text x="660" y="54" font-size="9" fill="#fff" text-anchor="middle">user B</text>
+            <line x1="90" y1="50" x2="128" y2="50" stroke="#1f6f6f" stroke-width="2"/><line x1="592" y1="50" x2="628" y2="50" stroke="#1f6f6f" stroke-width="2"/>
+            <path d="M250 50 H468" stroke="#a01f1f" stroke-width="1.6" stroke-dasharray="6 4"/><text x="360" y="44" font-size="10" fill="#a01f1f" text-anchor="middle">A&rarr;B? server 1 can't see B &#10007;</text>
+
+            <text x="20" y="118" class="mono" font-size="10.5" font-weight="700" fill="#3d7a2e">the fix &mdash; a pub/sub backplane every instance subscribes to</text>
+            <rect x="30" y="132" width="60" height="30" rx="6" fill="#bc4b2b"/><text x="60" y="152" font-size="9" fill="#fff" text-anchor="middle">user A</text>
+            <rect x="130" y="128" width="120" height="40" rx="9" fill="#e3efe0" stroke="#1f6f6f"/><text x="190" y="152" font-size="10" font-weight="700" fill="#1f6f6f" text-anchor="middle">server 1</text>
+            <rect x="470" y="128" width="120" height="40" rx="9" fill="#e3efe0" stroke="#1f6f6f"/><text x="530" y="152" font-size="10" font-weight="700" fill="#1f6f6f" text-anchor="middle">server 2</text>
+            <rect x="630" y="132" width="60" height="30" rx="6" fill="#bc4b2b"/><text x="660" y="152" font-size="9" fill="#fff" text-anchor="middle">user B</text>
+            <line x1="90" y1="148" x2="128" y2="148" stroke="#1f6f6f" stroke-width="2"/><line x1="592" y1="148" x2="628" y2="148" stroke="#1f6f6f" stroke-width="2"/>
+            <rect x="250" y="210" width="220" height="46" rx="10" fill="#1c1a17"/><text x="360" y="231" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">Backplane (Redis Pub/Sub or Kafka)</text><text x="360" y="248" class="mono" font-size="8.5" fill="#cfd2da" text-anchor="middle">every server subscribes</text>
+            <defs><marker id="be" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#3d7a2e"/></marker></defs>
+            <path d="M190 168 C190 200 260 220 290 222" stroke="#3d7a2e" stroke-width="1.6" fill="none" marker-end="url(#be)"/><text x="220" y="196" font-size="8.5" fill="#3d7a2e">publish A&rarr;B</text>
+            <path d="M430 222 C470 220 510 188 530 170" stroke="#3d7a2e" stroke-width="1.6" fill="none" marker-end="url(#be)"/><text x="520" y="196" font-size="8.5" fill="#3d7a2e">deliver to B &#10003;</text>
+            <text x="360" y="276" class="serif" font-size="11.5" font-style="italic" fill="#4a443c" text-anchor="middle">Server 1 publishes the message; server 2 (subscribed) receives it and pushes it down B's socket.</text>
+          </svg>
+        </div>
+
+        <p>The solution is a <strong>backplane</strong> (a.k.a. pub/sub adapter): an external message system that all
+          server instances connect to. When a server needs to deliver a message to a client that may be on <em>any</em>
+          instance, it <strong>publishes</strong> the message to the backplane; every instance is <strong>subscribed</strong>,
+          receives it, and forwards it to whichever of <em>its</em> local connections should get it. The instances no
+          longer need to know about each other's connections &mdash; they coordinate through the shared bus. Common
+          backplanes:</p>
+        <ul>
+          <li><strong>Redis Pub/Sub</strong> &mdash; the most common choice: simple, fast, low-latency, fire-and-forget.
+            Perfect when you only need live fan-out and don't need history (a disconnected user simply misses messages).</li>
+          <li><strong>Kafka</strong> &mdash; when you also want durability, replay, and the events to feed other systems
+            (the Kafka chapter): publish events to a topic, every WS instance consumes and forwards. Heavier, but the
+            messages become part of your durable event stream.</li>
+          <li><strong>NATS</strong> / cloud pub/sub &mdash; other fast messaging options with similar mechanics.</li>
+        </ul>
+
+        <div class="box key"><span class="tag">The mental shift: instances are interchangeable, the bus coordinates</span>
+          <p>The backplane turns "N servers each with their own islands of connections" into "N servers that collectively
+            behave as one." It's the same decoupling idea as the Kafka chapter applied to live delivery: a publisher
+            doesn't need to know which instance hosts a recipient &mdash; it publishes, and whoever holds the connection
+            delivers. You cannot horizontally scale WebSockets without something playing this role; designing it in early
+            is far easier than retrofitting it.</p>
+        </div>
+      </section>
+
+      <!-- 16 -->
+      <section id="s16">
+        <div class="sec-head"><div class="sec-num">16</div><h2>Load Balancing &amp; Sticky Sessions</h2></div>
+        <p>Putting a load balancer in front of WebSocket servers has its own wrinkles, because the connection is
+          long-lived and stateful rather than a quick request. Three things matter: the LB must <em>support</em>
+          WebSockets, connections usually need <em>affinity</em>, and deploys must <em>drain</em> connections gracefully.</p>
+
+        <ul>
+          <li><strong>The LB must speak WebSocket.</strong> It has to pass through the <code>Upgrade</code> handshake and
+            then keep the connection open (an L7/HTTP-aware proxy, or L4 TCP pass-through). Most modern LBs (Nginx, HAProxy,
+            cloud ALBs, the Kubernetes Ingress controllers of chapter 21) support this, but you configure longer idle
+            timeouts &mdash; a default 60s idle timeout will kill quiet WebSockets, which is another reason for heartbeats
+            (&sect;7).</li>
+          <li><strong>Sticky sessions / affinity.</strong> Once a client is connected to instance 1, all its frames must
+            keep going to instance 1 (that's where its socket lives). With raw TCP that's automatic (one connection =
+            one backend), but reconnections and any per-message routing want <em>session affinity</em> so a client
+            returns to a consistent instance. With a backplane (&sect;15) affinity matters less for <em>delivery</em>
+            (any instance can publish/receive), but it still affects local state.</li>
+          <li><strong>Connection draining on deploy.</strong> The big one: deploying a new version (the rolling updates
+            of chapter 21 &sect;18) <em>terminates instances</em>, and every WebSocket on a terminating instance drops.
+            You must drain gracefully &mdash; stop accepting new connections, send a close frame (code <code>1001</code>
+            "going away") so clients reconnect cleanly to a healthy instance, and allow time before <code>SIGKILL</code>
+            (graceful shutdown chapter). Even so, a deploy causes a reconnection storm &mdash; which is why robust client
+            reconnection (&sect;17) is mandatory.</li>
+        </ul>
+
+        <div class="box gotcha"><span class="tag">Every deploy disconnects everyone</span>
+          <p>Unlike stateless HTTP &mdash; where a rolling deploy is invisible &mdash; rolling a WebSocket fleet drops every
+            live connection as old instances retire. This is fundamental to stateful connections, not a bug. Plan for it:
+            graceful drain with <code>1001</code> on the server, exponential-backoff reconnection with jitter on the
+            client (&sect;17, to avoid a thundering-herd reconnect), and message design that tolerates a brief gap and
+            re-sync. Treat reconnection as the normal case, not the exception.</p>
+        </div>
+      </section>
+
+      <!-- 17 -->
+      <section id="s17">
+        <div class="sec-head"><div class="sec-num">17</div><h2>Reconnection &amp; Resilience</h2></div>
+        <p>Given everything above &mdash; connections drop silently (&sect;6), deploys disconnect everyone (&sect;16),
+          networks are flaky &mdash; a real-time client that doesn't <strong>automatically reconnect</strong> is broken by
+          design. Resilience lives mostly on the client, with server-side support for re-syncing missed state. (Note: SSE
+          gives you reconnection <em>for free</em> &mdash; another reason to prefer it when you only need server push,
+          &sect;2.)</p>
+
+        <div class="viz">
+          <div class="viz-cap">Reconnect with backoff</div>
+          <div class="viz-title">On drop, retry with growing delays + jitter, then re-sync state</div>
+          <svg viewBox="0 0 720 160" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A connection drops, then reconnection attempts at 1s, 2s, 4s with jitter until one succeeds, after which the client re-syncs missed state">
+            <text x="40" y="40" font-size="11" font-weight="700" fill="#a01f1f">drop</text>
+            <circle cx="60" cy="80" r="9" fill="#a01f1f"/>
+            <defs><marker id="rc" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#9a7400"/></marker></defs>
+            <path d="M70 80 H150" stroke="#9a7400" stroke-width="1.4" marker-end="url(#rc)"/><text x="110" y="72" class="mono" font-size="8.5" fill="#9a7400" text-anchor="middle">wait 1s</text>
+            <circle cx="160" cy="80" r="7" fill="#9a7400"/><text x="160" y="102" font-size="8" fill="#a01f1f" text-anchor="middle">fail</text>
+            <path d="M170 80 H270" stroke="#9a7400" stroke-width="1.4" marker-end="url(#rc)"/><text x="220" y="72" class="mono" font-size="8.5" fill="#9a7400" text-anchor="middle">wait 2s</text>
+            <circle cx="280" cy="80" r="7" fill="#9a7400"/><text x="280" y="102" font-size="8" fill="#a01f1f" text-anchor="middle">fail</text>
+            <path d="M290 80 H410" stroke="#9a7400" stroke-width="1.4" marker-end="url(#rc)"/><text x="350" y="72" class="mono" font-size="8.5" fill="#9a7400" text-anchor="middle">wait 4s (+jitter)</text>
+            <circle cx="420" cy="80" r="9" fill="#3d7a2e"/><text x="420" y="104" font-size="8.5" font-weight="700" fill="#3d7a2e" text-anchor="middle">connected</text>
+            <path d="M430 80 H520" stroke="#3d7a2e" stroke-width="1.6" marker-end="url(#be)"/>
+            <rect x="522" y="64" width="170" height="32" rx="8" fill="#e3efe0" stroke="#3d7a2e"/><text x="607" y="84" font-size="9.5" fill="#3d7a2e" text-anchor="middle">re-sync missed state</text>
+            <text x="360" y="140" class="serif" font-size="11.5" font-style="italic" fill="#4a443c" text-anchor="middle">Exponential backoff + jitter avoids a thundering herd; on success, fetch what you missed while gone.</text>
+          </svg>
+        </div>
+
+        <h4>The resilience checklist</h4>
+        <ul>
+          <li><strong>Reconnect with exponential backoff + jitter.</strong> Don't hammer a struggling server with
+            instant retries; grow the delay (1s, 2s, 4s, &hellip; capped) and add randomness so thousands of clients
+            disconnected by a deploy don't all reconnect at the same instant (the thundering-herd / reconnect-storm
+            problem from &sect;16).</li>
+          <li><strong>Re-sync after reconnect.</strong> A new connection means a possible gap in the stream. On reconnect,
+            the client should reconcile: fetch current state via a normal HTTP call, or tell the server "last event I saw
+            was N, send me everything since" (a resume token / sequence number). This is where a durable backplane like
+            Kafka (&sect;15) shines &mdash; the missed messages are still in the log to replay.</li>
+          <li><strong>Decide your delivery guarantee.</strong> Like Kafka (&sect;9), WebSocket delivery isn't magically
+            exactly-once. For critical data, give messages sequence numbers/IDs so the client can detect gaps and
+            duplicates, and make handling idempotent. For lossy data (live positions), a gap is fine &mdash; the next
+            update corrects it.</li>
+          <li><strong>Buffer outbound on the client</strong> while disconnected (within limits), and flush on reconnect &mdash;
+            so a user's action taken during a blip isn't simply lost.</li>
+        </ul>
+
+        <div class="box key"><span class="tag">Reconnection is a first-class feature</span>
+          <p>The connection dropping is <em>normal operation</em>, not an error case &mdash; so reconnection logic isn't a
+            nice-to-have, it's core functionality you build and test deliberately. A real-time system's reliability is
+            mostly determined by how gracefully it handles the constant churn of connections coming and going. Design for
+            the drop.</p>
+        </div>
+      </section>
+
+      <div class="part-label">Part V · Practice &amp; Comparison</div>
+
+      <!-- 18 -->
+      <section id="s18">
+        <div class="sec-head"><div class="sec-num">18</div><h2>WebSockets vs SSE vs Streaming vs Polling</h2></div>
+        <p>The decision that should come <em>before</em> you build anything real-time. WebSockets are powerful but carry
+          the operational weight of Part IV (stateful connections, backplane, sticky sessions, reconnection), so picking
+          the simplest tool that fits is a real cost saving. Four contenders, drawing together the spectrum (&sect;2) and
+          the gRPC chapter.</p>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Need</th><th>Best fit</th><th>Why</th></tr></thead>
+            <tbody>
+              <tr><td>Rare updates, latency tolerant</td><td><strong>Polling</strong></td><td>Trivial, stateless, no infra. Don't over-engineer.</td></tr>
+              <tr><td>Server &rarr; browser push, one-way</td><td><strong>SSE</strong></td><td>Just HTTP, auto-reconnect, sails through proxies; far simpler than WS. Feeds, notifications, live dashboards.</td></tr>
+              <tr><td>Browser &harr; server, frequent both ways</td><td><strong>WebSocket</strong></td><td>The only option for true low-latency bidirectional in a browser. Chat, games, collaborative editing, trading UIs.</td></tr>
+              <tr><td>Service &harr; service streaming</td><td><strong>gRPC streaming</strong></td><td>Typed, efficient, HTTP/2-native (gRPC chapter). For internal backends, not browsers.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="viz">
+          <div class="viz-cap">Direction &amp; reach</div>
+          <div class="viz-title">What each supports, at a glance</div>
+          <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="A comparison grid of polling, SSE, WebSocket and gRPC streaming across direction and browser support">
+            <g font-family="JetBrains Mono" font-size="9.5">
+              <rect x="20" y="30" width="165" height="150" rx="11" fill="#fbf2dc" stroke="#9a7400"/>
+              <text x="102" y="52" font-size="11.5" font-weight="700" fill="#9a7400" text-anchor="middle">Polling</text>
+              <text x="102" y="78" fill="#4a443c" text-anchor="middle">dir: client pull</text>
+              <text x="102" y="100" fill="#3d7a2e" text-anchor="middle">browser: yes</text>
+              <text x="102" y="122" fill="#4a443c" text-anchor="middle">latency: high</text>
+              <text x="102" y="144" fill="#3d7a2e" text-anchor="middle">complexity: tiny</text>
+              <text x="102" y="166" fill="#4a443c" text-anchor="middle">stateless</text>
+
+              <rect x="195" y="30" width="165" height="150" rx="11" fill="#e4eef0" stroke="#1f6f6f"/>
+              <text x="277" y="52" font-size="11.5" font-weight="700" fill="#1f6f6f" text-anchor="middle">SSE</text>
+              <text x="277" y="78" fill="#4a443c" text-anchor="middle">dir: server&rarr;client</text>
+              <text x="277" y="100" fill="#3d7a2e" text-anchor="middle">browser: yes</text>
+              <text x="277" y="122" fill="#3d7a2e" text-anchor="middle">latency: low</text>
+              <text x="277" y="144" fill="#3d7a2e" text-anchor="middle">complexity: low</text>
+              <text x="277" y="166" fill="#3d7a2e" text-anchor="middle">auto-reconnect</text>
+
+              <rect x="370" y="30" width="165" height="150" rx="11" fill="#e3efe0" stroke="#3d7a2e"/>
+              <text x="452" y="52" font-size="11.5" font-weight="700" fill="#3d7a2e" text-anchor="middle">WebSocket</text>
+              <text x="452" y="78" fill="#3d7a2e" text-anchor="middle">dir: both ways</text>
+              <text x="452" y="100" fill="#3d7a2e" text-anchor="middle">browser: yes</text>
+              <text x="452" y="122" fill="#3d7a2e" text-anchor="middle">latency: lowest</text>
+              <text x="452" y="144" fill="#a01f1f" text-anchor="middle">complexity: high</text>
+              <text x="452" y="166" fill="#a01f1f" text-anchor="middle">stateful</text>
+
+              <rect x="545" y="30" width="165" height="150" rx="11" fill="#f7e9e2" stroke="#bc4b2b"/>
+              <text x="627" y="52" font-size="11" font-weight="700" fill="#8f3415" text-anchor="middle">gRPC stream</text>
+              <text x="627" y="78" fill="#8f3415" text-anchor="middle">dir: both ways</text>
+              <text x="627" y="100" fill="#a01f1f" text-anchor="middle">browser: no*</text>
+              <text x="627" y="122" fill="#3d7a2e" text-anchor="middle">latency: low</text>
+              <text x="627" y="144" fill="#4a443c" text-anchor="middle">typed/binary</text>
+              <text x="627" y="166" fill="#4a443c" text-anchor="middle">service&harr;service</text>
+            </g>
+            <text x="360" y="196" class="serif" font-size="11" font-style="italic" fill="#4a443c" text-anchor="middle">*gRPC needs gRPC-Web/a proxy in browsers (gRPC §19). Pick the leftmost column that meets the need.</text>
+          </svg>
+        </div>
+
+        <div class="box key"><span class="tag">The rule: simplest that fits</span>
+          <p>Move left until it no longer works. Need server push to a browser but not client&rarr;server chatter? <strong>SSE</strong>,
+            not WebSockets &mdash; you skip the entire backplane/sticky-session burden of Part IV. Genuinely need frequent
+            bidirectional browser traffic? <strong>WebSockets</strong>. Two backend services? <strong>gRPC streaming</strong>.
+            Reaching for WebSockets when SSE or even polling would do is one of the most common and costly over-
+            engineering mistakes in real-time work.</p>
+        </div>
+      </section>
+
+      <!-- 19 -->
+      <section id="s19">
+        <div class="sec-head"><div class="sec-num">19</div><h2>Common Pitfalls</h2></div>
+        <p>The failure modes that bite WebSocket servers in production &mdash; most are about <em>resource management</em>
+          for long-lived, stateful connections, a discipline stateless HTTP never demanded.</p>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Pitfall</th><th>What happens</th><th>Fix</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Connection / goroutine leaks</strong></td><td>A disconnect path forgets to unregister &amp; free; goroutines/tasks and memory accumulate until the server dies</td><td>Always clean up on <em>every</em> exit path (defer/finally); register on connect, unregister on disconnect (§10)</td></tr>
+              <tr><td><strong>No heartbeat &rarr; zombies</strong></td><td>Dead connections look idle (§6); the table fills with sockets to clients that vanished</td><td>Ping on a timer; drop on missed pong (§7)</td></tr>
+              <tr><td><strong>Unbounded send buffers</strong></td><td>One slow client's queue grows without limit and OOMs the server</td><td>Bounded per-client queue + drop/disconnect policy (§12)</td></tr>
+              <tr><td><strong>Concurrent writes to one conn</strong></td><td>Multiple goroutines writing the same socket corrupt the frame stream</td><td>One writer goroutine fed by a channel (§8, §10)</td></tr>
+              <tr><td><strong>Blocking the read loop</strong></td><td>Doing slow work inline in the read loop stalls that connection (and trips heartbeats)</td><td>Hand work to a worker; keep the read loop fast (the queue idea, ch.10)</td></tr>
+              <tr><td><strong>No origin check</strong></td><td>Cross-Site WebSocket Hijacking on cookie-auth endpoints (§14)</td><td>Allowlist origins; never blanket-allow</td></tr>
+              <tr><td><strong>Forgetting the backplane</strong></td><td>Works on one instance; messages vanish between users once you scale out (§15)</td><td>Design the pub/sub backplane in early</td></tr>
+              <tr><td><strong>No reconnection logic</strong></td><td>Client silently stops receiving after the first network blip or deploy</td><td>Reconnect with backoff + jitter, then re-sync (§17)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="box gotcha"><span class="tag">Stateful connections need lifecycle discipline</span>
+          <p>Notice the pattern: nearly every pitfall is a <em>resource that wasn't bounded or freed</em> &mdash; a leaked
+            connection, an unbounded buffer, a zombie socket. Stateless HTTP forgives sloppiness here because each request
+            is short-lived and self-cleaning; a WebSocket lives for hours and holds memory the whole time. Treat every
+            connection as something you must explicitly account for from open to close, and most production problems
+            never appear.</p>
+        </div>
+      </section>
+
+      <!-- 20 -->
+      <section id="s20">
+        <div class="sec-head"><div class="sec-num">20</div><h2>Designing Real-Time Systems</h2></div>
+        <p>Pulling the manual into design judgment for anything real-time.</p>
+
+        <h4>Design principles</h4>
+        <ul>
+          <li><strong>Choose the lightest transport first.</strong> Polling &rarr; SSE &rarr; WebSocket &rarr; gRPC
+            streaming, leftmost that fits (&sect;18). Don't pay for WebSocket complexity unless you need bidirectional
+            browser traffic.</li>
+          <li><strong>Design the backplane in from day one</strong> if you'll ever run more than one instance &mdash; which
+            is always, in production (&sect;15). Retrofitting cross-instance delivery into a single-instance design is
+            painful.</li>
+          <li><strong>Treat disconnection as normal.</strong> Heartbeats to detect it (&sect;7), graceful drain on deploy
+            (&sect;16), client reconnection with backoff + jitter and state re-sync (&sect;17). The connection <em>will</em>
+            churn; build for it.</li>
+          <li><strong>Bound everything per connection.</strong> Send-buffer size, message size, message rate, connections
+            per user (§12, §14, §19). Unbounded anything is an outage waiting for one bad client.</li>
+          <li><strong>Don't assume reliable, ordered, exactly-once delivery.</strong> Add sequence numbers/IDs for
+            gap detection and idempotent handling where it matters; accept loss where it doesn't (§17, echoing Kafka §9).</li>
+          <li><strong>Authenticate at the handshake, authorize every message, secure the channel.</strong> <code>wss://</code>,
+            origin checks, validated inbound messages (§13&ndash;14).</li>
+          <li><strong>Keep the read loop fast;</strong> offload real work to a queue/worker (ch.10), and serialize writes
+            through one writer per connection (§8).</li>
+        </ul>
+
+        <div class="box key"><span class="tag">When WebSockets, and when not</span>
+          <p><strong>Reach for WebSockets</strong> for genuinely interactive, low-latency, bidirectional browser
+            experiences: chat, multiplayer games, collaborative editing, live trading/betting interfaces, real-time
+            dashboards with client interaction. <strong>Don't</strong> reach for them for one-way server push (use SSE),
+            for occasional updates (polling), for request/response (plain HTTP/REST &mdash; the HTTP chapter), or for
+            service-to-service streaming (gRPC). The skill, as always, is matching the transport to the actual
+            interaction shape rather than reaching for the most powerful tool by reflex.</p>
+        </div>
+      </section>
+
+      <!-- 21 -->
+      <section id="s21">
+        <div class="sec-head"><div class="sec-num">21</div><h2>Cheat-Sheet</h2></div>
+        <p>The whole manual compressed to what you reach for under pressure.</p>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Concept</th><th>One-liner</th></tr></thead>
+            <tbody>
+              <tr><td>Why WebSockets</td><td>HTTP can't push; WS is a persistent full-duplex pipe either side can send on anytime.</td></tr>
+              <tr><td>Spectrum</td><td>Polling &rarr; long-polling &rarr; SSE (one-way) &rarr; WebSocket (two-way). Pick the simplest.</td></tr>
+              <tr><td>What it is</td><td>One long-lived TCP connection, started via HTTP, on ports 80/443. <code>ws://</code> / <code>wss://</code>.</td></tr>
+              <tr><td>Handshake</td><td>HTTP GET + <code>Upgrade: websocket</code> &rarr; <code>101 Switching Protocols</code>. Not 200.</td></tr>
+              <tr><td>Frames</td><td>FIN, opcode (text/binary/close/ping/pong), client&rarr;server masked; message-oriented, not byte-stream.</td></tr>
+              <tr><td>Lifecycle</td><td>open &rarr; messages &rarr; close (with a code). 1006 = died with no close frame.</td></tr>
+              <tr><td>Heartbeats</td><td>Ping/pong on a timer; missed pong = dead &rarr; close + clean up. Always run them.</td></tr>
+              <tr><td>Server</td><td>Accept upgrade, then a read loop; library does framing (gorilla / FastAPI / websockets).</td></tr>
+              <tr><td>Concurrency</td><td>One writer per connection; never write the same socket from many goroutines.</td></tr>
+              <tr><td>Hub</td><td>Central registry owns connections; register/unregister/broadcast. Always clean up.</td></tr>
+              <tr><td>Rooms</td><td>Group connections by name; broadcast to a group, not everyone.</td></tr>
+              <tr><td>Backpressure</td><td>Bounded per-client buffer; on overflow drop / disconnect / conflate. Never buffer unbounded.</td></tr>
+              <tr><td>Auth</td><td>At the handshake (cookie/query/subprotocol/first msg) &mdash; browsers can't set headers. Authz every message.</td></tr>
+              <tr><td>Security</td><td><code>wss://</code> + validate <code>Origin</code> (CSWSH) + validate messages + size/rate limits.</td></tr>
+              <tr><td>Backplane</td><td>Connections are pinned per instance; Redis/Kafka pub/sub lets servers deliver across instances.</td></tr>
+              <tr><td>Load balancing</td><td>LB must speak WS; raise idle timeouts; affinity; drain (1001) on deploy.</td></tr>
+              <tr><td>Deploys</td><td>Every rolling deploy disconnects all clients &mdash; reconnection is mandatory.</td></tr>
+              <tr><td>Reconnection</td><td>Backoff + jitter, then re-sync missed state (resume token / HTTP fetch).</td></tr>
+              <tr><td>Delivery</td><td>Not exactly-once; add sequence IDs + idempotency where gaps matter.</td></tr>
+              <tr><td>vs others</td><td>SSE for one-way push; gRPC streaming for service&harr;service; polling for rare updates.</td></tr>
+              <tr><td>Pitfalls</td><td>Leaks, zombies, unbounded buffers, concurrent writes, no origin check, no backplane.</td></tr>
+              <tr><td>Design rule</td><td>Lightest transport that fits; bound everything; treat disconnection as normal.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="foot">
+          <p><strong>The whole topic in one breath:</strong> WebSockets exist because HTTP can't let the server push, and
+            polling is wasteful (&sect;1) &mdash; but they're the heaviest option on a spectrum that includes polling and
+            one-way SSE (&sect;2). A WebSocket is a single persistent full-duplex TCP connection (&sect;3) that begins as
+            an HTTP <code>Upgrade</code> handshake answered with <code>101</code> (&sect;4), then exchanges
+            message-oriented frames (&sect;5) through an open&rarr;message&rarr;close lifecycle (&sect;6), kept honest by
+            ping/pong heartbeats since dead connections look idle (&sect;7). You build a server as accept-then-read-loop
+            (&sect;8), often act as a client too (&sect;9), and manage many connections through a central hub (&sect;10)
+            with rooms for grouping (&sect;11) and bounded buffers for backpressure so one slow client can't sink the
+            server (&sect;12). In production you authenticate at the handshake and authorize every message (&sect;13),
+            secure with <code>wss://</code> and origin checks (&sect;14), and &mdash; the hard part &mdash; scale stateful
+            connections across instances with a pub/sub backplane (&sect;15), behind a WebSocket-aware load balancer that
+            drains on deploy (&sect;16), with clients that reconnect with backoff and re-sync (&sect;17). Above all: pick
+            the lightest transport that fits (&sect;18), avoid the resource-leak pitfalls (&sect;19), and treat
+            disconnection as the normal case (&sect;20).</p>
+          <p style="margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;">
+            Grounded in MDN (developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) &amp; RFC 6455 &middot;
+            gorilla/websocket &amp; the websockets/FastAPI docs &middot; Go 1.22+ / Python 3.11+ examples.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+    hljs.highlightAll();
+    document.querySelectorAll('[data-cb]').forEach(block => {
+      const btns = block.querySelectorAll('.code-tabs button');
+      const panels = block.querySelectorAll('.code-panel');
+      btns.forEach(btn => btn.addEventListener('click', () => {
+        const lang = btn.dataset.lang;
+        btns.forEach(b => b.classList.toggle('on', b === btn));
+        panels.forEach(p => p.classList.toggle('on', p.dataset.panel === lang));
+      }));
+    });
+    const links = [...document.querySelectorAll('.toc nav a')];
+    const map = {}; links.forEach(l => map[l.getAttribute('href').slice(1)] = l);
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          links.forEach(l => l.classList.remove('active'));
+          if (map[e.target.id]) map[e.target.id].classList.add('active');
+        }
+      });
+    }, { rootMargin: '-10% 0px -80% 0px' });
+    document.querySelectorAll('section').forEach(s => obs.observe(s));
+    links.forEach(l => l.addEventListener('click', () => document.querySelector('.toc').classList.remove('open')));
+  </script>
+<!-- ============ CHAPTER NAVIGATION ============ -->
+<nav class="chapter-nav" id="chapterNav">
+  <a href="../../23.Message-Brokers-and-Event-Streaming-with-Kafka/html_notes/notes.html" class="nav-chapter-link"><span class="nav-arrow">&larr;</span><span class="nav-label"><span class="nav-small">Chapter 23</span>Message Brokers & Kafka</span></a>
+  <a href="../../index.html" class="nav-indicator"><span class="nav-dot"></span> Chapter 24 <span class="nav-sep">/</span> 24</a>
+  <span class="nav-chapter-link nav-disabled"></span>
+</nav>
+</body>
+
+</html>
