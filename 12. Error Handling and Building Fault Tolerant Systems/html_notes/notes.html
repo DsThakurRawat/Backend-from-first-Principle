@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Error Handling & Fault Tolerance — Backend Field Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Lora:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f0e8;
+    --cream-dark: #ede7d9;
+    --ink: #1a1612;
+    --ink-light: #4a3f35;
+    --red: #c0392b;
+    --red-dark: #96281b;
+    --gold: #b8960c;
+    --green: #1e8449;
+    --border: #d4c9b8;
+    --code-bg: #2b2218;
+    --code-text: #e8ddd0;
+    --sidebar-w: 240px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Lora', Georgia, serif;
+    background: var(--cream);
+    color: var(--ink);
+    display: flex;
+    min-height: 100vh;
+    font-size: 17px;
+    line-height: 1.75;
+  }
+
+  /* SIDEBAR */
+  aside {
+    width: var(--sidebar-w);
+    min-height: 100vh;
+    background: var(--cream-dark);
+    border-right: 1px solid var(--border);
+    padding: 36px 20px 40px;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .sidebar-title { font-family:'Playfair Display',serif; font-weight:900; font-size:18px; color:var(--ink); line-height:1.25; margin-bottom:4px; }
+  .sidebar-sub { font-family:'Source Sans 3',sans-serif; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-light); margin-bottom:28px; }
+  .sidebar-nav a { display:flex; align-items:flex-start; gap:10px; text-decoration:none; color:var(--ink-light); font-family:'Source Sans 3',sans-serif; font-size:13px; padding:5px 6px; border-radius:4px; margin-bottom:2px; transition:background .15s,color .15s; }
+  .sidebar-nav a:hover { background:var(--border); color:var(--red); }
+  .sidebar-nav .num { font-size:11px; color:var(--red); font-weight:700; min-width:20px; padding-top:1px; }
+
+  /* MAIN */
+  main { flex:1; max-width:860px; padding:60px 64px 100px; }
+  .chapter-label { font-family:'Source Sans 3',sans-serif; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--red); font-weight:600; margin-bottom:12px; }
+  h1.chapter-title { font-family:'Playfair Display',serif; font-weight:900; font-size:48px; line-height:1.1; color:var(--ink); margin-bottom:24px; }
+  .chapter-intro { font-size:18px; color:var(--ink-light); line-height:1.8; border-top:1px solid var(--border); border-bottom:1px solid var(--border); padding:20px 0; margin-bottom:52px; }
+
+  /* SECTIONS */
+  section { margin-bottom:60px; }
+  .section-header { display:flex; align-items:center; gap:14px; margin-bottom:20px; }
+  .badge { display:inline-flex; align-items:center; justify-content:center; background:var(--red); color:#fff; font-family:'Source Sans 3',sans-serif; font-weight:700; font-size:13px; width:32px; height:32px; border-radius:6px; flex-shrink:0; }
+  h2 { font-family:'Playfair Display',serif; font-weight:700; font-size:28px; color:var(--ink); }
+  h3 { font-family:'Playfair Display',serif; font-weight:700; font-size:20px; color:var(--ink); margin:32px 0 12px; }
+  h4 { font-family:'Source Sans 3',sans-serif; font-weight:700; font-size:15px; text-transform:uppercase; letter-spacing:.07em; color:var(--red-dark); margin:20px 0 8px; }
+  p { margin-bottom:16px; }
+
+  /* CALLOUTS */
+  .callout { background:var(--cream-dark); border-left:4px solid var(--red); border-radius:0 8px 8px 0; padding:16px 20px; margin:24px 0; font-size:15.5px; }
+  .callout::before { content:"📌 Note  "; font-weight:700; color:var(--red); }
+  .callout.tip { border-color:var(--gold); }
+  .callout.tip::before { content:"💡 Tip  "; font-weight:700; color:var(--gold); }
+  .callout.warning { border-color:#e67e22; }
+  .callout.warning::before { content:"⚠️ Warning  "; font-weight:700; color:#c0392b; }
+  .callout.security { border-color:#8e44ad; background:#f5f0ff; }
+  .callout.security::before { content:"🔒 Security  "; font-weight:700; color:#8e44ad; }
+
+  /* CODE */
+  pre { background:var(--code-bg); color:var(--code-text); font-family:'JetBrains Mono',monospace; font-size:13.5px; line-height:1.65; border-radius:10px; padding:22px 24px; overflow-x:auto; margin:20px 0; position:relative; }
+  pre .lang-label { position:absolute; top:10px; right:14px; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#8a7a6a; font-family:'Source Sans 3',sans-serif; }
+  code { font-family:'JetBrains Mono',monospace; font-size:13px; background:#e8e0d4; color:var(--red-dark); padding:2px 6px; border-radius:4px; }
+  pre code { background:none; color:inherit; padding:0; font-size:inherit; border-radius:0; }
+  .kw{color:#f39c12} .str{color:#2ecc71} .cmt{color:#7f8c8d;font-style:italic} .fn{color:#3498db} .num{color:#e74c3c} .type{color:#9b59b6}
+
+  /* DIAGRAM */
+  .diagram-box { border:1px solid var(--border); border-radius:12px; overflow:hidden; margin:28px 0; background:#fff; }
+  .diagram-caption { text-align:center; font-family:'Source Sans 3',sans-serif; font-size:12.5px; color:var(--ink-light); padding:8px 0 12px; letter-spacing:.04em; }
+
+  /* TABLE */
+  table { width:100%; border-collapse:collapse; margin:24px 0; font-size:15px; font-family:'Source Sans 3',sans-serif; }
+  th { background:var(--ink); color:var(--cream); padding:10px 14px; text-align:left; font-weight:600; font-size:13px; letter-spacing:.05em; text-transform:uppercase; }
+  td { padding:10px 14px; border-bottom:1px solid var(--border); }
+  tr:nth-child(even) td { background:var(--cream-dark); }
+
+  /* LISTS */
+  ul,ol { padding-left:24px; margin-bottom:16px; }
+  li { margin-bottom:8px; }
+  li strong { color:var(--red-dark); }
+
+  /* QUOTE */
+  blockquote { border-left:3px solid var(--gold); margin:24px 0; padding:12px 20px; font-style:italic; color:var(--ink-light); font-size:17px; }
+
+  /* COMPARE GRID */
+  .compare-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:24px 0; }
+  .compare-card { border:1px solid var(--border); border-radius:10px; padding:18px 20px; background:#fff; }
+  .compare-card h4 { font-family:'Source Sans 3',sans-serif; font-weight:700; font-size:13px; text-transform:uppercase; letter-spacing:.1em; margin-bottom:12px; padding-bottom:8px; border-bottom:2px solid var(--red); color:var(--red); }
+  .compare-card ul { margin:0; padding-left:18px; }
+  .compare-card li { font-size:14.5px; margin-bottom:6px; }
+
+  /* ERROR TYPE CARD */
+  .error-cards { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:24px 0; }
+  .error-card { border-radius:10px; padding:16px 18px; border:1px solid var(--border); }
+  .error-card .ec-title { font-family:'Source Sans 3',sans-serif; font-weight:700; font-size:13px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; }
+  .ec-logic  { background:#fff8f0; border-top:3px solid #e67e22; }
+  .ec-logic .ec-title { color:#c0392b; }
+  .ec-db     { background:#f0f8ff; border-top:3px solid #2980b9; }
+  .ec-db .ec-title { color:#2980b9; }
+  .ec-ext    { background:#f0fff4; border-top:3px solid #27ae60; }
+  .ec-ext .ec-title { color:#27ae60; }
+  .ec-input  { background:#fdf9ff; border-top:3px solid #8e44ad; }
+  .ec-input .ec-title { color:#8e44ad; }
+  .ec-config { background:#fffbf0; border-top:3px solid var(--gold); }
+  .ec-config .ec-title { color:#b8960c; }
+
+  /* REF LINKS */
+  .ref-links { display:flex; flex-wrap:wrap; gap:10px; margin:20px 0; }
+  .ref-link { display:inline-flex; align-items:center; gap:6px; background:var(--cream-dark); border:1px solid var(--border); border-radius:6px; padding:6px 12px; font-family:'Source Sans 3',sans-serif; font-size:13px; color:var(--red-dark); text-decoration:none; transition:background .15s; }
+  .ref-link:hover { background:var(--border); }
+
+  hr { border:none; border-top:1px solid var(--border); margin:48px 0; }
+
+  ::-webkit-scrollbar { width:6px; height:6px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+</style>
+<style>
+.chapter-nav{position:fixed;bottom:0;left:0;right:0;z-index:9998;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(16px,4vw,48px);background:rgba(243,237,226,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1.5px solid #c7bca6;box-shadow:0 -8px 32px -16px rgba(40,30,20,.18);font-family:"JetBrains Mono","Spline Sans",monospace;}
+.nav-chapter-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:#5b5347;padding:10px 18px;border-radius:10px;transition:all .2s ease;max-width:38%;}
+.nav-chapter-link:hover{background:rgba(184,64,46,.08);color:#b8402e;transform:translateY(-1px);}
+.nav-chapter-link.nav-next{text-align:right;flex-direction:row;}
+.nav-arrow{font-size:22px;color:#b8402e;font-weight:700;flex:none;}
+.nav-label{display:flex;flex-direction:column;gap:2px;font-size:13.5px;line-height:1.3;}
+.nav-small{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8d8475;font-weight:600;}
+.nav-indicator{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#b8402e;font-weight:700;text-decoration:none;padding:8px 16px;border:1.5px solid #c7bca6;border-radius:40px;background:rgba(255,255,255,.5);transition:all .2s;white-space:nowrap;}
+.nav-indicator:hover{background:#b8402e;color:#fff;border-color:#b8402e;}
+.nav-dot{display:inline-block;width:7px;height:7px;background:#b8402e;border-radius:50%;margin-right:4px;vertical-align:middle;}
+.nav-sep{color:#c7bca6;margin:0 2px;}
+.nav-disabled{visibility:hidden;pointer-events:none;}
+@media(max-width:700px){.nav-label{font-size:11.5px;}.nav-chapter-link{padding:8px 10px;max-width:42%;}.chapter-nav{padding:10px 12px;}}
+body{padding-bottom:80px;}
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="sidebar-title">Error Handling &amp; Fault Tolerance</div>
+  <div class="sidebar-sub">Backend Field Manual · Chapter 16</div>
+  <nav class="sidebar-nav">
+    <a href="#mindset"><span class="num">01</span>The Mindset</a>
+    <a href="#types"><span class="num">02</span>Types of Errors</a>
+    <a href="#logic"><span class="num">03</span>Logic Errors</a>
+    <a href="#db"><span class="num">04</span>Database Errors</a>
+    <a href="#external"><span class="num">05</span>External Service Errors</a>
+    <a href="#input"><span class="num">06</span>Input Validation Errors</a>
+    <a href="#config"><span class="num">07</span>Configuration Errors</a>
+    <a href="#proactive"><span class="num">08</span>Proactive Detection</a>
+    <a href="#monitoring"><span class="num">09</span>Monitoring &amp; Observability</a>
+    <a href="#recovery"><span class="num">10</span>Recovery Strategies</a>
+    <a href="#global"><span class="num">11</span>Global Error Handler</a>
+    <a href="#code-go"><span class="num">12</span>Go — Global Handler</a>
+    <a href="#code-py"><span class="num">13</span>Python — Global Handler</a>
+    <a href="#security"><span class="num">14</span>Security &amp; Safe Logging</a>
+    <a href="#refs"><span class="num">15</span>References</a>
+  </nav>
+</aside>
+
+<main>
+
+  <div class="chapter-label">Chapter 16 · Fault Tolerance</div>
+  <h1 class="chapter-title">Error Handling &amp; Fault-Tolerant Systems</h1>
+  <p class="chapter-intro">
+    Errors are not exceptional — they are <em>inevitable</em>. Database queries fail, external APIs time out, users send bad data, and business logic hits edge cases nobody predicted. This chapter builds the mindset and concrete toolkit for detecting, handling, and recovering from every class of backend error — before it silently costs you money or trust.
+  </p>
+
+  <!-- 01 MINDSET -->
+  <section id="mindset">
+    <div class="section-header"><span class="badge">01</span><h2>The Fault-Tolerant Mindset</h2></div>
+    <blockquote>"The question is not whether errors will happen — it is how you will handle them when they do."</blockquote>
+    <p>Every backend engineer must internalise a simple truth: <strong>your system will fail</strong>. Not might. Will. The sources are everywhere:</p>
+    <ul>
+      <li>Database queries will occasionally fail or time out.</li>
+      <li>External APIs (payments, email, auth) will go down.</li>
+      <li>Users will send malformed, missing, or malicious data.</li>
+      <li>Business logic will hit edge cases no one thought of during design.</li>
+    </ul>
+    <p>A fault-tolerant system is not one that never breaks. It is one that <strong>breaks predictably, recovers gracefully, and tells you exactly what happened</strong>. Achieving that requires a deliberate mindset shift from "I'll handle errors later" to "I'll design for failure from day one."</p>
+    <div class="callout tip">The best error handling starts <em>before</em> the error happens. Proactive detection, health checks, and validation prevent most runtime surprises.</div>
+  </section>
+
+  <!-- 02 TYPES OVERVIEW -->
+  <section id="types">
+    <div class="section-header"><span class="badge">02</span><h2>The Five Classes of Backend Errors</h2></div>
+    <p>Backend errors can be grouped into five broad categories. Each has a different origin, detection strategy, and fix.</p>
+    <div class="error-cards">
+      <div class="error-card ec-logic">
+        <div class="ec-title">① Logic Errors</div>
+        <p style="font-size:14px;margin:0">App runs but produces wrong results. Hardest to detect. Can silently drain money for weeks.</p>
+      </div>
+      <div class="error-card ec-db">
+        <div class="ec-title">② Database Errors</div>
+        <p style="font-size:14px;margin:0">Connection failures, deadlocks, constraint violations, malformed SQL. Can bring the whole app down.</p>
+      </div>
+      <div class="error-card ec-ext">
+        <div class="ec-title">③ External Service Errors</div>
+        <p style="font-size:14px;margin:0">Third-party APIs (payment, email, auth) time out, rate-limit, or go offline. You have no control.</p>
+      </div>
+      <div class="error-card ec-input">
+        <div class="ec-title">④ Input Validation Errors</div>
+        <p style="font-size:14px;margin:0">Users send bad, missing, or out-of-range data. Easiest to handle — if your validation layer is robust.</p>
+      </div>
+      <div class="error-card ec-config">
+        <div class="ec-title">⑤ Configuration Errors</div>
+        <p style="font-size:14px;margin:0">Missing env vars, wrong credentials on deploy. Surface at startup — not at runtime, if you do it right.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 LOGIC ERRORS -->
+  <section id="logic">
+    <div class="section-header"><span class="badge">03</span><h2>Logic Errors — The Silent Killers</h2></div>
+    <p>Logic errors are the most <strong>dangerous</strong> class because your application keeps running — it just does the wrong thing. No crash, no stack trace, no 500 response. Just quietly wrong results accumulating over time.</p>
+
+    <h3>Classic Example</h3>
+    <p>An e-commerce platform applies a discount twice due to a bug in the promotion engine. The result: <strong>negative shipping costs</strong>. The app runs perfectly. Every order ships. The company loses money on every transaction. This goes unnoticed for weeks because no monitoring alert fires on "negative shipping cost."</p>
+
+    <h3>Common Root Causes</h3>
+    <ul>
+      <li><strong>Misunderstood requirements</strong> — notes from a sprint meeting were ambiguous; you implemented what you <em>thought</em> was asked, not what was intended.</li>
+      <li><strong>Incorrect algorithms</strong> — a complex discount or pricing formula has an off-by-one error or a wrong operator (<code>*</code> instead of <code>+</code>).</li>
+      <li><strong>Unhandled edge cases</strong> — a user who has never purchased before triggers a "past-purchase-based" discount path that wasn't designed for zero-purchase users.</li>
+    </ul>
+
+    <div class="callout warning">Logic errors involving money, permissions, or security can corrupt data and produce wrong business results for months without a single error log entry. They are only found through careful testing, monitoring business metrics, and code review.</div>
+
+    <h3>Prevention Strategies</h3>
+    <ul>
+      <li>Write <strong>unit tests for every business rule</strong>, especially discount, pricing, and permission logic.</li>
+      <li>Add <strong>business metric monitoring</strong> (e.g., alert if average order value drops by &gt;20% in one hour).</li>
+      <li>Use <strong>property-based testing</strong> (Go: <code>gopter</code>, Python: <code>hypothesis</code>) to auto-generate edge-case inputs.</li>
+      <li>Require <strong>peer review</strong> for all payment and auth-related code changes.</li>
+    </ul>
+  </section>
+
+  <!-- 04 DATABASE ERRORS -->
+  <section id="db">
+    <div class="section-header"><span class="badge">04</span><h2>Database Errors</h2></div>
+    <p>Most backend applications are meaningless without their database. A database error of any kind means your app cannot serve real data — which usually means a broken UI or cascading failures across services.</p>
+
+    <h3>① Connection Errors</h3>
+    <p>Your backend cannot reach the database server. Possible causes:</p>
+    <ul>
+      <li>Network partition or DNS failure between app server and DB server.</li>
+      <li>Database server is overloaded or down.</li>
+      <li><strong>Connection pool exhausted</strong> — all pooled TCP connections are in use; new requests queue up or fail immediately.</li>
+    </ul>
+    <div class="callout tip"><strong>Connection pooling</strong> keeps a fixed number of open TCP connections to the database, avoiding the overhead of a full TCP handshake + TLS negotiation on every query. Tools: <code>pgxpool</code> (Go), <code>psycopg2</code> pool or <code>SQLAlchemy</code> (Python), <code>pg</code> Pool (Node). Size your pool carefully: too small → bottleneck; too large → DB overload.</div>
+
+    <h3>② Constraint Violation Errors</h3>
+    <p>You are trying to perform an operation that violates a database-level rule:</p>
+    <table>
+      <thead><tr><th>Constraint Type</th><th>Trigger</th><th>Appropriate Response</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Unique</strong></td><td>Insert a duplicate email / username</td><td>HTTP 409 Conflict or 400 — "Email already in use"</td></tr>
+        <tr><td><strong>Foreign Key</strong></td><td>Reference a row that doesn't exist</td><td>HTTP 404 — "Author ID not found" / 400</td></tr>
+        <tr><td><strong>Not Null</strong></td><td>Missing required column value</td><td>HTTP 400 — "Field X is required"</td></tr>
+        <tr><td><strong>Check</strong></td><td>Value fails a custom rule (e.g. price &gt; 0)</td><td>HTTP 400 — domain-specific message</td></tr>
+      </tbody>
+    </table>
+
+    <h3>③ Query / Syntax Errors</h3>
+    <p>Malformed SQL — a table name typo, referencing a column that was renamed, or a missing join condition. These are usually caught in development but can slip through if raw SQL strings are built dynamically.</p>
+    <div class="callout warning">Never construct SQL by string concatenation with user input. Use parameterised queries / prepared statements always. This prevents both query errors <em>and</em> SQL injection attacks.</div>
+
+    <h3>④ Deadlocks</h3>
+    <p>A deadlock occurs when two (or more) transactions each hold a lock that the other needs:</p>
+    <div class="diagram-box">
+      <svg viewBox="0 0 580 180" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <rect width="580" height="180" fill="#fff"/>
+        <defs>
+          <marker id="da" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#c0392b"/></marker>
+          <marker id="db" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2980b9"/></marker>
+        </defs>
+        <!-- Tx A -->
+        <rect x="30" y="60" width="120" height="50" rx="8" fill="#fdecea" stroke="#c0392b"/>
+        <text x="90" y="82" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700">Transaction A</text>
+        <text x="90" y="100" text-anchor="middle" fill="#4a3f35" font-family="JetBrains Mono,monospace" font-size="11">holds LOCK on Row 1</text>
+        <!-- Tx B -->
+        <rect x="430" y="60" width="120" height="50" rx="8" fill="#eaf4fb" stroke="#2980b9"/>
+        <text x="490" y="82" text-anchor="middle" fill="#2980b9" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700">Transaction B</text>
+        <text x="490" y="100" text-anchor="middle" fill="#4a3f35" font-family="JetBrains Mono,monospace" font-size="11">holds LOCK on Row 2</text>
+        <!-- Wants arrows -->
+        <path d="M 152,75 C 260,40 320,40 428,75" fill="none" stroke="#c0392b" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#da)"/>
+        <text x="290" y="36" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="11">A wants Row 2 →</text>
+        <path d="M 428,100 C 320,140 260,140 152,100" fill="none" stroke="#2980b9" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#db)"/>
+        <text x="290" y="158" text-anchor="middle" fill="#2980b9" font-family="Source Sans 3,sans-serif" font-size="11">← B wants Row 1</text>
+        <!-- Deadlock label -->
+        <rect x="230" y="68" width="120" height="36" rx="8" fill="#1a1612"/>
+        <text x="290" y="82" text-anchor="middle" fill="#f5f0e8" font-family="Playfair Display,serif" font-size="13" font-weight="700">DEADLOCK</text>
+        <text x="290" y="97" text-anchor="middle" fill="#ffeaea" font-family="Source Sans 3,sans-serif" font-size="10">circular wait — DB kills one Tx</text>
+      </svg>
+      <div class="diagram-caption">Fig 1 — Deadlock: two transactions waiting on each other's locks indefinitely. The DB detects and aborts one.</div>
+    </div>
+    <p>Postgres detects deadlocks automatically and kills one transaction with error code <code>40P01</code>. Your application must <strong>retry that transaction</strong>. Prevention: always acquire locks in a <em>consistent order</em> across all code paths.</p>
+  </section>
+
+  <!-- 05 EXTERNAL SERVICE ERRORS -->
+  <section id="external">
+    <div class="section-header"><span class="badge">05</span><h2>External Service Errors</h2></div>
+    <p>Modern SaaS backends depend on a constellation of third-party services — payment processors (Stripe), email (Resend, SendGrid), object storage (S3), auth (Clerk, Auth0), AI (OpenAI). Every one of these is a <strong>point of failure outside your control</strong>.</p>
+
+    <div class="diagram-box">
+      <svg viewBox="0 0 660 200" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <rect width="660" height="200" fill="#fff"/>
+        <defs>
+          <marker id="ea" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="#4a3f35"/></marker>
+        </defs>
+        <!-- Backend -->
+        <rect x="260" y="70" width="140" height="60" rx="10" fill="#1a1612"/>
+        <text x="330" y="97" text-anchor="middle" fill="#f5f0e8" font-family="Playfair Display,serif" font-size="14" font-weight="700">Your Backend</text>
+        <text x="330" y="116" text-anchor="middle" fill="#d4c9b8" font-family="Source Sans 3,sans-serif" font-size="11">HTTP / TCP / WS</text>
+        <!-- External services -->
+        <rect x="20" y="30" width="110" height="36" rx="6" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="75" y="53" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="12">💳 Stripe</text>
+        <line x1="130" y1="48" x2="258" y2="88" stroke="#4a3f35" stroke-width="1.2" marker-end="url(#ea)"/>
+        <rect x="20" y="82" width="110" height="36" rx="6" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="75" y="105" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="12">📧 Resend</text>
+        <line x1="130" y1="100" x2="258" y2="100" stroke="#4a3f35" stroke-width="1.2" marker-end="url(#ea)"/>
+        <rect x="20" y="134" width="110" height="36" rx="6" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="75" y="157" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="12">🔐 Clerk/Auth0</text>
+        <line x1="130" y1="152" x2="258" y2="115" stroke="#4a3f35" stroke-width="1.2" marker-end="url(#ea)"/>
+        <!-- Right side -->
+        <rect x="530" y="30" width="110" height="36" rx="6" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="585" y="53" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="12">🗄️ S3 Storage</text>
+        <line x1="402" y1="88" x2="528" y2="48" stroke="#4a3f35" stroke-width="1.2" marker-end="url(#ea)"/>
+        <rect x="530" y="82" width="110" height="36" rx="6" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="585" y="105" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="12">🤖 OpenAI</text>
+        <line x1="402" y1="100" x2="528" y2="100" stroke="#4a3f35" stroke-width="1.2" marker-end="url(#ea)"/>
+        <rect x="530" y="134" width="110" height="36" rx="6" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="585" y="157" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="12">📊 Analytics</text>
+        <line x1="402" y1="115" x2="528" y2="152" stroke="#4a3f35" stroke-width="1.2" marker-end="url(#ea)"/>
+        <!-- Failure label -->
+        <text x="330" y="175" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Any of these going down = your problem</text>
+      </svg>
+      <div class="diagram-caption">Fig 2 — Each external dependency is an independent failure point your app must handle gracefully.</div>
+    </div>
+
+    <h3>① Network Failures</h3>
+    <p>The internet between your server and the external API is unreliable. You will encounter: connection timeouts, DNS resolution failures, network partitions, and TLS handshake errors. Set <strong>explicit timeouts</strong> on every outgoing HTTP call — never let a slow third-party API block your goroutine / thread indefinitely.</p>
+
+    <h3>② Rate Limiting — HTTP 429</h3>
+    <p>Every serious external API enforces rate limits to prevent abuse. If your app hammers an API (due to a bug, a traffic spike, or a loop error), you will receive <code>HTTP 429 Too Many Requests</code>.</p>
+    <p>The standard mitigation is <strong>Exponential Backoff with Jitter</strong>:</p>
+
+    <div class="diagram-box">
+      <svg viewBox="0 0 620 130" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <rect width="620" height="130" fill="#fff"/>
+        <defs><marker id="fa" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="#c0392b"/></marker></defs>
+        <!-- Attempt 1 -->
+        <rect x="20" y="40" width="70" height="40" rx="6" fill="#fdecea" stroke="#c0392b"/>
+        <text x="55" y="58" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Try #1</text>
+        <text x="55" y="72" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">→ 429</text>
+        <line x1="92" y1="60" x2="118" y2="60" stroke="#c0392b" stroke-width="1.5" marker-end="url(#fa)"/>
+        <text x="104" y="52" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">1 s</text>
+
+        <rect x="120" y="40" width="70" height="40" rx="6" fill="#fdecea" stroke="#c0392b"/>
+        <text x="155" y="58" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Try #2</text>
+        <text x="155" y="72" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">→ 429</text>
+        <line x1="192" y1="60" x2="218" y2="60" stroke="#c0392b" stroke-width="1.5" marker-end="url(#fa)"/>
+        <text x="204" y="52" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">2 s</text>
+
+        <rect x="220" y="40" width="70" height="40" rx="6" fill="#fdecea" stroke="#c0392b"/>
+        <text x="255" y="58" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Try #3</text>
+        <text x="255" y="72" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">→ 429</text>
+        <line x1="292" y1="60" x2="318" y2="60" stroke="#c0392b" stroke-width="1.5" marker-end="url(#fa)"/>
+        <text x="304" y="52" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">4 s</text>
+
+        <rect x="320" y="40" width="70" height="40" rx="6" fill="#fdecea" stroke="#c0392b"/>
+        <text x="355" y="58" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Try #4</text>
+        <text x="355" y="72" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">→ 429</text>
+        <line x1="392" y1="60" x2="418" y2="60" stroke="#c0392b" stroke-width="1.5" marker-end="url(#fa)"/>
+        <text x="404" y="52" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">8 s</text>
+
+        <rect x="420" y="40" width="80" height="40" rx="6" fill="#eafaf1" stroke="#27ae60"/>
+        <text x="460" y="58" text-anchor="middle" fill="#27ae60" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Try #5</text>
+        <text x="460" y="72" text-anchor="middle" fill="#27ae60" font-family="Source Sans 3,sans-serif" font-size="10">→ 200 ✓</text>
+
+        <text x="310" y="110" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="11">Wait = base × 2ⁿ + random_jitter — doubles each retry, jitter prevents thundering herd</text>
+      </svg>
+      <div class="diagram-caption">Fig 3 — Exponential Backoff: each retry waits 2× longer. Jitter spreads retries to avoid thundering herd.</div>
+    </div>
+
+    <h3>③ Service Outage / Downtime</h3>
+    <p>Major cloud providers (AWS, GCP) and popular SaaS services go down occasionally. Your app needs a strategy for when a critical dependency is completely unavailable:</p>
+    <ul>
+      <li><strong>Fallback</strong> — if Redis cache is down, fall back to direct DB reads for non-critical data.</li>
+      <li><strong>Graceful degradation</strong> — disable the affected feature (e.g., "AI suggestions temporarily unavailable") rather than crashing the whole app.</li>
+      <li><strong>Circuit breaker pattern</strong> — after N consecutive failures, stop sending requests to the broken service and return a cached/default response immediately. Re-try the service after a cool-down period.</li>
+    </ul>
+  </section>
+
+  <!-- 06 INPUT VALIDATION -->
+  <section id="input">
+    <div class="section-header"><span class="badge">06</span><h2>Input Validation Errors</h2></div>
+    <p>These are the <strong>easiest errors to handle</strong> because <em>you define the rules</em>. Your validation layer is the first line of defence: catch bad data at the entry point, before it reaches your database or business logic.</p>
+
+    <h3>Types of Validation</h3>
+    <table>
+      <thead><tr><th>Type</th><th>What It Checks</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Format</strong></td><td>Shape/pattern of the value</td><td>Email regex, ISO date, E.164 phone</td></tr>
+        <tr><td><strong>Range</strong></td><td>Numeric bounds, string length, array size</td><td>Price: 0–99999, name: 2–100 chars</td></tr>
+        <tr><td><strong>Required</strong></td><td>Mandatory field present</td><td>user_id must not be null</td></tr>
+        <tr><td><strong>Business Rule</strong></td><td>Domain-specific constraint</td><td>Booking end_date &gt; start_date</td></tr>
+        <tr><td><strong>Referential</strong></td><td>Related entity actually exists</td><td>category_id exists in categories table</td></tr>
+      </tbody>
+    </table>
+
+    <p>Always validate at <strong>both layers</strong>: frontend (UX) <em>and</em> backend (security). Never trust client-side validation alone. The backend is the authoritative gate.</p>
+
+    <div class="callout">Return HTTP <code>400 Bad Request</code> with a structured error body listing every field that failed and why. Don't return a single generic message — help the user fix all their mistakes in one round-trip.</div>
+  </section>
+
+  <!-- 07 CONFIG ERRORS -->
+  <section id="config">
+    <div class="section-header"><span class="badge">07</span><h2>Configuration Errors</h2></div>
+    <p>Configuration errors happen at the boundary between environments — dev → staging → production. A missing <code>OPENAI_API_KEY</code>, a wrong database URL, or a forgotten secret can silently break specific features while the rest of the app appears healthy.</p>
+
+    <h3>Fail Fast at Startup — Not at Runtime</h3>
+    <p>The golden rule: <strong>validate all required environment variables before the server starts accepting traffic</strong>. If any are missing or corrupt, crash immediately with a clear error message.</p>
+
+    <div class="compare-grid">
+      <div class="compare-card">
+        <h4>❌ Bad — Runtime Failure</h4>
+        <ul>
+          <li>App starts successfully</li>
+          <li>First user hits the AI image endpoint</li>
+          <li>OpenAI call fails — key is missing</li>
+          <li>User gets a mysterious 500 error</li>
+          <li>Old deployment is already stopped</li>
+          <li>Site is down until manually fixed</li>
+        </ul>
+      </div>
+      <div class="compare-card">
+        <h4>✅ Good — Startup Failure</h4>
+        <ul>
+          <li>New deployment starts</li>
+          <li>Config validation runs immediately</li>
+          <li>Missing key detected → process exits with clear message</li>
+          <li>Blue-green: old deployment still running</li>
+          <li>Zero downtime — ops team fixes and redeploys</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout tip">Blue-green deployments make startup-time crashes safe: the new version must pass health checks before the old version is terminated. If the new version crashes at start, the old version keeps serving traffic.</div>
+
+    <h3>Go — Config Validation at Boot</h3>
+    <pre><span class="lang-label">Go</span><span class="kw">package</span> config
+
+<span class="kw">import</span> (
+    <span class="str">"fmt"</span>
+    <span class="str">"os"</span>
+    <span class="str">"strings"</span>
+)
+
+<span class="kw">type</span> <span class="type">Config</span> <span class="kw">struct</span> {
+    DatabaseURL    <span class="type">string</span>
+    OpenAIKey      <span class="type">string</span>
+    JWTSecret      <span class="type">string</span>
+    ResendAPIKey   <span class="type">string</span>
+}
+
+<span class="cmt">// MustLoad panics if any required variable is missing.</span>
+<span class="cmt">// Call this once in main() before http.ListenAndServe.</span>
+<span class="kw">func</span> <span class="fn">MustLoad</span>() <span class="type">Config</span> {
+    required := []<span class="type">string</span>{
+        <span class="str">"DATABASE_URL"</span>,
+        <span class="str">"OPENAI_API_KEY"</span>,
+        <span class="str">"JWT_SECRET"</span>,
+        <span class="str">"RESEND_API_KEY"</span>,
+    }
+
+    <span class="kw">var</span> missing []<span class="type">string</span>
+    <span class="kw">for</span> _, key := <span class="kw">range</span> required {
+        <span class="kw">if</span> os.Getenv(key) == <span class="str">""</span> {
+            missing = append(missing, key)
+        }
+    }
+    <span class="kw">if</span> len(missing) > <span class="num">0</span> {
+        <span class="cmt">// Crash immediately — loud and clear</span>
+        panic(fmt.Sprintf(<span class="str">"[FATAL] missing required env vars: %s"</span>,
+            strings.Join(missing, <span class="str">", "</span>)))
+    }
+
+    <span class="kw">return</span> <span class="type">Config</span>{
+        DatabaseURL:  os.Getenv(<span class="str">"DATABASE_URL"</span>),
+        OpenAIKey:    os.Getenv(<span class="str">"OPENAI_API_KEY"</span>),
+        JWTSecret:    os.Getenv(<span class="str">"JWT_SECRET"</span>),
+        ResendAPIKey: os.Getenv(<span class="str">"RESEND_API_KEY"</span>),
+    }
+}
+
+<span class="cmt">// main.go</span>
+<span class="kw">func</span> <span class="fn">main</span>() {
+    cfg := config.<span class="fn">MustLoad</span>()  <span class="cmt">// panics here if config invalid</span>
+    server := <span class="fn">newServer</span>(cfg)
+    log.<span class="fn">Fatal</span>(server.<span class="fn">ListenAndServe</span>())
+}</pre>
+  </section>
+
+  <!-- 08 PROACTIVE DETECTION -->
+  <section id="proactive">
+    <div class="section-header"><span class="badge">08</span><h2>Proactive Error Detection — Health Checks</h2></div>
+
+    <blockquote>"The best error handling starts before the error happens."</blockquote>
+
+    <p>Health checks continuously verify that your system is working — not just that it is <em>running</em>. There is a critical difference:</p>
+
+    <div class="diagram-box">
+      <svg viewBox="0 0 640 160" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <rect width="640" height="160" fill="#fff"/>
+        <!-- Basic ping -->
+        <rect x="30" y="30" width="260" height="100" rx="10" fill="#fdecea" stroke="#c0392b"/>
+        <text x="160" y="56" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700">Basic Liveness Check ❌</text>
+        <text x="160" y="78" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="12">GET /health → 200 OK</text>
+        <text x="160" y="96" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="12">Checks: is the process running?</text>
+        <text x="160" y="114" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="11">Does NOT verify DB / cache / external</text>
+        <!-- Deep -->
+        <rect x="350" y="30" width="260" height="100" rx="10" fill="#eafaf1" stroke="#27ae60"/>
+        <text x="480" y="56" text-anchor="middle" fill="#27ae60" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700">Deep Readiness Check ✅</text>
+        <text x="480" y="78" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="12">GET /ready → 200 OK</text>
+        <text x="480" y="96" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="12">Runs test query, pings cache,</text>
+        <text x="480" y="114" text-anchor="middle" fill="#27ae60" font-family="Source Sans 3,sans-serif" font-size="11">verifies all subsystems are functional</text>
+      </svg>
+      <div class="diagram-caption">Fig 4 — Liveness vs Readiness: the industry-standard split (Kubernetes uses both).</div>
+    </div>
+
+    <h3>What to Check</h3>
+    <ul>
+      <li><strong>Database</strong> — run a lightweight representative query. Track query time; if it jumps from 50ms to 4s, something is wrong before users notice.</li>
+      <li><strong>External services</strong> — payment processors: run periodic test transactions; email: send to an internal address; auth: generate and validate a test token.</li>
+      <li><strong>Configuration</strong> — verify all required env vars are loaded and non-empty at startup.</li>
+      <li><strong>Cache warmup</strong> — ensure critical caches (session store, product catalogue) are populated before serving traffic.</li>
+    </ul>
+
+    <h3>Go — Deep Health Check Endpoint</h3>
+    <pre><span class="lang-label">Go</span><span class="kw">type</span> <span class="type">HealthStatus</span> <span class="kw">struct</span> {
+    Status   <span class="type">string</span>            <span class="str">`json:"status"`</span>
+    Checks   <span class="kw">map</span>[<span class="type">string</span>]<span class="type">string</span> <span class="str">`json:"checks"`</span>
+}
+
+<span class="kw">func</span> <span class="fn">healthHandler</span>(db *pgxpool.Pool, rdb *redis.Client) http.HandlerFunc {
+    <span class="kw">return func</span>(w http.ResponseWriter, r *http.Request) {
+        checks := <span class="kw">map</span>[<span class="type">string</span>]<span class="type">string</span>{}
+        overall := <span class="str">"ok"</span>
+
+        <span class="cmt">// DB check</span>
+        ctx, cancel := context.WithTimeout(r.Context(), <span class="num">2</span>*time.Second)
+        <span class="kw">defer</span> cancel()
+        <span class="kw">if</span> err := db.Ping(ctx); err != nil {
+            checks[<span class="str">"database"</span>] = <span class="str">"unhealthy: "</span> + err.Error()
+            overall = <span class="str">"degraded"</span>
+        } <span class="kw">else</span> {
+            checks[<span class="str">"database"</span>] = <span class="str">"ok"</span>
+        }
+
+        <span class="cmt">// Redis check</span>
+        <span class="kw">if</span> err := rdb.Ping(r.Context()).Err(); err != nil {
+            checks[<span class="str">"cache"</span>] = <span class="str">"unhealthy: "</span> + err.Error()
+            overall = <span class="str">"degraded"</span>
+        } <span class="kw">else</span> {
+            checks[<span class="str">"cache"</span>] = <span class="str">"ok"</span>
+        }
+
+        status := http.StatusOK
+        <span class="kw">if</span> overall != <span class="str">"ok"</span> { status = http.StatusServiceUnavailable }
+
+        w.Header().Set(<span class="str">"Content-Type"</span>, <span class="str">"application/json"</span>)
+        w.WriteHeader(status)
+        json.NewEncoder(w).Encode(<span class="type">HealthStatus</span>{Status: overall, Checks: checks})
+    }
+}</pre>
+  </section>
+
+  <!-- 09 MONITORING -->
+  <section id="monitoring">
+    <div class="section-header"><span class="badge">09</span><h2>Monitoring &amp; Observability</h2></div>
+    <p>Health checks tell you something is broken <em>right now</em>. Monitoring tells you something is <em>about to break</em> — and gives you the context to understand why something broke after the fact.</p>
+
+    <h3>What to Track</h3>
+    <table>
+      <thead><tr><th>Category</th><th>Metrics to Monitor</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><strong>HTTP Layer</strong></td><td>4xx / 5xx rate, p50/p95/p99 latency</td><td>Surface user-facing issues immediately</td></tr>
+        <tr><td><strong>Database</strong></td><td>Query duration, connection pool usage, deadlock count</td><td>Detect slow queries before timeout</td></tr>
+        <tr><td><strong>External Services</strong></td><td>Call success rate, latency, 429 count</td><td>Know when a dependency is degrading</td></tr>
+        <tr><td><strong>Business Metrics</strong></td><td>Successful transactions/min, failed payments, sign-up rate</td><td>Catch logic errors invisible to error rates</td></tr>
+        <tr><td><strong>Infrastructure</strong></td><td>CPU, memory, disk I/O, network throughput</td><td>Resource exhaustion precedes crashes</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout warning"><strong>Don't only track error rates.</strong> A drop in successful transactions from 1000/min to 200/min is a critical problem — even if the error rate shows 0%. Always monitor positive business outcomes, not just failure signals.</div>
+
+    <h3>Structured Logging (JSON)</h3>
+    <p>Plain-text logs are hard to query at scale. Use structured JSON logs so log aggregation tools (Grafana Loki, Datadog, ELK) can parse, filter, and alert on them programmatically.</p>
+
+    <pre><span class="lang-label">Python — structlog</span><span class="kw">import</span> structlog
+
+log = structlog.get_logger()
+
+<span class="cmt"># Good — structured, queryable, no sensitive data</span>
+log.error(
+    <span class="str">"payment_failed"</span>,
+    user_id=<span class="str">"u_9a3f"</span>,          <span class="cmt"># ID, not email</span>
+    correlation_id=<span class="str">"req_abc123"</span>,
+    provider=<span class="str">"stripe"</span>,
+    error_code=<span class="str">"card_declined"</span>,
+    amount_cents=<span class="num">4999</span>,
+)
+
+<span class="cmt"># BAD — never log PII or secrets</span>
+<span class="cmt"># log.error("payment_failed", email="alice@example.com", card="4242...")</span></pre>
+  </section>
+
+  <!-- 10 RECOVERY STRATEGIES -->
+  <section id="recovery">
+    <div class="section-header"><span class="badge">10</span><h2>Recovery Strategies</h2></div>
+
+    <h3>Recoverable vs Non-Recoverable</h3>
+    <div class="compare-grid">
+      <div class="compare-card">
+        <h4>Recoverable Errors</h4>
+        <ul>
+          <li>Transient network glitch to email API</li>
+          <li>Database connection pool temporarily exhausted</li>
+          <li>Rate limit 429 from external service</li>
+        </ul>
+        <p style="margin-top:10px;font-size:14px"><strong>Strategy:</strong> Retry with exponential backoff. Queue the work. Don't give up immediately.</p>
+      </div>
+      <div class="compare-card">
+        <h4>Non-Recoverable Errors</h4>
+        <ul>
+          <li>Redis cluster completely down</li>
+          <li>Payment processor offline for hours</li>
+          <li>Corrupt data in the DB</li>
+        </ul>
+        <p style="margin-top:10px;font-size:14px"><strong>Strategy:</strong> Graceful degradation. Fallback. Disable the feature. Protect core functionality.</p>
+      </div>
+    </div>
+
+    <h3>Exponential Backoff in Go</h3>
+    <pre><span class="lang-label">Go</span><span class="kw">func</span> <span class="fn">sendEmailWithRetry</span>(to, subject, body <span class="type">string</span>) error {
+    maxRetries := <span class="num">5</span>
+    baseDelay  := <span class="num">1</span> * time.Second
+
+    <span class="kw">for</span> attempt := <span class="num">0</span>; attempt &lt; maxRetries; attempt++ {
+        err := emailClient.<span class="fn">Send</span>(to, subject, body)
+        <span class="kw">if</span> err == nil {
+            <span class="kw">return</span> nil  <span class="cmt">// success</span>
+        }
+
+        <span class="kw">if</span> !<span class="fn">isRetryable</span>(err) {
+            <span class="kw">return</span> fmt.Errorf(<span class="str">"permanent failure: %w"</span>, err)
+        }
+
+        <span class="cmt">// Exponential backoff: 1s, 2s, 4s, 8s, 16s</span>
+        wait := baseDelay * time.Duration(<span class="num">1</span>&lt;&lt;attempt)
+        <span class="cmt">// Add jitter (±20%) to prevent thundering herd</span>
+        jitter := time.Duration(rand.Int63n(int64(wait / <span class="num">5</span>)))
+        time.Sleep(wait + jitter)
+
+        log.Warn(<span class="str">"email send failed, retrying"</span>,
+            <span class="str">"attempt"</span>, attempt+<span class="num">1</span>,
+            <span class="str">"wait_ms"</span>, wait.Milliseconds(),
+            <span class="str">"error"</span>, err)
+    }
+    <span class="kw">return</span> fmt.Errorf(<span class="str">"all %d retries exhausted"</span>, maxRetries)
+}
+
+<span class="kw">func</span> <span class="fn">isRetryable</span>(err error) <span class="type">bool</span> {
+    <span class="cmt">// Retry on 429, 503, network errors; not on 400, 401, 422</span>
+    <span class="kw">var</span> httpErr *<span class="type">HTTPError</span>
+    <span class="kw">if</span> errors.As(err, &amp;httpErr) {
+        <span class="kw">return</span> httpErr.StatusCode == <span class="num">429</span> || httpErr.StatusCode &gt;= <span class="num">500</span>
+    }
+    <span class="kw">return</span> true  <span class="cmt">// network errors are always retryable</span>
+}</pre>
+
+    <h3>Automatic vs Manual Recovery</h3>
+    <ul>
+      <li><strong>Automatic</strong>: restart crashed processes (systemd, Kubernetes restart policy), clean up corrupted caches, switch to backup systems. Design carefully — automatic recovery can sometimes <em>amplify</em> a problem.</li>
+      <li><strong>Manual</strong>: data corruption, payment discrepancies, security incidents. These <em>require human judgment</em>. Document the runbook. Test it. Know who is on-call.</li>
+    </ul>
+    <div class="callout warning">Data integrity is your #1 priority during any incident. Never auto-delete or auto-migrate data as part of an error recovery procedure. Take a backup first, always.</div>
+  </section>
+
+  <!-- 11 GLOBAL ERROR HANDLER -->
+  <section id="global">
+    <div class="section-header"><span class="badge">11</span><h2>Global Error Handler — The Final Safety Net</h2></div>
+    <p>The global error handler is a single middleware that sits at the outermost layer of your application, catches every error that bubbles up from any layer, and converts it into a properly formatted HTTP response.</p>
+
+    <div class="diagram-box">
+      <svg viewBox="0 0 680 340" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <rect width="680" height="340" fill="#fff"/>
+        <defs>
+          <marker id="ga" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="#4a3f35"/></marker>
+          <marker id="gb" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="#c0392b"/></marker>
+        </defs>
+
+        <!-- Layers (left column) -->
+        <text x="20" y="26" font-family="Playfair Display,serif" font-size="14" font-weight="700" fill="#1a1612">Request Flow</text>
+
+        <rect x="20" y="36" width="160" height="40" rx="7" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="100" y="62" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="600">Router</text>
+
+        <line x1="100" y1="78" x2="100" y2="98" stroke="#4a3f35" stroke-width="1.5" marker-end="url(#ga)"/>
+
+        <rect x="20" y="100" width="160" height="40" rx="7" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="100" y="126" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="600">Handler</text>
+        <text x="100" y="140" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="10">→ ValidationError (400)</text>
+
+        <line x1="100" y1="144" x2="100" y2="164" stroke="#4a3f35" stroke-width="1.5" marker-end="url(#ga)"/>
+
+        <rect x="20" y="166" width="160" height="40" rx="7" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="100" y="192" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="600">Service</text>
+        <text x="100" y="206" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="10">→ BusinessError</text>
+
+        <line x1="100" y1="210" x2="100" y2="230" stroke="#4a3f35" stroke-width="1.5" marker-end="url(#ga)"/>
+
+        <rect x="20" y="232" width="160" height="40" rx="7" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="100" y="258" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="600">Repository</text>
+        <text x="100" y="272" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="10">→ DBError (unique, norows, fk)</text>
+
+        <!-- Bubble up arrow -->
+        <path d="M 182,252 Q 240,252 240,180 Q 240,80 280,60" fill="none" stroke="#c0392b" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#gb)"/>
+        <text x="248" y="170" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="11" transform="rotate(-90,248,170)">errors bubble up</text>
+
+        <!-- Global handler -->
+        <rect x="286" y="30" width="200" height="280" rx="10" fill="#1a1612"/>
+        <text x="386" y="58" text-anchor="middle" fill="#f5f0e8" font-family="Playfair Display,serif" font-size="14" font-weight="700">Global Error</text>
+        <text x="386" y="75" text-anchor="middle" fill="#f5f0e8" font-family="Playfair Display,serif" font-size="14" font-weight="700">Handler Middleware</text>
+
+        <rect x="300" y="90" width="172" height="40" rx="6" fill="#c0392b" opacity=".9"/>
+        <text x="386" y="107" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">ValidationError</text>
+        <text x="386" y="122" text-anchor="middle" fill="#ffeaea" font-family="JetBrains Mono,monospace" font-size="10">→ HTTP 400 + field errors</text>
+
+        <rect x="300" y="140" width="172" height="40" rx="6" fill="#2980b9" opacity=".9"/>
+        <text x="386" y="157" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">DB UniqueViolation</text>
+        <text x="386" y="172" text-anchor="middle" fill="#d6eaf8" font-family="JetBrains Mono,monospace" font-size="10">→ HTTP 409 Conflict</text>
+
+        <rect x="300" y="190" width="172" height="40" rx="6" fill="#27ae60" opacity=".9"/>
+        <text x="386" y="207" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">DB NoRows</text>
+        <text x="386" y="222" text-anchor="middle" fill="#d5f5e3" font-family="JetBrains Mono,monospace" font-size="10">→ HTTP 404 Not Found</text>
+
+        <rect x="300" y="240" width="172" height="40" rx="6" fill="#8e44ad" opacity=".9"/>
+        <text x="386" y="257" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Unknown Error</text>
+        <text x="386" y="272" text-anchor="middle" fill="#f5eeff" font-family="JetBrains Mono,monospace" font-size="10">→ HTTP 500 + generic msg</text>
+
+        <!-- Arrow to response -->
+        <line x1="488" y1="170" x2="520" y2="170" stroke="#4a3f35" stroke-width="1.5" marker-end="url(#ga)"/>
+
+        <!-- Response box -->
+        <rect x="522" y="60" width="140" height="220" rx="10" fill="#f5f0e8" stroke="#d4c9b8"/>
+        <text x="592" y="88" text-anchor="middle" fill="#1a1612" font-family="Playfair Display,serif" font-size="13" font-weight="700">HTTP Response</text>
+        <text x="592" y="118" text-anchor="middle" fill="#c0392b" font-family="JetBrains Mono,monospace" font-size="10">400 Bad Request</text>
+        <text x="592" y="146" text-anchor="middle" fill="#2980b9" font-family="JetBrains Mono,monospace" font-size="10">409 Conflict</text>
+        <text x="592" y="174" text-anchor="middle" fill="#27ae60" font-family="JetBrains Mono,monospace" font-size="10">404 Not Found</text>
+        <text x="592" y="202" text-anchor="middle" fill="#8e44ad" font-family="JetBrains Mono,monospace" font-size="10">500 Internal Error</text>
+        <text x="592" y="240" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">Safe, user-friendly</text>
+        <text x="592" y="256" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">messages only.</text>
+        <text x="592" y="272" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">No internal details.</text>
+      </svg>
+      <div class="diagram-caption">Fig 5 — All errors bubble up to one middleware. One place to define every response format.</div>
+    </div>
+
+    <h3>Two Major Advantages</h3>
+    <ul>
+      <li><strong>No forgotten error conditions</strong> — every unhandled error falls through to the global handler's default case (<code>500 + "something went wrong"</code>). Nothing silently swallowed.</li>
+      <li><strong>Zero redundancy</strong> — database error handling logic lives in <em>one file</em>, not scattered across 40 repository methods. Change the unique-violation message once, it applies everywhere.</li>
+    </ul>
+  </section>
+
+  <!-- 12 CODE GO -->
+  <section id="code-go">
+    <div class="section-header"><span class="badge">12</span><h2>Go — Global Error Handler Implementation</h2></div>
+    <p>Go doesn't have exceptions — errors are return values. The pattern is to return errors up the call stack and handle them in middleware.</p>
+
+    <pre><span class="lang-label">Go — errors/types.go</span><span class="kw">package</span> apperr
+
+<span class="kw">import</span> <span class="str">"net/http"</span>
+
+<span class="cmt">// AppError is the canonical error type for this application.</span>
+<span class="kw">type</span> <span class="type">AppError</span> <span class="kw">struct</span> {
+    Code    <span class="type">int</span>      <span class="cmt">// HTTP status code</span>
+    Message <span class="type">string</span>   <span class="cmt">// Safe, user-facing message</span>
+    Details <span class="kw">any</span>      <span class="cmt">// Optional: field-level errors for 400s</span>
+    Err     <span class="type">error</span>    <span class="cmt">// Original error — for logging only, NEVER sent to client</span>
+}
+
+<span class="kw">func</span> (e *<span class="type">AppError</span>) <span class="fn">Error</span>() <span class="type">string</span> { <span class="kw">return</span> e.Message }
+
+<span class="cmt">// Constructors</span>
+<span class="kw">func</span> <span class="fn">NotFound</span>(resource <span class="type">string</span>) *<span class="type">AppError</span> {
+    <span class="kw">return</span> &amp;<span class="type">AppError</span>{Code: http.StatusNotFound, Message: resource + <span class="str">" not found"</span>}
+}
+<span class="kw">func</span> <span class="fn">Conflict</span>(msg <span class="type">string</span>) *<span class="type">AppError</span> {
+    <span class="kw">return</span> &amp;<span class="type">AppError</span>{Code: http.StatusConflict, Message: msg}
+}
+<span class="kw">func</span> <span class="fn">BadRequest</span>(msg <span class="type">string</span>, details <span class="kw">any</span>) *<span class="type">AppError</span> {
+    <span class="kw">return</span> &amp;<span class="type">AppError</span>{Code: http.StatusBadRequest, Message: msg, Details: details}
+}
+<span class="kw">func</span> <span class="fn">Internal</span>(err <span class="type">error</span>) *<span class="type">AppError</span> {
+    <span class="kw">return</span> &amp;<span class="type">AppError</span>{
+        Code:    http.StatusInternalServerError,
+        Message: <span class="str">"something went wrong"</span>,  <span class="cmt">// NEVER expose err.Error() here</span>
+        Err:     err,
+    }
+}</pre>
+
+    <pre><span class="lang-label">Go — middleware/error_handler.go</span><span class="kw">package</span> middleware
+
+<span class="kw">import</span> (
+    <span class="str">"encoding/json"</span>
+    <span class="str">"errors"</span>
+    <span class="str">"log/slog"</span>
+    <span class="str">"net/http"</span>
+
+    <span class="str">"github.com/jackc/pgx/v5/pgconn"</span>
+    apperr <span class="str">"yourapp/errors"</span>
+)
+
+<span class="kw">type</span> <span class="type">ErrorResponse</span> <span class="kw">struct</span> {
+    Code    <span class="type">int</span>    <span class="str">`json:"code"`</span>
+    Message <span class="type">string</span> <span class="str">`json:"message"`</span>
+    Details <span class="kw">any</span>    <span class="str">`json:"details,omitempty"`</span>
+}
+
+<span class="cmt">// GlobalErrorHandler wraps a handler that returns an error.</span>
+<span class="kw">func</span> <span class="fn">GlobalErrorHandler</span>(next <span class="kw">func</span>(http.ResponseWriter, *http.Request) <span class="type">error</span>) http.HandlerFunc {
+    <span class="kw">return func</span>(w http.ResponseWriter, r *http.Request) {
+        err := next(w, r)
+        <span class="kw">if</span> err == nil { <span class="kw">return</span> }
+
+        <span class="kw">var</span> appErr *apperr.AppError
+
+        <span class="kw">switch</span> {
+        <span class="cmt">// Already wrapped as AppError</span>
+        <span class="kw">case</span> errors.As(err, &amp;appErr):
+            <span class="kw">if</span> appErr.Err != nil {
+                slog.Error(<span class="str">"app error"</span>, <span class="str">"err"</span>, appErr.Err)
+            }
+
+        <span class="cmt">// Postgres unique constraint violation → 409</span>
+        <span class="kw">case</span> <span class="fn">isPgError</span>(err, <span class="str">"23505"</span>):
+            appErr = apperr.Conflict(<span class="str">"resource already exists"</span>)
+
+        <span class="cmt">// Postgres foreign key violation → 404</span>
+        <span class="kw">case</span> <span class="fn">isPgError</span>(err, <span class="str">"23503"</span>):
+            appErr = apperr.NotFound(<span class="str">"referenced resource"</span>)
+
+        <span class="cmt">// pgx no-rows → 404</span>
+        <span class="kw">case</span> errors.Is(err, pgx.ErrNoRows):
+            appErr = apperr.NotFound(<span class="str">"resource"</span>)
+
+        <span class="cmt">// Everything else → 500 (never leak internal error)</span>
+        <span class="kw">default</span>:
+            slog.Error(<span class="str">"unhandled error"</span>, <span class="str">"err"</span>, err)
+            appErr = apperr.Internal(err)
+        }
+
+        w.Header().Set(<span class="str">"Content-Type"</span>, <span class="str">"application/json"</span>)
+        w.WriteHeader(appErr.Code)
+        json.NewEncoder(w).Encode(<span class="type">ErrorResponse</span>{
+            Code:    appErr.Code,
+            Message: appErr.Message,
+            Details: appErr.Details,
+        })
+    }
+}
+
+<span class="kw">func</span> <span class="fn">isPgError</span>(err <span class="type">error</span>, code <span class="type">string</span>) <span class="type">bool</span> {
+    <span class="kw">var</span> pgErr *pgconn.PgError
+    <span class="kw">return</span> errors.As(err, &amp;pgErr) &amp;&amp; pgErr.Code == code
+}</pre>
+  </section>
+
+  <!-- 13 CODE PYTHON -->
+  <section id="code-py">
+    <div class="section-header"><span class="badge">13</span><h2>Python — Global Error Handler (FastAPI)</h2></div>
+    <pre><span class="lang-label">Python — FastAPI</span><span class="kw">from</span> fastapi <span class="kw">import</span> FastAPI, Request
+<span class="kw">from</span> fastapi.responses <span class="kw">import</span> JSONResponse
+<span class="kw">from</span> psycopg2 <span class="kw">import</span> errors <span class="kw">as</span> pg_errors
+<span class="kw">import</span> logging
+
+app = FastAPI()
+logger = logging.getLogger(<span class="str">"app"</span>)
+
+<span class="cmt"># --- Custom exception types ---</span>
+<span class="kw">class</span> <span class="type">AppError</span>(Exception):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, status: int, message: str, details=<span class="kw">None</span>):
+        self.status  = status
+        self.message = message
+        self.details = details
+
+<span class="kw">class</span> <span class="type">NotFoundError</span>(<span class="type">AppError</span>):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, resource: str):
+        <span class="fn">super()</span>.<span class="fn">__init__</span>(<span class="num">404</span>, <span class="str">f"{resource} not found"</span>)
+
+<span class="kw">class</span> <span class="type">ConflictError</span>(<span class="type">AppError</span>):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, msg: str):
+        <span class="fn">super()</span>.<span class="fn">__init__</span>(<span class="num">409</span>, msg)
+
+<span class="cmt"># --- Global exception handlers ---</span>
+<span class="str">@app.exception_handler(AppError)</span>
+<span class="kw">async def</span> <span class="fn">app_error_handler</span>(request: Request, exc: AppError):
+    <span class="kw">return</span> JSONResponse(
+        status_code=exc.status,
+        content={<span class="str">"code"</span>: exc.status, <span class="str">"message"</span>: exc.message, <span class="str">"details"</span>: exc.details}
+    )
+
+<span class="str">@app.exception_handler(pg_errors.UniqueViolation)</span>
+<span class="kw">async def</span> <span class="fn">unique_violation_handler</span>(request: Request, exc):
+    logger.warning(<span class="str">"unique_violation"</span>, extra={<span class="str">"path"</span>: request.url.path})
+    <span class="kw">return</span> JSONResponse(status_code=<span class="num">409</span>,
+        content={<span class="str">"code"</span>: <span class="num">409</span>, <span class="str">"message"</span>: <span class="str">"resource already exists"</span>})
+
+<span class="str">@app.exception_handler(pg_errors.ForeignKeyViolation)</span>
+<span class="kw">async def</span> <span class="fn">fk_violation_handler</span>(request: Request, exc):
+    <span class="kw">return</span> JSONResponse(status_code=<span class="num">404</span>,
+        content={<span class="str">"code"</span>: <span class="num">404</span>, <span class="str">"message"</span>: <span class="str">"referenced resource not found"</span>})
+
+<span class="str">@app.exception_handler(Exception)</span>
+<span class="kw">async def</span> <span class="fn">unhandled_error_handler</span>(request: Request, exc: Exception):
+    <span class="cmt"># Log the real error internally, never expose it</span>
+    logger.error(<span class="str">"unhandled_exception"</span>, exc_info=exc,
+        extra={<span class="str">"path"</span>: request.url.path})
+    <span class="kw">return</span> JSONResponse(status_code=<span class="num">500</span>,
+        content={<span class="str">"code"</span>: <span class="num">500</span>, <span class="str">"message"</span>: <span class="str">"something went wrong"</span>})</pre>
+  </section>
+
+  <!-- 14 SECURITY -->
+  <section id="security">
+    <div class="section-header"><span class="badge">14</span><h2>Security — What to Expose, What to Hide</h2></div>
+
+    <div class="callout security">Every error message that leaves your backend is a potential information leak. Treat your error responses with the same care as your API responses.</div>
+
+    <h3>① Never Leak Internal Details</h3>
+    <p>Database error messages from Postgres contain table names, column names, index names, and constraint names. If you forward a raw <code>pgconn.PgError</code> message directly to the client, an attacker learns your schema and can craft more targeted SQL injection attempts.</p>
+
+    <table>
+      <thead><tr><th>What You Got</th><th>What to Send to Client</th></tr></thead>
+      <tbody>
+        <tr><td><code>duplicate key value violates unique constraint "users_email_key"</code></td><td><code>"Email already in use"</code></td></tr>
+        <tr><td><code>relation "usres" does not exist</code> (typo)</td><td><code>"Something went wrong"</code></td></tr>
+        <tr><td><code>deadlock detected on relation 42816</code></td><td><code>"Something went wrong, please retry"</code></td></tr>
+        <tr><td><code>stack trace: panic at server.go:142</code></td><td><code>"Internal server error"</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3>② Vague Auth Errors (On Purpose)</h3>
+    <p>Login endpoints are the most attacked surface in any application. If you return specific messages like <em>"no user with this email exists"</em> vs <em>"password is incorrect"</em>, an attacker can enumerate valid emails through a simple loop.</p>
+
+    <div class="diagram-box">
+      <svg viewBox="0 0 640 180" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <rect width="640" height="180" fill="#fff"/>
+        <!-- Attack steps -->
+        <text x="20" y="26" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700" fill="#c0392b">🔴 Attacker's Strategy (when you use specific errors)</text>
+        <!-- Step 1 -->
+        <rect x="20" y="40" width="170" height="50" rx="6" fill="#fdecea" stroke="#c0392b"/>
+        <text x="105" y="62" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Step 1: Email Enum</text>
+        <text x="105" y="78" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">Try many emails with fake pwd</text>
+        <text x="105" y="90" text-anchor="middle" fill="#c0392b" font-family="JetBrains Mono,monospace" font-size="9">→ "user not found" until hit</text>
+        <!-- Step 2 -->
+        <rect x="220" y="40" width="170" height="50" rx="6" fill="#fdecea" stroke="#c0392b"/>
+        <text x="305" y="62" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Step 2: Got Valid Email</text>
+        <text x="305" y="78" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="10">Now tries common passwords</text>
+        <text x="305" y="90" text-anchor="middle" fill="#c0392b" font-family="JetBrains Mono,monospace" font-size="9">→ "wrong password" on each miss</text>
+        <!-- Step 3 -->
+        <rect x="420" y="40" width="200" height="50" rx="6" fill="#c0392b"/>
+        <text x="520" y="62" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Step 3: Account Compromised</text>
+        <text x="520" y="78" text-anchor="middle" fill="#ffeaea" font-family="Source Sans 3,sans-serif" font-size="10">Your user's account is now owned</text>
+
+        <!-- Fix -->
+        <text x="20" y="128" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700" fill="#27ae60">✅ The Fix: Always use a generic message</text>
+        <rect x="20" y="140" width="600" height="30" rx="6" fill="#eafaf1" stroke="#27ae60"/>
+        <text x="320" y="160" text-anchor="middle" fill="#1a1612" font-family="JetBrains Mono,monospace" font-size="12">{ "message": "invalid email or password" }  ← same message always</text>
+      </svg>
+      <div class="diagram-caption">Fig 6 — Specific auth error messages enable email enumeration attacks. Use a single generic message for all auth failures.</div>
+    </div>
+
+    <h3>③ Safe Logging Practices</h3>
+    <p>Logs are often shipped to third-party aggregation services (Datadog, Grafana Cloud, ELK). In major data breaches, leaked log files exposed millions of records — because engineers had carelessly logged sensitive fields.</p>
+
+    <ul>
+      <li><strong>Never log</strong>: passwords, API keys, credit card numbers, SSNs, full email addresses, session tokens.</li>
+      <li><strong>Log instead</strong>: user ID (not email), correlation/request ID, operation name, error code.</li>
+      <li>Use a <strong>log scrubbing library</strong> (e.g. Go: <code>slog</code> with custom handler; Python: <code>structlog</code> processors) to automatically redact known sensitive fields.</li>
+    </ul>
+
+    <pre><span class="lang-label">Go — safe vs unsafe logging</span><span class="cmt">// ❌ UNSAFE — never do this</span>
+slog.Error(<span class="str">"login_failed"</span>,
+    <span class="str">"email"</span>, user.Email,          <span class="cmt">// PII leak</span>
+    <span class="str">"password"</span>, req.Password,     <span class="cmt">// catastrophic</span>
+    <span class="str">"api_key"</span>, cfg.OpenAIKey,      <span class="cmt">// secret leak</span>
+)
+
+<span class="cmt">// ✅ SAFE — IDs and correlation only</span>
+slog.Error(<span class="str">"login_failed"</span>,
+    <span class="str">"user_id"</span>, user.ID,
+    <span class="str">"correlation_id"</span>, r.Header.Get(<span class="str">"X-Request-ID"</span>),
+    <span class="str">"reason"</span>, <span class="str">"invalid_credentials"</span>,  <span class="cmt">// generic code, not DB message</span>
+)</pre>
+
+    <div class="callout security">Follow the <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html" target="_blank" style="color:#8e44ad">OWASP Authentication Cheat Sheet</a> for authentication endpoint security. It covers error message handling, brute-force protection, account lockout, and more.</div>
+  </section>
+
+  <!-- 15 REFS -->
+  <section id="refs">
+    <div class="section-header"><span class="badge">15</span><h2>References &amp; Further Reading</h2></div>
+    <div class="ref-links">
+      <a class="ref-link" href="https://cheatsheetseries.owasp.org/cheatsheets/Error_Handling_Cheat_Sheet.html" target="_blank">🔒 OWASP Error Handling Cheat Sheet</a>
+      <a class="ref-link" href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html" target="_blank">🔒 OWASP Authentication Cheat Sheet</a>
+      <a class="ref-link" href="https://pkg.go.dev/errors" target="_blank">🐹 Go errors package</a>
+      <a class="ref-link" href="https://pkg.go.dev/log/slog" target="_blank">🐹 Go slog (structured logging)</a>
+      <a class="ref-link" href="https://fastapi.tiangolo.com/tutorial/handling-errors/" target="_blank">🐍 FastAPI Error Handling</a>
+      <a class="ref-link" href="https://www.structlog.org/" target="_blank">🐍 structlog (Python)</a>
+      <a class="ref-link" href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Status" target="_blank">📖 MDN — HTTP Status Codes</a>
+      <a class="ref-link" href="https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/" target="_blank">⚙️ AWS: Backoff with Jitter</a>
+      <a class="ref-link" href="https://grafana.com/docs/loki/latest/" target="_blank">📊 Grafana Loki</a>
+    </div>
+  </section>
+
+  <hr>
+  <p style="text-align:center;font-family:'Source Sans 3',sans-serif;font-size:13px;color:var(--ink-light);">
+    Backend Field Manual · Error Handling &amp; Fault Tolerance · Chapter 16
+  </p>
+
+</main>
+<!-- ============ CHAPTER NAVIGATION ============ -->
+<nav class="chapter-nav" id="chapterNav">
+  <a href="../../11.Full text search using Elasticsearch for blazingly fast search/html_notes/notes.html" class="nav-chapter-link"><span class="nav-arrow">&larr;</span><span class="nav-label"><span class="nav-small">Chapter 11</span>Full-Text Search (Elasticsearch)</span></a>
+  <a href="../../index.html" class="nav-indicator"><span class="nav-dot"></span> Chapter 12 <span class="nav-sep">/</span> 24</a>
+  <a href="../../13.gRPC-and-Inter-Service-Communication-for-Microservices/html_notes/notes.html" class="nav-chapter-link nav-next"><span class="nav-label"><span class="nav-small">Chapter 13</span>gRPC & Inter-Service Communication</span><span class="nav-arrow">&rarr;</span></a>
+</nav>
+</body>
+</html>

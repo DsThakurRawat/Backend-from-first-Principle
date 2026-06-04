@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Graceful Shutdown — Backend Engineering Notes</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #F5F2EB;
+    --surface: #EDEAE0;
+    --surface2: #E4E0D4;
+    --ink: #1A1916;
+    --ink2: #3D3C38;
+    --ink3: #6B6A65;
+    --red: #C0392B;
+    --red-bg: #F9EAE8;
+    --red-border: #E8C4BF;
+    --sidebar: #E9E4D6;
+    --sidebar-text: #1A1916;
+    --sidebar-muted: #3D3C38;
+    --sidebar-accent: #C0392B;
+    --code-bg: #2A2925;
+    --code-text: #E8E5DC;
+    --code-comment: #7A7870;
+    --code-keyword: #E8834A;
+    --code-string: #A8C285;
+    --code-number: #7DB8D4;
+    --code-type: #C9A869;
+    --border: #D4D0C4;
+    --accent-gold: #B8960C;
+    --accent-gold-bg: #FBF6E2;
+    --teal: #0F7066;
+    --teal-bg: #E4F2EF;
+    --chapter-num: #C0392B;
+    --divider: #C8C4B8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 17px;
+    line-height: 1.75;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: 260px;
+    height: 100vh;
+    background: #E9E4D6;
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    z-index: 100;
+    padding: 0 0 2rem;
+    border-right: 1px solid #C8C2B2;
+  }
+  .sidebar-header {
+    padding: 2rem 1.5rem 1.5rem;
+    border-bottom: 1px solid var(--divider);
+  }
+  .sidebar-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--sidebar-muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .sidebar-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--sidebar-text);
+  }
+  .sidebar-subtitle {
+    font-size: 12px;
+    color: var(--sidebar-muted);
+    margin-top: 4px;
+    font-style: italic;
+  }
+  .sidebar-nav { padding: 1rem 0; }
+  .nav-section {
+    padding: 0.5rem 1.5rem 0.25rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    color: #6B6A65;
+    text-transform: uppercase;
+  }
+  .nav-item {
+    display: block;
+    padding: 6px 1.5rem 6px 2rem;
+    font-size: 13px;
+    color: #3D3C38 !important;
+    text-decoration: none !important;
+    border-bottom: none !important;
+    border-top: none !important;
+    transition: color 0.15s, background 0.15s;
+    line-height: 1.4;
+    border-left: 2px solid transparent;
+  }
+  .nav-item:hover {
+    color: #1A1916 !important;
+    background: rgba(192,57,43,0.07);
+    border-left-color: #C0392B;
+    border-bottom: none !important;
+  }
+  .nav-item.active {
+    color: #C0392B !important;
+    border-left-color: #C0392B;
+  }
+
+  /* ── MAIN CONTENT ── */
+  .main {
+    margin-left: 260px;
+    flex: 1;
+    max-width: 860px;
+    padding: 4rem 4rem 6rem;
+  }
+
+  /* ── CHAPTER HEADER ── */
+  .chapter-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--chapter-num);
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .chapter-eyebrow::after {
+    content: '';
+    flex: 1;
+    max-width: 60px;
+    height: 1px;
+    background: var(--chapter-num);
+    opacity: 0.5;
+  }
+  .chapter-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 52px;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    margin-bottom: 1rem;
+  }
+  .chapter-subtitle {
+    font-size: 19px;
+    font-weight: 300;
+    color: var(--ink3);
+    font-style: italic;
+    margin-bottom: 2.5rem;
+    max-width: 560px;
+  }
+  .chapter-divider {
+    border: none;
+    border-top: 1px solid var(--divider);
+    margin: 2.5rem 0;
+  }
+
+  /* ── SECTION HEADINGS ── */
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--red);
+    letter-spacing: 0.12em;
+    display: inline-block;
+    background: var(--red-bg);
+    padding: 3px 8px;
+    border-radius: 3px;
+    margin-bottom: 10px;
+  }
+  h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--ink);
+    margin: 3rem 0 0.75rem;
+  }
+  h2:first-of-type { margin-top: 0; }
+  h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 21px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 2.25rem 0 0.6rem;
+  }
+  h4 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink2);
+    margin: 1.5rem 0 0.4rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  p { margin-bottom: 1rem; }
+  a { color: var(--red); text-decoration: none; border-bottom: 1px solid var(--red-border); }
+  a:hover { border-bottom-color: var(--red); }
+  .sidebar a, .sidebar a:visited, .sidebar a:hover { color: inherit; border-bottom: none; text-decoration: none; }
+  .nav-item, .nav-item:visited { color: #9A9890 !important; border-bottom: none !important; }
+  .nav-item:hover { color: #F5F2EB !important; border-bottom: none !important; }
+  .nav-item.active { color: #F5F2EB !important; }
+
+  /* ── CALLOUT BOXES ── */
+  .callout {
+    border-left: 3px solid var(--red);
+    background: var(--red-bg);
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--red);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .callout p { margin: 0; font-size: 15px; color: var(--ink2); }
+
+  .callout-gold {
+    border-left-color: var(--accent-gold);
+    background: var(--accent-gold-bg);
+  }
+  .callout-gold .callout-label { color: var(--accent-gold); }
+
+  .callout-teal {
+    border-left-color: var(--teal);
+    background: var(--teal-bg);
+  }
+  .callout-teal .callout-label { color: var(--teal); }
+
+  /* ── CODE BLOCKS ── */
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13.5px;
+    line-height: 1.65;
+    margin: 1.25rem 0;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    background: var(--surface2);
+    color: var(--red);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+
+  .kw  { color: var(--code-keyword); }
+  .str { color: var(--code-string); }
+  .num { color: var(--code-number); }
+  .ty  { color: var(--code-type); }
+  .cm  { color: var(--code-comment); font-style: italic; }
+  .fn  { color: #7DB8D4; }
+
+  /* ── CODE FILE HEADER ── */
+  .code-file {
+    background: #222018;
+    border-radius: 8px 8px 0 0;
+    padding: 8px 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #7A7870;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-bottom: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 1.25rem;
+  }
+  .code-file + pre { border-radius: 0 0 8px 8px; margin-top: 0; }
+  .code-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-r { background: #E8534A; }
+  .dot-y { background: #E8B84A; }
+  .dot-g { background: #4ACA57; }
+
+  /* ── DEFINITION TERMS ── */
+  .def-term {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--ink);
+    border-bottom: 2px solid var(--red);
+    display: inline;
+  }
+
+  /* ── DIAGRAM SVG CONTAINERS ── */
+  .diagram-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin: 1.75rem 0;
+    overflow: hidden;
+  }
+  .diagram-caption {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink3);
+    margin-top: 0.75rem;
+    text-align: center;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── COMPARISON TABLE ── */
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin: 1.5rem 0;
+  }
+  .compare-table th {
+    background: var(--sidebar);
+    color: var(--sidebar-text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 500;
+  }
+  .compare-table td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--ink2);
+    vertical-align: top;
+  }
+  .compare-table tr:nth-child(even) td { background: var(--surface); }
+  .compare-table tr:last-child td { border-bottom: none; }
+  .tag-fast { color: var(--teal); font-weight: 600; }
+  .tag-slow { color: var(--red); font-weight: 600; }
+
+  /* ── STRATEGY CARDS ── */
+  .strategy-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .strategy-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem 1.4rem;
+  }
+  .strategy-card-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--ink3);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .strategy-card h4 {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px;
+    color: var(--ink);
+    margin: 0 0 8px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-style: italic;
+  }
+  .strategy-card p { font-size: 14px; color: var(--ink2); margin: 0; }
+
+  /* ── EVICTION POLICY BADGES ── */
+  .policy-list { list-style: none; margin: 1rem 0 1.5rem; }
+  .policy-list li {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .policy-list li:last-child { border-bottom: none; }
+  .policy-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    padding: 4px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .badge-none { background: var(--surface2); color: var(--ink3); }
+  .badge-lru  { background: var(--teal-bg); color: var(--teal); }
+  .badge-lfu  { background: var(--accent-gold-bg); color: var(--accent-gold); }
+  .badge-ttl  { background: var(--red-bg); color: var(--red); }
+
+  /* ── USE-CASE TILES ── */
+  .usecase-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .usecase-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--red);
+    border-radius: 0 0 8px 8px;
+    padding: 1rem 1.2rem;
+  }
+  .usecase-tile h4 {
+    font-family: 'Playfair Display', serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0 0 6px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .usecase-tile p { font-size: 13.5px; color: var(--ink2); margin: 0; }
+
+  /* ── REFERENCE LINKS ── */
+  .ref-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 1rem 0;
+  }
+  .ref-box-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--ink3);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .ref-box a { font-size: 13.5px; display: block; margin-bottom: 4px; }
+
+  /* ── PULL QUOTE ── */
+  .pull-quote {
+    border-top: 2px solid var(--ink);
+    border-bottom: 2px solid var(--ink);
+    padding: 1.25rem 0;
+    margin: 2rem 0;
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-style: italic;
+    font-weight: 400;
+    color: var(--ink);
+    line-height: 1.4;
+  }
+
+  /* ── INLINE TERM HIGHLIGHT ── */
+  .term { color: var(--red); font-weight: 600; font-style: italic; }
+
+  /* ── SVG ── */
+  svg text { font-family: 'Source Serif 4', serif; }
+
+  /* ── PRINT / SCROLL ── */
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; padding: 2rem 1.5rem 4rem; }
+    .chapter-title { font-size: 36px; }
+    .strategy-grid, .usecase-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Smooth scroll */
+  html { scroll-behavior: smooth; }
+
+  /* Section spacing */
+  section { padding-top: 1rem; }
+</style>
+<style>
+.chapter-nav{position:fixed;bottom:0;left:0;right:0;z-index:9998;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(16px,4vw,48px);background:rgba(243,237,226,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1.5px solid #c7bca6;box-shadow:0 -8px 32px -16px rgba(40,30,20,.18);font-family:"JetBrains Mono","Spline Sans",monospace;}
+.nav-chapter-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:#5b5347;padding:10px 18px;border-radius:10px;transition:all .2s ease;max-width:38%;}
+.nav-chapter-link:hover{background:rgba(184,64,46,.08);color:#b8402e;transform:translateY(-1px);}
+.nav-chapter-link.nav-next{text-align:right;flex-direction:row;}
+.nav-arrow{font-size:22px;color:#b8402e;font-weight:700;flex:none;}
+.nav-label{display:flex;flex-direction:column;gap:2px;font-size:13.5px;line-height:1.3;}
+.nav-small{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8d8475;font-weight:600;}
+.nav-indicator{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#b8402e;font-weight:700;text-decoration:none;padding:8px 16px;border:1.5px solid #c7bca6;border-radius:40px;background:rgba(255,255,255,.5);transition:all .2s;white-space:nowrap;}
+.nav-indicator:hover{background:#b8402e;color:#fff;border-color:#b8402e;}
+.nav-dot{display:inline-block;width:7px;height:7px;background:#b8402e;border-radius:50%;margin-right:4px;vertical-align:middle;}
+.nav-sep{color:#c7bca6;margin:0 2px;}
+.nav-disabled{visibility:hidden;pointer-events:none;}
+@media(max-width:700px){.nav-label{font-size:11.5px;}.nav-chapter-link{padding:8px 10px;max-width:42%;}.chapter-nav{padding:10px 12px;}}
+body{padding-bottom:80px;}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════ SIDEBAR ══════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-label">Field Manual · V2</div>
+    <div class="sidebar-title">Backend Engineering</div>
+    <div class="sidebar-subtitle">Chapter 14 · Graceful Shutdown</div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Contents</div>
+    <a class="nav-item" href="#scenario" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">01 · The Scenario</a>
+    <a class="nav-item" href="#what-is-gs" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">02 · What is Graceful Shutdown?</a>
+    <a class="nav-item" href="#lifecycle" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">03 · Process Lifecycle</a>
+    <a class="nav-item" href="#signals" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">04 · Signals &amp; IPC</a>
+    <a class="nav-item" href="#sigterm" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">↳ SIGTERM</a>
+    <a class="nav-item" href="#sigint" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">↳ SIGINT</a>
+    <a class="nav-item" href="#sigkill" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">↳ SIGKILL</a>
+    <a class="nav-item" href="#draining" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">05 · Connection Draining</a>
+    <a class="nav-item" href="#timeout" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">↳ Timeout Tradeoff</a>
+    <a class="nav-item" href="#cleanup" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">06 · Resource Cleanup</a>
+    <a class="nav-item" href="#code" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">07 · Code Examples</a>
+    <div class="nav-section" style="margin-top:1rem">References</div>
+    <a class="nav-item" href="#refs" style="color:#3D3C38;border-bottom:none;text-decoration:none;display:block;padding:6px 1.5rem 6px 2rem;font-size:13px;font-weight:500;line-height:1.4;border-left:2px solid transparent;transition:color .15s,background .15s;" onmouseover="this.style.color='#1A1916';this.style.borderLeftColor='#C0392B';this.style.background='rgba(192,57,43,0.07)'" onmouseout="this.style.color='#3D3C38';this.style.borderLeftColor='transparent';this.style.background='none'">Docs &amp; Links</a>
+  </nav>
+</aside>
+
+<!-- ══════════════════ MAIN ══════════════════ -->
+<main class="main">
+
+  <!-- CHAPTER HEADER -->
+  <div class="chapter-eyebrow">Chapter 14 · Backend Operations</div>
+  <h1 class="chapter-title">Graceful<br/>Shutdown</h1>
+  <p class="chapter-subtitle">Teaching your backend good manners — how to finish ongoing work, clean up after itself, and close the door politely instead of slamming it shut.</p>
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 1: THE SCENARIO ══════ -->
+  <section id="scenario">
+    <div class="section-num">01 · MOTIVATION</div>
+    <h2>The Scenario</h2>
+
+    <p>Let's picture a very realistic scenario. You're in the middle of processing a <strong>critical payment transaction</strong> and suddenly your server needs to restart for a deployment. Someone pushed something to the production environment and your server needs to deploy itself.</p>
+
+    <h3>Zero-Downtime Deployment Doesn't Eliminate the Problem</h3>
+    <p>Of course, we have techniques like <span class="term">zero-downtime deployment</span> which makes sure that our existing server does not go down before our new server (the server with our new code) comes up and is ready to receive traffic. Those mechanisms are there.</p>
+
+    <p>But here's the catch: at some point, when our new server is ready to go online and ready to receive traffic, <strong>our old server has to shut down</strong>. It has to stop receiving traffic, and the transition will happen to the new server. We're talking about that critical moment — and you happen to be in the middle of a transaction.</p>
+
+    <div class="callout">
+      <div class="callout-label">The E-Commerce Payment Question</div>
+      <p>Say you're in the middle of an e-commerce transaction — buying something from Amazon or Flipkart — and the Amazon/Flipkart server needs to restart for a deployment. The question becomes:<br/><br/>
+      <strong>1.</strong> What exactly happens to that payment? Does it get lost in the digital world?<br/>
+      <strong>2.</strong> Does the customer (you) get <strong>charged twice</strong> because of some kind of race condition?<br/><br/>
+      These are scenarios you have to think about as a backend engineer.</p>
+    </div>
+
+    <p>This is not a new problem. It has been around since the start of servers and backends. And of course we already have a solution — that solution is called <span class="term">graceful shutdown</span>, and it is exactly as the name sounds: we want to stop our server <em>gracefully</em>. We don't want to stop abruptly or suddenly. That is the whole idea.</p>
+
+    <div class="callout callout-gold">
+      <div class="callout-label">Why Graceful Shutdown Matters</div>
+      <p>Worrying about graceful shutdown gives your application a very good user experience and avoids issues like <strong>data corruption</strong>. If you're in the middle of a payment transaction, it lets you avoid:<br/><br/>
+      • Double-charging the customer<br/>
+      • The transaction getting lost<br/>
+      • Having to process refunds for failed/duplicate charges</p>
+    </div>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 2: WHAT IS GRACEFUL SHUTDOWN ══════ -->
+  <section id="what-is-gs">
+    <div class="section-num">02 · DEFINITION</div>
+    <h2>What is Graceful Shutdown?</h2>
+
+    <div class="pull-quote">
+      We want to teach our backend good manners — it cannot just slam the door when it's time to leave.
+    </div>
+
+    <p>If we oversimplify what graceful shutdown means for our server, we can basically say we want to teach our server — teach our backend — <strong>good manners</strong>. It cannot stop abruptly when it is between a transition into a new deployment. It has to perform some kind of steps.</p>
+
+    <h3>The "Good Manners" Analogy</h3>
+    <p>Think of it like having guests over. When it's 9:00 PM and time to go to sleep, you don't just push your guests out of the door and slam the door in their face. There are steps you have to perform. Similarly, your backend politely:</p>
+
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:8px"><strong>Finishes its ongoing conversations</strong> — completes whatever it's currently doing</li>
+      <li style="margin-bottom:8px"><strong>Says goodbye to all the guests</strong> — closes out existing interactions properly</li>
+      <li style="margin-bottom:8px"><strong>Cleans up after itself</strong> — tidies up the resources it was using</li>
+      <li style="margin-bottom:8px"><strong>Then finally closes the door</strong> — only then does it actually exit</li>
+    </ul>
+
+    <p>This is the art and science of making your backend applications as well-mannered and efficient as possible. The rest of this chapter builds the foundations: <em>why</em> we do this, the surrounding concepts, and how it's actually implemented.</p>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 3: PROCESS LIFECYCLE ══════ -->
+  <section id="lifecycle">
+    <div class="section-num">03 · FOUNDATIONS</div>
+    <h2>Process Lifecycle Management</h2>
+
+    <p>The first concept to understand. Your backend is an application that runs as a <span class="term">process</span> in some kind of server, in some kind of computer. This is important: <strong>everything that runs in an operating system runs as a process</strong>.</p>
+
+    <p>If you're familiar with operating system concepts, this will make sense. If not, it's not a big deal — just learn the term: <em>process</em>. Whatever you run, it runs inside a process.</p>
+
+    <h3>Every Process Has a Lifecycle</h3>
+    <p>Like all living things, every process has a lifecycle — when it starts, how it starts, when it ends, and how it ends. In a way:</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 110" role="img">
+        <title>Process lifecycle three phases</title>
+        <defs>
+          <marker id="lc" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <rect x="40" y="35" width="180" height="50" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="130" y="56" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1916">Born</text>
+        <text x="130" y="73" text-anchor="middle" font-size="10" fill="#0F7066">process starts</text>
+        <line x1="222" y1="60" x2="258" y2="60" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#lc)"/>
+        <rect x="260" y="35" width="180" height="50" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="350" y="56" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1916">Living</text>
+        <text x="350" y="73" text-anchor="middle" font-size="10" fill="#B8960C">process executing</text>
+        <line x1="442" y1="60" x2="478" y2="60" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#lc)"/>
+        <rect x="480" y="35" width="180" height="50" rx="8" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="570" y="56" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1916">Dies</text>
+        <text x="570" y="73" text-anchor="middle" font-size="10" fill="#C0392B">process terminated</text>
+      </svg>
+      <div class="diagram-caption">Fig 1.1 — The three phases of a process lifecycle: born → living → dies</div>
+    </div>
+
+    <p>They are <strong>born</strong> when the process starts, they <strong>live</strong> while the process is executing, and they <strong>die</strong> when the process is terminated. This whole thing is called the lifecycle of a process. Understanding it is essential because it's very closely connected to how graceful shutdown is implemented.</p>
+
+    <h3>The OS Doesn't Just Pull the Plug</h3>
+    <p>When your operating system decides it's time for your application to stop running, it does <strong>not</strong> just pull the plug or kill the process. It follows an <strong>established protocol of communication</strong> — how to communicate with the process to say "it's time for you to stop, we're going to follow these steps, and then we're going to stop it."</p>
+
+    <p>You can imagine it like a conversation between your operating system and your application (which is running inside a process in your OS):</p>
+
+    <div class="callout">
+      <div class="callout-label">The Conversation (Simplified)</div>
+      <p><strong>OS:</strong> "Hey, it's time for you to stop."<br/>
+      <strong>Application:</strong> "Okay, give me a few seconds (realistically), then I'll stop myself — or you can stop me."<br/><br/>
+      Of course, this conversation does not happen through text — we're talking about programs, which don't understand text. This entire communication happens through a concept called <strong>signals</strong>.</p>
+    </div>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 4: SIGNALS ══════ -->
+  <section id="signals">
+    <div class="section-num">04 · SIGNALS</div>
+    <h2>Signals &amp; Inter-Process Communication</h2>
+
+    <p>Signals are an important concept in <strong>Unix operating systems</strong>. When we say Unix, we mean all the Linux operating systems (Arch, Ubuntu, etc.) and also Macs — Mac originated from a Unix core, a Unix kernel.</p>
+
+    <div class="callout callout-gold">
+      <div class="callout-label">Why Linux Matters for Servers</div>
+      <p>Mostly when we talk about servers, we mean Linux only — because 99% of the time, whenever you deploy your application to a cloud provider, it selects a Linux operating system and deploys your application there. You'll never see Windows except for some specialized use cases like Windows Server. For deploying servers, we overwhelmingly use Linux-based operating systems.</p>
+    </div>
+
+    <h3>Signals Are Used for IPC</h3>
+    <p>Unix operating systems have this concept called signals, which is used for <span class="term">IPC (Inter-Process Communication)</span>. Simply speaking, IPC is a technique using which two processes can communicate with each other using an established protocol (which you don't have to worry about the internals of).</p>
+
+    <h3>How Handlers Work</h3>
+    <p>Your application runs inside a process, and it <strong>registers some handlers</strong>. What do we mean by handlers?</p>
+
+    <p>Handlers are basically code that:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:8px">Waits and runs continuously behind the scenes</li>
+      <li style="margin-bottom:8px">Is waiting for some kind of communication — some kind of <strong>signal</strong> — from the operating system</li>
+      <li style="margin-bottom:8px">Detects whenever these signals come, and then does something (cleanup, finishing requests, etc.)</li>
+    </ul>
+
+    <p>These handlers are essentially telling your operating system: <em>"When you want me to stop, send me this specific message, and I'll handle it appropriately. I'll stop myself using predefined protocols and predefined steps."</em> You can't just say "stop" — that's human-readable text. It has to be a specific signal.</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 160" role="img">
+        <title>OS to application signal handler communication</title>
+        <defs>
+          <marker id="sg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <!-- OS -->
+        <rect x="30" y="50" width="170" height="60" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="115" y="76" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1916">Operating System</text>
+        <text x="115" y="93" text-anchor="middle" font-size="10" fill="#B8960C">sends signal</text>
+        <!-- Process container -->
+        <rect x="300" y="25" width="380" height="115" rx="10" fill="#F5F2EB" stroke="#3D3C38" stroke-width="0.8" stroke-dasharray="5 4"/>
+        <text x="490" y="45" text-anchor="middle" font-size="11" fill="#3D3C38" font-style="italic">Process</text>
+        <rect x="330" y="58" width="150" height="56" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="405" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Application</text>
+        <text x="405" y="98" text-anchor="middle" font-size="10" fill="#0F7066">your backend</text>
+        <rect x="500" y="58" width="160" height="56" rx="8" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="580" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Signal Handler</text>
+        <text x="580" y="98" text-anchor="middle" font-size="10" fill="#C0392B">waits + reacts</text>
+        <!-- arrows -->
+        <line x1="200" y1="80" x2="328" y2="86" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#sg)"/>
+        <text x="262" y="72" text-anchor="middle" font-size="9" fill="#6B6A65">SIGTERM</text>
+        <line x1="480" y1="86" x2="498" y2="86" stroke="#0F7066" stroke-width="1.2" marker-end="url(#sg)"/>
+        <text x="490" y="135" text-anchor="middle" font-size="10" fill="#3D3C38" font-style="italic">handler runs cleanup &amp; finishes work, then process exits</text>
+      </svg>
+      <div class="diagram-caption">Fig 2.1 — The OS sends a signal; the application's registered handler detects it and runs the shutdown steps</div>
+    </div>
+
+    <h3>The Three Signals</h3>
+    <p>The prefix <code>SIG</code> in all of these simply means <strong>signal</strong>. The second part is the actual command. There are three signals we care about:</p>
+
+    <!-- SIGTERM -->
+    <h3 id="sigterm">4.1 — SIGTERM (Terminate)</h3>
+    <p><code>SIG</code> means signal, <code>TERM</code> means terminate. SIGTERM is a <strong>polite way</strong> for your operating system to ask your application to shut down. It is not an extreme way — it's just a nudge.</p>
+
+    <div class="callout">
+      <div class="callout-label">The Shoulder-Poke Analogy</div>
+      <p>Imagine you're standing and someone comes from behind and gently pokes your shoulder — "hey, excuse me, could you please finish up and leave?" That's SIGTERM. It's a very gentle request, and because of that, your backend has an <strong>opportunity to complete whatever it's already doing</strong>. It doesn't have to leave that exact moment — it gets a window of a few seconds.</p>
+    </div>
+
+    <p>What might your backend be doing when it receives SIGTERM? Since we're talking about an HTTP backend, it might be <strong>processing requests</strong> — that's the primary thing your backend does. Your client (front end, web app, Chrome extension, whatever) sends HTTP requests, and your backend processes them and returns responses.</p>
+
+    <p>At a random point in time, your backend might be processing 10–12 requests — or if your application is big enough, hundreds or even 500–600 requests concurrently. When it gets a SIGTERM signal, it's time for it to perform these three steps:</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 100" role="img">
+        <title>SIGTERM three steps</title>
+        <defs>
+          <marker id="st" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <rect x="30" y="30" width="190" height="48" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="125" y="50" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">1. Finish existing requests</text>
+        <text x="125" y="66" text-anchor="middle" font-size="10" fill="#0F7066">complete in-flight work</text>
+        <line x1="222" y1="54" x2="248" y2="54" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#st)"/>
+        <rect x="250" y="30" width="190" height="48" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="345" y="50" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">2. Clean up resources</text>
+        <text x="345" y="66" text-anchor="middle" font-size="10" fill="#B8960C">DB, files, connections</text>
+        <line x1="442" y1="54" x2="468" y2="54" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#st)"/>
+        <rect x="470" y="30" width="190" height="48" rx="8" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="565" y="50" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">3. Exit</text>
+        <text x="565" y="66" text-anchor="middle" font-size="10" fill="#C0392B">close the door</text>
+      </svg>
+      <div class="diagram-caption">Fig 2.2 — The three SIGTERM steps: finish requests → clean up → exit</div>
+    </div>
+
+    <h4>Who Uses SIGTERM?</h4>
+    <p>SIGTERM is mostly used by <strong>deployment systems, process managers, or orchestration platforms</strong> — basically any system you've established for managing your process:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:6px"><strong>Kubernetes</strong> — container orchestration</li>
+      <li style="margin-bottom:6px"><strong>systemd</strong> — Linux service manager</li>
+      <li style="margin-bottom:6px"><strong>PM2</strong> — Node.js process manager</li>
+    </ul>
+    <p>These systems and tools use SIGTERM to properly let your application finish whatever it's doing, clean up, and leave gracefully.</p>
+
+    <!-- SIGINT -->
+    <h3 id="sigint">4.2 — SIGINT (Interrupt)</h3>
+    <p><code>SIG</code> means signal, <code>INT</code> means interrupt. The most famous use case of this signal, which you've almost certainly used as a developer, is <strong>Ctrl + C</strong>.</p>
+
+    <p>If you've worked with any command-line or terminal-based applications, you've used this — some process or task is running, and if you want to abruptly close it, you press <code>Ctrl + C</code> and that process is instantly stopped.</p>
+
+    <div class="callout callout-gold">
+      <div class="callout-label">Live Demo From the Lecture</div>
+      <p>In the lecture, a Go-based backend was running locally, ready to accept requests. Pressing <code>Ctrl + C</code> on the keyboard logged: <em>"a signal has been received and the signal type is an interrupt signal."</em> Because graceful shutdown was implemented, the app logged each step as it shut down — rather than dying instantly.</p>
+    </div>
+
+    <p>SIGINT requires a <strong>user/developer to press a key</strong> (Ctrl + C using a keyboard). So it's mostly used during development environments and is also called a <span class="term">user-initiated shutdown</span>. In process-to-process communication, SIGINT is normally not used — since it requires a key press.</p>
+
+    <h4>Handle SIGINT the Same Way as SIGTERM</h4>
+    <p>In pretty much all cases, you want to handle SIGINT the <strong>same way</strong> you handle SIGTERM. If you think about it, it makes sense:</p>
+
+    <table class="compare-table">
+      <thead>
+        <tr><th>Signal</th><th>Typically initiated by</th><th>Example context</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>SIGINT</td><td>A human (key press)</td><td>Developer pressing Ctrl+C locally to stop the dev server</td></tr>
+        <tr><td>SIGTERM</td><td>A program</td><td>PM2 on an AWS EC2 instance signaling your deployed backend to stop</td></tr>
+      </tbody>
+    </table>
+
+    <p>It doesn't matter whether your backend is running in a development environment and you stop it with Ctrl + C, versus running inside an AWS EC2 instance managed by PM2 (a process manager) which sends a SIGTERM. In both cases, the <strong>intention is the same</strong>: we want to shut down. And we want to shut down in a clean, graceful way. What matters is the intention, not whether a human or a program initiated it.</p>
+
+    <!-- SIGKILL -->
+    <h3 id="sigkill">4.3 — SIGKILL (The Nuclear Option)</h3>
+    <p><code>SIG</code> means signal, <code>KILL</code> is the actual command — and it is exactly as it sounds. We want to <strong>instantly kill the application</strong>.</p>
+
+    <div class="callout">
+      <div class="callout-label">SIGKILL Cannot Be Caught or Ignored</div>
+      <p>The interesting (and dangerous) thing about SIGKILL is that it <strong>cannot be caught</strong> and <strong>cannot be ignored</strong>:<br/><br/>
+      <strong>Cannot be caught</strong> — Your application cannot register a handler that does cleanup when it receives SIGKILL. The application is simply not given that capability/permission to detect it.<br/><br/>
+      <strong>Cannot be ignored</strong> — You can't say "since I couldn't detect it, I'll just ignore it and not stop." That doesn't happen either.</p>
+    </div>
+
+    <p>If your application is sent a SIGKILL, it will not be able to detect it, and it has to stop at that exact moment. Nothing else happens — it just stops. That's why it's called a kill signal.</p>
+
+    <div class="callout callout-gold">
+      <div class="callout-label">The Pull-the-Plug Analogy</div>
+      <p>Imagine the difference between two ways of turning off your computer:<br/><br/>
+      <strong>Graceful (SIGTERM/SIGINT):</strong> Clicking your system icon → clicking "Shutdown" → the OS closes apps properly.<br/><br/>
+      <strong>SIGKILL:</strong> Going straight to the power plug and <strong>pulling it</strong>. Your computer just dies. No cleanup, no goodbye.</p>
+    </div>
+
+    <h3>Why This Makes Graceful Shutdown Important</h3>
+    <p>Here's the critical chain of consequences. The <strong>polite signals</strong> are SIGTERM and SIGINT — these let you finish whatever you're doing, clean up, and gracefully exit. If you <strong>don't respect</strong> the polite signals, then eventually you <em>will</em> receive a SIGKILL. You'll have to stop, and you won't even get the opportunity to clean up after yourself.</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 130" role="img">
+        <title>Signal escalation from polite to forced</title>
+        <defs>
+          <marker id="es" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <rect x="30" y="40" width="240" height="56" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="150" y="63" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Polite: SIGTERM / SIGINT</text>
+        <text x="150" y="80" text-anchor="middle" font-size="10" fill="#0F7066">window to finish + clean up</text>
+        <text x="350" y="60" text-anchor="middle" font-size="10" fill="#C0392B" font-style="italic">if ignored /</text>
+        <text x="350" y="74" text-anchor="middle" font-size="10" fill="#C0392B" font-style="italic">timeout exceeded</text>
+        <line x1="272" y1="68" x2="428" y2="68" stroke="#C0392B" stroke-width="1.2" marker-end="url(#es)" stroke-dasharray="5 3"/>
+        <rect x="430" y="40" width="240" height="56" rx="8" fill="#F9EAE8" stroke="#C0392B" stroke-width="1.2"/>
+        <text x="550" y="63" text-anchor="middle" font-size="12" font-weight="600" fill="#C0392B">Forced: SIGKILL</text>
+        <text x="550" y="80" text-anchor="middle" font-size="10" fill="#C0392B">instant stop, no cleanup</text>
+      </svg>
+      <div class="diagram-caption">Fig 2.3 — Ignore the polite signals and the OS escalates to SIGKILL, which gives you no chance to clean up</div>
+    </div>
+
+    <p>This is the core reason graceful shutdown is an important concept: it's your chance to handle shutdown <em>before</em> the OS resorts to the nuclear option.</p>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 5: CONNECTION DRAINING ══════ -->
+  <section id="draining">
+    <div class="section-num">05 · STEP ONE</div>
+    <h2>Connection Draining</h2>
+    <p>Now we go deep into the two important things that happen during a graceful shutdown: <strong>finishing existing requests</strong> (this section) and <strong>cleaning up resources</strong> (next section). The first important part is stopping on-the-fly requests.</p>
+
+    <h3>What Are On-the-Fly Requests?</h3>
+    <p>Your HTTP server processes multiple requests concurrently. When it's time to stop your server, it's possible your backend is already processing a number of requests — 10, 12, hundreds, or thousands depending on scale. Those requests already being processed at that moment are the <span class="term">on-the-fly (in-flight) requests</span>.</p>
+
+    <h3>The Restaurant Analogy</h3>
+    <p>Imagine you've gone to a restaurant with friends, and the restaurant has to close (it's 10:30–11 PM, or for some other reason). What happens? The owners <strong>cannot</strong> just turn all the lights off and throw you out. Instead:</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 110" role="img">
+        <title>Restaurant closing analogy three steps</title>
+        <defs>
+          <marker id="rs" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <rect x="20" y="32" width="205" height="50" rx="8" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="122" y="52" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">1. Stop new customers</text>
+        <text x="122" y="68" text-anchor="middle" font-size="10" fill="#C0392B">→ stop accepting new conns</text>
+        <line x1="227" y1="57" x2="251" y2="57" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#rs)"/>
+        <rect x="253" y="32" width="205" height="50" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="355" y="52" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">2. Let diners finish</text>
+        <text x="355" y="68" text-anchor="middle" font-size="10" fill="#B8960C">→ finish in-flight requests</text>
+        <line x1="460" y1="57" x2="484" y2="57" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#rs)"/>
+        <rect x="486" y="32" width="205" height="50" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="588" y="52" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">3. Pay &amp; leave</text>
+        <text x="588" y="68" text-anchor="middle" font-size="10" fill="#0F7066">→ close the connection</text>
+      </svg>
+      <div class="diagram-caption">Fig 3.1 — Restaurant closing maps directly onto connection draining</div>
+    </div>
+
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:8px"><strong>Stop allowing new customers</strong> — Someone at the reception/gate stops letting new people in. You don't want new customers you'd have to say no to.</li>
+      <li style="margin-bottom:8px"><strong>Announce to existing customers</strong> — Tell everyone already eating: "It's time to close, you have 15–20 minutes to finish your meal. Take your time." 15–20 minutes is more than enough.</li>
+      <li style="margin-bottom:8px"><strong>Pay bills and leave</strong> — They finish, pay their bills (and tips!), and leave the restaurant.</li>
+    </ul>
+
+    <h3>The Same Idea for Your Backend</h3>
+    <p>We call this process <span class="term">connection draining</span>. When your application receives a shutdown signal (SIGTERM from a process, or SIGINT from a developer's Ctrl+C), the first thing it must do is <strong>stop accepting new connections</strong> — exactly like stopping new customers from entering. This prevents the situation from getting messier and more difficult to deal with. Then it lets the existing connections finish as soon as possible.</p>
+
+    <h3>Connection Draining Per Architecture</h3>
+    <p>The implementation differs depending on the application architecture, but the high-level idea is always the same three-step process: <strong>stop accepting new → finish existing → close connection</strong>.</p>
+
+    <table class="compare-table">
+      <thead>
+        <tr><th>Architecture</th><th>What "draining" means</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>HTTP backend</td><td>Stop accepting new HTTP requests from any client; allow in-flight requests to complete</td></tr>
+        <tr><td>Database (also a backend!)</td><td>Finish all existing queries/transactions; stop taking new queries into execution before closing the connection</td></tr>
+        <tr><td>WebSocket connections</td><td>First notify the clients that it's closing, then close the socket — never close abruptly</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <div class="callout-label">A Database is a Backend Too</div>
+      <p>As discussed in previous chapters, a database is also a backend — it can be imagined as a backend. Not in the HTTP sense, but it's still an application that runs as a process and follows the same graceful shutdown principles: finish existing transactions, stop accepting new ones, then close.</p>
+    </div>
+
+    <!-- TIMEOUT -->
+    <h3 id="timeout">5.1 — The Timeout Tradeoff</h3>
+    <p>The challenge with connection draining is the <strong>timing</strong>. You want to give existing connections enough time to complete their work, but you cannot wait as long as they need. There must be a limit.</p>
+
+    <p>Most production systems implement a <strong>timeout mechanism</strong> — commonly <strong>30 seconds</strong> (sometimes 60). This is the maximum duration your system will wait. After that, it just stops. Most of the time, if you're not accepting new requests, 30 seconds is more than enough to finish all existing requests. But if some blocking operation can't finish within the window, you'll be <strong>forcefully stopped</strong> — that's the backup plan. You cannot let your backend take as long as it wants; the timeout is the hard limit.</p>
+
+    <div class="callout callout-gold">
+      <div class="callout-label">The Design Consideration — How Long Should You Wait?</div>
+      <p><strong>Too short</strong> → you risk interrupting actual legitimate operations (a real payment mid-flight gets cut off).<br/><br/>
+      <strong>Too long</strong> → your whole shutdown process becomes sluggish, which eventually impacts your deployment speed and system responsiveness.<br/><br/>
+      There's no hard-and-fast rule. The right timeout depends on your application's <strong>typical request duration</strong> and your <strong>operational requirements</strong>. For a traditional/normal backend, 30 seconds is more than enough. For WebSockets or more complicated architectures, you have to understand your system and choose accordingly.</p>
+    </div>
+
+    <h3>Coordination With Load Balancers &amp; Service Discovery</h3>
+    <p>Connection draining also requires coordination between your <strong>load balancers</strong> and <strong>service discovery systems</strong>. It has to work with your health check systems and the registering/deregistering with your service discovery.</p>
+
+    <p>This is slightly advanced: <span class="term">service discovery</span> means that if you've deployed a set of applications (your backend, your database, your Elasticsearch instance), service discovery is the mechanism responsible for how they find, connect, and communicate with each other after deployment. During shutdown, your instance needs to deregister itself so the load balancer stops routing new traffic to it.</p>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 6: RESOURCE CLEANUP ══════ -->
+  <section id="cleanup">
+    <div class="section-num">06 · STEP TWO</div>
+    <h2>Resource Cleanup</h2>
+
+    <p>The second important step. Think of working at your desk: when it's time to leave the house or go to sleep, you do some cleanup first. If you've had coffee, you take the cup to the sink; you manage your cables, etc. We all have tiny cleanup tasks before leaving our desks. The same applies to your backend.</p>
+
+    <h3>What Counts as a "Resource"?</h3>
+    <p>When we say resources, we mean things the application acquired during its execution that it now has to let go of:</p>
+    <ul style="margin:0.5rem 0 1rem 1.5rem; color:var(--ink2)">
+      <li style="margin-bottom:6px"><strong>File handles</strong></li>
+      <li style="margin-bottom:6px"><strong>Network connections</strong></li>
+      <li style="margin-bottom:6px"><strong>Database connections</strong></li>
+      <li style="margin-bottom:6px"><strong>Temporary files</strong></li>
+      <li style="margin-bottom:6px"><strong>Caches</strong></li>
+      <li style="margin-bottom:6px"><strong>Any other system resources</strong></li>
+    </ul>
+
+    <h3>File Handles</h3>
+    <p>When your backend was running and tried to access a particular location in the file system, the way it works is: you send a signal to your operating system, and it provides you a <strong>handle</strong> to that file. There's a protocol for how a process accesses the underlying file system, but at a high level, you get a handle which you <strong>must let go of / clean up</strong> at some point.</p>
+
+    <div class="callout">
+      <div class="callout-label">Why Unclosed Handles Are Dangerous</div>
+      <p>If you don't clean up a file handle, that handle keeps running and you'll acquire more and more memory — meaning you keep eating your <strong>RAM (random access memory)</strong>, and at some point you'll run out of it. Operating systems also <strong>limit the number of file handles</strong> (and network connections) a single process can have open simultaneously, so leaking them eventually breaks your app.</p>
+    </div>
+
+    <h3>Network Connections (The Most Common Cleanup)</h3>
+    <p>The most common kind of resource cleanup is cleaning up network connections. Your operating system is the <strong>mediator</strong>: all requests from the internet go through your OS before reaching your application. The OS is the actual driver that receives all requests from your network card and passes them to you — so it has full knowledge of all your network connections.</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 130" role="img">
+        <title>OS as mediator between internet and application</title>
+        <defs>
+          <marker id="nw" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <rect x="30" y="42" width="170" height="50" rx="8" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="115" y="63" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Internet</text>
+        <text x="115" y="79" text-anchor="middle" font-size="10" fill="#0F7066">incoming requests</text>
+        <line x1="202" y1="67" x2="258" y2="67" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#nw)"/>
+        <rect x="260" y="42" width="200" height="50" rx="8" fill="#FBF6E2" stroke="#B8960C" stroke-width="0.8"/>
+        <text x="360" y="63" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Operating System</text>
+        <text x="360" y="79" text-anchor="middle" font-size="10" fill="#B8960C">mediator / driver</text>
+        <line x1="462" y1="67" x2="518" y2="67" stroke="#6B6A65" stroke-width="1.2" marker-end="url(#nw)"/>
+        <rect x="520" y="42" width="170" height="50" rx="8" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="605" y="63" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1916">Your Backend</text>
+        <text x="605" y="79" text-anchor="middle" font-size="10" fill="#C0392B">the application</text>
+      </svg>
+      <div class="diagram-caption">Fig 4.1 — All network traffic passes through the OS before reaching your application</div>
+    </div>
+
+    <p>Just like file handles, if you don't give up a network connection after dealing with it, you'll eventually run out of memory or face performance issues — because the OS limits how many connections a process can hold open.</p>
+
+    <h3>Database Connections — Commit or Rollback</h3>
+    <p>This is the part directly tied to our payment scenario from the start. Before your application/backend process shuts down, the database transactions it was dealing with must be either <strong>committed</strong> or <strong>rolled back explicitly</strong> by your application.</p>
+
+    <div class="callout callout-gold">
+      <div class="callout-label">What Happens If You Don't</div>
+      <p>If you don't commit or roll back open transactions, they might get into an <strong>inconsistent state</strong>, which can lead to:<br/><br/>
+      • <strong>Deadlocks</strong><br/>
+      • <strong>Data corruption</strong><br/>
+      • All kinds of other issues<br/><br/>
+      This is exactly the double-charge / lost-payment problem from the opening scenario — resolved by explicit transaction handling during shutdown.</p>
+    </div>
+
+    <h3>Clean Up in Reverse Order of Acquisition</h3>
+    <p>One important rule: when cleaning up resources during graceful shutdown, you want to clean them up in the <strong>reverse order</strong> of how you acquired them — Last In, First Out (LIFO), like a stack.</p>
+
+    <div class="diagram-wrap">
+      <svg width="100%" viewBox="0 0 720 175" role="img">
+        <title>Reverse order resource cleanup LIFO</title>
+        <defs>
+          <marker id="ro" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <!-- Acquire column -->
+        <text x="175" y="22" text-anchor="middle" font-size="11" font-weight="600" fill="#0F7066">ACQUIRE (in order)</text>
+        <rect x="90" y="32" width="170" height="34" rx="6" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="175" y="54" text-anchor="middle" font-size="11" fill="#1A1916">1. Redis connection</text>
+        <rect x="90" y="72" width="170" height="34" rx="6" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="175" y="94" text-anchor="middle" font-size="11" fill="#1A1916">2. DB connection</text>
+        <rect x="90" y="112" width="170" height="34" rx="6" fill="#E4F2EF" stroke="#0F7066" stroke-width="0.8"/>
+        <text x="175" y="134" text-anchor="middle" font-size="11" fill="#1A1916">3. HTTP server</text>
+        <line x1="175" y1="66" x2="175" y2="70" stroke="#0F7066" stroke-width="1.2" marker-end="url(#ro)"/>
+        <line x1="175" y1="106" x2="175" y2="110" stroke="#0F7066" stroke-width="1.2" marker-end="url(#ro)"/>
+        <!-- arrow across -->
+        <line x1="270" y1="89" x2="445" y2="89" stroke="#6B6A65" stroke-width="1" marker-end="url(#ro)" stroke-dasharray="5 3"/>
+        <text x="357" y="80" text-anchor="middle" font-size="10" fill="#6B6A65" font-style="italic">shutdown reverses it</text>
+        <!-- Release column -->
+        <text x="555" y="22" text-anchor="middle" font-size="11" font-weight="600" fill="#C0392B">RELEASE (reverse)</text>
+        <rect x="470" y="32" width="170" height="34" rx="6" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="555" y="54" text-anchor="middle" font-size="11" fill="#1A1916">1. HTTP server</text>
+        <rect x="470" y="72" width="170" height="34" rx="6" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="555" y="94" text-anchor="middle" font-size="11" fill="#1A1916">2. DB connection</text>
+        <rect x="470" y="112" width="170" height="34" rx="6" fill="#F9EAE8" stroke="#C0392B" stroke-width="0.8"/>
+        <text x="555" y="134" text-anchor="middle" font-size="11" fill="#1A1916">3. Redis connection</text>
+        <line x1="555" y1="66" x2="555" y2="70" stroke="#C0392B" stroke-width="1.2" marker-end="url(#ro)"/>
+        <line x1="555" y1="106" x2="555" y2="110" stroke="#C0392B" stroke-width="1.2" marker-end="url(#ro)"/>
+      </svg>
+      <div class="diagram-caption">Fig 4.2 — Acquire Redis → DB → HTTP, but release in reverse: HTTP → DB → Redis (LIFO)</div>
+    </div>
+
+    <p>For example, say you established a Redis connection, then a DB connection, then started the HTTP server. When giving up resources, go in reverse. <strong>Why?</strong> To prevent situations where you're cleaning up a resource or operation that <em>depends on a previous operation</em>. Tearing down in reverse ensures dependencies are still alive when the things that need them are being shut down.</p>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ SECTION 7: CODE ══════ -->
+  <section id="code">
+    <div class="section-num">07 · CODE</div>
+    <h2>Code Examples</h2>
+    <p>We typically avoid looking at code in this series, but a practical example helps avoid a hollow understanding. You don't have to understand every line — just follow the narrative. In practice, most frameworks (Node.js, Go, Rust, Python) provide this code ready to copy-paste; what matters is understanding <em>what happens</em> and <em>why</em>.</p>
+
+    <!-- GO -->
+    <h3>7.1 — Graceful Shutdown in Go</h3>
+    <p>This mirrors the live demo from the lecture: register a handler waiting for signals, then on receipt run the shutdown function which closes the HTTP server, then the database, then the Redis-backed background job server — in reverse order of acquisition.</p>
+    <div class="code-file">
+      <div class="code-dot dot-r"></div><div class="code-dot dot-y"></div><div class="code-dot dot-g"></div>
+      <span>main.go · Go · net/http + signal.NotifyContext</span>
+    </div>
+<pre><code><span class="kw">package</span> main
+
+<span class="kw">import</span> (
+    <span class="str">"context"</span>
+    <span class="str">"errors"</span>
+    <span class="str">"log"</span>
+    <span class="str">"net/http"</span>
+    <span class="str">"os"</span>
+    <span class="str">"os/signal"</span>
+    <span class="str">"syscall"</span>
+    <span class="str">"time"</span>
+)
+
+<span class="kw">func</span> <span class="fn">main</span>() {
+    <span class="cm">// --- Startup phase: acquire resources in order ---</span>
+    db := connectDatabase()           <span class="cm">// 1. acquire DB (TCP pool)</span>
+    jobs := startBackgroundJobs()     <span class="cm">// 2. acquire Redis-backed worker</span>
+
+    srv := &amp;http.Server{Addr: <span class="str">":8080"</span>, Handler: router()}
+
+    <span class="cm">// Register a handler that waits for SIGINT (Ctrl+C) or SIGTERM (PM2/k8s).</span>
+    <span class="cm">// We handle BOTH the same way — the intention is identical: shut down.</span>
+    ctx, stop := signal.NotifyContext(context.Background(),
+        os.Interrupt, syscall.SIGTERM)
+    <span class="kw">defer</span> stop()
+
+    <span class="cm">// Run the server in a goroutine so main can wait for the signal.</span>
+    <span class="kw">go</span> <span class="kw">func</span>() {
+        log.Println(<span class="str">"server started, ready to accept requests"</span>)
+        <span class="kw">if</span> err := srv.ListenAndServe(); err != <span class="kw">nil</span> &amp;&amp;
+            !errors.Is(err, http.ErrServerClosed) {
+            log.Fatalf(<span class="str">"listen error: %v"</span>, err)
+        }
+    }()
+
+    <span class="cm">// Block here until a signal arrives (the "living" phase).</span>
+    &lt;-ctx.Done()
+    log.Println(<span class="str">"signal received — starting graceful shutdown"</span>)
+
+    <span class="cm">// Hard limit: give in-flight work up to 30 seconds, then force stop.</span>
+    shutdownCtx, cancel := context.WithTimeout(
+        context.Background(), <span class="num">30</span>*time.Second)
+    <span class="kw">defer</span> cancel()
+
+    gracefulShutdown(shutdownCtx, srv, db, jobs)
+    log.Println(<span class="str">"server exited properly"</span>)
+}
+
+<span class="cm">// gracefulShutdown releases resources in REVERSE order of acquisition.</span>
+<span class="cm">// Acquired: DB -> jobs -> HTTP server. Released: HTTP -> jobs -> DB.</span>
+<span class="kw">func</span> <span class="fn">gracefulShutdown</span>(
+    ctx context.Context,
+    srv *http.Server,
+    db *Database,
+    jobs *JobServer,
+) {
+    <span class="cm">// 1. CONNECTION DRAINING: srv.Shutdown stops accepting NEW</span>
+    <span class="cm">//    connections and waits for in-flight requests to finish</span>
+    <span class="cm">//    (or until the 30s ctx deadline forces it).</span>
+    log.Println(<span class="str">"draining HTTP connections..."</span>)
+    <span class="kw">if</span> err := srv.Shutdown(ctx); err != <span class="kw">nil</span> {
+        log.Printf(<span class="str">"forced HTTP shutdown: %v"</span>, err)
+    }
+
+    <span class="cm">// 2. Stop the background job server (closes Redis connections,</span>
+    <span class="cm">//    waits for workers to finish current jobs).</span>
+    log.Println(<span class="str">"stopping background job server..."</span>)
+    jobs.Shutdown()
+
+    <span class="cm">// 3. Close the database LAST — finish/commit open transactions,</span>
+    <span class="cm">//    then close all pooled TCP connections one by one.</span>
+    log.Println(<span class="str">"closing database connection..."</span>)
+    <span class="kw">if</span> err := db.Close(); err != <span class="kw">nil</span> {
+        log.Printf(<span class="str">"db close error: %v"</span>, err)
+    }
+}</code></pre>
+
+    <!-- PYTHON -->
+    <h3>7.2 — Graceful Shutdown in Python</h3>
+    <p>The same concepts in Python using the <code>signal</code> module: register handlers for SIGINT and SIGTERM, drain in-flight work, then release resources in reverse.</p>
+    <div class="code-file">
+      <div class="code-dot dot-r"></div><div class="code-dot dot-y"></div><div class="code-dot dot-g"></div>
+      <span>server.py · Python · signal + asyncio</span>
+    </div>
+<pre><code><span class="kw">import</span> asyncio
+<span class="kw">import</span> signal
+<span class="kw">import</span> logging
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(<span class="str">"app"</span>)
+
+SHUTDOWN_TIMEOUT = <span class="num">30</span>  <span class="cm"># hard limit in seconds</span>
+
+
+<span class="kw">class</span> <span class="ty">Application</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(self):
+        self._shutdown = asyncio.Event()
+
+    <span class="kw">async def</span> <span class="fn">startup</span>(self):
+        <span class="cm"># Acquire resources IN ORDER</span>
+        self.redis = <span class="kw">await</span> connect_redis()       <span class="cm"># 1</span>
+        self.db = <span class="kw">await</span> connect_database()      <span class="cm"># 2</span>
+        self.server = <span class="kw">await</span> start_http_server()  <span class="cm"># 3</span>
+        log.info(<span class="str">"server started, ready to accept requests"</span>)
+
+    <span class="kw">def</span> <span class="fn">install_signal_handlers</span>(self):
+        <span class="cm"># Handle SIGINT (Ctrl+C, dev) and SIGTERM (PM2/k8s, prod)</span>
+        <span class="cm"># the SAME way — both mean "shut down gracefully".</span>
+        loop = asyncio.get_running_loop()
+        <span class="kw">for</span> sig <span class="kw">in</span> (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, self._on_signal, sig)
+
+    <span class="kw">def</span> <span class="fn">_on_signal</span>(self, sig):
+        <span class="cm"># NOTE: SIGKILL can never reach here — it cannot be</span>
+        <span class="cm"># caught or ignored. Only the polite signals arrive.</span>
+        log.info(f<span class="str">"signal received: {sig.name} — shutting down"</span>)
+        self._shutdown.set()
+
+    <span class="kw">async def</span> <span class="fn">graceful_shutdown</span>(self):
+        <span class="cm"># 1. CONNECTION DRAINING: stop accepting new requests,</span>
+        <span class="cm">#    let in-flight requests finish within the timeout.</span>
+        log.info(<span class="str">"draining HTTP connections..."</span>)
+        self.server.stop_accepting_new()
+        <span class="kw">try</span>:
+            <span class="kw">await</span> asyncio.wait_for(
+                self.server.wait_for_inflight(),
+                timeout=SHUTDOWN_TIMEOUT,
+            )
+        <span class="kw">except</span> asyncio.TimeoutError:
+            log.warning(<span class="str">"timeout exceeded — forcing shutdown"</span>)
+
+        <span class="cm"># 2 &amp; 3. Release resources in REVERSE order of acquisition.</span>
+        <span class="cm">#    Acquired redis -> db -> server; release server -> db -> redis.</span>
+        log.info(<span class="str">"committing/rolling back open transactions..."</span>)
+        <span class="kw">await</span> self.db.close()     <span class="cm"># commit or rollback, then close pool</span>
+        log.info(<span class="str">"closing redis connection..."</span>)
+        <span class="kw">await</span> self.redis.close()
+        log.info(<span class="str">"server exited properly"</span>)
+
+
+<span class="kw">async def</span> <span class="fn">main</span>():
+    app = Application()
+    <span class="kw">await</span> app.startup()
+    app.install_signal_handlers()
+    <span class="kw">await</span> app._shutdown.wait()   <span class="cm"># the "living" phase — block until signal</span>
+    <span class="kw">await</span> app.graceful_shutdown()
+
+
+<span class="kw">if</span> __name__ == <span class="str">"__main__"</span>:
+    asyncio.run(main())</code></pre>
+  </section>
+
+  <hr class="chapter-divider"/>
+
+  <!-- ══════ REFERENCES ══════ -->
+  <section id="refs">
+    <div class="section-num">REFERENCES</div>
+    <h2>Further Reading &amp; Documentation</h2>
+
+    <h4>Unix Signals</h4>
+    <div class="ref-box">
+      <a href="https://man7.org/linux/man-pages/man7/signal.7.html" target="_blank">man7 — signal(7): overview of signals (SIGTERM, SIGINT, SIGKILL)</a>
+      <a href="https://www.gnu.org/software/libc/manual/html_node/Termination-Signals.html" target="_blank">GNU libc — Termination Signals</a>
+    </div>
+
+    <h4>Go</h4>
+    <div class="ref-box">
+      <a href="https://pkg.go.dev/net/http#Server.Shutdown" target="_blank">Go docs — http.Server.Shutdown (graceful HTTP draining)</a>
+      <a href="https://pkg.go.dev/os/signal#NotifyContext" target="_blank">Go docs — signal.NotifyContext</a>
+    </div>
+
+    <h4>Python &amp; Node.js</h4>
+    <div class="ref-box">
+      <a href="https://docs.python.org/3/library/signal.html" target="_blank">Python docs — signal module</a>
+      <a href="https://nodejs.org/api/process.html#signal-events" target="_blank">Node.js docs — process signal events</a>
+    </div>
+
+    <h4>Orchestration &amp; Process Managers</h4>
+    <div class="ref-box">
+      <a href="https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/" target="_blank">Kubernetes — Container Lifecycle &amp; termination (SIGTERM → grace period → SIGKILL)</a>
+      <a href="https://pm2.keymetrics.io/docs/usage/signals-clean-restart/" target="_blank">PM2 — Graceful start / shutdown &amp; signals</a>
+      <a href="https://www.freedesktop.org/software/systemd/man/systemd.kill.html" target="_blank">systemd — kill &amp; shutdown behaviour</a>
+    </div>
+
+    <h4>MDN Web Docs</h4>
+    <div class="ref-box">
+      <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API" target="_blank">MDN — WebSockets API (closing handshake)</a>
+      <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Connection_management_in_HTTP_1.x" target="_blank">MDN — HTTP connection management</a>
+    </div>
+
+    <div style="margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--divider);">
+      <p style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink3); letter-spacing:0.08em;">
+        BACKEND ENGINEERING FIELD MANUAL · V2 · CHAPTER 14 · GRACEFUL SHUTDOWN<br/>
+        Notes compiled from lecture transcript · Go + Python examples · Unix signals &amp; orchestration references inline
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // Sidebar active state on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const navItems = document.querySelectorAll('.nav-item');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navItems.forEach(item => {
+          const isActive = item.getAttribute('href') === '#' + entry.target.id;
+          item.classList.toggle('active', isActive);
+          item.style.color = isActive ? '#C0392B' : '#3D3C38';
+          item.style.borderLeftColor = isActive ? '#C0392B' : 'transparent';
+        });
+      }
+    });
+  }, { threshold: 0.2 });
+  sections.forEach(s => observer.observe(s));
+</script>
+<!-- ============ CHAPTER NAVIGATION ============ -->
+<nav class="chapter-nav" id="chapterNav">
+  <a href="../../15.Logging, Monitoring and Observability/html_notes/notes.html" class="nav-chapter-link"><span class="nav-arrow">&larr;</span><span class="nav-label"><span class="nav-small">Chapter 15</span>Logging & Observability</span></a>
+  <a href="../../index.html" class="nav-indicator"><span class="nav-dot"></span> Chapter 16 <span class="nav-sep">/</span> 24</a>
+  <a href="../../17.Backend Security: Everything You Need to Know/html_notes/notes.html" class="nav-chapter-link nav-next"><span class="nav-label"><span class="nav-small">Chapter 17</span>Backend Security</span><span class="nav-arrow">&rarr;</span></a>
+</nav>
+</body>
+</html>

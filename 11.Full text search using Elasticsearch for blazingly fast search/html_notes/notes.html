@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Full-Text Search & Elasticsearch — Backend Field Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Lora:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f0e8;
+    --cream-dark: #ede7d9;
+    --ink: #1a1612;
+    --ink-light: #4a3f35;
+    --red: #c0392b;
+    --red-dark: #96281b;
+    --gold: #b8960c;
+    --border: #d4c9b8;
+    --code-bg: #2b2218;
+    --code-text: #e8ddd0;
+    --sidebar-w: 240px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Lora', Georgia, serif;
+    background: var(--cream);
+    color: var(--ink);
+    display: flex;
+    min-height: 100vh;
+    font-size: 17px;
+    line-height: 1.75;
+  }
+
+  /* ── SIDEBAR ── */
+  aside {
+    width: var(--sidebar-w);
+    min-height: 100vh;
+    background: var(--cream-dark);
+    border-right: 1px solid var(--border);
+    padding: 36px 20px 40px;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .sidebar-title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 900;
+    font-size: 18px;
+    color: var(--ink);
+    line-height: 1.25;
+    margin-bottom: 4px;
+  }
+  .sidebar-sub {
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-light);
+    margin-bottom: 28px;
+  }
+  .sidebar-nav a {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--ink-light);
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 13px;
+    padding: 5px 6px;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    transition: background .15s, color .15s;
+  }
+  .sidebar-nav a:hover { background: var(--border); color: var(--red); }
+  .sidebar-nav a.active { color: var(--red); font-weight: 600; }
+  .sidebar-nav .num {
+    font-size: 11px;
+    color: var(--red);
+    font-weight: 700;
+    min-width: 20px;
+    padding-top: 1px;
+  }
+
+  /* ── MAIN ── */
+  main {
+    flex: 1;
+    max-width: 860px;
+    padding: 60px 64px 100px;
+  }
+
+  .chapter-label {
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 11px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--red);
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  h1.chapter-title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 900;
+    font-size: 48px;
+    line-height: 1.1;
+    color: var(--ink);
+    margin-bottom: 24px;
+  }
+  .chapter-intro {
+    font-size: 18px;
+    color: var(--ink-light);
+    line-height: 1.8;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 0;
+    margin-bottom: 52px;
+  }
+
+  /* ── SECTIONS ── */
+  section { margin-bottom: 60px; }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--red);
+    color: #fff;
+    font-family: 'Source Sans 3', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+  h2 {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 28px;
+    color: var(--ink);
+  }
+  h3 {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 20px;
+    color: var(--ink);
+    margin: 32px 0 12px;
+  }
+  p { margin-bottom: 16px; }
+
+  /* ── CALLOUT BOXES ── */
+  .callout {
+    background: var(--cream-dark);
+    border-left: 4px solid var(--red);
+    border-radius: 0 8px 8px 0;
+    padding: 16px 20px;
+    margin: 24px 0;
+    font-size: 15.5px;
+  }
+  .callout.tip { border-color: var(--gold); }
+  .callout.tip::before { content: "💡 Tip  "; font-weight: 700; color: var(--gold); }
+  .callout::before { content: "📌 Note  "; font-weight: 700; color: var(--red); }
+  .callout.warning { border-color: #e67e22; }
+  .callout.warning::before { content: "⚠️ Watch out  "; font-weight: 700; color: #c0392b; }
+
+  /* ── CODE BLOCKS ── */
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13.5px;
+    line-height: 1.65;
+    border-radius: 10px;
+    padding: 22px 24px;
+    overflow-x: auto;
+    margin: 20px 0;
+    position: relative;
+  }
+  pre .lang-label {
+    position: absolute;
+    top: 10px; right: 14px;
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #8a7a6a;
+    font-family: 'Source Sans 3', sans-serif;
+  }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    background: #e8e0d4;
+    color: var(--red-dark);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; border-radius: 0; }
+
+  /* syntax color helpers */
+  .kw { color: #f39c12; }
+  .str { color: #2ecc71; }
+  .cmt { color: #7f8c8d; font-style: italic; }
+  .fn  { color: #3498db; }
+  .num { color: #e74c3c; }
+  .type{ color: #9b59b6; }
+
+  /* ── DIAGRAM SVG WRAPPER ── */
+  .diagram-box {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 28px 0;
+    background: #fff;
+  }
+  .diagram-caption {
+    text-align: center;
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 12.5px;
+    color: var(--ink-light);
+    padding: 8px 0 12px;
+    letter-spacing: .04em;
+  }
+
+  /* ── TABLE ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 24px 0;
+    font-size: 15px;
+    font-family: 'Source Sans 3', sans-serif;
+  }
+  th {
+    background: var(--ink);
+    color: var(--cream);
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  tr:nth-child(even) td { background: var(--cream-dark); }
+
+  /* ── LIST STYLES ── */
+  ul, ol {
+    padding-left: 24px;
+    margin-bottom: 16px;
+  }
+  li { margin-bottom: 8px; }
+  li strong { color: var(--red-dark); }
+
+  /* ── DIVIDER ── */
+  hr { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+
+  /* ── REFERENCE LINKS ── */
+  .ref-links {
+    display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0;
+  }
+  .ref-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--cream-dark);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 13px;
+    color: var(--red-dark);
+    text-decoration: none;
+    transition: background .15s;
+  }
+  .ref-link:hover { background: var(--border); }
+
+  /* ── HIGHLIGHT QUOTE ── */
+  blockquote {
+    border-left: 3px solid var(--gold);
+    margin: 24px 0;
+    padding: 12px 20px;
+    font-style: italic;
+    color: var(--ink-light);
+    font-size: 17px;
+  }
+
+  /* ── COMPARISON CARD ── */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 24px 0;
+  }
+  .compare-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    background: #fff;
+  }
+  .compare-card h4 {
+    font-family: 'Source Sans 3', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--red);
+    color: var(--red);
+  }
+  .compare-card ul { margin: 0; padding-left: 18px; }
+  .compare-card li { font-size: 14.5px; margin-bottom: 6px; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+<style>
+.chapter-nav{position:fixed;bottom:0;left:0;right:0;z-index:9998;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(16px,4vw,48px);background:rgba(243,237,226,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1.5px solid #c7bca6;box-shadow:0 -8px 32px -16px rgba(40,30,20,.18);font-family:"JetBrains Mono","Spline Sans",monospace;}
+.nav-chapter-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:#5b5347;padding:10px 18px;border-radius:10px;transition:all .2s ease;max-width:38%;}
+.nav-chapter-link:hover{background:rgba(184,64,46,.08);color:#b8402e;transform:translateY(-1px);}
+.nav-chapter-link.nav-next{text-align:right;flex-direction:row;}
+.nav-arrow{font-size:22px;color:#b8402e;font-weight:700;flex:none;}
+.nav-label{display:flex;flex-direction:column;gap:2px;font-size:13.5px;line-height:1.3;}
+.nav-small{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8d8475;font-weight:600;}
+.nav-indicator{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#b8402e;font-weight:700;text-decoration:none;padding:8px 16px;border:1.5px solid #c7bca6;border-radius:40px;background:rgba(255,255,255,.5);transition:all .2s;white-space:nowrap;}
+.nav-indicator:hover{background:#b8402e;color:#fff;border-color:#b8402e;}
+.nav-dot{display:inline-block;width:7px;height:7px;background:#b8402e;border-radius:50%;margin-right:4px;vertical-align:middle;}
+.nav-sep{color:#c7bca6;margin:0 2px;}
+.nav-disabled{visibility:hidden;pointer-events:none;}
+@media(max-width:700px){.nav-label{font-size:11.5px;}.nav-chapter-link{padding:8px 10px;max-width:42%;}.chapter-nav{padding:10px 12px;}}
+body{padding-bottom:80px;}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside>
+  <div class="sidebar-title">Search &amp; Elasticsearch</div>
+  <div class="sidebar-sub">Backend Field Manual · Chapter 15</div>
+  <nav class="sidebar-nav">
+    <a href="#problem"><span class="num">01</span>The Problem</a>
+    <a href="#librarian"><span class="num">02</span>Librarian Analogy</a>
+    <a href="#ilike"><span class="num">03</span>ILIKE &amp; Its Flaw</a>
+    <a href="#inverted"><span class="num">04</span>Inverted Index</a>
+    <a href="#elasticsearch"><span class="num">05</span>Elasticsearch</a>
+    <a href="#bm25"><span class="num">06</span>BM25 Algorithm</a>
+    <a href="#typo"><span class="num">07</span>Typo Tolerance</a>
+    <a href="#elk"><span class="num">08</span>ELK Stack</a>
+    <a href="#code-pg"><span class="num">09</span>Postgres FTS (Go)</a>
+    <a href="#code-es"><span class="num">10</span>Elasticsearch (Python)</a>
+    <a href="#benchmark"><span class="num">11</span>Benchmark Demo</a>
+    <a href="#when"><span class="num">12</span>When to Use What</a>
+    <a href="#refs"><span class="num">13</span>References</a>
+  </nav>
+</aside>
+
+<!-- MAIN CONTENT -->
+<main>
+
+  <div class="chapter-label">Chapter 15 · Full-Text Search</div>
+  <h1 class="chapter-title">Full-Text Search &amp; Elasticsearch</h1>
+  <p class="chapter-intro">
+    From a simple <code>ILIKE</code> query that suffocates under millions of rows, to relevance-ranked millisecond search — this chapter explains <em>why</em> tools like Elasticsearch exist, how the inverted index works, what BM25 does, and when to reach for Postgres FTS versus Elasticsearch in a real backend.
+  </p>
+
+  <!-- ── 01 THE PROBLEM ── -->
+  <section id="problem">
+    <div class="section-header">
+      <span class="badge">01</span>
+      <h2>The Origin Story — Why Search Got Hard</h2>
+    </div>
+
+    <p>Imagine it's <strong>2005</strong>. You're a backend engineer at a fast-growing e-commerce startup. The product catalog has ~5,000 items. You write a search endpoint using a classic SQL pattern:</p>
+
+    <pre><span class="lang-label">SQL</span><span class="cmt">-- Works great at 5 000 rows</span>
+<span class="kw">SELECT</span> * <span class="kw">FROM</span> products
+<span class="kw">WHERE</span>  name        ILIKE <span class="str">'%laptop%'</span>
+   <span class="kw">OR</span>  description ILIKE <span class="str">'%laptop%'</span>;</pre>
+
+    <p>This returns results in roughly <strong>50 ms</strong>. Users are happy, managers are happy, life is simple.</p>
+
+    <p>Fast-forward two years. The catalog explodes to <strong>millions of products</strong>. The same query now takes <strong>30 seconds</strong>. The company is losing sales. On top of the speed issue, new requirements arrive:</p>
+
+    <ul>
+      <li><strong>Relevance</strong> — searching "laptop" should show a MacBook Pro before a laptop bag.</li>
+      <li><strong>Typo tolerance</strong> — users type <em>lapto</em> during a sale rush; results must still appear.</li>
+      <li><strong>Speed</strong> — search must return in milliseconds, not seconds.</li>
+    </ul>
+
+    <div class="callout">These three requirements — speed, relevance, typo-tolerance — are exactly the founding charter of dedicated full-text search engines.</div>
+  </section>
+
+  <!-- ── 02 LIBRARIAN ANALOGY ── -->
+  <section id="librarian">
+    <div class="section-header">
+      <span class="badge">02</span>
+      <h2>The Librarian Analogy</h2>
+    </div>
+
+    <p>Think of your relational database (Postgres, MySQL, etc.) as a <strong>librarian</strong> in a giant library. The librarian knows exactly where every book lives on the shelf.</p>
+
+    <p>But it has one <strong>fatal flaw</strong>: to find books <em>about</em> a topic, it must physically walk to every single shelf, pull out every book, and read it page by page looking for your keyword.</p>
+
+    <!-- DIAGRAM: librarian scanning -->
+    <div class="diagram-box">
+      <svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <!-- shelf row -->
+        <rect x="0" y="0" width="760" height="260" fill="#fff"/>
+        <!-- query box -->
+        <rect x="30" y="100" width="140" height="60" rx="8" fill="#c0392b" opacity=".9"/>
+        <text x="100" y="126" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700">User Query</text>
+        <text x="100" y="146" text-anchor="middle" fill="#ffeaea" font-family="JetBrains Mono,monospace" font-size="12">"machine learning"</text>
+        <!-- arrow right -->
+        <line x1="172" y1="130" x2="210" y2="130" stroke="#4a3f35" stroke-width="2" marker-end="url(#arr)"/>
+        <!-- DB box -->
+        <rect x="212" y="90" width="130" height="80" rx="8" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="277" y="120" text-anchor="middle" fill="#1a1612" font-family="Playfair Display,serif" font-size="14" font-weight="700">Postgres</text>
+        <text x="277" y="138" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="12">ILIKE Scan</text>
+        <text x="277" y="156" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="11">scans EVERY row</text>
+        <!-- arrow -->
+        <line x1="344" y1="130" x2="380" y2="130" stroke="#4a3f35" stroke-width="2" marker-end="url(#arr)"/>
+        <!-- books -->
+        <g transform="translate(382,80)">
+          <rect x="0"  y="0" width="30" height="80" rx="3" fill="#e74c3c" opacity=".8"/>
+          <text x="15" y="40" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="9" transform="rotate(-90,15,40)">Harry Potter</text>
+          <rect x="34" y="0" width="30" height="80" rx="3" fill="#3498db" opacity=".8"/>
+          <text x="49" y="40" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="9" transform="rotate(-90,49,40)">Game of Thrones</text>
+          <rect x="68" y="0" width="36" height="80" rx="3" fill="#27ae60" opacity=".9"/>
+          <text x="86" y="40" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="9" font-weight="700" transform="rotate(-90,86,40)">Intro to ML ✓</text>
+          <rect x="108" y="0" width="28" height="80" rx="3" fill="#9b59b6" opacity=".8"/>
+          <text x="122" y="40" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="9" transform="rotate(-90,122,40)">Cooking</text>
+          <rect x="140" y="0" width="32" height="80" rx="3" fill="#f39c12" opacity=".8"/>
+          <text x="156" y="40" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="9" transform="rotate(-90,156,40)">Deep Learning ✓</text>
+          <rect x="176" y="0" width="28" height="80" rx="3" fill="#1abc9c" opacity=".8"/>
+          <text x="190" y="40" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="9" transform="rotate(-90,190,40)">Fiction</text>
+        </g>
+        <!-- scan arrow zigzag -->
+        <polyline points="382,170 550,170 550,185 382,185 382,200" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text x="466" y="220" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="11">Scans every book one by one — O(n)</text>
+        <!-- issue labels -->
+        <text x="620" y="110" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="12" font-weight="700">Two Fatal Flaws:</text>
+        <text x="620" y="132" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="12">① Slow — O(n) scan</text>
+        <text x="620" y="152" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="12">② No relevance order</text>
+        <!-- defs -->
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#4a3f35"/>
+          </marker>
+        </defs>
+      </svg>
+      <div class="diagram-caption">Fig 1 — Postgres ILIKE performs a full sequential scan: every row is examined individually.</div>
+    </div>
+
+    <p>The two problems summarised:</p>
+    <ol>
+      <li><strong>Speed</strong>: A table with 50 million rows means 50 million row comparisons. On spinning disk this was catastrophic even in the SSD era it wastes enormous I/O.</li>
+      <li><strong>No relevance</strong>: A book whose <em>title</em> is "Introduction to Machine Learning" ranks identically to a book that merely mentions "machine" once in the appendix. The database has zero concept of importance.</li>
+    </ol>
+  </section>
+
+  <!-- ── 03 ILIKE DEEP DIVE ── -->
+  <section id="ilike">
+    <div class="section-header">
+      <span class="badge">03</span>
+      <h2>Why <code>ILIKE '%term%'</code> Cannot Use Indexes</h2>
+    </div>
+
+    <p>Postgres B-tree indexes work by sorting values. A B-tree can locate <code>name LIKE 'lapt%'</code> (prefix match) efficiently because sorted strings share prefixes. But <code>ILIKE '%laptop%'</code> has a leading wildcard — there is no useful prefix to sort on. The engine <strong>must fall back to a sequential scan</strong>.</p>
+
+    <div class="callout warning">A leading <code>%</code> in a LIKE/ILIKE expression <em>disables</em> B-tree index usage. Postgres will read every single page of the heap.</div>
+
+    <h3>What the query plan looks like</h3>
+    <pre><span class="lang-label">SQL — EXPLAIN ANALYZE</span><span class="kw">EXPLAIN ANALYZE</span>
+<span class="kw">SELECT</span> id, name
+<span class="kw">FROM</span>  products
+<span class="kw">WHERE</span> name ILIKE <span class="str">'%laptop%'</span>;
+
+<span class="cmt">-- Output (simplified)</span>
+<span class="cmt">-- Seq Scan on products  (cost=0.00..18450.00 rows=5 width=36)</span>
+<span class="cmt">--   Filter: ((name)::text ~~* '%laptop%'::text)</span>
+<span class="cmt">--   Rows Removed by Filter: 4 999 995</span>
+<span class="cmt">-- Planning Time: 0.2 ms</span>
+<span class="cmt">-- Execution Time: 28 940.7 ms   ← 29 seconds!</span></pre>
+
+    <p>Notice <strong>Seq Scan</strong> — every row examined, 4,999,995 rows thrown away, execution time ~29 s.</p>
+  </section>
+
+  <!-- ── 04 INVERTED INDEX ── -->
+  <section id="inverted">
+    <div class="section-header">
+      <span class="badge">04</span>
+      <h2>The Inverted Index — The Core Invention</h2>
+    </div>
+
+    <blockquote>"Instead of going through every document to find the term, maintain a map from every term to the documents that contain it."</blockquote>
+
+    <p>This insight — <strong>inverting the search</strong> — is what the name captures. A normal index maps <em>document → words</em>. An <strong>inverted index</strong> maps <em>word → documents</em>.</p>
+
+    <h3>How It Is Built</h3>
+    <p>When a document is first stored (or updated), the search engine runs it through an <strong>analysis pipeline</strong>:</p>
+
+    <ol>
+      <li><strong>Tokenisation</strong> — break text into individual tokens (words). "Introduction to Machine Learning" → <code>["introduction", "to", "machine", "learning"]</code></li>
+      <li><strong>Normalisation / Lowercasing</strong> — convert to lowercase so "Machine" and "machine" are the same token.</li>
+      <li><strong>Stop-word removal</strong> — drop common words with no discriminative value ("to", "the", "a"). (Optional, configurable.)</li>
+      <li><strong>Stemming / Lemmatisation</strong> — reduce words to their root: "running" → "run", "searches" → "search". So a query for "searching" also matches "searched".</li>
+      <li><strong>Index entry creation</strong> — for each resulting term, record the document ID and position.</li>
+    </ol>
+
+    <!-- Diagram: inverted index -->
+    <div class="diagram-box">
+      <svg viewBox="0 0 740 340" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <rect width="740" height="340" fill="#fff"/>
+
+        <!-- Left: docs -->
+        <text x="30" y="28" font-family="Playfair Display,serif" font-size="15" font-weight="700" fill="#1a1612">Documents</text>
+        <rect x="20" y="40" width="200" height="44" rx="6" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="30" y="58" font-family="JetBrains Mono,monospace" font-size="11" fill="#1a1612">Doc 1: "Intro to</text>
+        <text x="30" y="74" font-family="JetBrains Mono,monospace" font-size="11" fill="#1a1612">        Machine Learning"</text>
+
+        <rect x="20" y="92" width="200" height="44" rx="6" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="30" y="110" font-family="JetBrains Mono,monospace" font-size="11" fill="#1a1612">Doc 2: "The Machine</text>
+        <text x="30" y="126" font-family="JetBrains Mono,monospace" font-size="11" fill="#1a1612">        Age"</text>
+
+        <rect x="20" y="144" width="200" height="44" rx="6" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="30" y="162" font-family="JetBrains Mono,monospace" font-size="11" fill="#1a1612">Doc 3: "Coffee</text>
+        <text x="30" y="178" font-family="JetBrains Mono,monospace" font-size="11" fill="#1a1612">        Machine Manual"</text>
+
+        <rect x="20" y="196" width="200" height="44" rx="6" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="30" y="214" font-family="JetBrains Mono,monospace" font-size="11" fill="#1a1612">Doc 4: "Deep Learning</text>
+        <text x="30" y="230" font-family="JetBrains Mono,monospace" font-size="11" fill="#1a1612">        Fundamentals"</text>
+
+        <!-- Arrow -->
+        <text x="230" y="148" font-family="Source Sans 3,sans-serif" font-size="12" fill="#4a3f35">Analyse &amp;</text>
+        <text x="230" y="164" font-family="Source Sans 3,sans-serif" font-size="12" fill="#4a3f35">Index</text>
+        <line x1="258" y1="155" x2="298" y2="155" stroke="#c0392b" stroke-width="2" marker-end="url(#arr2)"/>
+
+        <!-- Right: inverted index table -->
+        <text x="310" y="28" font-family="Playfair Display,serif" font-size="15" font-weight="700" fill="#1a1612">Inverted Index</text>
+        <!-- header -->
+        <rect x="306" y="38" width="130" height="26" rx="4" fill="#1a1612"/>
+        <rect x="440" y="38" width="280" height="26" rx="4" fill="#1a1612"/>
+        <text x="371" y="56" text-anchor="middle" fill="#f5f0e8" font-family="Source Sans 3,sans-serif" font-size="12" font-weight="700">TERM</text>
+        <text x="580" y="56" text-anchor="middle" fill="#f5f0e8" font-family="Source Sans 3,sans-serif" font-size="12" font-weight="700">POSTINGS (doc, positions)</text>
+        <!-- rows -->
+        <g font-family="JetBrains Mono,monospace" font-size="12">
+          <rect x="306" y="66" width="130" height="28" fill="#ede7d9" stroke="#d4c9b8"/>
+          <rect x="440" y="66" width="280" height="28" fill="#fff" stroke="#d4c9b8"/>
+          <text x="315" y="84" fill="#c0392b" font-weight="700">machine</text>
+          <text x="450" y="84" fill="#4a3f35">Doc1(p1,15,23) Doc2(p5,89) Doc3(p1)</text>
+
+          <rect x="306" y="96" width="130" height="28" fill="#ede7d9" stroke="#d4c9b8"/>
+          <rect x="440" y="96" width="280" height="28" fill="#fff" stroke="#d4c9b8"/>
+          <text x="315" y="114" fill="#c0392b" font-weight="700">learning</text>
+          <text x="450" y="114" fill="#4a3f35">Doc1(p1,16,24) Doc4(p2,8,45)</text>
+
+          <rect x="306" y="126" width="130" height="28" fill="#ede7d9" stroke="#d4c9b8"/>
+          <rect x="440" y="126" width="280" height="28" fill="#fff" stroke="#d4c9b8"/>
+          <text x="315" y="144" fill="#27ae60" font-weight="700">intro</text>
+          <text x="450" y="144" fill="#4a3f35">Doc1(p1)</text>
+
+          <rect x="306" y="156" width="130" height="28" fill="#ede7d9" stroke="#d4c9b8"/>
+          <rect x="440" y="156" width="280" height="28" fill="#fff" stroke="#d4c9b8"/>
+          <text x="315" y="174" fill="#27ae60" font-weight="700">coffee</text>
+          <text x="450" y="174" fill="#4a3f35">Doc3(p1,4,12)</text>
+
+          <rect x="306" y="186" width="130" height="28" fill="#ede7d9" stroke="#d4c9b8"/>
+          <rect x="440" y="186" width="280" height="28" fill="#fff" stroke="#d4c9b8"/>
+          <text x="315" y="204" fill="#27ae60" font-weight="700">deep</text>
+          <text x="450" y="204" fill="#4a3f35">Doc4(p1,3)</text>
+        </g>
+
+        <!-- query arrow -->
+        <text x="310" y="260" font-family="Source Sans 3,sans-serif" font-size="12" fill="#4a3f35">Query: "machine learning"</text>
+        <line x1="310" y1="268" x2="310" y2="300" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text x="315" y="316" font-family="Source Sans 3,sans-serif" font-size="12" fill="#c0392b">→ Intersect postings → ranked results in O(log n)</text>
+
+        <defs>
+          <marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#c0392b"/>
+          </marker>
+        </defs>
+      </svg>
+      <div class="diagram-caption">Fig 2 — Inverted index: term → posting list (document IDs + positions). Lookup is O(1) hash or O(log n) B-tree.</div>
+    </div>
+
+    <div class="callout tip">The key insight: inverted index lookup time depends on the <em>number of matching documents</em>, not the total number of documents. Millions of documents = no problem, as long as the hit list is small.</div>
+  </section>
+
+  <!-- ── 05 ELASTICSEARCH ── -->
+  <section id="elasticsearch">
+    <div class="section-header">
+      <span class="badge">05</span>
+      <h2>Elasticsearch — What It Is &amp; How It Works</h2>
+    </div>
+
+    <p>Elasticsearch is a distributed, JSON-document search engine built on top of <strong>Apache Lucene</strong> — the battle-tested Java library that implements the inverted index and BM25 scoring. Lucene has been around since 1999; Elasticsearch (2010) wraps it in a REST API and adds distributed clustering, replication, and a rich query DSL.</p>
+
+    <p>Key characteristics:</p>
+    <ul>
+      <li><strong>Schema-less JSON documents</strong> — like MongoDB, you store JSON. Fields are auto-detected (or explicitly mapped).</li>
+      <li><strong>Near real-time</strong> — newly indexed documents are searchable within ~1 second (configurable).</li>
+      <li><strong>Horizontal scaling</strong> — data is split into <em>shards</em> (sub-indexes), each shard is a complete Lucene index. More nodes = more throughput.</li>
+      <li><strong>Powerful query DSL</strong> — JSON-based. Supports full-text, fuzzy, range, geo-distance, aggregations, etc.</li>
+    </ul>
+
+    <h3>Creating an Index with Field Mapping</h3>
+    <pre><span class="lang-label">HTTP / Elasticsearch DSL</span><span class="kw">PUT</span> /products
+{
+  <span class="str">"mappings"</span>: {
+    <span class="str">"properties"</span>: {
+      <span class="str">"name"</span>: {
+        <span class="str">"type"</span>: <span class="str">"text"</span>,          <span class="cmt">// analysed — tokenised, stemmed</span>
+        <span class="str">"boost"</span>: <span class="num">3</span>            <span class="cmt">// title matches are 3× more relevant</span>
+      },
+      <span class="str">"description"</span>: {
+        <span class="str">"type"</span>: <span class="str">"text"</span>,
+        <span class="str">"boost"</span>: <span class="num">1.5</span>
+      },
+      <span class="str">"category"</span>: {
+        <span class="str">"type"</span>: <span class="str">"keyword"</span>     <span class="cmt">// not analysed — exact match only</span>
+      },
+      <span class="str">"price"</span>: { <span class="str">"type"</span>: <span class="str">"float"</span> }
+    }
+  }
+}</pre>
+
+    <p>The difference between <code>text</code> and <code>keyword</code> is critical:</p>
+    <table>
+      <thead><tr><th>Mapping Type</th><th>Analysed?</th><th>Use For</th></tr></thead>
+      <tbody>
+        <tr><td><code>text</code></td><td>Yes — tokenised, stemmed</td><td>Product names, descriptions, reviews</td></tr>
+        <tr><td><code>keyword</code></td><td>No — stored as-is</td><td>Status codes, tags, category IDs</td></tr>
+      </tbody>
+    </table>
+
+    <h3>A Full-Text Search Query</h3>
+    <pre><span class="lang-label">HTTP / Elasticsearch DSL</span><span class="kw">GET</span> /products/_search
+{
+  <span class="str">"query"</span>: {
+    <span class="str">"multi_match"</span>: {
+      <span class="str">"query"</span>: <span class="str">"laptop"</span>,
+      <span class="str">"fields"</span>: [<span class="str">"name^3"</span>, <span class="str">"description^1.5"</span>, <span class="str">"category"</span>],
+      <span class="str">"fuzziness"</span>: <span class="str">"AUTO"</span>    <span class="cmt">// typo tolerance</span>
+    }
+  },
+  <span class="str">"size"</span>: <span class="num">10</span>
+}</pre>
+
+    <p><code>^3</code> is <strong>field boosting</strong> — matches in <code>name</code> contribute 3× as much to the relevance score as matches in the default field weight.</p>
+  </section>
+
+  <!-- ── 06 BM25 ── -->
+  <section id="bm25">
+    <div class="section-header">
+      <span class="badge">06</span>
+      <h2>BM25 — How Relevance Scoring Works</h2>
+    </div>
+
+    <p>BM25 (<em>Best Match 25</em>) is the default ranking function in Elasticsearch (and also in Postgres FTS). It produces a floating-point score per document; higher = more relevant. The full formula has several components — but conceptually four factors drive the score:</p>
+
+    <!-- BM25 diagram -->
+    <div class="diagram-box">
+      <svg viewBox="0 0 700 220" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <rect width="700" height="220" fill="#fff"/>
+        <!-- Central node -->
+        <ellipse cx="350" cy="110" rx="80" ry="40" fill="#c0392b"/>
+        <text x="350" y="106" text-anchor="middle" fill="#fff" font-family="Playfair Display,serif" font-size="16" font-weight="700">BM25</text>
+        <text x="350" y="124" text-anchor="middle" fill="#ffeaea" font-family="Source Sans 3,sans-serif" font-size="11">Relevance Score</text>
+
+        <!-- TF -->
+        <rect x="20" y="30" width="160" height="56" rx="8" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="100" y="52" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="12" font-weight="700">Term Frequency (TF)</text>
+        <text x="100" y="68" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="11">How often term appears</text>
+        <text x="100" y="82" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="11">in THIS document</text>
+        <line x1="180" y1="58" x2="270" y2="100" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5 3"/>
+
+        <!-- IDF -->
+        <rect x="20" y="130" width="160" height="56" rx="8" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="100" y="152" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="12" font-weight="700">Inverse Doc Freq (IDF)</text>
+        <text x="100" y="168" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="11">How rare the term is</text>
+        <text x="100" y="182" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="11">across ALL documents</text>
+        <line x1="180" y1="158" x2="270" y2="120" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5 3"/>
+
+        <!-- Doc Length -->
+        <rect x="520" y="30" width="160" height="56" rx="8" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="600" y="52" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="12" font-weight="700">Document Length</text>
+        <text x="600" y="68" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="11">Normalise for long docs</text>
+        <text x="600" y="82" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="11">(shorter = higher boost)</text>
+        <line x1="520" y1="58" x2="430" y2="100" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5 3"/>
+
+        <!-- Field Boost -->
+        <rect x="520" y="130" width="160" height="56" rx="8" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="600" y="152" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="12" font-weight="700">Field Boosting</text>
+        <text x="600" y="168" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="11">title &gt; description</text>
+        <text x="600" y="182" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="11">&gt; content (configurable)</text>
+        <line x1="520" y1="158" x2="430" y2="120" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5 3"/>
+      </svg>
+      <div class="diagram-caption">Fig 3 — The four pillars of BM25 relevance scoring in Elasticsearch.</div>
+    </div>
+
+    <table>
+      <thead><tr><th>Factor</th><th>What It Measures</th><th>Effect on Score</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Term Frequency</strong></td><td>Count of query term in document</td><td>Higher = more relevant (with diminishing returns)</td></tr>
+        <tr><td><strong>Inverse Doc Frequency</strong></td><td>Rarity of term across index</td><td>Rare terms carry more signal than common ones</td></tr>
+        <tr><td><strong>Document Length</strong></td><td>Length vs. avg document length</td><td>Short docs with the term rank higher than long docs</td></tr>
+        <tr><td><strong>Field Boost</strong></td><td>Which field the term appears in</td><td>Title match &gt; body match (configurable multiplier)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout tip">You don't need to understand the BM25 math to use Elasticsearch productively. Just know: field-boosted + term-frequency + IDF = the score. Tune boosts in mapping and query DSL.</div>
+
+    <h3>Why IDF Matters</h3>
+    <p>Consider the word "the" — it appears in virtually every English document, so it has very high document frequency and a very low IDF weight. It contributes almost nothing to scores. A rare word like "photovoltaic" or "elasticsearch" appearing in a document is a strong signal of topical relevance.</p>
+  </section>
+
+  <!-- ── 07 TYPO TOLERANCE ── -->
+  <section id="typo">
+    <div class="section-header">
+      <span class="badge">07</span>
+      <h2>Typo Tolerance — Fuzzy Search</h2>
+    </div>
+
+    <p>Elasticsearch uses <strong>Levenshtein edit distance</strong> under the hood for fuzzy matching. Edit distance is the minimum number of single-character operations (insert, delete, substitute) needed to transform one word into another.</p>
+
+    <ul>
+      <li><code>lapto</code> → <code>laptop</code>: 1 insertion → edit distance 1 ✓</li>
+      <li><code>treading</code> → <code>trending</code>: 1 substitution → edit distance 1 ✓</li>
+      <li><code>mcbook</code> → <code>macbook</code>: 1 insertion → edit distance 1 ✓</li>
+    </ul>
+
+    <pre><span class="lang-label">Elasticsearch DSL — fuzzy query</span>{
+  <span class="str">"query"</span>: {
+    <span class="str">"fuzzy"</span>: {
+      <span class="str">"name"</span>: {
+        <span class="str">"value"</span>: <span class="str">"lapto"</span>,
+        <span class="str">"fuzziness"</span>: <span class="str">"AUTO"</span>,  <span class="cmt">// 0 for 1-2 chars, 1 for 3-5, 2 for 6+</span>
+        <span class="str">"prefix_length"</span>: <span class="num">1</span>       <span class="cmt">// first N chars must match exactly</span>
+      }
+    }
+  }
+}</pre>
+
+    <p><code>"fuzziness": "AUTO"</code> is the recommended setting. It automatically adjusts the allowed edit distance based on word length. <code>prefix_length: 1</code> prevents matching completely unrelated words that happen to be 1–2 edits away.</p>
+
+    <div class="callout">Type-ahead / autocomplete interfaces like those on Amazon or Google use this capability. As you type "trendin", Elasticsearch finds "trending" with fuzziness=1 and returns suggestions in &lt;50 ms.</div>
+  </section>
+
+  <!-- ── 08 ELK STACK ── -->
+  <section id="elk">
+    <div class="section-header">
+      <span class="badge">08</span>
+      <h2>The ELK Stack — Logs &amp; Observability</h2>
+    </div>
+
+    <p>Elasticsearch isn't only for product search. It's the "E" in the famous <strong>ELK Stack</strong> used for centralised log management and observability.</p>
+
+    <!-- ELK diagram -->
+    <div class="diagram-box">
+      <svg viewBox="0 0 680 130" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <rect width="680" height="130" fill="#fff"/>
+        <!-- L -->
+        <rect x="30" y="30" width="140" height="70" rx="8" fill="#27ae60" opacity=".9"/>
+        <text x="100" y="62" text-anchor="middle" fill="#fff" font-family="Playfair Display,serif" font-size="16" font-weight="700">Logstash</text>
+        <text x="100" y="82" text-anchor="middle" fill="#d5f5e3" font-family="Source Sans 3,sans-serif" font-size="11">Collect &amp; Parse Logs</text>
+        <!-- arrow -->
+        <line x1="172" y1="65" x2="212" y2="65" stroke="#4a3f35" stroke-width="2" marker-end="url(#arr3)"/>
+        <!-- E -->
+        <rect x="214" y="30" width="140" height="70" rx="8" fill="#c0392b" opacity=".9"/>
+        <text x="284" y="62" text-anchor="middle" fill="#fff" font-family="Playfair Display,serif" font-size="16" font-weight="700">Elasticsearch</text>
+        <text x="284" y="82" text-anchor="middle" fill="#ffeaea" font-family="Source Sans 3,sans-serif" font-size="11">Index &amp; Search Logs</text>
+        <!-- arrow -->
+        <line x1="356" y1="65" x2="396" y2="65" stroke="#4a3f35" stroke-width="2" marker-end="url(#arr3)"/>
+        <!-- K -->
+        <rect x="398" y="30" width="140" height="70" rx="8" fill="#2980b9" opacity=".9"/>
+        <text x="468" y="62" text-anchor="middle" fill="#fff" font-family="Playfair Display,serif" font-size="16" font-weight="700">Kibana</text>
+        <text x="468" y="82" text-anchor="middle" fill="#d6eaf8" font-family="Source Sans 3,sans-serif" font-size="11">Visualise &amp; Dashboard</text>
+        <!-- Beats note -->
+        <rect x="30" y="108" width="508" height="16" rx="4" fill="#ede7d9"/>
+        <text x="284" y="120" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="11">Beats (Filebeat / Metricbeat) → lightweight agents that ship logs/metrics to Logstash or directly to ES</text>
+        <defs>
+          <marker id="arr3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#4a3f35"/>
+          </marker>
+        </defs>
+      </svg>
+      <div class="diagram-caption">Fig 4 — The ELK Stack. Logstash ingests &amp; parses, Elasticsearch indexes, Kibana visualises.</div>
+    </div>
+
+    <p>If your company already runs ELK for logging, adding product/content search on top of the same Elasticsearch cluster is a natural, cost-effective choice — you're already paying for the infrastructure and your ops team already knows it.</p>
+  </section>
+
+  <!-- ── 09 CODE: POSTGRES FTS (Go) ── -->
+  <section id="code-pg">
+    <div class="section-header">
+      <span class="badge">09</span>
+      <h2>Postgres Full-Text Search in Go</h2>
+    </div>
+
+    <p>Postgres has had native full-text search since version 8.3 via the <code>tsvector</code> / <code>tsquery</code> types. It uses its own inverted index (the <strong>GIN</strong> index) and a BM25-variant scorer called <code>ts_rank</code>. It's not as feature-rich as Elasticsearch but perfectly adequate for moderate search needs on data already in Postgres.</p>
+
+    <h3>DDL — Add a GIN Index</h3>
+    <pre><span class="lang-label">SQL</span><span class="cmt">-- Add a generated tsvector column and index it</span>
+<span class="kw">ALTER TABLE</span> products
+  <span class="kw">ADD COLUMN</span> search_vec tsvector
+    <span class="kw">GENERATED ALWAYS AS</span> (
+      setweight(to_tsvector(<span class="str">'english'</span>, coalesce(name, <span class="str">''</span>)), <span class="str">'A'</span>) ||
+      setweight(to_tsvector(<span class="str">'english'</span>, coalesce(description, <span class="str">''</span>)), <span class="str">'B'</span>)
+    ) <span class="kw">STORED</span>;
+
+<span class="kw">CREATE INDEX</span> idx_products_fts <span class="kw">ON</span> products <span class="kw">USING</span> GIN(search_vec);</pre>
+
+    <p><code>setweight('A')</code> means title matches outrank description matches — the Postgres equivalent of field boosting.</p>
+
+    <h3>Go — Full-Text Search Handler</h3>
+    <pre><span class="lang-label">Go</span><span class="kw">package</span> main
+
+<span class="kw">import</span> (
+    <span class="str">"context"</span>
+    <span class="str">"fmt"</span>
+    <span class="str">"log"</span>
+    <span class="str">"net/http"</span>
+
+    <span class="str">"github.com/jackc/pgx/v5/pgxpool"</span>
+)
+
+<span class="kw">type</span> <span class="type">Product</span> <span class="kw">struct</span> {
+    ID          <span class="type">int</span>
+    Name        <span class="type">string</span>
+    Description <span class="type">string</span>
+    Rank        <span class="type">float64</span>
+}
+
+<span class="kw">func</span> <span class="fn">searchHandler</span>(pool *<span class="type">pgxpool.Pool</span>) http.HandlerFunc {
+    <span class="kw">return func</span>(w http.ResponseWriter, r *http.Request) {
+        query := r.URL.Query().Get(<span class="str">"q"</span>)
+        <span class="kw">if</span> query == <span class="str">""</span> {
+            http.Error(w, <span class="str">"missing query param q"</span>, http.StatusBadRequest)
+            <span class="kw">return</span>
+        }
+
+        <span class="cmt">// plainto_tsquery converts plain text safely (no special chars needed)</span>
+        <span class="cmt">// websearch_to_tsquery also supports AND/OR/-term syntax</span>
+        sql := <span class="str">`
+            SELECT id, name, description,
+                   ts_rank(search_vec, plainto_tsquery('english', $1)) AS rank
+            FROM   products
+            WHERE  search_vec @@ plainto_tsquery('english', $1)
+            ORDER  BY rank DESC
+            LIMIT  20
+        `</span>
+
+        rows, err := pool.Query(context.Background(), sql, query)
+        <span class="kw">if</span> err != nil {
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            <span class="kw">return</span>
+        }
+        <span class="kw">defer</span> rows.Close()
+
+        <span class="kw">var</span> results []<span class="type">Product</span>
+        <span class="kw">for</span> rows.Next() {
+            <span class="kw">var</span> p <span class="type">Product</span>
+            rows.Scan(&amp;p.ID, &amp;p.Name, &amp;p.Description, &amp;p.Rank)
+            results = append(results, p)
+        }
+
+        w.Header().Set(<span class="str">"Content-Type"</span>, <span class="str">"application/json"</span>)
+        fmt.Fprintf(w, <span class="str">"found %d results\n"</span>, len(results))
+    }
+}
+
+<span class="kw">func</span> <span class="fn">main</span>() {
+    pool, _ := pgxpool.New(context.Background(), <span class="str">"postgres://..."</span>)
+    http.HandleFunc(<span class="str">"/search"</span>, searchHandler(pool))
+    log.Fatal(http.ListenAndServe(<span class="str">":8080"</span>, nil))
+}</pre>
+
+    <div class="callout tip">The <code>@@</code> operator is Postgres's full-text match operator. It uses the GIN index — query time stays O(log n) regardless of table size.</div>
+  </section>
+
+  <!-- ── 10 CODE: ELASTICSEARCH (Python) ── -->
+  <section id="code-es">
+    <div class="section-header">
+      <span class="badge">10</span>
+      <h2>Elasticsearch in Python (Official SDK)</h2>
+    </div>
+
+    <p>The official Python client is <a href="https://www.elastic.co/guide/en/elasticsearch/client/python-api/current/index.html" target="_blank">elasticsearch-py</a>. Install:</p>
+
+    <pre><span class="lang-label">Shell</span>pip install elasticsearch</pre>
+
+    <h3>Index Setup &amp; Bulk Insert</h3>
+    <pre><span class="lang-label">Python</span><span class="kw">from</span> elasticsearch <span class="kw">import</span> Elasticsearch, helpers
+<span class="kw">import</span> csv
+
+es = Elasticsearch(
+    cloud_id=<span class="str">"YOUR_CLOUD_ID"</span>,
+    api_key=<span class="str">"YOUR_API_KEY"</span>
+)
+
+INDEX = <span class="str">"reviews"</span>
+
+<span class="cmt"># 1. Create index with explicit mapping</span>
+<span class="kw">if</span> es.indices.exists(index=INDEX):
+    es.indices.delete(index=INDEX)
+
+es.indices.create(index=INDEX, body={
+    <span class="str">"mappings"</span>: {
+        <span class="str">"properties"</span>: {
+            <span class="str">"review"</span>:    {<span class="str">"type"</span>: <span class="str">"text"</span>},     <span class="cmt"># analysed full-text</span>
+            <span class="str">"sentiment"</span>: {<span class="str">"type"</span>: <span class="str">"keyword"</span>}  <span class="cmt"># exact: "positive" / "negative"</span>
+        }
+    }
+})
+
+<span class="cmt"># 2. Bulk insert from CSV</span>
+<span class="kw">def</span> <span class="fn">generate_docs</span>(path: str):
+    <span class="kw">with</span> open(path) <span class="kw">as</span> f:
+        reader = csv.DictReader(f)
+        <span class="kw">for</span> row <span class="kw">in</span> reader:
+            <span class="kw">if</span> row.get(<span class="str">"review"</span>) <span class="kw">and</span> row.get(<span class="str">"sentiment"</span>):
+                <span class="kw">yield</span> {
+                    <span class="str">"_index"</span>: INDEX,
+                    <span class="str">"_source"</span>: {
+                        <span class="str">"review"</span>:    row[<span class="str">"review"</span>],
+                        <span class="str">"sentiment"</span>: row[<span class="str">"sentiment"</span>]
+                    }
+                }
+
+success, errors = helpers.bulk(es, generate_docs(<span class="str">"reviews.csv"</span>))
+<span class="fn">print</span>(<span class="str">f"Inserted {success} documents, {len(errors)} errors"</span>)</pre>
+
+    <h3>Search with Fuzzy + Field Boost</h3>
+    <pre><span class="lang-label">Python</span><span class="kw">def</span> <span class="fn">search_reviews</span>(query: str, sentiment_filter: str = <span class="kw">None</span>) -> list:
+    must_clauses = [{
+        <span class="str">"multi_match"</span>: {
+            <span class="str">"query"</span>:     query.lower(),
+            <span class="str">"fields"</span>:   [<span class="str">"review"</span>],
+            <span class="str">"fuzziness"</span>: <span class="str">"AUTO"</span>,
+            <span class="str">"operator"</span>:  <span class="str">"and"</span>   <span class="cmt"># all terms must appear</span>
+        }
+    }]
+
+    filter_clauses = []
+    <span class="kw">if</span> sentiment_filter:
+        filter_clauses.append({
+            <span class="str">"term"</span>: {<span class="str">"sentiment"</span>: sentiment_filter}
+        })
+
+    body = {
+        <span class="str">"query"</span>: {<span class="str">"bool"</span>: {<span class="str">"must"</span>: must_clauses, <span class="str">"filter"</span>: filter_clauses}},
+        <span class="str">"size"</span>: <span class="num">20</span>
+    }
+
+    resp = es.search(index=INDEX, body=body)
+    <span class="kw">return</span> [
+        {<span class="str">"score"</span>: hit[<span class="str">"_score"</span>], **hit[<span class="str">"_source"</span>]}
+        <span class="kw">for</span> hit <span class="kw">in</span> resp[<span class="str">"hits"</span>][<span class="str">"hits"</span>]
+    ]
+
+<span class="cmt"># Usage</span>
+results = search_reviews(<span class="str">"gret product"</span>, sentiment_filter=<span class="str">"positive"</span>)
+<span class="cmt"># "gret" (typo for "great") matched via fuzziness=AUTO (edit distance 1)</span></pre>
+
+    <h3>Streaming Results from Two Sources (Node.js Pattern)</h3>
+    <p>The demo in the lecture used a Next.js API route that streams results from Postgres and Elasticsearch simultaneously so neither waits for the other. Here is the pattern in pure Node.js:</p>
+
+    <pre><span class="lang-label">Node.js (ESM)</span><span class="kw">import</span> { Client } <span class="kw">from</span> <span class="str">'@elastic/elasticsearch'</span>
+<span class="kw">import</span> { neon }     <span class="kw">from</span> <span class="str">'@neondatabase/serverless'</span>
+
+<span class="kw">export async function</span> <span class="fn">GET</span>(req) {
+  <span class="kw">const</span> { searchParams } = <span class="kw">new</span> URL(req.url)
+  <span class="kw">const</span> term = searchParams.get(<span class="str">'q'</span>)
+
+  <span class="kw">const</span> encoder = <span class="kw">new</span> TextEncoder()
+  <span class="kw">const</span> stream = <span class="kw">new</span> ReadableStream({
+    <span class="kw">async</span> <span class="fn">start</span>(controller) {
+      <span class="cmt">// Fire BOTH queries concurrently — don't await sequentially</span>
+      <span class="kw">const</span> [pgResult, esResult] = <span class="kw">await</span> Promise.allSettled([
+        <span class="fn">pgSearch</span>(term),
+        <span class="fn">esSearch</span>(term),
+      ])
+
+      controller.enqueue(encoder.encode(JSON.stringify({
+        source: <span class="str">'postgres'</span>,
+        ...pgResult
+      })))
+      controller.enqueue(encoder.encode(JSON.stringify({
+        source: <span class="str">'elasticsearch'</span>,
+        ...esResult
+      })))
+      controller.close()
+    }
+  })
+  <span class="kw">return new</span> Response(stream, { headers: { <span class="str">'Content-Type'</span>: <span class="str">'text/event-stream'</span> } })
+}</pre>
+  </section>
+
+  <!-- ── 11 BENCHMARK ── -->
+  <section id="benchmark">
+    <div class="section-header">
+      <span class="badge">11</span>
+      <h2>The Benchmark — ILIKE vs Elasticsearch on 50k Rows</h2>
+    </div>
+
+    <p>The demo in the lecture populated <strong>50,000 review documents</strong> into both Neon (cloud Postgres) and Elastic Cloud, both hosted in <code>us-west</code> to keep network latency equal. Results:</p>
+
+    <!-- Bar chart diagram -->
+    <div class="diagram-box">
+      <svg viewBox="0 0 600 220" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <rect width="600" height="220" fill="#fff"/>
+        <text x="300" y="24" text-anchor="middle" font-family="Playfair Display,serif" font-size="15" font-weight="700" fill="#1a1612">Search Latency on 50 000 rows</text>
+
+        <!-- Y axis -->
+        <line x1="80" y1="40" x2="80" y2="180" stroke="#d4c9b8" stroke-width="1.5"/>
+        <line x1="80" y1="180" x2="560" y2="180" stroke="#d4c9b8" stroke-width="1.5"/>
+
+        <!-- gridlines -->
+        <line x1="80" y1="130" x2="560" y2="130" stroke="#ede7d9" stroke-width="1"/>
+        <line x1="80" y1="80" x2="560" y2="80" stroke="#ede7d9" stroke-width="1"/>
+        <text x="70" y="133" text-anchor="end" font-family="Source Sans 3,sans-serif" font-size="11" fill="#4a3f35">3 s</text>
+        <text x="70" y="83" text-anchor="end" font-family="Source Sans 3,sans-serif" font-size="11" fill="#4a3f35">7 s</text>
+        <text x="70" y="183" text-anchor="end" font-family="Source Sans 3,sans-serif" font-size="11" fill="#4a3f35">0</text>
+
+        <!-- ES bars (fast) -->
+        <rect x="130" y="173" width="70" height="7" rx="3" fill="#27ae60"/>
+        <text x="165" y="168" text-anchor="middle" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700" fill="#27ae60">500ms</text>
+        <text x="165" y="197" text-anchor="middle" font-family="Source Sans 3,sans-serif" font-size="11" fill="#4a3f35">ES: "laptop"</text>
+
+        <rect x="240" y="171" width="70" height="9" rx="3" fill="#27ae60"/>
+        <text x="275" y="166" text-anchor="middle" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700" fill="#27ae60">500ms</text>
+        <text x="275" y="197" text-anchor="middle" font-family="Source Sans 3,sans-serif" font-size="11" fill="#4a3f35">ES: "only"</text>
+
+        <!-- PG bars (slow) -->
+        <rect x="360" y="130" width="70" height="50" rx="3" fill="#c0392b"/>
+        <text x="395" y="125" text-anchor="middle" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700" fill="#c0392b">~3s</text>
+        <text x="395" y="197" text-anchor="middle" font-family="Source Sans 3,sans-serif" font-size="11" fill="#4a3f35">PG: "laptop"</text>
+
+        <rect x="460" y="75" width="70" height="105" rx="3" fill="#c0392b"/>
+        <text x="495" y="70" text-anchor="middle" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700" fill="#c0392b">~7.5s</text>
+        <text x="495" y="197" text-anchor="middle" font-family="Source Sans 3,sans-serif" font-size="11" fill="#4a3f35">PG: "only"</text>
+      </svg>
+      <div class="diagram-caption">Fig 5 — Postgres ILIKE scales poorly with wider matches; Elasticsearch stays flat at ~500ms.</div>
+    </div>
+
+    <table>
+      <thead><tr><th>Query</th><th>Elasticsearch</th><th>Postgres ILIKE</th><th>Speedup</th></tr></thead>
+      <tbody>
+        <tr><td>"laptop"</td><td>~500 ms</td><td>~3 s</td><td>6×</td></tr>
+        <tr><td>"only" (broad)</td><td>~500 ms</td><td>~7.5 s</td><td>15×</td></tr>
+      </tbody>
+    </table>
+
+    <p>The broader the search term (more matching rows), the worse ILIKE gets — because Postgres must retrieve and return all those rows from disk. Elasticsearch computes relevance scores in-memory on the shard and only returns the top-N, so latency stays low.</p>
+  </section>
+
+  <!-- ── 12 WHEN TO USE WHAT ── -->
+  <section id="when">
+    <div class="section-header">
+      <span class="badge">12</span>
+      <h2>When to Use What</h2>
+    </div>
+
+    <div class="compare-grid">
+      <div class="compare-card">
+        <h4>Postgres Full-Text Search</h4>
+        <ul>
+          <li>Data already in Postgres</li>
+          <li>Search is a secondary feature, not the core product</li>
+          <li>Team small / no dedicated infra for ES</li>
+          <li>Moderate data volume (&lt; a few million rows)</li>
+          <li>Don't need fuzzy/typo search on day one</li>
+        </ul>
+      </div>
+      <div class="compare-card">
+        <h4>Elasticsearch</h4>
+        <ul>
+          <li>Search is a first-class feature</li>
+          <li>Millions+ of documents</li>
+          <li>Need typo tolerance / autocomplete</li>
+          <li>Complex relevance tuning needed</li>
+          <li>Already running ELK for logs anyway</li>
+          <li>Need aggregations / analytics on search results</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout tip">As the lecturer noted: <em>"You don't have to master Elasticsearch the way you must master databases. Most search use cases are covered by copy-pasting from the official docs or an LLM."</em> Know when to reach for the tool; the tool's docs will handle the rest.</div>
+
+    <h3>Decision Flow</h3>
+    <div class="diagram-box">
+      <svg viewBox="0 0 640 200" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <rect width="640" height="200" fill="#fff"/>
+        <defs>
+          <marker id="arr4" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#4a3f35"/>
+          </marker>
+        </defs>
+        <!-- Start -->
+        <rect x="240" y="16" width="160" height="36" rx="18" fill="#1a1612"/>
+        <text x="320" y="39" text-anchor="middle" fill="#f5f0e8" font-family="Source Sans 3,sans-serif" font-size="13">Need text search?</text>
+        <line x1="320" y1="52" x2="320" y2="72" stroke="#4a3f35" stroke-width="1.5" marker-end="url(#arr4)"/>
+
+        <!-- Decision: millions? -->
+        <polygon points="320,72 420,100 320,128 220,100" fill="#ede7d9" stroke="#d4c9b8"/>
+        <text x="320" y="96" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="12">Millions of docs or</text>
+        <text x="320" y="112" text-anchor="middle" fill="#1a1612" font-family="Source Sans 3,sans-serif" font-size="12">search-first product?</text>
+
+        <!-- Yes → ES -->
+        <line x1="420" y1="100" x2="520" y2="100" stroke="#c0392b" stroke-width="1.5" marker-end="url(#arr4)"/>
+        <text x="468" y="92" text-anchor="middle" fill="#c0392b" font-family="Source Sans 3,sans-serif" font-size="11">Yes</text>
+        <rect x="522" y="76" width="100" height="48" rx="8" fill="#c0392b"/>
+        <text x="572" y="98" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="12" font-weight="700">Elasticsearch</text>
+        <text x="572" y="114" text-anchor="middle" fill="#ffeaea" font-family="Source Sans 3,sans-serif" font-size="10">/ OpenSearch</text>
+
+        <!-- No → PG -->
+        <line x1="220" y1="100" x2="100" y2="100" stroke="#27ae60" stroke-width="1.5" marker-end="url(#arr4)"/>
+        <text x="162" y="92" text-anchor="middle" fill="#27ae60" font-family="Source Sans 3,sans-serif" font-size="11">No</text>
+        <rect x="18" y="76" width="80" height="48" rx="8" fill="#27ae60"/>
+        <text x="58" y="98" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="12" font-weight="700">Postgres</text>
+        <text x="58" y="114" text-anchor="middle" fill="#d5f5e3" font-family="Source Sans 3,sans-serif" font-size="10">tsvector+GIN</text>
+
+        <!-- Note bottom -->
+        <text x="320" y="160" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="12">Both route through Apache Lucene (or compatible) under the hood.</text>
+        <text x="320" y="180" text-anchor="middle" fill="#4a3f35" font-family="Source Sans 3,sans-serif" font-size="12">Master your database first; search is the second skill to add.</text>
+      </svg>
+      <div class="diagram-caption">Fig 6 — Quick decision tree for choosing your search backend.</div>
+    </div>
+  </section>
+
+  <!-- ── 13 REFERENCES ── -->
+  <section id="refs">
+    <div class="section-header">
+      <span class="badge">13</span>
+      <h2>References &amp; Further Reading</h2>
+    </div>
+    <div class="ref-links">
+      <a class="ref-link" href="https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html" target="_blank">📖 Elasticsearch Official Docs</a>
+      <a class="ref-link" href="https://www.postgresql.org/docs/current/textsearch.html" target="_blank">📖 Postgres Full-Text Search</a>
+      <a class="ref-link" href="https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html" target="_blank">📖 Elasticsearch Query DSL</a>
+      <a class="ref-link" href="https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules-similarity.html" target="_blank">📐 BM25 Similarity Config</a>
+      <a class="ref-link" href="https://lucene.apache.org/core/" target="_blank">⚙️ Apache Lucene</a>
+      <a class="ref-link" href="https://www.elastic.co/guide/en/elasticsearch/reference/current/analysis.html" target="_blank">🔬 Analysis &amp; Tokenisation</a>
+      <a class="ref-link" href="https://www.elastic.co/what-is/elk-stack" target="_blank">📦 ELK Stack Overview</a>
+      <a class="ref-link" href="https://pkg.go.dev/github.com/jackc/pgx/v5" target="_blank">🐹 pgx Go Driver Docs</a>
+      <a class="ref-link" href="https://www.elastic.co/guide/en/elasticsearch/client/python-api/current/index.html" target="_blank">🐍 Python ES Client</a>
+    </div>
+  </section>
+
+  <hr>
+  <p style="text-align:center; font-family:'Source Sans 3',sans-serif; font-size:13px; color:var(--ink-light);">
+    Backend Field Manual · Full-Text Search Chapter · Notes compiled from video lecture
+  </p>
+
+</main>
+<!-- ============ CHAPTER NAVIGATION ============ -->
+<nav class="chapter-nav" id="chapterNav">
+  <a href="../../10.Task queues and background job/html_notes/notes.html" class="nav-chapter-link"><span class="nav-arrow">&larr;</span><span class="nav-label"><span class="nav-small">Chapter 10</span>Task Queues & Background Jobs</span></a>
+  <a href="../../index.html" class="nav-indicator"><span class="nav-dot"></span> Chapter 11 <span class="nav-sep">/</span> 24</a>
+  <a href="../../12. Error Handling and Building Fault Tolerant Systems/html_notes/notes.html" class="nav-chapter-link nav-next"><span class="nav-label"><span class="nav-small">Chapter 12</span>Error Handling & Fault Tolerance</span><span class="nav-arrow">&rarr;</span></a>
+</nav>
+</body>
+</html>
