@@ -264,6 +264,9 @@ body{padding-bottom:80px;}
     <li><a href="#s10"><span class="num">10</span> Golden Rules</a></li>
     <li><a href="#s11"><span class="num">11</span> Versioning</a></li>
     <li><a href="#s12"><span class="num">12</span> Error Responses</a></li>
+    <li><a href="#s13"><span class="num">13</span> The 6 vs the 8</a></li>
+    <li><a href="#s14"><span class="num">14</span> The Eight Principles</a></li>
+    <li><a href="#s15"><span class="num">15</span> Worked Code · Go</a></li>
   </ul>
 </aside>
 
@@ -1233,6 +1236,733 @@ error_response(
     <div class="callout model">
       <span class="clabel">The whole error story in one line</span>
       <p>Return the honest status code, wrap every failure in one consistent JSON envelope with a machine-readable <code>code</code> + human <code>message</code> + per-field <code>details</code> + a <code>requestId</code>, and never leak internals — so a consumer can handle your errors as reliably as your successes.</p>
+    </div>
+  </section>
+
+  <!-- ============ 13 ============ -->
+  <section id="s13">
+    <div class="sec-head"><span class="sec-num">13</span><h2>Constraints vs Conventions</h2></div>
+
+    <p>Zoom back out. Plural-or-singular and <code>PUT</code>-or-<code>PATCH</code> aren't the only things that trip people up about REST — so does the <em>count</em> itself. Ask one engineer for "the principles of REST" and you'll hear <strong>six</strong>; ask another and you'll get a checklist of <strong>eight</strong> or ten. Both are correct, because they answer two different questions. This closing section is a reference card for telling them apart.</p>
+
+    <h3>Two lists, two questions</h3>
+    <p>The <strong>six</strong> are Roy Fielding's formal <em>architectural constraints</em> — they define what makes a system RESTful <em>at all</em>. That's the academic answer, and it's the whole of <a href="#s2" class="ext">§02</a>. The <strong>eight</strong> are practical <em>conventions</em> — how you design a clean, predictable API once you've accepted those constraints. That's what most of this manual actually teaches, spread across its chapters. Constraints are the theory; conventions are the craft.</p>
+
+    <h4>The six constraints — the definition of REST</h4>
+    <ol>
+      <li><strong>Client–Server</strong> — split the UI from data &amp; logic so each side evolves on its own.</li>
+      <li><strong>Uniform Interface</strong> — one standard way to address and manipulate every resource.</li>
+      <li><strong>Layered System</strong> — let proxies, caches, and gateways sit between client and origin, invisibly.</li>
+      <li><strong>Cacheable</strong> — every response declares whether it may be cached.</li>
+      <li><strong>Stateless</strong> — each request carries everything it needs; the server remembers nothing between calls.</li>
+      <li><strong>Code on Demand</strong> <span style="color:var(--ink-faint)">(optional)</span> — the server may ship executable code to extend the client.</li>
+    </ol>
+    <p class="dg-note">All six — plus the four sub-constraints of the uniform interface, HATEOAS among them — are unpacked in <a href="#s2" class="ext">§02</a>.</p>
+
+    <h4>The eight conventions — how to build one well</h4>
+    <div class="diagram">
+      <div class="diagram-label">The eight conventions &amp; where this manual covers them</div>
+      <div class="tbl-wrap" style="margin:0; border:0;">
+        <table>
+          <thead><tr><th>Convention</th><th>In one line</th><th>Covered in</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Resources as plural nouns</strong></td><td>Model <em>things</em>, not actions; the method is the verb. <code>/orders/123</code>, never <code>/getOrder</code>.</td><td><a href="#s4" class="ext">§04 Routes</a></td></tr>
+            <tr><td><strong>Methods by intent</strong></td><td><code>GET</code> read · <code>POST</code> create/action · <code>PUT</code> replace · <code>PATCH</code> partial · <code>DELETE</code> remove.</td><td><a href="#s5" class="ext">§05 Methods</a></td></tr>
+            <tr><td><strong>Honest status codes</strong></td><td>Let the code carry the outcome — don't bury an error inside a <code>200</code>.</td><td><a href="#s8" class="ext">§08 Status</a></td></tr>
+            <tr><td><strong>Statelessness</strong> <span style="color:var(--ink-faint)">*</span></td><td>Every request self-contained → any server can answer it → horizontal scaling.</td><td><a href="#s2" class="ext">§02 Constraints</a></td></tr>
+            <tr><td><strong>Ruthless consistency</strong></td><td>One casing, one date format, one pagination shape — everywhere.</td><td><a href="#s10" class="ext">§10 Golden Rules</a></td></tr>
+            <tr><td><strong>Versioning</strong></td><td>Bump only on breaking changes; additive changes need no new version.</td><td><a href="#s11" class="ext">§11 Versioning</a></td></tr>
+            <tr><td><strong>Page · sort · filter</strong></td><td>Never dump a whole table; paginate lists and give sane defaults.</td><td><a href="#s7" class="ext">§07 List APIs</a></td></tr>
+            <tr><td><strong>Structured errors</strong></td><td>One consistent, machine-readable envelope on every failure.</td><td><a href="#s12" class="ext">§12 Errors</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="dg-note"><span style="color:var(--ink-faint)">*</span> Statelessness is the one item that lands on <em>both</em> lists — see below.</p>
+    </div>
+
+    <div class="callout note">
+      <span class="clabel">Where the two lists touch</span>
+      <p>They aren't rivals — the conventions are <em>how you honor</em> the constraints day to day. The clearest overlap is <strong>statelessness</strong>, which is both Fielding's constraint #5 and a rule you follow on every endpoint. The others echo too: <strong>cacheability</strong> surfaces as your <code>Cache-Control</code> / <code>ETag</code> headers, and the <strong>uniform interface</strong> is exactly what "plural-noun URLs + methods by intent + consistent shapes" delivers in practice. <strong>HATEOAS</strong> — the most aspirational sub-constraint — is the one piece of the theory most real-world APIs quietly skip.</p>
+    </div>
+
+    <div class="callout model">
+      <span class="clabel">Which list does someone want?</span>
+      <p>If the question is academic — an interview, "define REST," a systems exam — they want <strong>the six constraints</strong>. If it's "how do I design a clean API?" — a code review, a new service — they want <strong>the eight conventions</strong>. Same standard, two altitudes: the six say what REST <em>is</em>; the eight say how to <em>do it well</em>.</p>
+    </div>
+  </section>
+
+  <!-- ============ 14 ============ -->
+  <section id="s14">
+    <div class="sec-head"><span class="sec-num">14</span><h2>The Eight Principles</h2></div>
+
+    <p><a href="#s13" class="ext">§13</a> lined these up against Fielding's six at a glance; this is the same eight written out in full — the plain-English checklist. Each is a working convention that turns the theory into an API other developers actually enjoy consuming, and each links back to the chapter that unpacks it in depth.</p>
+
+    <h3>1 · Model resources as nouns, not actions</h3>
+    <p>URLs should represent <em>things</em>, not operations. Use <code>/users/123/orders</code> rather than <code>/getUserOrders?id=123</code>. The HTTP method supplies the verb, so the noun and the method together describe the action. Collections are plural — <code>/orders</code>, not <code>/order</code>. (Full treatment in <a href="#s4" class="ext">§04</a>.)</p>
+
+    <h3>2 · Use HTTP methods for their intended semantics</h3>
+    <p><code>GET</code> reads (and never changes state), <code>POST</code> creates, <code>PUT</code> replaces a resource wholesale, <code>PATCH</code> updates part of it, and <code>DELETE</code> removes it. Respecting this lets clients, caches, and proxies reason about your API correctly — a <code>GET</code> is safe to retry, a <code>PUT</code> is idempotent (calling it twice has the same effect as once), but a <code>POST</code> generally isn't. (See <a href="#s5" class="ext">§05</a>.)</p>
+
+    <h3>3 · Return meaningful status codes</h3>
+    <p>Lean on the standard ones instead of always returning <code>200</code> with an error buried in the body: <code>200</code>/<code>201</code>/<code>204</code> for success, <code>400</code> for bad input, <code>401</code>/<code>403</code> for auth problems, <code>404</code> when something's missing, <code>409</code> for conflicts, <code>422</code> for validation failures, <code>500</code> for server faults. This lets clients handle outcomes programmatically. (See <a href="#s8" class="ext">§08</a>.)</p>
+
+    <h3>4 · Stay stateless</h3>
+    <p>Each request should carry everything the server needs to process it — auth token, parameters — with no reliance on server-side session memory from previous calls. This is what lets you scale horizontally: any server can handle any request. It's also one of Fielding's core constraints (<a href="#s2" class="ext">§02</a>).</p>
+
+    <h3>5 · Be consistent</h3>
+    <p>Pick conventions and apply them everywhere: naming style (<code>snake_case</code> vs <code>camelCase</code> in JSON), date formats (ISO 8601), how errors are shaped, how pagination works. Predictability is worth more than cleverness — a developer who learns one endpoint should be able to guess the others. (See <a href="#s10" class="ext">§10</a>.)</p>
+
+    <h3>6 · Version your API</h3>
+    <p>Breaking changes are inevitable, so plan for them from the start — commonly via the URL path (<code>/v1/users</code>) or a header. This lets you evolve without breaking existing clients. (<a href="#s11" class="ext">§11</a> goes deeper on when to bump the version.)</p>
+
+    <h3>7 · Handle collections gracefully</h3>
+    <p>Large lists need pagination (<code>?page=2&amp;limit=50</code> or cursor-based), plus filtering (<code>?status=active</code>), sorting (<code>?sort=-created_at</code>), and often field selection. Returning ten thousand records in one response serves no one. (<a href="#s7" class="ext">§07</a> has the full pattern.)</p>
+
+    <h3>8 · Design clear, structured errors</h3>
+    <p>A good error response tells the client what went wrong and ideally how to fix it — a machine-readable code, a human-readable message, and often which field failed. Consistency here matters as much as consistency in success responses. (<a href="#s12" class="ext">§12</a> shows a concrete envelope.)</p>
+
+    <div class="callout model">
+      <span class="clabel">The through-line</span>
+      <p>An API is a contract meant to be used by other developers — so predictability, standards-compliance, and clear communication beat novelty every time. Nail these eight and a consumer can integrate one endpoint, then correctly <em>guess</em> the rest.</p>
+    </div>
+  </section>
+
+  <!-- ============ 15 ============ -->
+  <section id="s15">
+    <div class="sec-head"><span class="sec-num">15</span><h2>Worked Code — a Task API in Go</h2></div>
+
+    <p>Everything in this chapter, compiled into one runnable file: a complete REST API for a single resource — <code>tasks</code> — built on nothing but Go's standard library and the method-aware router introduced in <strong>Go 1.22</strong>. Before the source itself, here is how it actually behaves at runtime — how it boots, how a request is dispatched, and every branch a request can take.</p>
+
+    <!-- ===== DIAGRAM A · BOOT ===== -->
+    <div class="diagram">
+      <div class="diagram-label">Execution flow · from “go run” to a listening server</div>
+      <svg viewBox="0 0 720 128" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+        <defs><marker id="ahA" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L6,3 L0,6 Z" fill="#cdbfa9"/></marker></defs>
+        <line x1="142" y1="52" x2="168" y2="52" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahA)"/>
+        <line x1="278" y1="52" x2="304" y2="52" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahA)"/>
+        <line x1="414" y1="52" x2="440" y2="52" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahA)"/>
+        <line x1="550" y1="52" x2="576" y2="52" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahA)"/>
+        <rect x="34" y="28" width="108" height="48" rx="9" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="88" y="49" text-anchor="middle" fill="#5d544a" font-size="9.5" font-weight="600">go run ./RestAPI</text>
+        <text x="88" y="64" text-anchor="middle" fill="#8a7f70" font-size="8">compile → run</text>
+        <rect x="170" y="28" width="108" height="48" rx="9" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="224" y="49" text-anchor="middle" fill="#5d544a" font-size="11" font-weight="600">main()</text>
+        <text x="224" y="64" text-anchor="middle" fill="#8a7f70" font-size="8">entry point</text>
+        <rect x="306" y="28" width="108" height="48" rx="9" fill="#efe2c2" stroke="#dcc890"/>
+        <text x="360" y="49" text-anchor="middle" fill="#a9802a" font-size="10" font-weight="600">newStore()</text>
+        <text x="360" y="64" text-anchor="middle" fill="#8a7f70" font-size="8">seed 12 tasks</text>
+        <rect x="442" y="28" width="108" height="48" rx="9" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="496" y="49" text-anchor="middle" fill="#5d544a" font-size="10" font-weight="600">http.Server</text>
+        <text x="496" y="64" text-anchor="middle" fill="#8a7f70" font-size="8">timeouts 10s</text>
+        <rect x="578" y="28" width="108" height="48" rx="9" fill="#dde9da" stroke="#bcd3b6"/>
+        <text x="632" y="49" text-anchor="middle" fill="#3f7a4d" font-size="8.5" font-weight="600">ListenAndServe</text>
+        <text x="632" y="64" text-anchor="middle" fill="#3f7a4d" font-size="8">:8080 · ready</text>
+        <text x="360" y="108" text-anchor="middle" fill="#8a7f70" font-size="9.5">now serving — every incoming request runs the flow below</text>
+      </svg>
+      <p class="dg-note"><code>main()</code> builds the store, seeds twelve tasks, wires the routes, sets read/write timeouts, and hands off to <code>ListenAndServe</code>. That call blocks: the process now sits and waits, ready to serve one request at a time as they arrive.</p>
+    </div>
+
+    <!-- ===== DIAGRAM B · ROUTING ===== -->
+    <div class="diagram">
+      <div class="diagram-label">Request flow · the router dispatches on METHOD + PATH</div>
+      <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+        <defs><marker id="ahB" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L6,3 L0,6 Z" fill="#cdbfa9"/></marker></defs>
+        <!-- request -->
+        <rect x="14" y="124" width="118" height="54" rx="9" fill="#b23a26"/>
+        <text x="73" y="147" text-anchor="middle" fill="#fff" font-size="11" font-weight="600">HTTP request</text>
+        <text x="73" y="163" text-anchor="middle" fill="#f2dcd3" font-size="8.5">method + path</text>
+        <!-- router -->
+        <line x1="132" y1="151" x2="164" y2="151" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahB)"/>
+        <rect x="168" y="124" width="140" height="54" rx="9" fill="#dbe3ee" stroke="#c3d0e2"/>
+        <text x="238" y="146" text-anchor="middle" fill="#3a5e8c" font-size="11.5" font-weight="600">ServeMux</text>
+        <text x="238" y="162" text-anchor="middle" fill="#5d544a" font-size="8">method-aware · Go 1.22</text>
+        <!-- fan-out arrows -->
+        <line x1="308" y1="151" x2="340" y2="25"  stroke="#cdbfa9" stroke-width="1.3" marker-end="url(#ahB)"/>
+        <line x1="308" y1="151" x2="340" y2="67"  stroke="#cdbfa9" stroke-width="1.3" marker-end="url(#ahB)"/>
+        <line x1="308" y1="151" x2="340" y2="109" stroke="#cdbfa9" stroke-width="1.3" marker-end="url(#ahB)"/>
+        <line x1="308" y1="151" x2="340" y2="151" stroke="#cdbfa9" stroke-width="1.3" marker-end="url(#ahB)"/>
+        <line x1="308" y1="151" x2="340" y2="193" stroke="#cdbfa9" stroke-width="1.3" marker-end="url(#ahB)"/>
+        <line x1="308" y1="151" x2="340" y2="235" stroke="#cdbfa9" stroke-width="1.3" marker-end="url(#ahB)"/>
+        <line x1="308" y1="151" x2="340" y2="277" stroke="#cdbfa9" stroke-width="1.3" stroke-dasharray="3 3" marker-end="url(#ahB)"/>
+        <!-- rows -->
+        <rect x="344" y="10"  width="300" height="30" rx="7" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="356" y="29" fill="#5d544a" font-size="9.5">GET /v1/tasks → handleList</text>
+        <rect x="590" y="15" width="48" height="20" rx="6" fill="#dde9da"/><text x="614" y="29" text-anchor="middle" fill="#3f7a4d" font-size="9" font-weight="600">200</text>
+        <rect x="344" y="52"  width="300" height="30" rx="7" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="356" y="71" fill="#5d544a" font-size="9.5">POST /v1/tasks → handleCreate</text>
+        <rect x="590" y="57" width="48" height="20" rx="6" fill="#dde9da"/><text x="614" y="71" text-anchor="middle" fill="#3f7a4d" font-size="9" font-weight="600">201</text>
+        <rect x="344" y="94"  width="300" height="30" rx="7" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="356" y="113" fill="#5d544a" font-size="9.5">GET /v1/tasks/{id} → handleGet</text>
+        <rect x="590" y="99" width="48" height="20" rx="6" fill="#dde9da"/><text x="614" y="113" text-anchor="middle" fill="#3f7a4d" font-size="9" font-weight="600">200</text>
+        <rect x="344" y="136" width="300" height="30" rx="7" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="356" y="155" fill="#5d544a" font-size="9.5">PUT /v1/tasks/{id} → handleUpdate</text>
+        <rect x="590" y="141" width="48" height="20" rx="6" fill="#dde9da"/><text x="614" y="155" text-anchor="middle" fill="#3f7a4d" font-size="9" font-weight="600">200</text>
+        <rect x="344" y="178" width="300" height="30" rx="7" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="356" y="197" fill="#5d544a" font-size="9.5">DELETE /v1/tasks/{id} → handleDelete</text>
+        <rect x="590" y="183" width="48" height="20" rx="6" fill="#dde9da"/><text x="614" y="197" text-anchor="middle" fill="#3f7a4d" font-size="9" font-weight="600">204</text>
+        <rect x="344" y="220" width="300" height="30" rx="7" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="356" y="239" fill="#5d544a" font-size="9.5">GET /healthz → health check</text>
+        <rect x="590" y="225" width="48" height="20" rx="6" fill="#dde9da"/><text x="614" y="239" text-anchor="middle" fill="#3f7a4d" font-size="9" font-weight="600">200</text>
+        <rect x="344" y="262" width="300" height="30" rx="7" fill="#f2dcd3" stroke="#e3c4b8"/>
+        <text x="356" y="281" fill="#b23a26" font-size="9.5">· unmatched route / method</text>
+        <rect x="590" y="267" width="48" height="20" rx="6" fill="#b23a26"/><text x="614" y="281" text-anchor="middle" fill="#fff" font-size="9" font-weight="600">404</text>
+      </svg>
+      <p class="dg-note">Because the router is registered with <code>"METHOD /path"</code> patterns, a wrong method on a real path (say <code>POST /v1/tasks/5</code>) matches no route and falls through to the built-in <strong>404</strong>. The tag on each row is that route's success code; the error branches live in the next diagram and the table below.</p>
+    </div>
+
+    <!-- ===== DIAGRAM C · LIST PIPELINE ===== -->
+    <div class="diagram">
+      <div class="diagram-label">Deep dive · every branch inside “GET /v1/tasks”</div>
+      <svg viewBox="0 0 720 540" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+        <defs><marker id="ahC" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L6,3 L0,6 Z" fill="#cdbfa9"/></marker></defs>
+        <!-- spine arrows -->
+        <line x1="250" y1="60"  x2="250" y2="74"  stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahC)"/>
+        <line x1="250" y1="116" x2="250" y2="130" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahC)"/>
+        <line x1="250" y1="180" x2="250" y2="194" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahC)"/>
+        <line x1="250" y1="234" x2="250" y2="248" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahC)"/>
+        <line x1="250" y1="302" x2="250" y2="316" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahC)"/>
+        <line x1="250" y1="356" x2="250" y2="370" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahC)"/>
+        <line x1="250" y1="420" x2="250" y2="434" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahC)"/>
+        <line x1="250" y1="484" x2="250" y2="498" stroke="#cdbfa9" stroke-width="1.5" marker-end="url(#ahC)"/>
+        <!-- error arrows -->
+        <line x1="375" y1="156" x2="468" y2="156" stroke="#cdbfa9" stroke-width="1.3" marker-end="url(#ahC)"/>
+        <line x1="375" y1="274" x2="468" y2="274" stroke="#cdbfa9" stroke-width="1.3" marker-end="url(#ahC)"/>
+        <line x1="375" y1="394" x2="468" y2="394" stroke="#cdbfa9" stroke-width="1.3" marker-end="url(#ahC)"/>
+        <!-- C0 entry -->
+        <rect x="135" y="14" width="230" height="46" rx="9" fill="#b23a26"/>
+        <text x="250" y="36" text-anchor="middle" fill="#fff" font-size="11.5" font-weight="600">GET /v1/tasks</text>
+        <text x="250" y="51" text-anchor="middle" fill="#f2dcd3" font-size="9">handleList()</text>
+        <!-- C1 -->
+        <rect x="135" y="74" width="230" height="42" rx="8" fill="#efe2c2" stroke="#dcc890"/>
+        <text x="250" y="100" text-anchor="middle" fill="#a9802a" font-size="9.5" font-weight="600">list() — snapshot of all tasks (RLock)</text>
+        <!-- C2 -->
+        <rect x="125" y="130" width="250" height="50" rx="8" fill="#dbe3ee" stroke="#c3d0e2"/>
+        <text x="250" y="151" text-anchor="middle" fill="#3a5e8c" font-size="9.5" font-weight="600">is ?done a valid bool?</text>
+        <text x="250" y="166" text-anchor="middle" fill="#5d544a" font-size="8">strconv.ParseBool</text>
+        <text x="415" y="150" text-anchor="middle" fill="#8a7f70" font-size="7.5">no</text>
+        <text x="262" y="192" fill="#8a7f70" font-size="7.5">valid ↓</text>
+        <rect x="468" y="132" width="234" height="46" rx="8" fill="#f2dcd3" stroke="#e3c4b8"/>
+        <text x="585" y="153" text-anchor="middle" fill="#b23a26" font-size="9.5" font-weight="600">400 Bad Request</text>
+        <text x="585" y="168" text-anchor="middle" fill="#b23a26" font-size="7.5">done → true or false</text>
+        <!-- C3 -->
+        <rect x="135" y="194" width="230" height="40" rx="8" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="250" y="219" text-anchor="middle" fill="#5d544a" font-size="9.5">filter: done + title (substring)</text>
+        <!-- C4 -->
+        <rect x="125" y="248" width="250" height="54" rx="8" fill="#dbe3ee" stroke="#c3d0e2"/>
+        <text x="250" y="269" text-anchor="middle" fill="#3a5e8c" font-size="9.5" font-weight="600">sortBy in allow-list?</text>
+        <text x="250" y="284" text-anchor="middle" fill="#5d544a" font-size="8.5">&amp; sortOrder asc | desc?</text>
+        <text x="415" y="268" text-anchor="middle" fill="#8a7f70" font-size="7.5">no</text>
+        <text x="118" y="268" text-anchor="end" fill="#8a7f70" font-size="7.5">defaults:</text>
+        <text x="118" y="280" text-anchor="end" fill="#8a7f70" font-size="7.5">createdAt · desc</text>
+        <rect x="468" y="250" width="234" height="50" rx="8" fill="#f2dcd3" stroke="#e3c4b8"/>
+        <text x="585" y="271" text-anchor="middle" fill="#b23a26" font-size="9.5" font-weight="600">400 Bad Request</text>
+        <text x="585" y="286" text-anchor="middle" fill="#b23a26" font-size="7.5">bad sortBy / sortOrder</text>
+        <!-- C5 -->
+        <rect x="135" y="316" width="230" height="40" rx="8" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="250" y="341" text-anchor="middle" fill="#5d544a" font-size="9.5">sort.Slice(tasks, …)</text>
+        <!-- C6 -->
+        <rect x="125" y="370" width="250" height="50" rx="8" fill="#dbe3ee" stroke="#c3d0e2"/>
+        <text x="250" y="391" text-anchor="middle" fill="#3a5e8c" font-size="9.5" font-weight="600">page ≥ 1 and limit ≥ 1?</text>
+        <text x="250" y="406" text-anchor="middle" fill="#5d544a" font-size="8">parsePositiveInt</text>
+        <text x="415" y="390" text-anchor="middle" fill="#8a7f70" font-size="7.5">no</text>
+        <text x="118" y="386" text-anchor="end" fill="#8a7f70" font-size="7.5">defaults:</text>
+        <text x="118" y="398" text-anchor="end" fill="#8a7f70" font-size="7.5">page 1 · limit 10</text>
+        <text x="118" y="410" text-anchor="end" fill="#8a7f70" font-size="7.5">cap 100</text>
+        <rect x="468" y="372" width="234" height="46" rx="8" fill="#f2dcd3" stroke="#e3c4b8"/>
+        <text x="585" y="393" text-anchor="middle" fill="#b23a26" font-size="9.5" font-weight="600">400 Bad Request</text>
+        <text x="585" y="408" text-anchor="middle" fill="#b23a26" font-size="7.5">page / limit must be ≥ 1</text>
+        <!-- C7 -->
+        <rect x="120" y="434" width="260" height="50" rx="8" fill="#f6f0e6" stroke="#d9cdba"/>
+        <text x="250" y="455" text-anchor="middle" fill="#5d544a" font-size="9.5" font-weight="600">slice out the page · cap 100</text>
+        <text x="250" y="470" text-anchor="middle" fill="#8a7f70" font-size="8">past the end → [] (still 200)</text>
+        <!-- C8 success -->
+        <rect x="135" y="498" width="230" height="40" rx="8" fill="#dde9da" stroke="#bcd3b6"/>
+        <text x="250" y="516" text-anchor="middle" fill="#3f7a4d" font-size="11" font-weight="600">200 OK</text>
+        <text x="250" y="530" text-anchor="middle" fill="#3f7a4d" font-size="8">{ data, pagination }</text>
+      </svg>
+      <p class="dg-note">Four gates, each with an early <strong>400</strong> exit; anything that passes is filtered, sorted, and paginated. Note the two things that are <em>not</em> errors: a missing param falls back to a sane default, and a page past the end returns an empty <code>[]</code> with a <strong>200</strong> — an empty list is not “not found” (<a href="#s8" class="ext">§08</a>).</p>
+    </div>
+
+    <h3>Every response the API can return</h3>
+    <p>Reading the three diagrams together, here is the complete set of outcomes — every status code this server can produce, and the condition that triggers each.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Request</th><th>When</th><th>Response</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /v1/tasks</code></td><td>Valid query, or a page past the end</td><td><strong>200</strong> — <code>{data, pagination}</code>; empty page → <code>data: []</code></td></tr>
+          <tr><td><code>GET /v1/tasks</code></td><td><code>done</code>, <code>sortBy</code>, <code>sortOrder</code>, <code>page</code> or <code>limit</code> malformed</td><td><strong>400</strong> — message naming the bad param</td></tr>
+          <tr><td><code>GET /v1/tasks/{id}</code></td><td>Numeric id that exists</td><td><strong>200</strong> — the task</td></tr>
+          <tr><td><code>GET /v1/tasks/{id}</code></td><td>id is not a number</td><td><strong>400</strong> — <code>invalid id</code></td></tr>
+          <tr><td><code>GET /v1/tasks/{id}</code></td><td>Numeric id that does not exist</td><td><strong>404</strong> — <code>task not found</code></td></tr>
+          <tr><td><code>POST /v1/tasks</code></td><td>Valid JSON with a non-empty <code>title</code></td><td><strong>201</strong> — the created task</td></tr>
+          <tr><td><code>POST /v1/tasks</code></td><td>Body is not valid JSON</td><td><strong>400</strong> — <code>invalid JSON body</code></td></tr>
+          <tr><td><code>POST /v1/tasks</code></td><td><code>title</code> missing or empty</td><td><strong>400</strong> — <code>title is required</code></td></tr>
+          <tr><td><code>PUT /v1/tasks/{id}</code></td><td>Valid id + valid body</td><td><strong>200</strong> — the updated task</td></tr>
+          <tr><td><code>PUT /v1/tasks/{id}</code></td><td>Bad id, bad JSON, or empty title</td><td><strong>400</strong> — the matching message</td></tr>
+          <tr><td><code>PUT /v1/tasks/{id}</code></td><td>id does not exist</td><td><strong>404</strong> — <code>task not found</code></td></tr>
+          <tr><td><code>DELETE /v1/tasks/{id}</code></td><td>Numeric id that exists</td><td><strong>204</strong> — no body</td></tr>
+          <tr><td><code>DELETE /v1/tasks/{id}</code></td><td>Bad id</td><td><strong>400</strong> — <code>invalid id</code></td></tr>
+          <tr><td><code>DELETE /v1/tasks/{id}</code></td><td>id does not exist</td><td><strong>404</strong> — <code>task not found</code></td></tr>
+          <tr><td><code>GET /healthz</code></td><td>Always</td><td><strong>200</strong> — <code>{status: "ok"}</code></td></tr>
+          <tr><td><em>anything else</em></td><td>No route matches the method + path</td><td><strong>404</strong> — default mux</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>The complete program</h3>
+    <div class="code">
+      <div class="code-top"><span class="dots"><i></i><i></i><i></i></span>
+        <div class="tabs"><button class="tab active" data-lang="go">Go</button></div>
+        <span class="code-cap">task API · net/http · Go 1.22+</span>
+      </div>
+      <pre class="code-body" data-lang="go">// A REST API in Go (standard library) for managing "tasks".
+//
+// This version applies three REST-design rules from the course notes:
+//
+//	§3  URL versioning         -&gt; every route lives under /v1
+//	§6  List query parameters  -&gt; pagination + sorting + filtering
+//	§8  Consistent naming      -&gt; JSON fields use camelCase, with sane defaults
+//
+// Requires Go 1.22+ for the method-aware router.
+//
+//	Run:   go run ./RestAPI       (from the module root, where go.mod is)
+//	Then:  curl "http://localhost:8080/v1/tasks?limit=5&amp;sortBy=title&amp;sortOrder=asc&amp;done=false"
+
+///- stateless HTTP server that exposes one resource (tasks) as a REST API:
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"math"
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+// ---------- Model ----------
+
+// Task is a single to-do item.
+//
+// §8 (consistent naming): every JSON field is camelCase — note `createdAt`,
+// NOT `created_at`. The Go field names stay idiomatic PascalCase; only the
+// json struct tags define the wire format the client sees.
+type Task struct {
+	ID        int       `json:"id"`
+	Title     string    `json:"title"`
+	Done      bool      `json:"done"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// ---------- Store (unchanged: thread-safe in-memory map) ----------
+
+var errNotFound = errors.New("task not found")
+
+type store struct {
+	mu     sync.RWMutex
+	tasks  map[int]Task
+	nextID int
+}
+
+func newStore() *store { return &amp;store{tasks: make(map[int]Task), nextID: 1} }
+
+func (s *store) list() []Task {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Task, 0, len(s.tasks)) // non-nil so an empty result encodes as [] not null
+	for _, t := range s.tasks {
+		out = append(out, t)
+	}
+	return out
+}
+
+func (s *store) get(id int) (Task, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return Task{}, errNotFound
+	}
+	return t, nil
+}
+
+func (s *store) create(title string, done bool) Task {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t := Task{ID: s.nextID, Title: title, Done: done, CreatedAt: time.Now()}
+	s.tasks[t.ID] = t
+	s.nextID++
+	return t
+}
+
+func (s *store) update(id int, title string, done bool) (Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return Task{}, errNotFound
+	}
+	t.Title, t.Done = title, done
+	s.tasks[id] = t
+	return t, nil
+}
+
+func (s *store) delete(id int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tasks[id]; !ok {
+		return errNotFound
+	}
+	delete(s.tasks, id)
+	return nil
+}
+
+// ---------- HTTP helpers ----------
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if v != nil {
+		_ = json.NewEncoder(w).Encode(v)
+	}
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func idFromPath(r *http.Request) (int, error) { return strconv.Atoi(r.PathValue("id")) }
+
+// ---------- List endpoint: pagination, sorting, filtering (§6) ----------
+
+// listResponse is the envelope returned by GET /v1/tasks. Wrapping the array
+// in an object gives us a place to attach pagination metadata beside the data.
+// §8: these fields are camelCase too.
+type listResponse struct {
+	Data       []Task     `json:"data"`
+	Pagination pagination `json:"pagination"`
+}
+
+type pagination struct {
+	Page       int `json:"page"`
+	Limit      int `json:"limit"`
+	TotalItems int `json:"totalItems"`
+	TotalPages int `json:"totalPages"`
+}
+
+// sortableFields is an allowlist — clients may only sort by these, never by an
+// arbitrary field name they invent.
+var sortableFields = map[string]bool{"id": true, "title": true, "createdAt": true}
+
+func (s *server) handleList(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	tasks := s.store.list()
+
+	// --- Filtering (§6): narrow the set by matching query params. ---
+	if raw := q.Get("done"); raw != "" {
+		done, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "query param 'done' must be true or false")
+			return
+		}
+		filtered := make([]Task, 0)
+		for _, t := range tasks {
+			if t.Done == done {
+				filtered = append(filtered, t)
+			}
+		}
+		tasks = filtered
+	}
+	if title := strings.TrimSpace(q.Get("title")); title != "" {
+		needle := strings.ToLower(title)
+		filtered := make([]Task, 0)
+		for _, t := range tasks {
+			if strings.Contains(strings.ToLower(t.Title), needle) {
+				filtered = append(filtered, t)
+			}
+		}
+		tasks = filtered
+	}
+
+	// --- Sorting (§6) with sane defaults (§8: default = createdAt, descending). ---
+	sortBy := q.Get("sortBy")
+	if sortBy == "" {
+		sortBy = "createdAt" // sane default
+	}
+	if !sortableFields[sortBy] {
+		writeError(w, http.StatusBadRequest, "query param 'sortBy' must be one of: id, title, createdAt")
+		return
+	}
+	sortOrder := q.Get("sortOrder")
+	if sortOrder == "" {
+		sortOrder = "desc" // sane default
+	}
+	if sortOrder != "asc" &amp;&amp; sortOrder != "desc" {
+		writeError(w, http.StatusBadRequest, "query param 'sortOrder' must be 'asc' or 'desc'")
+		return
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		var less bool
+		switch sortBy {
+		case "id":
+			less = tasks[i].ID &lt; tasks[j].ID
+		case "title":
+			less = strings.ToLower(tasks[i].Title) &lt; strings.ToLower(tasks[j].Title)
+		case "createdAt":
+			less = tasks[i].CreatedAt.Before(tasks[j].CreatedAt)
+		}
+		if sortOrder == "desc" {
+			return !less
+		}
+		return less
+	})
+
+	// --- Pagination (§6) with sane defaults (§8: default limit = 10). ---
+	page, err := parsePositiveInt(q.Get("page"), 1)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "query param 'page' must be a positive integer")
+		return
+	}
+	limit, err := parsePositiveInt(q.Get("limit"), 10)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "query param 'limit' must be a positive integer")
+		return
+	}
+	if limit &gt; 100 {
+		limit = 100 // cap the page size so a client can't ask for everything at once
+	}
+
+	totalItems := len(tasks)
+	totalPages := int(math.Ceil(float64(totalItems) / float64(limit)))
+
+	// Slice out the requested page. A page past the end yields an EMPTY data
+	// array — still 200 OK, never 404 (§7: an empty list is not "not found").
+	start := (page - 1) * limit
+	if start &gt; totalItems {
+		start = totalItems
+	}
+	end := start + limit
+	if end &gt; totalItems {
+		end = totalItems
+	}
+	data := tasks[start:end]
+	if data == nil {
+		data = []Task{} // guarantee [] rather than null in the JSON
+	}
+
+	writeJSON(w, http.StatusOK, listResponse{
+		Data: data,
+		Pagination: pagination{
+			Page:       page,
+			Limit:      limit,
+			TotalItems: totalItems,
+			TotalPages: totalPages,
+		},
+	})
+}
+
+// parsePositiveInt returns def when raw is empty, otherwise the parsed value if
+// it is a positive integer. Anything else (non-numeric, zero, negative) errors.
+func parsePositiveInt(raw string, def int) (int, error) {
+	if raw == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n &lt; 1 {
+		return 0, errors.New("invalid")
+	}
+	return n, nil
+}
+
+// ---------- Single-resource handlers (unchanged logic) ----------
+
+type server struct{ store *store }
+
+func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
+	id, err := idFromPath(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	t, err := s.store.get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (s *server) handleCreate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&amp;body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+	writeJSON(w, http.StatusCreated, s.store.create(body.Title, false))
+}
+
+func (s *server) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := idFromPath(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var body struct {
+		Title string `json:"title"`
+		Done  bool   `json:"done"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&amp;body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+	t, err := s.store.update(id, body.Title, body.Done)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (s *server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := idFromPath(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := s.store.delete(id); err != nil {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---------- Wiring ----------
+
+func (s *server) routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	// §3 (versioning): everything is namespaced under /v1, so a future breaking
+	// change can ship as /v2 without disturbing clients still using /v1.
+	mux.HandleFunc("GET /v1/tasks", s.handleList)
+	mux.HandleFunc("POST /v1/tasks", s.handleCreate)
+	mux.HandleFunc("GET /v1/tasks/{id}", s.handleGet)
+	mux.HandleFunc("PUT /v1/tasks/{id}", s.handleUpdate)
+	mux.HandleFunc("DELETE /v1/tasks/{id}", s.handleDelete)
+
+	// Health check stays unversioned — it's an infrastructure concern, not part
+	// of the versioned resource API.
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	return mux
+}
+
+func main() {
+	srv := &amp;server{store: newStore()}
+
+	// Seed enough varied data to actually exercise pagination/sorting/filtering.
+	seed := []struct {
+		title string
+		done  bool
+	}{
+		{"Learn Go", true},
+		{"Build a REST API", true},
+		{"Add pagination", false},
+		{"Add sorting", false},
+		{"Add filtering", false},
+		{"Write unit tests", false},
+		{"Add request logging", false},
+		{"Write API docs", false},
+		{"Set up CI pipeline", false},
+		{"Dockerize the service", false},
+		{"Add authentication", false},
+		{"Deploy to staging", false},
+	}
+	for _, sd := range seed {
+		srv.store.create(sd.title, sd.done)
+	}
+
+	const addr = ":8080"
+	httpServer := &amp;http.Server{
+		Addr:         addr,
+		Handler:      srv.routes(),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	log.Printf("listening on http://localhost%s  (try /v1/tasks)", addr)
+	log.Fatal(httpServer.ListenAndServe())
+}</pre>
+    </div>
+
+    <h3>What the code implements</h3>
+    <p>One file, three clean layers — the same shape every real service grows from. Read from the bottom up, each layer only knows about the one beneath it.</p>
+
+    <h4>1 · The model</h4>
+    <p>A single struct, <code>Task</code>, with four fields. The <code>json</code> struct tags are doing quiet but important work: the Go fields stay idiomatic PascalCase (<code>CreatedAt</code>) while the wire format the client sees is camelCase (<code>createdAt</code>, never <code>created_at</code>). The tags are the one place the naming convention (<a href="#s10" class="ext">§10</a>) is enforced.</p>
+
+    <h4>2 · The store</h4>
+    <p>An in-memory <code>map[int]Task</code> guarded by a <code>sync.RWMutex</code> — the stand-in for a database. Reads (<code>list</code>, <code>get</code>) take a shared <code>RLock</code>; writes (<code>create</code>, <code>update</code>, <code>delete</code>) take an exclusive <code>Lock</code>, so concurrent requests can't corrupt the map. Two details matter for the API contract: <code>list()</code> returns a <em>non-nil</em> slice so an empty result serialises as <code>[]</code> rather than <code>null</code>, and a missing key returns the <code>errNotFound</code> sentinel that the HTTP layer turns into a 404. Swap this layer for Postgres later and not a single handler changes.</p>
+
+    <h4>3 · The HTTP layer</h4>
+    <p>This is where REST lives. Three small helpers keep every handler honest: <code>writeJSON</code> sets the content type, writes the status, and encodes the body in one place; <code>writeError</code> wraps a message in a consistent <code>{"error": …}</code> envelope; <code>idFromPath</code> pulls <code>{id}</code> out of the URL. The five resource handlers plus the health check each do one job, and <code>routes()</code> binds them to <code>"METHOD /path"</code> patterns on the Go 1.22 <code>ServeMux</code> — the router itself encodes which verb belongs to which URL, so the handlers never have to check the method by hand.</p>
+
+    <h3>A request, start to finish</h3>
+    <p>Take the exact command from the top of the file: <code>curl ".../v1/tasks?limit=5&amp;sortBy=title&amp;sortOrder=asc&amp;done=false"</code>. Following Diagram C: the router matches <code>GET /v1/tasks</code> and calls <code>handleList</code>. It snapshots all twelve seeded tasks, filters to the ten that are <code>done=false</code>, validates <code>sortBy=title</code> and <code>sortOrder=asc</code> (both pass), sorts A→Z, then takes page 1 at 5 per page — the first five rows. The reply:</p>
+    <div class="wire"><span class="h">GET</span> /v1/tasks?limit=5&amp;sortBy=title&amp;sortOrder=asc&amp;done=false   <span class="m">200 OK</span>
+{
+  <span class="v">"data"</span>: [
+    { <span class="h">"id"</span>: <span class="v">5</span>, <span class="h">"title"</span>: <span class="v">"Add filtering"</span>, <span class="h">"done"</span>: <span class="v">false</span>, <span class="h">"createdAt"</span>: <span class="v">"2026-07-02T…"</span> },
+    <span class="cm">… four more, ordered by title A→Z …</span>
+  ],
+  <span class="v">"pagination"</span>: { <span class="h">"page"</span>: <span class="v">1</span>, <span class="h">"limit"</span>: <span class="v">5</span>, <span class="h">"totalItems"</span>: <span class="v">10</span>, <span class="h">"totalPages"</span>: <span class="v">2</span> }
+}</div>
+    <p>Change one thing and the branch changes with it: <code>POST /v1/tasks</code> with a title returns <strong>201</strong> and the new row; <code>GET /v1/tasks/999</code> returns <strong>404</strong>; <code>DELETE /v1/tasks/3</code> returns <strong>204</strong> with no body; and <code>?sortBy=colour</code> is rejected up front with <strong>400</strong> because it isn't in the allow-list.</p>
+
+    <h3>Which principles it demonstrates</h3>
+    <p>This one file touches nearly every rule in the chapter — repetition on purpose, so you can see the theory land in real code.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Principle</th><th>Where it shows up in the code</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Resource nouns, plural</strong> <a href="#s4" class="ext">§04</a></td><td><code>/v1/tasks</code> and <code>/v1/tasks/{id}</code> — a thing, never a verb like <code>/getTask</code></td></tr>
+          <tr><td><strong>Methods by intent</strong> <a href="#s5" class="ext">§05</a></td><td><code>GET</code> reads · <code>POST</code> creates · <code>PUT</code> replaces · <code>DELETE</code> removes — one handler each</td></tr>
+          <tr><td><strong>Honest status codes</strong> <a href="#s8" class="ext">§08</a></td><td><code>200</code> · <code>201</code> · <code>204</code> · <code>400</code> · <code>404</code> — see the outcomes table</td></tr>
+          <tr><td><strong>Statelessness</strong> <a href="#s2" class="ext">§02</a></td><td>No sessions; the store is shared and each request carries everything it needs</td></tr>
+          <tr><td><strong>Consistency</strong> <a href="#s10" class="ext">§10</a></td><td>camelCase JSON, one <code>{data, pagination}</code> envelope, sane defaults everywhere</td></tr>
+          <tr><td><strong>Versioning</strong> <a href="#s11" class="ext">§11</a></td><td>Every resource route under <code>/v1</code>; <code>/healthz</code> deliberately left unversioned</td></tr>
+          <tr><td><strong>Page · sort · filter</strong> <a href="#s7" class="ext">§07</a></td><td><code>?page ?limit ?sortBy ?sortOrder ?done ?title</code>, with <code>limit</code> capped at 100</td></tr>
+          <tr><td><strong>Structured errors</strong> <a href="#s12" class="ext">§12</a></td><td>A consistent <code>{"error": …}</code> body on every failure</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout tip">
+      <span class="clabel">Small touches worth stealing</span>
+      <p>The <strong>allow-list</strong> on <code>sortBy</code> means a client can only sort by fields you approved — never an arbitrary column name they invent. Capping <code>limit</code> at <strong>100</strong> stops one request from asking for the entire table. Returning <code>[]</code> instead of <code>null</code> saves every consumer a null-check. And <code>DELETE</code> replies <strong>204</strong> with no body, because there's nothing meaningful left to send.</p>
+    </div>
+
+    <div class="callout note">
+      <span class="clabel">What's intentionally left out</span>
+      <p>This is a teaching skeleton, so a few production concerns are deliberately absent: <strong>persistence</strong> (swap the map for a real database behind the same store interface), <strong>authentication</strong>, a <strong>PATCH</strong> route for partial updates (only <code>PUT</code>/full-replace is here), and the richer <strong>RFC 9457</strong> error envelope from <a href="#s12" class="ext">§12</a>. Each is a natural next step, and none of them changes the shape you see here.</p>
+    </div>
+
+    <div class="callout model">
+      <span class="clabel">The file in one breath</span>
+      <p>One resource, three layers, a method-aware router, and an in-memory store behind a mutex — every REST rule in this chapter applied in a couple hundred lines you can actually <code>go run</code> and hit with <code>curl</code>.</p>
     </div>
   </section>
 
