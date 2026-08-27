@@ -37,6 +37,18 @@ The documentation is organized into the following topics:
 
 Feel free to browse through the directories to explore specific topics. Each directory contains detailed markdown notes, code examples, and practical implementations.
 
-## 🤝 Contributions
+## 🤝 Contributing & Community
 
-This is a personal reference and documentation repository, but suggestions, corrections, and improvements are always welcome. Feel free to open an issue or submit a pull request!
+**Backend from First Principles** is created and maintained by **[@DsThakurRawat](https://github.com/DsThakurRawat)** as an open engineering reference for everyone.
+
+Contributions are warmly welcomed! You can help by:
+- 💡 Adding code implementations in other languages (Rust, Java, C++, TypeScript, etc.)
+- ✍️ Improving explanations, adding architectural diagrams, or clarifying edge cases
+- 🐛 Fixing typos, broken links, or syntax issues
+
+Feel free to open an **[Issue](https://github.com/DsThakurRawat/Backend-from-first-Principle/issues)** or submit a **[Pull Request](https://github.com/DsThakurRawat/Backend-from-first-Principle/pulls)**!
+
+---
+
+*“Learn the fundamentals, and the frameworks become obvious.”* &mdash; Curated with dedication by [@DsThakurRawat](https://github.com/DsThakurRawat)
+
