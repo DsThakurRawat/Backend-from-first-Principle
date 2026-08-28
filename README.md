@@ -4,7 +4,7 @@ Welcome to the **Backend from First Principles** documentation repository!
 
 This repository contains a comprehensive collection of notes, code snippets, and explanations covering fundamental and advanced concepts in backend engineering. The goal of this series is to break down complex backend topics into understandable, foundational principles.
 
-## 📚 Table of Contents
+## Table of Contents
 
 The documentation is organized into the following topics:
 
@@ -33,22 +33,21 @@ The documentation is organized into the following topics:
 23. **Message Brokers and Event Streaming** - Using tools like Kafka for event-driven architectures.
 24. **WebSockets and Real-Time Communication** - Building real-time features using WebSockets.
 
-## 🚀 Getting Started
+## Getting Started
 
 Feel free to browse through the directories to explore specific topics. Each directory contains detailed markdown notes, code examples, and practical implementations.
 
-## 🤝 Contributing & Community
+## Contributing & Community
 
 **Backend from First Principles** is created and maintained by **[@DsThakurRawat](https://github.com/DsThakurRawat)** as an open engineering reference for everyone.
 
 Contributions are warmly welcomed! You can help by:
-- 💡 Adding code implementations in other languages (Rust, Java, C++, TypeScript, etc.)
-- ✍️ Improving explanations, adding architectural diagrams, or clarifying edge cases
-- 🐛 Fixing typos, broken links, or syntax issues
+- Adding code implementations in other languages (Rust, Java, C++, TypeScript, etc.)
+- Improving explanations, adding architectural diagrams, or clarifying edge cases
+- Fixing typos, broken links, or syntax issues
 
 Feel free to open an **[Issue](https://github.com/DsThakurRawat/Backend-from-first-Principle/issues)** or submit a **[Pull Request](https://github.com/DsThakurRawat/Backend-from-first-Principle/pulls)**!
 
 ---
 
-*“Learn the fundamentals, and the frameworks become obvious.”* &mdash; Curated with dedication by [@DsThakurRawat](https://github.com/DsThakurRawat)
-
+*"Learn the fundamentals, and the frameworks become obvious."* — Curated with dedication by [@DsThakurRawat](https://github.com/DsThakurRawat)
