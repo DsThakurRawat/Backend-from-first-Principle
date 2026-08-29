@@ -20,7 +20,7 @@ for (const color of ['#17120e', '#1b1511', '#201914', '#251d17', '#f2e8dc', '#b8
 }
 
 assert.match(themeCss, /:root\[data-theme=['"]dark['"]\]/);
-assert.doesNotMatch(themeCss, /:root\[data-theme=['"]light['"]\][^{]*\{/);
+assert.doesNotMatch(themeCss, /:root\[data-theme=['"]light['"]\][\s\S]*?\{/);
 assert.match(themeJs, /localStorage/);
 assert.match(themeJs, /data-theme/);
 assert.match(homepage, /assets\/theme\.css/);
@@ -56,7 +56,7 @@ assert.equal(chapterPages.length, 24, 'all 24 chapter pages should be present');
 for (const page of chapterPages) {
   const html = fs.readFileSync(page, 'utf8');
   assert.match(html, /assets\/theme\.css/, `${page} is missing dark-mode CSS`);
-  assert.match(html, /assets\/theme\.js/, `${page} is missing theme JavaScript`);
+  assert.match(html, /assets\/theme\.js" defer/, `${page} is missing deferred theme JavaScript`);
 }
 
 console.log('dark mode checks passed');
