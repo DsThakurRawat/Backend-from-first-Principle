@@ -1,4 +1,4 @@
-# rate_limiter.py — Redis token bucket implementation
+# rate_limiter.py ,  Redis token bucket implementation
 import time
 import redis
 
@@ -46,6 +46,6 @@ limiter = TokenBucketRateLimiter(r, "ratelimit:resend", capacity=100, refill_rat
 @app.task(bind=True, max_retries=10)
 def send_email_task(self, email, token):
     if not limiter.acquire():
-        # Rate limited — retry after a short delay (not counted as failure)
+        # Rate limited ,  retry after a short delay (not counted as failure)
         raise self.retry(countdown=1, max_retries=60)  # retry every 1s up to 60 times
     _do_send_email(email, token)

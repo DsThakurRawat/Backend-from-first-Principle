@@ -16,7 +16,7 @@ func VerifyRS256(tokenStr string, pub *rsa.PublicKey) (jwt.MapClaims, error) {
 func Refresh(rdb *redis.Client, presented string) (string, error) {
     family, err := rdb.Get(ctx, "rt:"+presented).Result()
     if err != nil {
-        // not a live token — was it a previously-spent one? -> theft
+        // not a live token ,  was it a previously-spent one? -> theft
         if fam, e := rdb.Get(ctx, "spent:"+presented).Result(); e == nil {
             rdb.Del(ctx, "family:"+fam)            // revoke the whole family
             return "", errors.New("refresh reuse detected")

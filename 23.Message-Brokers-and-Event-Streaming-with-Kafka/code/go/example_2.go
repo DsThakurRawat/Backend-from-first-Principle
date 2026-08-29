@@ -1,8 +1,8 @@
 c, _ := kafka.NewConsumer(&kafka.ConfigMap{
     "bootstrap.servers": "localhost:9092",
-    "group.id":          "billing",        // the consumer GROUP — scale by adding instances
-    "auto.offset.reset": "earliest",       // where to start if no committed offset (§8)
-    "enable.auto.commit": false,           // we'll commit manually for at-least-once (§9)
+    "group.id":          "billing",        // the consumer GROUP ,  scale by adding instances
+    "auto.offset.reset": "earliest",       // where to start if no committed offset (sec 8)
+    "enable.auto.commit": false,           // we'll commit manually for at-least-once (sec 9)
 })
 defer c.Close()
 c.Subscribe("orders", nil)                 // Kafka assigns this instance some partitions
@@ -12,5 +12,5 @@ for {
     if err != nil { continue }
 
     process(msg.Value)                     // do the work FIRST...
-    c.CommitMessage(msg)                   // ...THEN commit the offset (at-least-once, §9)
+    c.CommitMessage(msg)                   // ...THEN commit the offset (at-least-once, sec 9)
 }

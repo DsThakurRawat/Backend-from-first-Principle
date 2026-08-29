@@ -1,6 +1,6 @@
 # proto:  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
 
-# ===== SERVER: iterate incoming, yield outgoing — interleaved =====
+# ===== SERVER: iterate incoming, yield outgoing ,  interleaved =====
 class UserService(pb_grpc.UserServiceServicer):
     def Chat(self, request_iterator, context):
         for msg in request_iterator:          # read the client's stream

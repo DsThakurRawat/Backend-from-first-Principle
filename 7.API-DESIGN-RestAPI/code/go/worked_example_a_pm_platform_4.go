@@ -21,7 +21,7 @@ func CreateOrganization(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&in)
 
 	if in.Status == "" {
-		in.Status = "active" // sane default — don't force the client to send the obvious
+		in.Status = "active" // sane default ,  don't force the client to send the obvious
 	}
 	org := store.Insert(in.Name, in.Status, in.Description) // id, createdAt set server-side
 	writeJSON(w, 201, org) // 201 Created + the new entity
@@ -34,5 +34,5 @@ func DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 
 func ArchiveOrganization(w http.ResponseWriter, r *http.Request) {
 	org := store.Archive(r.PathValue("id")) // flips status + cascades: projects, tasks, emails...
-	writeJSON(w, 200, org) // custom action → 200, NOT 201
+	writeJSON(w, 200, org) // custom action -> 200, NOT 201
 }

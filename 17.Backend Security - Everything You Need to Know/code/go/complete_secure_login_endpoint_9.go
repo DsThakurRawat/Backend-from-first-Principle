@@ -12,14 +12,14 @@ func loginHandler(db *pgxpool.Pool, redis *redis.Client) http.HandlerFunc {
             return
         }
 
-        // 2. Parameterised query — no SQL injection possible
+        // 2. Parameterised query ,  no SQL injection possible
         var userID string
         var hashedPass string
         err := db.QueryRow(ctx,
             "SELECT id, password_hash FROM users WHERE email = $1",
             req.Email).Scan(&userID, &hashedPass)
 
-        // 3. Generic error — never reveal whether email exists
+        // 3. Generic error ,  never reveal whether email exists
         if err != nil || !verifyArgon2(req.Password, hashedPass) {
             http.Error(w, "invalid email or password", 401)
             return
@@ -32,7 +32,7 @@ func loginHandler(db *pgxpool.Pool, redis *redis.Client) http.HandlerFunc {
         redis.Set(ctx, "session:"+sessionID,
             userID, 7*24*time.Hour)
 
-        // 6. Secure cookie — HttpOnly, Secure, SameSite=Strict
+        // 6. Secure cookie ,  HttpOnly, Secure, SameSite=Strict
         http.SetCookie(w, &http.Cookie{
             Name: "session_id", Value: sessionID,
             HttpOnly: true, Secure: true,
@@ -45,6 +45,6 @@ func loginHandler(db *pgxpool.Pool, redis *redis.Client) http.HandlerFunc {
 
 func generateSecureToken(n int) string {
     b := make([]byte, n)
-    rand.Read(b) // crypto/rand — not math/rand
+    rand.Read(b) // crypto/rand ,  not math/rand
     return base64.URLEncoding.EncodeToString(b)
 }

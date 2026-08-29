@@ -1,10 +1,10 @@
-# Python — Full metrics instrumentation for a worker process
+# Python ,  Full metrics instrumentation for a worker process
 from prometheus_client import (
     Counter, Histogram, Gauge, start_http_server
 )
 import time
 
-# ── Define metrics ─────────────────────────────────────────────
+# -- Define metrics ---------------------------------------------
 TASK_TOTAL = Counter(
     'worker_tasks_total',
     'Total tasks processed',
@@ -30,7 +30,7 @@ RETRY_COUNT = Counter(
     ['task_name']
 )
 
-# ── Decorator to wrap any task with metrics ────────────────────
+# -- Decorator to wrap any task with metrics --------------------
 def track_metrics(task_name: str):
     def decorator(func):
         def wrapper(*args, **kwargs):
@@ -50,7 +50,7 @@ def track_metrics(task_name: str):
 # Start /metrics server on port 9090 (Prometheus scrapes this)
 start_http_server(9090)
 
-# ── Apply to task ──────────────────────────────────────────────
+# -- Apply to task ----------------------------------------------
 @app.task(bind=True, max_retries=5)
 @track_metrics("send_verification_email")
 def send_verification_email(self, user_id, email, token):

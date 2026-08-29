@@ -1,5 +1,5 @@
 func wsHandler(w http.ResponseWriter, r *http.Request) {
-    // AUTHENTICATE FIRST — before upgrading. Reject with a normal HTTP error.
+    // AUTHENTICATE FIRST ,  before upgrading. Reject with a normal HTTP error.
     token := r.URL.Query().Get("token")          // or read a cookie / subprotocol
     user, err := verifyJWT(token)                 // your auth logic (auth chapter)
     if err != nil {

@@ -1,4 +1,4 @@
-// The unit depends on an interface — the seam that lets us substitute a double (§6).
+// The unit depends on an interface ,  the seam that lets us substitute a double (sec 6).
 type UserRepo interface{ FindByID(id string) (*User, error) }
 
 type Notifier interface{ Send(to, msg string) error }

@@ -6,7 +6,7 @@ def verify_rs256(token: str, public_key) -> dict:
 def refresh(rdb, presented: str) -> str:
     family = rdb.get(f"rt:{presented}")
     if family is None:
-        # not a live token — was it previously spent? -> theft
+        # not a live token ,  was it previously spent? -> theft
         fam = rdb.get(f"spent:{presented}")
         if fam is not None:
             rdb.delete(f"family:{fam.decode()}")    # revoke the whole family

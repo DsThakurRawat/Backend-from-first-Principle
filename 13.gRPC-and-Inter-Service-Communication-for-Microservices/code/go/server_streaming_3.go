@@ -17,7 +17,7 @@ func listUsers(client userv1.UserServiceClient) {
     stream, _ := client.ListUsers(ctx, &userv1.ListUsersRequest{Filter: "active"})
     for {
         u, err := stream.Recv()
-        if err == io.EOF { break } // server closed the stream — we're done
+        if err == io.EOF { break } // server closed the stream ,  we're done
         if err != nil { log.Fatal(err) }
         log.Printf("user: %s", u.GetFullName())
     }

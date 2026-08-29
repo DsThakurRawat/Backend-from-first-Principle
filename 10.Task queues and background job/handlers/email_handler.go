@@ -1,4 +1,4 @@
-// handlers/email_handler.go — Consumer handler
+// handlers/email_handler.go ,  Consumer handler
 package handlers
 
 import (
@@ -14,12 +14,12 @@ type EmailHandler struct {
     emailSvc EmailService // injected dependency
 }
 
-// HandleSendVerificationEmail — registered with the Asynq server
+// HandleSendVerificationEmail ,  registered with the Asynq server
 func (h *EmailHandler) HandleSendVerificationEmail(
     ctx context.Context,
     t *asynq.Task,
 ) error {
-    // 1. Deserialize JSON → Go struct
+    // 1. Deserialize JSON -> Go struct
     var p tasks.EmailPayload
     if err := json.Unmarshal(t.Payload(), &p); err != nil {
         // Non-retryable error: mark as failed immediately
@@ -33,6 +33,6 @@ func (h *EmailHandler) HandleSendVerificationEmail(
         return fmt.Errorf("emailSvc.SendVerification: %w", err)
     }
 
-    // 3. Returning nil → ACK to queue (task done)
+    // 3. Returning nil -> ACK to queue (task done)
     return nil
 }

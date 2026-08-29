@@ -19,7 +19,7 @@ func main() {
     srv := &http.Server{Addr: ":8080", Handler: router()}
 
     // Register a handler that waits for SIGINT (Ctrl+C) or SIGTERM (PM2/k8s).
-    // We handle BOTH the same way — the intention is identical: shut down.
+    // We handle BOTH the same way ,  the intention is identical: shut down.
     ctx, stop := signal.NotifyContext(context.Background(),
         os.Interrupt, syscall.SIGTERM)
     defer stop()
@@ -35,7 +35,7 @@ func main() {
 
     // Block here until a signal arrives (the "living" phase).
     <-ctx.Done()
-    log.Println("signal received — starting graceful shutdown")
+    log.Println("signal received ,  starting graceful shutdown")
 
     // Hard limit: give in-flight work up to 30 seconds, then force stop.
     shutdownCtx, cancel := context.WithTimeout(
@@ -67,7 +67,7 @@ func gracefulShutdown(
     log.Println("stopping background job server...")
     jobs.Shutdown()
 
-    // 3. Close the database LAST — finish/commit open transactions,
+    // 3. Close the database LAST ,  finish/commit open transactions,
     //    then close all pooled TCP connections one by one.
     log.Println("closing database connection...")
     if err := db.Close(); err != nil {

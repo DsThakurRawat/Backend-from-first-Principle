@@ -1,4 +1,4 @@
-// services/todo_service.go — The full LMO pattern per function
+// services/todo_service.go ,  The full LMO pattern per function
 package services
 
 import (
@@ -19,21 +19,21 @@ func CreateTodo(ctx context.Context, req models.CreateTodoRequest, userID string
     ctx, span := tracer.Start(ctx, "TodoService.CreateTodo")
     defer span.End()
 
-    // 2. Add business context to the span — visible in trace UI
+    // 2. Add business context to the span ,  visible in trace UI
     span.SetAttributes(
         attribute.String("user.id", userID),
         attribute.String("todo.title", req.Title),
         attribute.String("todo.priority", req.Priority),
     )
 
-    // 3. INFO log — record business event start
+    // 3. INFO log ,  record business event start
     logger.Log.Info("creating todo",
         zap.String("user_id", userID),
         zap.String("title", req.Title),
         zap.String("trace_id", span.SpanContext().TraceID().String()),
     )
 
-    // 4. Execute DB operation (inside its own child span — auto via otelgorm)
+    // 4. Execute DB operation (inside its own child span ,  auto via otelgorm)
     todo, err := repo.CreateTodo(ctx, req, userID)
     if err != nil {
         // ERROR log with full context
@@ -42,18 +42,18 @@ func CreateTodo(ctx context.Context, req models.CreateTodoRequest, userID string
             zap.String("error", err.Error()),
             zap.String("trace_id", span.SpanContext().TraceID().String()),
         )
-        // Record error on span — shows as failed in Jaeger/Grafana Tempo
+        // Record error on span ,  shows as failed in Jaeger/Grafana Tempo
         span.RecordError(err)
         span.SetStatus(codes.Error, err.Error())
         return nil, fmt.Errorf("repo.CreateTodo: %w", err)
     }
 
-    // 5. DEBUG log — only visible in dev, suppressed in production
+    // 5. DEBUG log ,  only visible in dev, suppressed in production
     logger.Log.Debug("todo created",
         zap.String("todo_id", todo.ID),
     )
 
-    // 6. INFO — business event completion log (for audit trail)
+    // 6. INFO ,  business event completion log (for audit trail)
     logger.Log.Info("todo created successfully",
         zap.String("todo_id", todo.ID),
         zap.String("user_id", userID),

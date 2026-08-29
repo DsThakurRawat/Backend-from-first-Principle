@@ -2,7 +2,7 @@ import structlog
 
 log = structlog.get_logger()
 
-# Good — structured, queryable, no sensitive data
+# Good ,  structured, queryable, no sensitive data
 log.error(
     "payment_failed",
     user_id="u_9a3f",          # ID, not email
@@ -12,5 +12,5 @@ log.error(
     amount_cents=4999,
 )
 
-# BAD — never log PII or secrets
+# BAD ,  never log PII or secrets
 # log.error("payment_failed", email="alice@example.com", card="4242...")

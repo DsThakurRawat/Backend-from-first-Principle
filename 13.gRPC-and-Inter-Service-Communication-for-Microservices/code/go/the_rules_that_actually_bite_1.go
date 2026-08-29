@@ -16,7 +16,7 @@ message User {
 
 // An enum is a fixed set of named values. The first MUST be 0 (the default).
 enum Role {
-  ROLE_UNSPECIFIED = 0;         // 0 is the implicit default — reserve it
+  ROLE_UNSPECIFIED = 0;         // 0 is the implicit default ,  reserve it
   ROLE_MEMBER      = 1;
   ROLE_ADMIN       = 2;
 }

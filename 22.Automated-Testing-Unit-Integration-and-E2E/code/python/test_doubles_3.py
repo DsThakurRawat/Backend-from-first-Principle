@@ -1,6 +1,6 @@
 from unittest.mock import Mock
 
-# The unit depends on injected collaborators (§6).
+# The unit depends on injected collaborators (sec 6).
 def greet(repo, notifier, user_id):
     user = repo.find_by_id(user_id)          # collaborator 1
     notifier.send(user.email, f"Hi {user.name}")  # collaborator 2 (the interaction)

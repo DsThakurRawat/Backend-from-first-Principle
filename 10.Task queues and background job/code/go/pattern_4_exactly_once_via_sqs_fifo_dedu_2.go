@@ -1,4 +1,4 @@
-// Go — Idempotent multi-step task with full transaction rollback
+// Go ,  Idempotent multi-step task with full transaction rollback
 func (h *AccountHandler) HandleDeleteAccount(ctx context.Context, t *asynq.Task) error {
     var p DeleteAccountPayload
     json.Unmarshal(t.Payload(), &p)
@@ -6,7 +6,7 @@ func (h *AccountHandler) HandleDeleteAccount(ctx context.Context, t *asynq.Task)
     // Check if already deleted (idempotency guard)
     exists, _ := h.db.UserExists(ctx, p.UserID)
     if !exists {
-        return nil // already deleted on a previous attempt — ACK cleanly
+        return nil // already deleted on a previous attempt ,  ACK cleanly
     }
 
     // Wrap all DB writes in a single transaction
@@ -22,6 +22,6 @@ func (h *AccountHandler) HandleDeleteAccount(ctx context.Context, t *asynq.Task)
                 return err // triggers full rollback; task retried from scratch
             }
         }
-        return nil // all steps succeeded → commit → ACK
+        return nil // all steps succeeded -> commit -> ACK
     })
 }

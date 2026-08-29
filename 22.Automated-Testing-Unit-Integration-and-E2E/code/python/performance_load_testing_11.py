@@ -16,4 +16,4 @@ export default function () {
   const res = http.get('https://staging.example.com/api/v1/health');
   check(res, { 'status 200': (r) => r.status === 200 });
 }
-# Run:  k6 run load_test.js   — fails the build if a threshold is breached.
+# Run:  k6 run load_test.js   ,  fails the build if a threshold is breached.

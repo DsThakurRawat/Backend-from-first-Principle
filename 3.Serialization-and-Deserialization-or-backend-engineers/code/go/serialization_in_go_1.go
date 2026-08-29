@@ -2,8 +2,8 @@ package main
 
 import ("encoding/json"; "fmt"; "time")
 
-// ABSTRACTION: Serializer names a capability — "turn data into
-// bytes and back" — without binding to a concrete format. Code
+// ABSTRACTION: Serializer names a capability ,  "turn data into
+// bytes and back" ,  without binding to a concrete format. Code
 // depends on this contract, so JSON could be swapped for another
 // format with zero changes to callers.
 type Serializer interface {
@@ -55,13 +55,13 @@ func main() {
         Address:   Address{Country: "India", Phone: 123456},
     }
 
-    // SERIALIZE — native Go struct into the common JSON format
+    // SERIALIZE ,  native Go struct into the common JSON format
     out, _ := codec.Serialize(u)
     fmt.Println(string(out))
     // {"id":1,"created_at":"...","name":"Ada","active":true,
     //  "address":{"country":"India","phone":123456}}
 
-    // DESERIALIZE — JSON received over HTTP back into a Go struct
+    // DESERIALIZE ,  JSON received over HTTP back into a Go struct
     incoming := []byte(`{"name":"Lin","address":{"country":"IN","phone":42}}`)
     var back User
     codec.Deserialize(incoming, &back)

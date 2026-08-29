@@ -10,7 +10,7 @@ import (
 
 var pepper = []byte(os.Getenv("PASSWORD_PEPPER")) // secret, NOT in DB
 
-// cost parameters — tune so one hash ~250ms
+// cost parameters ,  tune so one hash ~250ms
 const (
     aTime    = 3         // iterations
     aMemory  = 64 * 1024 // 64 MB, memory-hard

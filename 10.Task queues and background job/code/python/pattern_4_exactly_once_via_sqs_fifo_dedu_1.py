@@ -1,4 +1,4 @@
-# Python — Idempotency key pattern with Redis
+# Python ,  Idempotency key pattern with Redis
 import redis
 import hashlib
 
@@ -13,10 +13,10 @@ def send_verification_email(self, user_id: str, email: str, token: str):
     # Returns True if we are the FIRST execution, False if already done
     acquired = r.set(key, "done", nx=True, ex=3600)
     if not acquired:
-        # Already processed — skip silently (idempotent return)
+        # Already processed ,  skip silently (idempotent return)
         return {"status": "already_sent"}
 
-    # First time — actually send the email
+    # First time ,  actually send the email
     try:
         _send_email_via_provider(email, token)
     except Exception as exc:

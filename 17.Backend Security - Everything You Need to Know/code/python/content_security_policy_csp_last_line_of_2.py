@@ -12,6 +12,6 @@ def sanitise_comment(raw_html: str) -> str:
         strip=True  # strip disallowed, don't escape
     )
 
-# <script>...</script> → stripped entirely
-# <b>bold</b> → kept
-# <img onerror="..."> → attribute stripped
+# <script>...</script> -> stripped entirely
+# <b>bold</b> -> kept
+# <img onerror="..."> -> attribute stripped

@@ -14,7 +14,7 @@ class Environment(str, Enum):
 class Settings(BaseSettings):
     """
     All runtime config. pydantic VALIDATES every field automatically
-    when the object is constructed — mandatory fields without a default
+    when the object is constructed ,  mandatory fields without a default
     raise an error immediately at startup, not silently in production.
     """
     model_config = SettingsConfigDict(
@@ -28,18 +28,18 @@ class Settings(BaseSettings):
     log_level: str = Field(default="info", pattern="^(debug|info|warn|error)$")
     app_env: Environment = Environment.DEVELOPMENT
 
-    # Database config — mandatory, no defaults (will fail if missing)
+    # Database config ,  mandatory, no defaults (will fail if missing)
     db_host: str
     db_port: int = 5432
     db_user: str
-    db_password: str          # sensitive — never hardcoded
+    db_password: str          # sensitive ,  never hardcoded
     db_name: str
     db_pool_size: int = Field(default=10, ge=1)  # dev=10, prod=50, staging=2
 
-    # External services — mandatory secret
+    # External services ,  mandatory secret
     stripe_api_key: str
 
-    # Feature flag — optional, defaults off
+    # Feature flag ,  optional, defaults off
     new_checkout_enabled: bool = False
 
     @computed_field
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
 @lru_cache  # load & validate once, reuse everywhere (singleton)
 def get_settings() -> Settings:
     # Construction triggers validation. If a mandatory var is
-    # missing, pydantic raises here — at startup, loudly.
+    # missing, pydantic raises here ,  at startup, loudly.
     return Settings()
 
 

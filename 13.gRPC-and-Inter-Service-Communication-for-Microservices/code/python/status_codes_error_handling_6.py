@@ -15,8 +15,8 @@ try:
     resp = stub.GetUser(req, timeout=1.0)
 except grpc.RpcError as e:
     if e.code() == grpc.StatusCode.NOT_FOUND:
-        ...   # expected — show "not found"
+        ...   # expected ,  show "not found"
     elif e.code() == grpc.StatusCode.UNAVAILABLE:
-        ...   # transient — retry with backoff, §17
+        ...   # transient ,  retry with backoff, sec 17
     else:
         print("unexpected:", e.code(), e.details())

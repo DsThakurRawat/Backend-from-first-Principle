@@ -4,7 +4,7 @@ from dataclasses import dataclass, asdict, field
 
 # ABSTRACTION: Serializer is an Abstract Base Class. The
 # @abstractmethod forces subclasses to implement both directions.
-# You cannot instantiate Serializer itself — it is a pure contract.
+# You cannot instantiate Serializer itself ,  it is a pure contract.
 class Serializer(ABC):
     @abstractmethod
     def serialize(self, obj) -> str: ...      # native -> common
@@ -32,7 +32,7 @@ class Address:
 
 # ENCAPSULATION: __password is name-mangled (-> _User__password),
 # effectively private, and to_dict() chooses what leaves the
-# object — the secret never appears in the serialized output.
+# object ,  the secret never appears in the serialized output.
 @dataclass
 class User(BaseModel):                     # IS-A BaseModel
     name: str = ""
@@ -51,13 +51,13 @@ if __name__ == "__main__":
     user = User(id=1, name="Ada",
                 address=Address("India", 123456))
 
-    # SERIALIZE — native object into the common JSON format
+    # SERIALIZE ,  native object into the common JSON format
     payload = codec.serialize(user.to_dict())
     print(payload)
     # {"id": 1, "name": "Ada", "active": true,
     #  "address": {"country": "India", "phone": 123456}}
 
-    # DESERIALIZE — JSON received over HTTP back into native data
+    # DESERIALIZE ,  JSON received over HTTP back into native data
     incoming = '{"name": "Lin", "address": {"country": "IN", "phone": 42}}'
     data = codec.deserialize(incoming)
     print(data["name"], data["address"]["country"])  # Lin IN

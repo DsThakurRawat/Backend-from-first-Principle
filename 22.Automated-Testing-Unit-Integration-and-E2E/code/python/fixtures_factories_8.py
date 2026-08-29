@@ -5,7 +5,7 @@ import pytest
 def temp_store(tmp_path):           # tmp_path is a built-in fixture (auto-cleaned dir)
     store = Store(tmp_path)
     yield store                     # the test runs here
-    store.close()                   # teardown — runs even if the test fails
+    store.close()                   # teardown ,  runs even if the test fails
 
 # A FACTORY: defaults + overrides, so tests state only what they care about.
 def make_user(**overrides):

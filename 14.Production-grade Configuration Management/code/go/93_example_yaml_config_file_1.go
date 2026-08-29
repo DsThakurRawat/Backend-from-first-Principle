@@ -11,7 +11,7 @@ import (
 )
 
 // Config holds all runtime application settings.
-// The `validate` tags enforce rules at startup — this is the
+// The `validate` tags enforce rules at startup ,  this is the
 // single most important safeguard for config management.
 type Config struct {
     // Application settings
@@ -43,7 +43,7 @@ func (c *Config) DatabaseURL() string {
 }
 
 // Load reads env vars, applies defaults, then VALIDATES before returning.
-// Called once at startup — fail loudly here, never silently in production.
+// Called once at startup ,  fail loudly here, never silently in production.
 func Load() (*Config, error) {
     // In local dev, load .env into the OS environment.
     // In production this is a no-op (vars already injected by the platform).
@@ -63,7 +63,7 @@ func Load() (*Config, error) {
         NewCheckoutEnabled: getEnv("NEW_CHECKOUT", "false") == "true",
     }
 
-    // THE critical step — validate everything before the app boots
+    // THE critical step ,  validate everything before the app boots
     if err := validator.New().Struct(cfg); err != nil {
         return nil, fmt.Errorf("config validation failed: %w", err)
     }

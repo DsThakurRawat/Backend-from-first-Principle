@@ -1,4 +1,4 @@
-# celery_config.py — Celery Beat schedule
+# celery_config.py ,  Celery Beat schedule
 from celery.schedules import crontab
 
 CELERYBEAT_SCHEDULE = {

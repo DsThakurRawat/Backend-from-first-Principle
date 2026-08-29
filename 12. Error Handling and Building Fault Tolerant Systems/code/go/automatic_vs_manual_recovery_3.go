@@ -14,7 +14,7 @@ func sendEmailWithRetry(to, subject, body string) error {
 
         // Exponential backoff: 1s, 2s, 4s, 8s, 16s
         wait := baseDelay * time.Duration(1<<attempt)
-        // Add jitter (±20%) to prevent thundering herd
+        // Add jitter (+/-20%) to prevent thundering herd
         jitter := time.Duration(rand.Int63n(int64(wait / 5)))
         time.Sleep(wait + jitter)
 

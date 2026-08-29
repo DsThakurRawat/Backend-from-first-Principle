@@ -2,7 +2,7 @@ package main
 
 import ("fmt"; "strings")
 
-// ABSTRACTION: Handler is an interface — it names a capability
+// ABSTRACTION: Handler is an interface ,  it names a capability
 // ("be able to Handle a request") without saying how. Any type
 // with a Handle method IS-A Handler. The router depends only on
 // this contract, never on a concrete type.

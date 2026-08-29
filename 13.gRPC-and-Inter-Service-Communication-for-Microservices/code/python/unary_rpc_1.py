@@ -8,7 +8,7 @@ class UserService(pb_grpc.UserServiceServicer):
     # Method signature generated FROM the proto: (self, request, context) -> response
     def GetUser(self, request, context):
         if not request.id:
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "id is required")  # typed error, §14
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "id is required")  # typed error, sec 14
         # ...real work: query the DB by request.id...
         user = pb.User(id=request.id, email="ada@example.com",
                        full_name="Ada", role=pb.ROLE_ADMIN)
@@ -27,7 +27,7 @@ def call_get_user():
     with grpc.insecure_channel("localhost:50051") as channel:
         stub = pb_grpc.UserServiceStub(channel)        # the generated STUB
         try:
-            # timeout= is the deadline, §13; looks local, runs remote
+            # timeout= is the deadline, sec 13; looks local, runs remote
             resp = stub.GetUser(pb.GetUserRequest(id="u42"), timeout=1.0)
             print("got user:", resp.user.full_name)
         except grpc.RpcError as e:

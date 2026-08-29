@@ -11,5 +11,5 @@ XREADGROUP GROUP email_workers worker-1 COUNT 1 BLOCK 5000 STREAMS myapp:email_q
 # After successful processing, ACK the message by ID
 XACK myapp:email_queue email_workers 1705312200000-0
 
-# Check pending (delivered but not ACKed) — these are in-flight tasks
+# Check pending (delivered but not ACKed) ,  these are in-flight tasks
 XPENDING myapp:email_queue email_workers - + 10

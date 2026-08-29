@@ -1,11 +1,11 @@
-// ❌ UNSAFE — never do this
+// X UNSAFE ,  never do this
 slog.Error("login_failed",
     "email", user.Email,          // PII leak
     "password", req.Password,     // catastrophic
     "api_key", cfg.OpenAIKey,      // secret leak
 )
 
-// ✅ SAFE — IDs and correlation only
+// OK SAFE ,  IDs and correlation only
 slog.Error("login_failed",
     "user_id", user.ID,
     "correlation_id", r.Header.Get("X-Request-ID"),

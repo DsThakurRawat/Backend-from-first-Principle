@@ -1,4 +1,4 @@
-// The unit: pure logic, no I/O — trivially testable.
+// The unit: pure logic, no I/O ,  trivially testable.
 func IsStrongPassword(p string) bool {
     if len(p) < 8 { return false }
     var hasDigit, hasUpper bool
@@ -10,7 +10,7 @@ func IsStrongPassword(p string) bool {
 }
 
 func TestIsStrongPassword(t *testing.T) {
-    if IsStrongPassword("short1A") {            // 7 chars → too short
+    if IsStrongPassword("short1A") {            // 7 chars -> too short
         t.Error("expected short password to be rejected")
     }
     if !IsStrongPassword("longEnough9") {        // meets all rules

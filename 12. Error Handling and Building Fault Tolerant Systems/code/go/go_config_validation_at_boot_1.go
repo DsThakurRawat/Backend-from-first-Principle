@@ -30,7 +30,7 @@ func MustLoad() Config {
         }
     }
     if len(missing) > 0 {
-        // Crash immediately — loud and clear
+        // Crash immediately ,  loud and clear
         panic(fmt.Sprintf("[FATAL] missing required env vars: %s",
             strings.Join(missing, ", ")))
     }

@@ -6,7 +6,7 @@ func (s *server) Chat(stream userv1.UserService_ChatServer) error {
         msg, err := stream.Recv()
         if err == io.EOF { return nil } // client closed its send side
         if err != nil { return err }
-        // echo back (or broadcast to a room, etc.) — can Send anytime, any number
+        // echo back (or broadcast to a room, etc.) ,  can Send anytime, any number
         reply := &userv1.ChatMessage{User: "server", Text: "ack: " + msg.GetText()}
         if err := stream.Send(reply); err != nil { return err }
     }

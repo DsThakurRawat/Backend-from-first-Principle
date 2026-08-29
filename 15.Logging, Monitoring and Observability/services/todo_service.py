@@ -11,13 +11,13 @@ async def create_todo(user_id: str, req: CreateTodoRequest) -> Todo:
         span.set_attribute("user.id", user_id)
         span.set_attribute("todo.title", req.title)
 
-        # 2. INFO log — business event start
+        # 2. INFO log ,  business event start
         log.info("creating_todo", user_id=user_id, title=req.title)
 
         try:
             todo = await repo.create_todo(user_id, req)
 
-            # 3. Business event log — audit trail
+            # 3. Business event log ,  audit trail
             log.info("todo_created",
                 todo_id=todo.id,
                 user_id=user_id,

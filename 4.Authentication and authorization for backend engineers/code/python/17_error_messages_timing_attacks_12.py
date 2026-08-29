@@ -1,7 +1,7 @@
 import time
 
 DUMMY_HASH = bcrypt.hashpw(b"x", bcrypt.gensalt())
-FLOOR = 0.25  # seconds — equalize every path
+FLOOR = 0.25  # seconds ,  equalize every path
 
 def authenticate(email: str, pw: str):
     start = time.perf_counter()

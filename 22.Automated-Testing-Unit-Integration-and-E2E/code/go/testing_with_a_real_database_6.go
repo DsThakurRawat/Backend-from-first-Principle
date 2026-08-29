@@ -1,5 +1,5 @@
 // Build tag keeps slow integration tests out of the fast unit run:
-//   //go:build integration      → run with:  go test -tags=integration ./...
+//   //go:build integration      -> run with:  go test -tags=integration ./...
 func TestUserRepo_SaveAndFind(t *testing.T) {
     ctx := context.Background()
 

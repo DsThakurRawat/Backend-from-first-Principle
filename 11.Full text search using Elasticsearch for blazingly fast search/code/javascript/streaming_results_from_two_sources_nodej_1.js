@@ -8,7 +8,7 @@ export async function GET(req) {
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
-      // Fire BOTH queries concurrently — don't await sequentially
+      // Fire BOTH queries concurrently ,  don't await sequentially
       const [pgResult, esResult] = await Promise.allSettled([
         pgSearch(term),
         esSearch(term),

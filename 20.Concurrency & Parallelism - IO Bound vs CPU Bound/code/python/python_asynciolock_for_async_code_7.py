@@ -10,7 +10,7 @@ async def withdraw(amount: int):
             await process_withdrawal(amount)
             balance -= amount
 
-# Now safe — second withdraw waits for the lock
+# Now safe ,  second withdraw waits for the lock
 await asyncio.gather(
     withdraw(100),
     withdraw(100),

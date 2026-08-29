@@ -1,6 +1,6 @@
 @app.websocket("/ws")
 async def ws_handler(ws: WebSocket):
-    # AUTHENTICATE FIRST — before accept(). Close with a policy code if it fails.
+    # AUTHENTICATE FIRST ,  before accept(). Close with a policy code if it fails.
     token = ws.query_params.get("token")          # or a cookie / subprotocol
     user = verify_jwt(token)                       # your auth logic (auth chapter)
     if user is None:

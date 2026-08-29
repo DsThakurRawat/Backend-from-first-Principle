@@ -15,7 +15,7 @@ def repo(db_url):
     # function-scoped: clean state per test (truncate / rollback)
     r = UserRepo(db_url)
     yield r
-    r.truncate_all()                                # keep tests independent (§8)
+    r.truncate_all()                                # keep tests independent (sec 8)
 
 @pytest.mark.integration            # marker: pytest -m integration
 def test_save_and_find(repo):

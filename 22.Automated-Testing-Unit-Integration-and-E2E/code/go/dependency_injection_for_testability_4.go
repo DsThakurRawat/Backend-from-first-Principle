@@ -1,4 +1,4 @@
-// Depend on an INTERFACE, not a concrete type — that interface is the seam.
+// Depend on an INTERFACE, not a concrete type ,  that interface is the seam.
 type OrderRepo interface{ Save(o Order) error }
 
 type OrderService struct{ repo OrderRepo } // injected, not constructed inside
@@ -20,4 +20,4 @@ func TestPlace_RejectsInvalidTotal(t *testing.T) {
         t.Error("expected error for non-positive total")
     }
 }
-// In production:  NewOrderService(postgresRepo)  — same code, real dependency.
+// In production:  NewOrderService(postgresRepo)  ,  same code, real dependency.

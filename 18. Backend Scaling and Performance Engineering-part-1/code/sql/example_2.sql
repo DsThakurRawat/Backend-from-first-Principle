@@ -6,5 +6,5 @@ WHERE p.published = true
 ORDER BY p.created_at DESC
 LIMIT 20;
 
--- Look for "Seq Scan" in the output — that means no index is being used.
+-- Look for "Seq Scan" in the output ,  that means no index is being used.
 -- After adding an index, re-run and confirm it shows "Index Scan".

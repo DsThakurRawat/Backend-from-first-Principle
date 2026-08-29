@@ -1,6 +1,6 @@
 # proto:  rpc ListUsers(ListUsersRequest) returns (stream User);
 
-# ===== SERVER: a generator — every `yield` sends one message =====
+# ===== SERVER: a generator ,  every `yield` sends one message =====
 class UserService(pb_grpc.UserServiceServicer):
     def ListUsers(self, request, context):
         for u in query_users(request.filter):  # big result set

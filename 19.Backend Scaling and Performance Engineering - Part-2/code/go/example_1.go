@@ -11,7 +11,7 @@ func StoreSession(ctx context.Context, sessionID string, userID string) error {
     return rdb.Set(ctx, "session:"+sessionID, userID, 24*time.Hour).Err()
 }
 
-// GetSession retrieves session data — works regardless of which server
+// GetSession retrieves session data ,  works regardless of which server
 // the request lands on, because Redis is shared across all instances.
 func GetSession(ctx context.Context, sessionID string) (string, error) {
     return rdb.Get(ctx, "session:"+sessionID).Result()

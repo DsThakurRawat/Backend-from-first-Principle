@@ -6,7 +6,7 @@ import (
 )
 
 func TestCreateUser_Returns201(t *testing.T) {
-    handler := NewRouter(deps)  // the REAL router + handlers (deps may use a fake repo §6)
+    handler := NewRouter(deps)  // the REAL router + handlers (deps may use a fake repo sec 6)
 
     // Arrange: build a request and an in-memory response recorder (no network)
     body := strings.NewReader(`{"email":"a@x.com","name":"Ada"}`)
@@ -17,7 +17,7 @@ func TestCreateUser_Returns201(t *testing.T) {
     // Act: drive the handler directly
     handler.ServeHTTP(rec, req)
 
-    // Assert: on the real response — status, then body
+    // Assert: on the real response ,  status, then body
     if rec.Code != http.StatusCreated {
         t.Fatalf("status = %d; want 201; body=%s", rec.Code, rec.Body.String())
     }

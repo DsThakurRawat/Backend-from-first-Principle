@@ -20,8 +20,8 @@ resp, err := client.GetUser(ctx, req)
 if err != nil {
     st := status.Convert(err)        // pull the status out of the error
     switch st.Code() {
-    case codes.NotFound:        // expected — show "not found" in UI
-    case codes.Unavailable:     // transient — retry with backoff, §17
+    case codes.NotFound:        // expected ,  show "not found" in UI
+    case codes.Unavailable:     // transient ,  retry with backoff, sec 17
     default:                    log.Printf("unexpected: %v: %s", st.Code(), st.Message())
     }
 }

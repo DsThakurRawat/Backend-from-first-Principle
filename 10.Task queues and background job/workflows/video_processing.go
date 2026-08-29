@@ -8,10 +8,10 @@ import (
     "myapp/activities"
 )
 
-// VideoProcessingWorkflow — orchestrates the entire pipeline
-// Temporal persists every step — crash at any point = resume here
+// VideoProcessingWorkflow ,  orchestrates the entire pipeline
+// Temporal persists every step ,  crash at any point = resume here
 func VideoProcessingWorkflow(ctx workflow.Context, videoID string) error {
-    // Activity options — each step has its own retry policy
+    // Activity options ,  each step has its own retry policy
     actOpts := workflow.ActivityOptions{
         StartToCloseTimeout: 10 * time.Minute,
         RetryPolicy: &temporal.RetryPolicy{
@@ -26,14 +26,14 @@ func VideoProcessingWorkflow(ctx workflow.Context, videoID string) error {
     // If server crashes here, workflow resumes from step 1 on restart
     var encodedPath string
     if err := workflow.ExecuteActivity(ctx, activities.EncodeVideo, videoID).Get(ctx, &encodedPath); err != nil {
-        return err // step 1 failed all retries — workflow fails
+        return err // step 1 failed all retries ,  workflow fails
     }
 
     // Step 2 + 3: Thumbnail generation AND transcription in parallel
     thumbFuture := workflow.ExecuteActivity(ctx, activities.GenerateThumbnails, encodedPath)
     transcriptFuture := workflow.ExecuteActivity(ctx, activities.GenerateTranscription, encodedPath)
 
-    // Wait for both — if either fails, the workflow fails (with its own retries first)
+    // Wait for both ,  if either fails, the workflow fails (with its own retries first)
     if err := thumbFuture.Get(ctx, nil); err != nil { return err }
     if err := transcriptFuture.Get(ctx, nil); err != nil { return err }
 

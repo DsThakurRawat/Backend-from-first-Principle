@@ -15,7 +15,7 @@ CREATE TABLE users (
 -- ONE-TO-ONE: user_id is BOTH primary key and foreign key
 CREATE TABLE user_profiles (
   user_id     UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  avatar_url  TEXT,             -- optional → no NOT NULL
+  avatar_url  TEXT,             -- optional -> no NOT NULL
   bio         TEXT,
   phone       TEXT,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),

@@ -12,7 +12,7 @@ func RequireJWT(next http.HandlerFunc) http.HandlerFunc {
             http.Error(w, "authentication failed", http.StatusUnauthorized)
             return
         }
-        // no store lookup — identity comes from the verified token
+        // no store lookup ,  identity comes from the verified token
         u := User{ID: claims["sub"].(string), Role: claims["role"].(string)}
         next(w, r.WithContext(context.WithValue(r.Context(), "user", u)))
     }

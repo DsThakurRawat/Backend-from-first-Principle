@@ -4,7 +4,7 @@ from argon2.exceptions import VerifyMismatchError
 
 PEPPER = os.environ["PASSWORD_PEPPER"].encode()  # secret, NOT in DB
 
-# cost parameters — tune so one hash ~250ms
+# cost parameters ,  tune so one hash ~250ms
 ph = PasswordHasher(
     time_cost=3,            # iterations
     memory_cost=64 * 1024,  # 64 MB, memory-hard

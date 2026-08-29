@@ -26,5 +26,5 @@ func main() {
     }
 
     result := <-done
-    fmt.Println(result) // 1000 — no race condition, no mutex needed
+    fmt.Println(result) // 1000 ,  no race condition, no mutex needed
 }

@@ -25,7 +25,7 @@ def cache_result(ttl: int = 3600):
                 print(f"[CACHE HIT] {cache_key}")
                 return json.loads(cached)
 
-            # Step 2: Cache Miss — execute the actual function
+            # Step 2: Cache Miss ,  execute the actual function
             print(f"[CACHE MISS] calling {func.__name__}...")
             result = await func(*args, **kwargs)
 
@@ -41,7 +41,7 @@ def cache_result(ttl: int = 3600):
 @app.get("/products/{product_id}")
 @cache_result(ttl=3600)  # cache for 1 hour
 async def get_product(product_id: str):
-    # Expensive DB query — only runs on cache miss
+    # Expensive DB query ,  only runs on cache miss
     product = await fetch_from_db(product_id)
     return product
 

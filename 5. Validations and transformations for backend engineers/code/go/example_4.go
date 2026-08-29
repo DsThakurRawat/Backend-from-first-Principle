@@ -11,7 +11,7 @@ type Profile struct {
     Age int `validate:"required,gte=1,lte=120"`
 }
 
-// Type & syntax can't express "not in the future" —
+// Type & syntax can't express "not in the future" , 
 // semantics need real logic against the real clock.
 func (p Profile) checkSemantics() error {
     dob, err := time.Parse("2006-01-02", p.DateOfBirth)

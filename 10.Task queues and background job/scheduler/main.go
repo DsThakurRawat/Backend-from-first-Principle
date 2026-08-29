@@ -1,4 +1,4 @@
-// scheduler/main.go — Cron-style recurring tasks
+// scheduler/main.go ,  Cron-style recurring tasks
 package main
 
 import (

@@ -32,11 +32,11 @@ func writeJSON(w http.ResponseWriter, status int, b any) {
 func createBookHandler(w http.ResponseWriter, r *http.Request) {
     var body CreateBook
 
-    // === GATE — runs before ANY business logic ===
+    // === GATE ,  runs before ANY business logic ===
     if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
         writeJSON(w, 400, map[string]string{
             "error": "name: expected a string"})
-        return // 400 — the DB is never touched
+        return // 400 ,  the DB is never touched
     }
     body.Name = strings.TrimSpace(body.Name) // transform
     if err := validate.Struct(body); err != nil {
@@ -45,7 +45,7 @@ func createBookHandler(w http.ResponseWriter, r *http.Request) {
         return // 400 Bad Request, not a confusing 500
     }
 
-    // === only now: business logic (service → repo) ===
+    // === only now: business logic (service -> repo) ===
     book, err := createBook(r.Context(), body.Name)
     if err != nil {
         writeJSON(w, 500, map[string]string{
@@ -57,7 +57,7 @@ func createBookHandler(w http.ResponseWriter, r *http.Request) {
 
 // ---- service + repository (sketched) ----
 func createBook(ctx context.Context, name string) (*Book, error) {
-    // service logic … repository INSERT … then:
+    // service logic ... repository INSERT ... then:
     return &Book{ID: 1, Name: name}, nil
 }
 

@@ -5,7 +5,7 @@ func (s *server) UploadEvents(stream userv1.UserService_UploadEventsServer) erro
     count := 0
     for {
         ev, err := stream.Recv()
-        if err == io.EOF { // client finished sending — now reply once
+        if err == io.EOF { // client finished sending ,  now reply once
             return stream.SendAndClose(&userv1.UploadSummary{Received: int32(count)})
         }
         if err != nil { return err }

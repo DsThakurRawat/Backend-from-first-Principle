@@ -11,7 +11,7 @@ def create_session(user_id: str, user_data: dict) -> str:
     session_key = f"session:{session_id}"
 
     # Store session data with 24-hour TTL
-    # TTL ensures sessions auto-expire — no manual cleanup needed
+    # TTL ensures sessions auto-expire ,  no manual cleanup needed
     r.setex(
         session_key,
         timedelta(hours=24),
@@ -24,7 +24,7 @@ def create_session(user_id: str, user_data: dict) -> str:
 def get_session(session_id: str) -> dict | None:
     """
     Validate session on every authenticated API request.
-    Redis O(1) lookup — microseconds, not milliseconds.
+    Redis O(1) lookup ,  microseconds, not milliseconds.
     """
     session_key = f"session:{session_id}"
     data = r.get(session_key)
@@ -39,5 +39,5 @@ def get_session(session_id: str) -> dict | None:
 
 
 def delete_session(session_id: str):
-    """Logout — delete session from Redis immediately."""
+    """Logout ,  delete session from Redis immediately."""
     r.delete(f"session:{session_id}")

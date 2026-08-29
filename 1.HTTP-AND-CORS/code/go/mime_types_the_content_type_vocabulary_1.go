@@ -17,7 +17,7 @@ func createNote(w http.ResponseWriter, r *http.Request) {
     defer r.Body.Close()
 
     var in Note
-    if err := json.Unmarshal(body, ∈); err != nil {
+    if err := json.Unmarshal(body,  in ); err != nil {
         http.Error(w, "invalid JSON", http.StatusBadRequest)
         return
     }

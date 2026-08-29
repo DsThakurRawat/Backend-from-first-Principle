@@ -8,4 +8,4 @@ WHERE name ILIKE '%laptop%';
 --   Filter: ((name)::text ~~* '%laptop%'::text)
 --   Rows Removed by Filter: 4 999 995
 -- Planning Time: 0.2 ms
--- Execution Time: 28 940.7 ms   ← 29 seconds!
+-- Execution Time: 28 940.7 ms   <- 29 seconds!

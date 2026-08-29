@@ -8,7 +8,7 @@ def require_jwt(view):
             claims = verify(h.removeprefix("Bearer "))
         except jwt.PyJWTError:
             return jsonify(error="authentication failed"), 401
-        # no store lookup — identity comes from the verified token
+        # no store lookup ,  identity comes from the verified token
         g.user = {"id": claims["sub"], "role": claims["role"]}
         return view(*args, **kwargs)
     return wrapper

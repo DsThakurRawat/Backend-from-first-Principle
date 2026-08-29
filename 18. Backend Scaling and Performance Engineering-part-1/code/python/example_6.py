@@ -10,7 +10,7 @@ def get_product(product_id: str) -> dict:
     if cached:
         return json.loads(cached)  # Cache HIT
 
-    # 2. Cache miss — query database
+    # 2. Cache miss ,  query database
     product = query_product_from_db(product_id)
 
     # 3. Store with 10-minute TTL

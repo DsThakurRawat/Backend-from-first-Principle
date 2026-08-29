@@ -21,15 +21,15 @@ class Application:
 
     def install_signal_handlers(self):
         # Handle SIGINT (Ctrl+C, dev) and SIGTERM (PM2/k8s, prod)
-        # the SAME way — both mean "shut down gracefully".
+        # the SAME way ,  both mean "shut down gracefully".
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, self._on_signal, sig)
 
     def _on_signal(self, sig):
-        # NOTE: SIGKILL can never reach here — it cannot be
+        # NOTE: SIGKILL can never reach here ,  it cannot be
         # caught or ignored. Only the polite signals arrive.
-        log.info(f"signal received: {sig.name} — shutting down")
+        log.info(f"signal received: {sig.name} ,  shutting down")
         self._shutdown.set()
 
     async def graceful_shutdown(self):
@@ -43,7 +43,7 @@ class Application:
                 timeout=SHUTDOWN_TIMEOUT,
             )
         except asyncio.TimeoutError:
-            log.warning("timeout exceeded — forcing shutdown")
+            log.warning("timeout exceeded ,  forcing shutdown")
 
         # 2 & 3. Release resources in REVERSE order of acquisition.
         #    Acquired redis -> db -> server; release server -> db -> redis.
@@ -58,7 +58,7 @@ async def main():
     app = Application()
     await app.startup()
     app.install_signal_handlers()
-    await app._shutdown.wait()   # the "living" phase — block until signal
+    await app._shutdown.wait()   # the "living" phase ,  block until signal
     await app.graceful_shutdown()
 
 

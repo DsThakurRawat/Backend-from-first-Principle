@@ -7,7 +7,7 @@ type AppError struct {
     Code    int      // HTTP status code
     Message string   // Safe, user-facing message
     Details any      // Optional: field-level errors for 400s
-    Err     error    // Original error — for logging only, NEVER sent to client
+    Err     error    // Original error ,  for logging only, NEVER sent to client
 }
 
 func (e *AppError) Error() string { return e.Message }

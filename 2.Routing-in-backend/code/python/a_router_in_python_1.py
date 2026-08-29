@@ -4,7 +4,7 @@ from urllib.parse import urlsplit, parse_qs
 
 # ABSTRACTION: Handler is an Abstract Base Class. @abstractmethod
 # forces every subclass to define handle(). You cannot create a
-# Handler directly — it is a pure contract.
+# Handler directly ,  it is a pure contract.
 class Handler(ABC):
     @abstractmethod
     def handle(self, req: "Request") -> "Response": ...
@@ -28,7 +28,7 @@ class BaseHandler(Handler):
     def _log(self, req): print(f"[{self._name}] {req.method} {req.path}")
 
 # POLYMORPHISM: each subclass OVERRIDES handle() differently, yet
-# the router calls them all identically — handler.handle(req).
+# the router calls them all identically ,  handler.handle(req).
 class GetUser(BaseHandler):           # IS-A BaseHandler IS-A Handler
     def handle(self, req):
         self._log(req)              # inherited from parent

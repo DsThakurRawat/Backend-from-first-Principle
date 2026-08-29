@@ -1,4 +1,4 @@
-// 1) Injected clock — deterministic time.
+// 1) Injected clock ,  deterministic time.
 type Clock interface{ Now() time.Time }
 type fixedClock struct{ t time.Time }
 func (f fixedClock) Now() time.Time { return f.t }
@@ -11,7 +11,7 @@ func TestTokenExpiry(t *testing.T) {
     }
 }
 
-// 2) Stub an external HTTP API with httptest.Server — no real network.
+// 2) Stub an external HTTP API with httptest.Server ,  no real network.
 func TestFetchRate(t *testing.T) {
     srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
         w.Write([]byte(`{"usd_inr": 83.2}`)) // canned response

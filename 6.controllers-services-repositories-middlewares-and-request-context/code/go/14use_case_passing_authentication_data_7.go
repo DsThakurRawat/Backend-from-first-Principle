@@ -12,7 +12,7 @@ func CreateBookHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Persist with the SERVER-VERIFIED owner id — never the client's.
+    // Persist with the SERVER-VERIFIED owner id ,  never the client's.
     book, _ := bookService.Create(r.Context(), req, userID)
     w.WriteHeader(http.StatusCreated) // 201
     json.NewEncoder(w).Encode(book)

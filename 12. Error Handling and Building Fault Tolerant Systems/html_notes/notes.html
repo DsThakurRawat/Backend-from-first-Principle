@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Error Handling & Fault Tolerance · Chapter 12 · Backend from First Principles</title>
+<title>Error Handling & Fault Tolerance / Chapter 12 / Backend from First Principles</title>
   <meta name="description" content="Chapter 12 of Backend from First Principles: Error Handling & Fault Tolerance. First-principles notes, diagrams and runnable Go and Python examples.">
   <meta name="theme-color" content="#f3ede2">
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%23b8402e'/%3E%3Ctext%20x='16'%20y='23'%20font-family='Georgia,serif'%20font-size='19'%20font-weight='700'%20fill='%23f3ede2'%20text-anchor='middle'%3EB%3C/text%3E%3C/svg%3E">
@@ -28,7 +28,7 @@
     font-family:"Spline Sans", system-ui, sans-serif;
     background: var(--cream);
     color: var(--ink);
-    display: flex;
+    
     min-height: 100vh;
     font-size: 17px;
     line-height: 1.7;
@@ -47,14 +47,9 @@
     height: 100vh;
     overflow-y: auto;
   }
-  .sidebar-title { font-family:"Fraunces", Georgia, serif; font-weight:900; font-size:18px; color:var(--ink); line-height:1.25; margin-bottom:4px; }
-  .sidebar-sub { font-family:"Spline Sans", system-ui, sans-serif; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-light); margin-bottom:28px; }
-  .sidebar-nav a { display:flex; align-items:flex-start; gap:10px; text-decoration:none; color:var(--ink-light); font-family:"Spline Sans", system-ui, sans-serif; font-size:13px; padding:5px 6px; border-radius:4px; margin-bottom:2px; transition:background .15s,color .15s; }
-  .sidebar-nav a:hover { background:var(--border); color:var(--red); }
-  .sidebar-nav .num { font-size:11px; color:var(--red); font-weight:700; min-width:20px; padding-top:1px; }
 
   /* MAIN */
-  main { flex:1; max-width:860px; padding:60px 64px 100px; }
+  .bfp-content { flex:1; max-width:860px; padding:60px 64px 100px; }
   .chapter-label { font-family:"Spline Sans", system-ui, sans-serif; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--red); font-weight:600; margin-bottom:12px; }
   h1.chapter-title { font-family:"Fraunces", Georgia, serif; font-weight:900; font-size:48px; line-height:1.1; color:var(--ink); margin-bottom:24px; }
   .chapter-intro { font-size:18px; color:var(--ink-light); line-height:1.8; border-top:1px solid var(--border); border-bottom:1px solid var(--border); padding:20px 0; margin-bottom:52px; }
@@ -138,21 +133,10 @@
 
     /* ---- responsive ---- */
     @media (max-width: 900px) {
-      body { display: block; }
-      aside {
-        width: auto; min-height: 0; height: auto; overflow-y: visible;
-        position: static; align-self: auto;
-        border-right: none; border-bottom: 1px solid var(--border);
-        padding: 24px 20px 20px;
-      }
-      .sidebar-nav { columns: 2; column-gap: 22px; }
-      main { max-width: none; padding: 38px 22px 100px; }
-    }
+      body {  }
+      .bfp-content { max-width: none; padding: 38px 22px 100px; }}
     @media (max-width: 560px) {
-      .sidebar-nav { columns: 1; }
-      main { padding: 30px 18px 100px; }
-    }
-</style>
+      .bfp-content { padding: 30px 18px 100px; }}</style>
 <style>
 .chapter-nav{position:fixed;bottom:0;left:0;right:0;z-index:9998;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(16px,4vw,48px);background:rgba(243,237,226,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1.5px solid #c7bca6;box-shadow:0 -8px 32px -16px rgba(40,30,20,.18);font-family:"JetBrains Mono", ui-monospace, monospace;}
 .nav-chapter-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:#5b5347;padding:10px 18px;border-radius:10px;transition:all .2s ease;max-width:38%;}
@@ -172,33 +156,36 @@ body{padding-bottom:80px;}
 </style>
   <link rel="stylesheet" href="../../assets/copy-button.css">
   <link rel="stylesheet" href="../../assets/enhancements.css">
+  <link rel="stylesheet" href="../../assets/shell.css">
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,400;1,9..144,600&family=Spline+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-
-<aside>
-  <div class="sidebar-title">Error Handling &amp; Fault Tolerance</div>
-  <div class="sidebar-sub">Chapter 12 · Field Manual</div>
-  <nav class="sidebar-nav">
-    <a href="#mindset"><span class="num">01</span>The Mindset</a>
-    <a href="#types"><span class="num">02</span>Types of Errors</a>
-    <a href="#logic"><span class="num">03</span>Logic Errors</a>
-    <a href="#db"><span class="num">04</span>Database Errors</a>
-    <a href="#external"><span class="num">05</span>External Service Errors</a>
-    <a href="#input"><span class="num">06</span>Input Validation Errors</a>
-    <a href="#config"><span class="num">07</span>Configuration Errors</a>
-    <a href="#proactive"><span class="num">08</span>Proactive Detection</a>
-    <a href="#monitoring"><span class="num">09</span>Monitoring &amp; Observability</a>
-    <a href="#recovery"><span class="num">10</span>Recovery Strategies</a>
-    <a href="#global"><span class="num">11</span>Global Error Handler</a>
-    <a href="#code-go"><span class="num">12</span>Go, Global Handler</a>
-    <a href="#code-py"><span class="num">13</span>Python, Global Handler</a>
-    <a href="#security"><span class="num">14</span>Security &amp; Safe Logging</a>
-    <a href="#refs"><span class="num">15</span>References</a>
-  </nav>
-</aside>
-
-<main>
+<button class="bfp-toc-toggle" id="bfpTocToggle" aria-controls="bfpToc" aria-expanded="false"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>Contents</button>
+<div class="bfp-toc-scrim" id="bfpTocScrim"></div>
+<div class="bfp-shell">
+    <aside class="bfp-toc" id="bfpToc">
+      <div class="bfp-brand"><span class="bfp-brand-name">Errors</span><span class="bfp-brand-slash">/</span><span class="bfp-brand-lens">the backend lens</span></div>
+      <div class="bfp-brand-sub">Chapter 12 / Field Manual</div>
+      <div class="bfp-toc-rule"></div>
+      <nav class="bfp-toc-nav">
+        <a class="bfp-toc-link" href="#mindset"><span class="bfp-toc-num">01</span><span class="bfp-toc-text">The Mindset</span></a>
+        <a class="bfp-toc-link" href="#types"><span class="bfp-toc-num">02</span><span class="bfp-toc-text">Types of Errors</span></a>
+        <a class="bfp-toc-link" href="#logic"><span class="bfp-toc-num">03</span><span class="bfp-toc-text">Logic Errors</span></a>
+        <a class="bfp-toc-link" href="#db"><span class="bfp-toc-num">04</span><span class="bfp-toc-text">Database Errors</span></a>
+        <a class="bfp-toc-link" href="#external"><span class="bfp-toc-num">05</span><span class="bfp-toc-text">External Service Errors</span></a>
+        <a class="bfp-toc-link" href="#input"><span class="bfp-toc-num">06</span><span class="bfp-toc-text">Input Validation Errors</span></a>
+        <a class="bfp-toc-link" href="#config"><span class="bfp-toc-num">07</span><span class="bfp-toc-text">Configuration Errors</span></a>
+        <a class="bfp-toc-link" href="#proactive"><span class="bfp-toc-num">08</span><span class="bfp-toc-text">Proactive Detection</span></a>
+        <a class="bfp-toc-link" href="#monitoring"><span class="bfp-toc-num">09</span><span class="bfp-toc-text">Monitoring &amp; Observability</span></a>
+        <a class="bfp-toc-link" href="#recovery"><span class="bfp-toc-num">10</span><span class="bfp-toc-text">Recovery Strategies</span></a>
+        <a class="bfp-toc-link" href="#global"><span class="bfp-toc-num">11</span><span class="bfp-toc-text">Global Error Handler</span></a>
+        <a class="bfp-toc-link" href="#code-go"><span class="bfp-toc-num">12</span><span class="bfp-toc-text">Go, Global Handler</span></a>
+        <a class="bfp-toc-link" href="#code-py"><span class="bfp-toc-num">13</span><span class="bfp-toc-text">Python, Global Handler</span></a>
+        <a class="bfp-toc-link" href="#security"><span class="bfp-toc-num">14</span><span class="bfp-toc-text">Security &amp; Safe Logging</span></a>
+        <a class="bfp-toc-link" href="#refs"><span class="bfp-toc-num">15</span><span class="bfp-toc-text">References</span></a>
+      </nav>
+    </aside>
+    <main class="bfp-content">
 
   <div class="chapter-label">A detailed backend reference</div>
   <h1 class="chapter-title">Error Handling &amp; Fault-Tolerant Systems</h1>
@@ -227,23 +214,23 @@ body{padding-bottom:80px;}
     <p>Backend errors can be grouped into five broad categories. Each has a different origin, detection strategy, and fix.</p>
     <div class="error-cards">
       <div class="error-card ec-logic">
-        <div class="ec-title">① Logic Errors</div>
+        <div class="ec-title">(1) Logic Errors</div>
         <p style="font-size:14px;margin:0">App runs but produces wrong results. Hardest to detect. Can silently drain money for weeks.</p>
       </div>
       <div class="error-card ec-db">
-        <div class="ec-title">② Database Errors</div>
+        <div class="ec-title">(2) Database Errors</div>
         <p style="font-size:14px;margin:0">Connection failures, deadlocks, constraint violations, malformed SQL. Can bring the whole app down.</p>
       </div>
       <div class="error-card ec-ext">
-        <div class="ec-title">③ External Service Errors</div>
+        <div class="ec-title">(3) External Service Errors</div>
         <p style="font-size:14px;margin:0">Third-party APIs (payment, email, auth) time out, rate-limit, or go offline. You have no control.</p>
       </div>
       <div class="error-card ec-input">
-        <div class="ec-title">④ Input Validation Errors</div>
+        <div class="ec-title">(4) Input Validation Errors</div>
         <p style="font-size:14px;margin:0">Users send bad, missing, or out-of-range data. Easiest to handle, if your validation layer is robust.</p>
       </div>
       <div class="error-card ec-config">
-        <div class="ec-title">⑤ Configuration Errors</div>
+        <div class="ec-title">(5) Configuration Errors</div>
         <p style="font-size:14px;margin:0">Missing env vars, wrong credentials on deploy. Surface at startup, not at runtime, if you do it right.</p>
       </div>
     </div>
@@ -280,16 +267,16 @@ body{padding-bottom:80px;}
     <div class="section-header"><span class="badge">04</span><h2>Database Errors</h2></div>
     <p>Most backend applications are meaningless without their database. A database error of any kind means your app cannot serve real data, which usually means a broken UI or cascading failures across services.</p>
 
-    <h3>① Connection Errors</h3>
+    <h3>(1) Connection Errors</h3>
     <p>Your backend cannot reach the database server. Possible causes:</p>
     <ul>
       <li>Network partition or DNS failure between app server and DB server.</li>
       <li>Database server is overloaded or down.</li>
       <li><strong>Connection pool exhausted</strong>: all pooled TCP connections are in use; new requests queue up or fail immediately.</li>
     </ul>
-    <div class="callout tip"><strong>Connection pooling</strong> keeps a fixed number of open TCP connections to the database, avoiding the overhead of a full TCP handshake + TLS negotiation on every query. Tools: <code>pgxpool</code> (Go), <code>psycopg2</code> pool or <code>SQLAlchemy</code> (Python), <code>pg</code> Pool (Node). Size your pool carefully: too small → bottleneck; too large → DB overload.</div>
+    <div class="callout tip"><strong>Connection pooling</strong> keeps a fixed number of open TCP connections to the database, avoiding the overhead of a full TCP handshake + TLS negotiation on every query. Tools: <code>pgxpool</code> (Go), <code>psycopg2</code> pool or <code>SQLAlchemy</code> (Python), <code>pg</code> Pool (Node). Size your pool carefully: too small -&gt; bottleneck; too large -&gt; DB overload.</div>
 
-    <h3>② Constraint Violation Errors</h3>
+    <h3>(2) Constraint Violation Errors</h3>
     <p>You are trying to perform an operation that violates a database-level rule:</p>
     <table>
       <thead><tr><th>Constraint Type</th><th>Trigger</th><th>Appropriate Response</th></tr></thead>
@@ -301,11 +288,11 @@ body{padding-bottom:80px;}
       </tbody>
     </table>
 
-    <h3>③ Query / Syntax Errors</h3>
+    <h3>(3) Query / Syntax Errors</h3>
     <p>Malformed SQL, a table name typo, referencing a column that was renamed, or a missing join condition. These are usually caught in development but can slip through if raw SQL strings are built dynamically.</p>
     <div class="callout warning">Never construct SQL by string concatenation with user input. Use parameterised queries / prepared statements always. This prevents both query errors <em>and</em> SQL injection attacks.</div>
 
-    <h3>④ Deadlocks</h3>
+    <h3>(4) Deadlocks</h3>
     <p>A deadlock occurs when two (or more) transactions each hold a lock that the other needs:</p>
     <div class="diagram-box">
       <svg viewBox="0 0 580 180" xmlns="http://www.w3.org/2000/svg" width="100%">
@@ -324,9 +311,9 @@ body{padding-bottom:80px;}
         <text x="490" y="100" text-anchor="middle" fill="#5b5347" font-family="JetBrains Mono,monospace" font-size="11">holds LOCK on Row 2</text>
         <!-- Wants arrows -->
         <path d="M 152,75 C 260,40 320,40 428,75" fill="none" stroke="#b8402e" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#da)"/>
-        <text x="290" y="36" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="11">A wants Row 2 →</text>
+        <text x="290" y="36" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="11">A wants Row 2 -&gt;</text>
         <path d="M 428,100 C 320,140 260,140 152,100" fill="none" stroke="#37607f" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#db)"/>
-        <text x="290" y="158" text-anchor="middle" fill="#37607f" font-family="Source Sans 3,sans-serif" font-size="11">← B wants Row 1</text>
+        <text x="290" y="158" text-anchor="middle" fill="#37607f" font-family="Source Sans 3,sans-serif" font-size="11">&lt;- B wants Row 1</text>
         <!-- Deadlock label -->
         <rect x="230" y="68" width="120" height="36" rx="8" fill="#211e1a"/>
         <text x="290" y="82" text-anchor="middle" fill="#f3ede2" font-family="Playfair Display,serif" font-size="13" font-weight="700">DEADLOCK</text>
@@ -378,10 +365,10 @@ body{padding-bottom:80px;}
       <div class="diagram-caption">Fig 2: Each external dependency is an independent failure point your app must handle gracefully.</div>
     </div>
 
-    <h3>① Network Failures</h3>
+    <h3>(1) Network Failures</h3>
     <p>The internet between your server and the external API is unreliable. You will encounter: connection timeouts, DNS resolution failures, network partitions, and TLS handshake errors. Set <strong>explicit timeouts</strong> on every outgoing HTTP call, never let a slow third-party API block your goroutine / thread indefinitely.</p>
 
-    <h3>② Rate Limiting: HTTP 429</h3>
+    <h3>(2) Rate Limiting: HTTP 429</h3>
     <p>Every serious external API enforces rate limits to prevent abuse. If your app hammers an API (due to a bug, a traffic spike, or a loop error), you will receive <code>HTTP 429 Too Many Requests</code>.</p>
     <p>The standard mitigation is <strong>Exponential Backoff with Jitter</strong>:</p>
 
@@ -392,38 +379,38 @@ body{padding-bottom:80px;}
         <!-- Attempt 1 -->
         <rect x="20" y="40" width="70" height="40" rx="6" fill="#fdecea" stroke="#b8402e"/>
         <text x="55" y="58" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Try #1</text>
-        <text x="55" y="72" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">→ 429</text>
+        <text x="55" y="72" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">-&gt; 429</text>
         <line x1="92" y1="60" x2="118" y2="60" stroke="#b8402e" stroke-width="1.5" marker-end="url(#fa)"/>
         <text x="104" y="52" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">1 s</text>
 
         <rect x="120" y="40" width="70" height="40" rx="6" fill="#fdecea" stroke="#b8402e"/>
         <text x="155" y="58" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Try #2</text>
-        <text x="155" y="72" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">→ 429</text>
+        <text x="155" y="72" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">-&gt; 429</text>
         <line x1="192" y1="60" x2="218" y2="60" stroke="#b8402e" stroke-width="1.5" marker-end="url(#fa)"/>
         <text x="204" y="52" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">2 s</text>
 
         <rect x="220" y="40" width="70" height="40" rx="6" fill="#fdecea" stroke="#b8402e"/>
         <text x="255" y="58" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Try #3</text>
-        <text x="255" y="72" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">→ 429</text>
+        <text x="255" y="72" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">-&gt; 429</text>
         <line x1="292" y1="60" x2="318" y2="60" stroke="#b8402e" stroke-width="1.5" marker-end="url(#fa)"/>
         <text x="304" y="52" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">4 s</text>
 
         <rect x="320" y="40" width="70" height="40" rx="6" fill="#fdecea" stroke="#b8402e"/>
         <text x="355" y="58" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Try #4</text>
-        <text x="355" y="72" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">→ 429</text>
+        <text x="355" y="72" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">-&gt; 429</text>
         <line x1="392" y1="60" x2="418" y2="60" stroke="#b8402e" stroke-width="1.5" marker-end="url(#fa)"/>
         <text x="404" y="52" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">8 s</text>
 
         <rect x="420" y="40" width="80" height="40" rx="6" fill="#eafaf1" stroke="#3f6f4e"/>
         <text x="460" y="58" text-anchor="middle" fill="#3f6f4e" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Try #5</text>
-        <text x="460" y="72" text-anchor="middle" fill="#3f6f4e" font-family="Source Sans 3,sans-serif" font-size="10">→ 200 ✓</text>
+        <text x="460" y="72" text-anchor="middle" fill="#3f6f4e" font-family="Source Sans 3,sans-serif" font-size="10">-&gt; 200 </text>
 
-        <text x="310" y="110" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="11">Wait = base × 2ⁿ + random_jitter, doubles each retry, jitter prevents thundering herd</text>
+        <text x="310" y="110" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="11">Wait = base x 2^n + random_jitter, doubles each retry, jitter prevents thundering herd</text>
       </svg>
-      <div class="diagram-caption">Fig 3: Exponential Backoff: each retry waits 2× longer. Jitter spreads retries to avoid thundering herd.</div>
+      <div class="diagram-caption">Fig 3: Exponential Backoff: each retry waits 2x longer. Jitter spreads retries to avoid thundering herd.</div>
     </div>
 
-    <h3>③ Service Outage / Downtime</h3>
+    <h3>(3) Service Outage / Downtime</h3>
     <p>Major cloud providers (AWS, GCP) and popular SaaS services go down occasionally. Your app needs a strategy for when a critical dependency is completely unavailable:</p>
     <ul>
       <li><strong>Fallback</strong>: if Redis cache is down, fall back to direct DB reads for non-critical data.</li>
@@ -457,14 +444,14 @@ body{padding-bottom:80px;}
   <!-- 07 CONFIG ERRORS -->
   <section id="config">
     <div class="section-header"><span class="badge">07</span><h2>Configuration Errors</h2></div>
-    <p>Configuration errors happen at the boundary between environments, dev → staging → production. A missing <code>OPENAI_API_KEY</code>, a wrong database URL, or a forgotten secret can silently break specific features while the rest of the app appears healthy.</p>
+    <p>Configuration errors happen at the boundary between environments, dev -&gt; staging -&gt; production. A missing <code>OPENAI_API_KEY</code>, a wrong database URL, or a forgotten secret can silently break specific features while the rest of the app appears healthy.</p>
 
     <h3>Fail Fast at Startup: Not at Runtime</h3>
     <p>The golden rule: <strong>validate all required environment variables before the server starts accepting traffic</strong>. If any are missing or corrupt, crash immediately with a clear error message.</p>
 
     <div class="compare-grid">
       <div class="compare-card">
-        <h4>✗ Bad: Runtime Failure</h4>
+        <h4>Bad: Runtime Failure</h4>
         <ul>
           <li>App starts successfully</li>
           <li>First user hits the AI image endpoint</li>
@@ -475,11 +462,11 @@ body{padding-bottom:80px;}
         </ul>
       </div>
       <div class="compare-card">
-        <h4>✓ Good: Startup Failure</h4>
+        <h4>Good: Startup Failure</h4>
         <ul>
           <li>New deployment starts</li>
           <li>Config validation runs immediately</li>
-          <li>Missing key detected → process exits with clear message</li>
+          <li>Missing key detected -&gt; process exits with clear message</li>
           <li>Blue-green: old deployment still running</li>
           <li>Zero downtime, ops team fixes and redeploys</li>
         </ul>
@@ -555,14 +542,14 @@ body{padding-bottom:80px;}
         <rect width="640" height="160" fill="#fff"/>
         <!-- Basic ping -->
         <rect x="30" y="30" width="260" height="100" rx="10" fill="#fdecea" stroke="#b8402e"/>
-        <text x="160" y="56" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700">Basic Liveness Check ✗</text>
-        <text x="160" y="78" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="12">GET /health → 200 OK</text>
+        <text x="160" y="56" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700">Basic Liveness Check</text>
+        <text x="160" y="78" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="12">GET /health -&gt; 200 OK</text>
         <text x="160" y="96" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="12">Checks: is the process running?</text>
         <text x="160" y="114" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="11">Does NOT verify DB / cache / external</text>
         <!-- Deep -->
         <rect x="350" y="30" width="260" height="100" rx="10" fill="#eafaf1" stroke="#3f6f4e"/>
-        <text x="480" y="56" text-anchor="middle" fill="#3f6f4e" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700">Deep Readiness Check ✓</text>
-        <text x="480" y="78" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="12">GET /ready → 200 OK</text>
+        <text x="480" y="56" text-anchor="middle" fill="#3f6f4e" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700">Deep Readiness Check </text>
+        <text x="480" y="78" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="12">GET /ready -&gt; 200 OK</text>
         <text x="480" y="96" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="12">Runs test query, pings cache,</text>
         <text x="480" y="114" text-anchor="middle" fill="#3f6f4e" font-family="Source Sans 3,sans-serif" font-size="11">verifies all subsystems are functional</text>
       </svg>
@@ -638,7 +625,7 @@ body{padding-bottom:80px;}
     <h3>Structured Logging (JSON)</h3>
     <p>Plain-text logs are hard to query at scale. Use structured JSON logs so log aggregation tools (Grafana Loki, Datadog, ELK) can parse, filter, and alert on them programmatically.</p>
 
-    <pre><span class="lang-label">Python · structlog</span><span class="kw">import</span> structlog
+    <pre><span class="lang-label">Python / structlog</span><span class="kw">import</span> structlog
 
 log = structlog.get_logger()
 
@@ -699,7 +686,7 @@ log.error(
 
         <span class="cmt">// Exponential backoff: 1s, 2s, 4s, 8s, 16s</span>
         wait := baseDelay * time.Duration(<span class="num">1</span>&lt;&lt;attempt)
-        <span class="cmt">// Add jitter (±20%) to prevent thundering herd</span>
+        <span class="cmt">// Add jitter (+/-20%) to prevent thundering herd</span>
         jitter := time.Duration(rand.Int63n(int64(wait / <span class="num">5</span>)))
         time.Sleep(wait + jitter)
 
@@ -751,19 +738,19 @@ log.error(
 
         <rect x="20" y="100" width="160" height="40" rx="7" fill="#ece3d4" stroke="#d8cfbe"/>
         <text x="100" y="126" text-anchor="middle" fill="#211e1a" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="600">Handler</text>
-        <text x="100" y="140" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="10">→ ValidationError (400)</text>
+        <text x="100" y="140" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="10">-&gt; ValidationError (400)</text>
 
         <line x1="100" y1="144" x2="100" y2="164" stroke="#5b5347" stroke-width="1.5" marker-end="url(#ga)"/>
 
         <rect x="20" y="166" width="160" height="40" rx="7" fill="#ece3d4" stroke="#d8cfbe"/>
         <text x="100" y="192" text-anchor="middle" fill="#211e1a" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="600">Service</text>
-        <text x="100" y="206" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="10">→ BusinessError</text>
+        <text x="100" y="206" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="10">-&gt; BusinessError</text>
 
         <line x1="100" y1="210" x2="100" y2="230" stroke="#5b5347" stroke-width="1.5" marker-end="url(#ga)"/>
 
         <rect x="20" y="232" width="160" height="40" rx="7" fill="#ece3d4" stroke="#d8cfbe"/>
         <text x="100" y="258" text-anchor="middle" fill="#211e1a" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="600">Repository</text>
-        <text x="100" y="272" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="10">→ DBError (unique, norows, fk)</text>
+        <text x="100" y="272" text-anchor="middle" fill="#b8402e" font-family="Source Sans 3,sans-serif" font-size="10">-&gt; DBError (unique, norows, fk)</text>
 
         <!-- Bubble up arrow -->
         <path d="M 182,252 Q 240,252 240,180 Q 240,80 280,60" fill="none" stroke="#b8402e" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#gb)"/>
@@ -776,19 +763,19 @@ log.error(
 
         <rect x="300" y="90" width="172" height="40" rx="6" fill="#b8402e" opacity=".9"/>
         <text x="386" y="107" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">ValidationError</text>
-        <text x="386" y="122" text-anchor="middle" fill="#ffeaea" font-family="JetBrains Mono,monospace" font-size="10">→ HTTP 400 + field errors</text>
+        <text x="386" y="122" text-anchor="middle" fill="#ffeaea" font-family="JetBrains Mono,monospace" font-size="10">-&gt; HTTP 400 + field errors</text>
 
         <rect x="300" y="140" width="172" height="40" rx="6" fill="#37607f" opacity=".9"/>
         <text x="386" y="157" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">DB UniqueViolation</text>
-        <text x="386" y="172" text-anchor="middle" fill="#d6eaf8" font-family="JetBrains Mono,monospace" font-size="10">→ HTTP 409 Conflict</text>
+        <text x="386" y="172" text-anchor="middle" fill="#d6eaf8" font-family="JetBrains Mono,monospace" font-size="10">-&gt; HTTP 409 Conflict</text>
 
         <rect x="300" y="190" width="172" height="40" rx="6" fill="#3f6f4e" opacity=".9"/>
         <text x="386" y="207" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">DB NoRows</text>
-        <text x="386" y="222" text-anchor="middle" fill="#d5f5e3" font-family="JetBrains Mono,monospace" font-size="10">→ HTTP 404 Not Found</text>
+        <text x="386" y="222" text-anchor="middle" fill="#d5f5e3" font-family="JetBrains Mono,monospace" font-size="10">-&gt; HTTP 404 Not Found</text>
 
         <rect x="300" y="240" width="172" height="40" rx="6" fill="#37607f" opacity=".9"/>
         <text x="386" y="257" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Unknown Error</text>
-        <text x="386" y="272" text-anchor="middle" fill="#f5eeff" font-family="JetBrains Mono,monospace" font-size="10">→ HTTP 500 + generic msg</text>
+        <text x="386" y="272" text-anchor="middle" fill="#f5eeff" font-family="JetBrains Mono,monospace" font-size="10">-&gt; HTTP 500 + generic msg</text>
 
         <!-- Arrow to response -->
         <line x1="488" y1="170" x2="520" y2="170" stroke="#5b5347" stroke-width="1.5" marker-end="url(#ga)"/>
@@ -819,7 +806,7 @@ log.error(
     <div class="section-header"><span class="badge">12</span><h2>Go: Global Error Handler Implementation</h2></div>
     <p>Go doesn't have exceptions, errors are return values. The pattern is to return errors up the call stack and handle them in middleware.</p>
 
-    <pre><span class="lang-label">Go · errors/types.go</span><span class="kw">package</span> apperr
+    <pre><span class="lang-label">Go / errors/types.go</span><span class="kw">package</span> apperr
 
 <span class="kw">import</span> <span class="str">"net/http"</span>
 
@@ -851,7 +838,7 @@ log.error(
     }
 }</pre>
 
-    <pre><span class="lang-label">Go · middleware/error_handler.go</span><span class="kw">package</span> middleware
+    <pre><span class="lang-label">Go / middleware/error_handler.go</span><span class="kw">package</span> middleware
 
 <span class="kw">import</span> (
     <span class="str">"encoding/json"</span>
@@ -884,19 +871,19 @@ log.error(
                 slog.Error(<span class="str">"app error"</span>, <span class="str">"err"</span>, appErr.Err)
             }
 
-        <span class="cmt">// Postgres unique constraint violation → 409</span>
+        <span class="cmt">// Postgres unique constraint violation -&gt; 409</span>
         <span class="kw">case</span> <span class="fn">isPgError</span>(err, <span class="str">"23505"</span>):
             appErr = apperr.Conflict(<span class="str">"resource already exists"</span>)
 
-        <span class="cmt">// Postgres foreign key violation → 404</span>
+        <span class="cmt">// Postgres foreign key violation -&gt; 404</span>
         <span class="kw">case</span> <span class="fn">isPgError</span>(err, <span class="str">"23503"</span>):
             appErr = apperr.NotFound(<span class="str">"referenced resource"</span>)
 
-        <span class="cmt">// pgx no-rows → 404</span>
+        <span class="cmt">// pgx no-rows -&gt; 404</span>
         <span class="kw">case</span> errors.Is(err, pgx.ErrNoRows):
             appErr = apperr.NotFound(<span class="str">"resource"</span>)
 
-        <span class="cmt">// Everything else → 500 (never leak internal error)</span>
+        <span class="cmt">// Everything else -&gt; 500 (never leak internal error)</span>
         <span class="kw">default</span>:
             slog.Error(<span class="str">"unhandled error"</span>, <span class="str">"err"</span>, err)
             appErr = apperr.Internal(err)
@@ -921,7 +908,7 @@ log.error(
   <!-- 13 CODE PYTHON -->
   <section id="code-py">
     <div class="section-header"><span class="badge">13</span><h2>Python: Global Error Handler (FastAPI)</h2></div>
-    <pre><span class="lang-label">Python · FastAPI</span><span class="kw">from</span> fastapi <span class="kw">import</span> FastAPI, Request
+    <pre><span class="lang-label">Python / FastAPI</span><span class="kw">from</span> fastapi <span class="kw">import</span> FastAPI, Request
 <span class="kw">from</span> fastapi.responses <span class="kw">import</span> JSONResponse
 <span class="kw">from</span> psycopg2 <span class="kw">import</span> errors <span class="kw">as</span> pg_errors
 <span class="kw">import</span> logging
@@ -978,7 +965,7 @@ logger = logging.getLogger(<span class="str">"app"</span>)
 
     <div class="callout security">Every error message that leaves your backend is a potential information leak. Treat your error responses with the same care as your API responses.</div>
 
-    <h3>① Never Leak Internal Details</h3>
+    <h3>(1) Never Leak Internal Details</h3>
     <p>Database error messages from Postgres contain table names, column names, index names, and constraint names. If you forward a raw <code>pgconn.PgError</code> message directly to the client, an attacker learns your schema and can craft more targeted SQL injection attempts.</p>
 
     <table>
@@ -991,7 +978,7 @@ logger = logging.getLogger(<span class="str">"app"</span>)
       </tbody>
     </table>
 
-    <h3>② Vague Auth Errors (On Purpose)</h3>
+    <h3>(2) Vague Auth Errors (On Purpose)</h3>
     <p>Login endpoints are the most attacked surface in any application. If you return specific messages like <em>"no user with this email exists"</em> vs <em>"password is incorrect"</em>, an attacker can enumerate valid emails through a simple loop.</p>
 
     <div class="diagram-box">
@@ -1003,26 +990,26 @@ logger = logging.getLogger(<span class="str">"app"</span>)
         <rect x="20" y="40" width="170" height="50" rx="6" fill="#fdecea" stroke="#b8402e"/>
         <text x="105" y="62" text-anchor="middle" fill="#211e1a" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Step 1: Email Enum</text>
         <text x="105" y="78" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">Try many emails with fake pwd</text>
-        <text x="105" y="90" text-anchor="middle" fill="#b8402e" font-family="JetBrains Mono,monospace" font-size="9">→ "user not found" until hit</text>
+        <text x="105" y="90" text-anchor="middle" fill="#b8402e" font-family="JetBrains Mono,monospace" font-size="9">-&gt; "user not found" until hit</text>
         <!-- Step 2 -->
         <rect x="220" y="40" width="170" height="50" rx="6" fill="#fdecea" stroke="#b8402e"/>
         <text x="305" y="62" text-anchor="middle" fill="#211e1a" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Step 2: Got Valid Email</text>
         <text x="305" y="78" text-anchor="middle" fill="#5b5347" font-family="Source Sans 3,sans-serif" font-size="10">Now tries common passwords</text>
-        <text x="305" y="90" text-anchor="middle" fill="#b8402e" font-family="JetBrains Mono,monospace" font-size="9">→ "wrong password" on each miss</text>
+        <text x="305" y="90" text-anchor="middle" fill="#b8402e" font-family="JetBrains Mono,monospace" font-size="9">-&gt; "wrong password" on each miss</text>
         <!-- Step 3 -->
         <rect x="420" y="40" width="200" height="50" rx="6" fill="#b8402e"/>
         <text x="520" y="62" text-anchor="middle" fill="#fff" font-family="Source Sans 3,sans-serif" font-size="11" font-weight="700">Step 3: Account Compromised</text>
         <text x="520" y="78" text-anchor="middle" fill="#ffeaea" font-family="Source Sans 3,sans-serif" font-size="10">Your user's account is now owned</text>
 
         <!-- Fix -->
-        <text x="20" y="128" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700" fill="#3f6f4e">✓ The Fix: Always use a generic message</text>
+        <text x="20" y="128" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700" fill="#3f6f4e">The Fix: Always use a generic message</text>
         <rect x="20" y="140" width="600" height="30" rx="6" fill="#eafaf1" stroke="#3f6f4e"/>
-        <text x="320" y="160" text-anchor="middle" fill="#211e1a" font-family="JetBrains Mono,monospace" font-size="12">{ "message": "invalid email or password" }  ← same message always</text>
+        <text x="320" y="160" text-anchor="middle" fill="#211e1a" font-family="JetBrains Mono,monospace" font-size="12">{ "message": "invalid email or password" }  &lt;- same message always</text>
       </svg>
       <div class="diagram-caption">Fig 6: Specific auth error messages enable email enumeration attacks. Use a single generic message for all auth failures.</div>
     </div>
 
-    <h3>③ Safe Logging Practices</h3>
+    <h3>(3) Safe Logging Practices</h3>
     <p>Logs are often shipped to third-party aggregation services (Datadog, Grafana Cloud, ELK). In major data breaches, leaked log files exposed millions of records, because engineers had carelessly logged sensitive fields.</p>
 
     <ul>
@@ -1031,14 +1018,14 @@ logger = logging.getLogger(<span class="str">"app"</span>)
       <li>Use a <strong>log scrubbing library</strong> (e.g. Go: <code>slog</code> with custom handler; Python: <code>structlog</code> processors) to automatically redact known sensitive fields.</li>
     </ul>
 
-    <pre><span class="lang-label">Go · safe vs unsafe logging</span><span class="cmt">// ✗ UNSAFE, never do this</span>
+    <pre><span class="lang-label">Go / safe vs unsafe logging</span><span class="cmt">//UNSAFE, never do this</span>
 slog.Error(<span class="str">"login_failed"</span>,
     <span class="str">"email"</span>, user.Email,          <span class="cmt">// PII leak</span>
     <span class="str">"password"</span>, req.Password,     <span class="cmt">// catastrophic</span>
     <span class="str">"api_key"</span>, cfg.OpenAIKey,      <span class="cmt">// secret leak</span>
 )
 
-<span class="cmt">// ✓ SAFE, IDs and correlation only</span>
+<span class="cmt">// SAFE, IDs and correlation only</span>
 slog.Error(<span class="str">"login_failed"</span>,
     <span class="str">"user_id"</span>, user.ID,
     <span class="str">"correlation_id"</span>, r.Header.Get(<span class="str">"X-Request-ID"</span>),
@@ -1066,17 +1053,22 @@ slog.Error(<span class="str">"login_failed"</span>,
 
   <hr>
   <p style="text-align:center;font-family:'Spline Sans', system-ui, sans-serif;font-size:13px;color:var(--ink-light);">
-    Backend Field Manual · Error Handling &amp; Fault Tolerance · Chapter 16
+    Backend Field Manual / Error Handling &amp; Fault Tolerance / Chapter 16
   </p>
 
+
+      <footer class="bfp-footer">Backend from First Principles / Chapter 12 / Errors. Code targets Go 1.22+ and Python 3.11+.</footer>
 </main>
-<!-- ============ CHAPTER NAVIGATION ============ -->
+</div>
+<!-- CHAPTER NAVIGATION -->
 <nav class="chapter-nav" id="chapterNav">
-  <a href="../../11.Full text search using Elasticsearch for blazingly fast search/html_notes/notes.html" class="nav-chapter-link"><span class="nav-arrow">&larr;</span><span class="nav-label"><span class="nav-small">Chapter 11</span>Full-Text Search (Elasticsearch)</span></a>
+  <a href="../../11.Full text search using Elasticsearch for blazingly fast search/html_notes/notes.html" class="nav-chapter-link"><span class="nav-arrow"><svg class="ico-arrow" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="13.5" y1="8" x2="3.5" y2="8"/><polyline points="7.5,4 3.5,8 7.5,12"/></svg></span><span class="nav-label"><span class="nav-small">Chapter 11</span>Full-Text Search (Elasticsearch)</span></a>
   <a href="../../index.html" class="nav-indicator"><span class="nav-dot"></span> Chapter 12 <span class="nav-sep">/</span> 24</a>
-  <a href="../../13.gRPC-and-Inter-Service-Communication-for-Microservices/html_notes/notes.html" class="nav-chapter-link nav-next"><span class="nav-label"><span class="nav-small">Chapter 13</span>gRPC & Inter-Service Communication</span><span class="nav-arrow">&rarr;</span></a>
+  <a href="../../13.gRPC-and-Inter-Service-Communication-for-Microservices/html_notes/notes.html" class="nav-chapter-link nav-next"><span class="nav-label"><span class="nav-small">Chapter 13</span>gRPC & Inter-Service Communication</span><span class="nav-arrow"><svg class="ico-arrow" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2.5" y1="8" x2="12.5" y2="8"/><polyline points="8.5,4 12.5,8 8.5,12"/></svg></span></a>
 </nav>
   <script src="../../assets/copy-button.js"></script>
   <script src="../../assets/enhancements.js"></script>
+<script src="../../assets/shell.js"></script>
 </body>
+
 </html>

@@ -20,7 +20,7 @@ type server struct {
 // The method signature is generated FROM the proto: ctx, *Request -> *Response, error
 func (s *server) GetUser(ctx context.Context, req *userv1.GetUserRequest) (*userv1.GetUserResponse, error) {
     if req.GetId() == "" {
-        return nil, status.Error(codes.InvalidArgument, "id is required") // typed error, §14
+        return nil, status.Error(codes.InvalidArgument, "id is required") // typed error, sec 14
     }
     // ...real work: query the DB by req.GetId()...
     u := &userv1.User{Id: req.GetId(), Email: "ada@example.com", FullName: "Ada", Role: userv1.Role_ROLE_ADMIN}
@@ -42,7 +42,7 @@ func callGetUser() {
     defer conn.Close()
 
     client := userv1.NewUserServiceClient(conn) // the generated STUB
-    ctx, cancel := context.WithTimeout(context.Background(), time.Second) // always a deadline, §13
+    ctx, cancel := context.WithTimeout(context.Background(), time.Second) // always a deadline, sec 13
     defer cancel()
 
     resp, err := client.GetUser(ctx, &userv1.GetUserRequest{Id: "u42"}) // looks local, runs remote

@@ -1,4 +1,4 @@
-// Go — SQS producer + consumer using AWS SDK v2
+// Go ,  SQS producer + consumer using AWS SDK v2
 package main
 
 import (
@@ -8,7 +8,7 @@ import (
     "github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
-// ── PRODUCER ──────────────────────────────────────────
+// -- PRODUCER ------------------------------------------
 func EnqueueEmailTask(ctx context.Context, client *sqs.Client, queueURL string, payload EmailPayload) error {
     body, _ := json.Marshal(payload)
     _, err := client.SendMessage(ctx, &sqs.SendMessageInput{
@@ -21,7 +21,7 @@ func EnqueueEmailTask(ctx context.Context, client *sqs.Client, queueURL string, 
     return err
 }
 
-// ── CONSUMER ──────────────────────────────────────────
+// -- CONSUMER ------------------------------------------
 func PollQueue(ctx context.Context, client *sqs.Client, queueURL string) {
     for {
         result, _ := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
@@ -39,7 +39,7 @@ func PollQueue(ctx context.Context, client *sqs.Client, queueURL string) {
                     ReceiptHandle: msg.ReceiptHandle, // unique handle per receive
                 })
             }
-            // On error: do nothing — visibility timeout expires, SQS redelivers
+            // On error: do nothing ,  visibility timeout expires, SQS redelivers
         }
     }
 }

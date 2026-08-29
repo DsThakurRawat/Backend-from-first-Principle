@@ -5,7 +5,7 @@ type Hub struct {
     broadcast  chan []byte
 }
 
-// One goroutine owns the map → all mutation is serialized here (no locks needed).
+// One goroutine owns the map -> all mutation is serialized here (no locks needed).
 func (h *Hub) Run() {
     for {
         select {
@@ -20,7 +20,7 @@ func (h *Hub) Run() {
             for c := range h.clients {
                 select {
                 case c.send <- msg:        // queue into the client's buffered channel
-                default:                   // buffer full → slow client; drop it (§12)
+                default:                   // buffer full -> slow client; drop it (sec 12)
                     delete(h.clients, c)
                     close(c.send)
                 }

@@ -15,10 +15,10 @@ func GetProduct(ctx context.Context, id string) (*Product, error) {
     if err == nil {
         var p Product
         json.Unmarshal([]byte(cached), &p)
-        return &p, nil  // Cache HIT — ~2ms
+        return &p, nil  // Cache HIT ,  ~2ms
     }
 
-    // 2. Cache miss — query database
+    // 2. Cache miss ,  query database
     p, err := queryProductFromDB(ctx, id)
     if err != nil {
         return nil, err

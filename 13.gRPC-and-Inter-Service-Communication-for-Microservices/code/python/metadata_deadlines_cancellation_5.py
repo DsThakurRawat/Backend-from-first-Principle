@@ -1,6 +1,6 @@
 # ===== CLIENT: attach a deadline (timeout=) + metadata =====
 metadata = (
-    ("authorization", f"Bearer {token}"),  # auth as metadata, §16
+    ("authorization", f"Bearer {token}"),  # auth as metadata, sec 16
     ("x-request-id", req_id),               # trace id for correlation
 )
 try:
@@ -15,7 +15,7 @@ except grpc.RpcError as e:
 class UserService(pb_grpc.UserServiceServicer):
     def GetUser(self, request, context):
         md = dict(context.invocation_metadata())
-        auth = md.get("authorization")       # verify token (or in an interceptor, §15)
+        auth = md.get("authorization")       # verify token (or in an interceptor, sec 15)
 
         if not context.is_active():          # client gone / deadline passed?
             return pb.GetUserResponse()      # abandon the work

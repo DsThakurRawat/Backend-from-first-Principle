@@ -1,4 +1,4 @@
-// rate/sliding_window.go — Redis sorted-set sliding window
+// rate/sliding_window.go ,  Redis sorted-set sliding window
 package rate
 
 import (
@@ -38,7 +38,7 @@ func (l *SlidingWindowLimiter) Allow(ctx context.Context) (bool, error) {
 func (h *EmailHandler) HandleSendEmail(ctx context.Context, t *asynq.Task) error {
     allowed, _ := h.limiter.Allow(ctx)
     if !allowed {
-        // Return a retryable error — asynq will retry with backoff
+        // Return a retryable error ,  asynq will retry with backoff
         return fmt.Errorf("rate limit exceeded: %w", asynq.ErrRetry)
     }
     return h.doSendEmail(ctx, t)

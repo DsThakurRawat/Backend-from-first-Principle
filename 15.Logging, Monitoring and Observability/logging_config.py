@@ -1,4 +1,4 @@
-# logging_config.py — structlog setup for Python
+# logging_config.py ,  structlog setup for Python
 import logging
 import os
 import structlog
@@ -7,11 +7,11 @@ def configure_logging():
     env = os.getenv("APP_ENV", "development")
 
     if env == "production":
-        # JSON renderer for production — parseable by Loki / ELK
+        # JSON renderer for production ,  parseable by Loki / ELK
         renderer = structlog.processors.JSONRenderer()
         level = logging.INFO
     else:
-        # ColourfulConsole for local dev — human-readable
+        # ColourfulConsole for local dev ,  human-readable
         renderer = structlog.dev.ConsoleRenderer(colors=True)
         level = logging.DEBUG
 

@@ -1,6 +1,6 @@
 // github.com/gorilla/websocket
 func runClient() {
-    // Dial performs the upgrade handshake; header carries auth where allowed (§13).
+    // Dial performs the upgrade handshake; header carries auth where allowed (sec 13).
     h := http.Header{"Authorization": {"Bearer " + token}}
     conn, _, err := websocket.DefaultDialer.Dial("wss://api.example.com/ws", h)
     if err != nil {
@@ -22,7 +22,7 @@ func runClient() {
     // send a message
     conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"hello"}`))
 
-    // graceful close: send a close frame, then the socket shuts (§6)
+    // graceful close: send a close frame, then the socket shuts (sec 6)
     conn.WriteMessage(websocket.CloseMessage,
         websocket.FormatCloseMessage(websocket.CloseNormalClosure, "bye"))
 }

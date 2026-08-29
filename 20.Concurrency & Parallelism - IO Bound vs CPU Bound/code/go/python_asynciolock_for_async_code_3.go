@@ -14,9 +14,9 @@ func main() {
         wg.Add(1)
         go func() {
             defer wg.Done()
-            mu.Lock()         // Acquire — other goroutines wait here
+            mu.Lock()         // Acquire ,  other goroutines wait here
             counter++
-            mu.Unlock()       // Release — next goroutine can proceed
+            mu.Unlock()       // Release ,  next goroutine can proceed
         }()
     }
 

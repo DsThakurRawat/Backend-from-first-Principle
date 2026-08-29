@@ -1,4 +1,4 @@
-# Accept the collaborator as a constructor argument — that parameter is the seam.
+# Accept the collaborator as a constructor argument ,  that parameter is the seam.
 class OrderService:
     def __init__(self, repo):        # injected, not created inside
         self.repo = repo
@@ -18,4 +18,4 @@ def test_place_rejects_invalid_total():
     with pytest.raises(ValueError):
         svc.place(Order(total=0))
 
-# In production:  OrderService(postgres_repo)  — same code, real dependency.
+# In production:  OrderService(postgres_repo)  ,  same code, real dependency.

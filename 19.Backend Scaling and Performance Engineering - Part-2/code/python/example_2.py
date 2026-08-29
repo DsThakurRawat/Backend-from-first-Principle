@@ -14,5 +14,5 @@ def send_invitation_email(self, email: str, invite_url: str):
     except Exception as exc:
         raise self.retry(exc=exc, countdown=60)
 
-# In your API handler — returns instantly to the user
+# In your API handler ,  returns instantly to the user
 send_invitation_email.delay("user@example.com", "https://app.co/invite/abc")

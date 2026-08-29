@@ -24,6 +24,6 @@ func EmailWorker(ctx context.Context) {
 
         var job EmailJob
         json.Unmarshal([]byte(result[1]), &job)
-        sendEmail(job)  // takes 300ms — but no user is waiting
+        sendEmail(job)  // takes 300ms ,  but no user is waiting
     }
 }

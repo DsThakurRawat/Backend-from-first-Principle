@@ -12,7 +12,7 @@ func TestApplyDiscount(t *testing.T) {
         {"rounds down",          99, 10,  90}, // boundary/edge case
     }
     for _, c := range cases {
-        // t.Run makes each row a named subtest — failures report the case name.
+        // t.Run makes each row a named subtest ,  failures report the case name.
         t.Run(c.name, func(t *testing.T) {
             got := ApplyDiscount(Cart{Subtotal: c.subtotal}, Coupon{Percent: c.percent})
             if got != c.want {

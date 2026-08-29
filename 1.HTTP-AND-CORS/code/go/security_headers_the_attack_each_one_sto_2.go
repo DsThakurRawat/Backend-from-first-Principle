@@ -5,7 +5,7 @@ func securityHeaders(next http.Handler) http.Handler {
         h.Set("Content-Security-Policy", "default-src 'self'")
         h.Set("X-Frame-Options", "DENY")
         h.Set("X-Content-Type-Options", "nosniff")
-        next.ServeHTTP(w, r) // headers MUST be set before this call (see §3)
+        next.ServeHTTP(w, r) // headers MUST be set before this call (see sec 3)
     })
 }
 // http.ListenAndServe(":8080", securityHeaders(mux))

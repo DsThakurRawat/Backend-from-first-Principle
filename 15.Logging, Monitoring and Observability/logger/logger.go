@@ -1,4 +1,4 @@
-// logger/logger.go — Environment-aware log level
+// logger/logger.go ,  Environment-aware log level
 package logger
 
 import (
@@ -25,12 +25,12 @@ func New() *zap.Logger {
 
     var cfg zap.Config
     if env == "production" {
-        // Production: JSON format — parseable by Loki, ELK, New Relic
+        // Production: JSON format ,  parseable by Loki, ELK, New Relic
         cfg = zap.NewProductionConfig()
         cfg.EncoderConfig.TimeKey = "timestamp"
         cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
     } else {
-        // Development: coloured console format — human-readable
+        // Development: coloured console format ,  human-readable
         cfg = zap.NewDevelopmentConfig()
         cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
     }

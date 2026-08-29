@@ -28,7 +28,7 @@ func RateLimitMiddleware(rdb *redis.Client) http.HandlerFunc {
         // Redis key: per IP, per minute window
         key := fmt.Sprintf("rate_limit:%s:%d", clientIP, time.Now().Unix()/60)
 
-        // INCR is atomic — no race condition even with concurrent requests
+        // INCR is atomic ,  no race condition even with concurrent requests
         count, err := rdb.Incr(ctx, key).Result()
         if err != nil {
             http.Error(w, "Internal Server Error", http.StatusInternalServerError)

@@ -34,7 +34,7 @@ func GetProduct(ctx context.Context, productID string) (*Product, error) {
         return &product, nil
     }
 
-    // Step 2: Cache Miss — fetch from database (expensive operation)
+    // Step 2: Cache Miss ,  fetch from database (expensive operation)
     fmt.Println("[CACHE MISS] fetching from DB...", productID)
     product, err := fetchFromDatabase(productID) // simulate DB call
     if err != nil {
@@ -55,7 +55,7 @@ func UpdateProduct(ctx context.Context, product *Product) error {
         return err
     }
 
-    // Step 2: Write-through — update cache immediately
+    // Step 2: Write-through ,  update cache immediately
     cacheKey := "product:" + product.ID
     data, _ := json.Marshal(product)
     rdb.Set(ctx, cacheKey, data, 1*time.Hour)

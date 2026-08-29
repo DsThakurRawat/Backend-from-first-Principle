@@ -1,4 +1,4 @@
-// CreateBookRequest is our native format — the bind target.
+// CreateBookRequest is our native format ,  the bind target.
 type CreateBookRequest struct {
     Title  string `json:"title"`
     Author string `json:"author"`

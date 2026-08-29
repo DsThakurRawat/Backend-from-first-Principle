@@ -1,11 +1,11 @@
-# Python — threading model (simplified)
+# Python ,  threading model (simplified)
 import threading
 
 def handle_request(conn):
     # 1. Parse the HTTP request (CPU work)
     request = parse_http(conn)
 
-    # 2. Database query — this BLOCKS the thread
+    # 2. Database query ,  this BLOCKS the thread
     #    The OS scheduler will switch to another thread
     user = db.execute(
         "SELECT * FROM users WHERE id = %s",

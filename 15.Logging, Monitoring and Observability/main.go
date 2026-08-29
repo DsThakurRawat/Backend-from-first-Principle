@@ -1,4 +1,4 @@
-// main.go — New Relic agent setup in Go
+// main.go ,  New Relic agent setup in Go
 import (
     "github.com/newrelic/go-agent/v3/newrelic"
     "github.com/newrelic/go-agent/v3/integrations/nrgin"
@@ -14,7 +14,7 @@ func main() {
     )
 
     r := gin.New()
-    // nrgin middleware — auto-instruments every route with NR transactions
+    // nrgin middleware ,  auto-instruments every route with NR transactions
     r.Use(nrgin.Middleware(nrApp))
 
     r.Run(":8080")

@@ -17,10 +17,10 @@ class Hub:
             try:
                 await ws.send_text(message)     # fan out to everyone
             except Exception:
-                dead.append(ws)                 # send failed → connection is gone
+                dead.append(ws)                 # send failed -> connection is gone
         for ws in dead:
             self.unregister(ws)                 # clean up on the way out
 
 hub = Hub()
 # (asyncio is single-threaded, so the set needs no lock; just don't mutate
-#  it while iterating — collect dead ones, remove after.)
+#  it while iterating ,  collect dead ones, remove after.)

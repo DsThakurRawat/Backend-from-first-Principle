@@ -1,4 +1,4 @@
-// Edge authentication — runs in 2–3ms at the closest CDN node
+// Edge authentication ,  runs in 2-3ms at the closest CDN node
 export default {
   async fetch(request, env) {
     const sessionId = getCookie(request, "session_id");
@@ -13,7 +13,7 @@ export default {
       return new Response("Unauthorized", { status: 401 });
     }
 
-    // Authenticated → forward to origin server
+    // Authenticated -> forward to origin server
     request.headers.set("X-User-Id", userId);
     return fetch(request);
   },

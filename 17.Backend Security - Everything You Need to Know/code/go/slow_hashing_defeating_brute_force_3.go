@@ -19,7 +19,7 @@ func HashPassword(password string) (string, error) {
 }
 
 func VerifyPassword(password, stored string) bool {
-    // Re-hash with stored salt, compare — never compare raw hashes with ==
+    // Re-hash with stored salt, compare ,  never compare raw hashes with ==
     parts := strings.Split(stored, "$")
     salt, _ := base64.RawStdEncoding.DecodeString(parts[0])
     newHash := argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, 32)
