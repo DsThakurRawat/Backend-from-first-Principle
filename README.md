@@ -50,4 +50,6 @@ Feel free to open an **[Issue](https://github.com/DsThakurRawat/Backend-from-fir
 
 ---
 
-*"Learn the fundamentals, and the frameworks become obvious."* — Curated with dedication by [@DsThakurRawat](https://github.com/DsThakurRawat)
+*"Learn the fundamentals, and the frameworks become obvious."*
+
+Curated with dedication by [@DsThakurRawat](https://github.com/DsThakurRawat)

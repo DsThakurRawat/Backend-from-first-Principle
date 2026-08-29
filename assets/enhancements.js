@@ -53,7 +53,7 @@
     });
   }
 
-  // --- Code Runner (Piston API — supports Go + Python, free, no auth) ---
+  // --- Code Runner (Piston API, supports Go + Python, free, no auth) ---
   var PISTON_URL = 'https://emkc.org/api/v2/piston/execute';
 
   function initCodeRunner() {
@@ -152,30 +152,30 @@
   // =============================
 
   var CHAPTERS = [
-    { n: '01', title: 'HTTP & CORS', time: 35, keys: 'http cors headers methods status tls https cookies preflight request response' },
-    { n: '02', title: 'Routing in Backend', time: 15, keys: 'routing path parameters query strings mux dynamic routes' },
-    { n: '03', title: 'Serialization & Deserialization', time: 18, keys: 'serialization deserialization json protobuf encoding decoding marshal' },
-    { n: '04', title: 'Authentication & Authorization', time: 22, keys: 'authentication authorization jwt oauth tokens session cookies rbac' },
-    { n: '05', title: 'Validations & Transformations', time: 16, keys: 'validation transformation sanitization input schema zod pydantic' },
-    { n: '06', title: 'Controllers, Services & Middlewares', time: 20, keys: 'controllers services repositories middleware request context layers' },
-    { n: '07', title: 'API Design (REST)', time: 25, keys: 'api rest restful design versioning pagination hateoas idempotency' },
-    { n: '08', title: 'Databases', time: 28, keys: 'database postgres sql orm queries transactions connection pooling indexes' },
-    { n: '09', title: 'Caching', time: 20, keys: 'caching redis memcached cache invalidation ttl lru write-through' },
-    { n: '10', title: 'Task Queues & Background Jobs', time: 18, keys: 'task queues background jobs workers async redis sidekiq celery' },
-    { n: '11', title: 'Full-Text Search (Elasticsearch)', time: 22, keys: 'elasticsearch search full-text inverted index fuzzy tokenizer analyzer' },
-    { n: '12', title: 'Error Handling & Fault Tolerance', time: 20, keys: 'error handling retry circuit breaker fault tolerance resilience fallback' },
-    { n: '13', title: 'gRPC & Inter-Service Communication', time: 22, keys: 'grpc protobuf microservices inter-service rpc streaming unary' },
-    { n: '14', title: 'Configuration Management', time: 16, keys: 'configuration environment variables yaml dotenv secrets config management' },
-    { n: '15', title: 'Logging & Observability', time: 18, keys: 'logging monitoring observability structured logs metrics tracing' },
-    { n: '16', title: 'Graceful Shutdown', time: 15, keys: 'graceful shutdown signals sigterm sigint sigkill process lifecycle' },
-    { n: '17', title: 'Backend Security', time: 24, keys: 'security xss csrf sql injection cors csp hsts helmet' },
-    { n: '18', title: 'Scaling & Performance (Part 1)', time: 22, keys: 'scaling performance horizontal vertical load balancing sharding' },
-    { n: '19', title: 'Scaling & Performance (Part 2)', time: 20, keys: 'scaling performance cdn rate limiting connection pooling' },
-    { n: '20', title: 'Concurrency & Parallelism', time: 18, keys: 'concurrency parallelism goroutines asyncio threads io-bound cpu-bound' },
-    { n: '21', title: 'Docker, K8s & CI/CD', time: 28, keys: 'docker kubernetes k8s cicd containers deployment dockerfile pods' },
-    { n: '22', title: 'Automated Testing', time: 20, keys: 'testing unit integration e2e test coverage mocking tdd' },
-    { n: '23', title: 'Message Brokers & Kafka', time: 22, keys: 'kafka message brokers event streaming pub-sub consumers producers topics' },
-    { n: '24', title: 'WebSockets & Real-Time', time: 18, keys: 'websockets real-time ws upgrade handshake bidirectional persistent' }
+    { n: '01', title: 'HTTP & CORS', time: '3-4 hours', keys: 'http cors headers methods status tls https cookies preflight request response' },
+    { n: '02', title: 'Routing in Backend', time: '2-3 hours', keys: 'routing path parameters query strings mux dynamic routes' },
+    { n: '03', title: 'Serialization & Deserialization', time: '2-3 hours', keys: 'serialization deserialization json protobuf encoding decoding marshal' },
+    { n: '04', title: 'Authentication & Authorization', time: '3-4 hours', keys: 'authentication authorization jwt oauth tokens session cookies rbac' },
+    { n: '05', title: 'Validations & Transformations', time: '2-3 hours', keys: 'validation transformation sanitization input schema zod pydantic' },
+    { n: '06', title: 'Controllers, Services & Middlewares', time: '2-3 hours', keys: 'controllers services repositories middleware request context layers' },
+    { n: '07', title: 'API Design (REST)', time: '3-4 hours', keys: 'api rest restful design versioning pagination hateoas idempotency' },
+    { n: '08', title: 'Databases', time: '2-3 hours', keys: 'database postgres sql orm queries transactions connection pooling indexes' },
+    { n: '09', title: 'Caching', time: '2-3 hours', keys: 'caching redis memcached cache invalidation ttl lru write-through' },
+    { n: '10', title: 'Task Queues & Background Jobs', time: '3-4 hours', keys: 'task queues background jobs workers async redis sidekiq celery' },
+    { n: '11', title: 'Full-Text Search (Elasticsearch)', time: '2-3 hours', keys: 'elasticsearch search full-text inverted index fuzzy tokenizer analyzer' },
+    { n: '12', title: 'Error Handling & Fault Tolerance', time: '2-3 hours', keys: 'error handling retry circuit breaker fault tolerance resilience fallback' },
+    { n: '13', title: 'gRPC & Inter-Service Communication', time: '3-4 hours', keys: 'grpc protobuf microservices inter-service rpc streaming unary' },
+    { n: '14', title: 'Configuration Management', time: '2-3 hours', keys: 'configuration environment variables yaml dotenv secrets config management' },
+    { n: '15', title: 'Logging & Observability', time: '2-3 hours', keys: 'logging monitoring observability structured logs metrics tracing' },
+    { n: '16', title: 'Graceful Shutdown', time: '2-3 hours', keys: 'graceful shutdown signals sigterm sigint sigkill process lifecycle' },
+    { n: '17', title: 'Backend Security', time: '2-3 hours', keys: 'security xss csrf sql injection cors csp hsts helmet' },
+    { n: '18', title: 'Scaling & Performance (Part 1)', time: '2-3 hours', keys: 'scaling performance horizontal vertical load balancing sharding' },
+    { n: '19', title: 'Scaling & Performance (Part 2)', time: '2-3 hours', keys: 'scaling performance cdn rate limiting connection pooling' },
+    { n: '20', title: 'Concurrency & Parallelism', time: '2-3 hours', keys: 'concurrency parallelism goroutines asyncio threads io-bound cpu-bound' },
+    { n: '21', title: 'Docker, K8s & CI/CD', time: '2-3 hours', keys: 'docker kubernetes k8s cicd containers deployment dockerfile pods' },
+    { n: '22', title: 'Automated Testing', time: '2-3 hours', keys: 'testing unit integration e2e test coverage mocking tdd' },
+    { n: '23', title: 'Message Brokers & Kafka', time: '2-3 hours', keys: 'kafka message brokers event streaming pub-sub consumers producers topics' },
+    { n: '24', title: 'WebSockets & Real-Time', time: '2-3 hours', keys: 'websockets real-time ws upgrade handshake bidirectional persistent' }
   ];
 
   // --- Search Modal ---
@@ -278,7 +278,7 @@
         return '<a class="search-result" href="' + href + '">' +
           '<span class="sr-num">' + m.ch.n + '</span>' +
           '<span class="sr-title">' + m.ch.title + '</span>' +
-          '<span class="sr-meta">~' + m.ch.time + ' min</span>' +
+          '<span class="sr-meta">' + m.ch.time + '</span>' +
           '</a>';
       }).join('');
     }

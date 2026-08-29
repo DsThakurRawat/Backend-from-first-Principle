@@ -3,46 +3,48 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Backend Lens — Handlers, Services, Repositories, Middleware & Context</title>
+<title>Controllers, Services & Middlewares · Chapter 06 · Backend from First Principles</title>
+  <meta name="description" content="Chapter 06 of Backend from First Principles: Controllers, Services & Middlewares. First-principles notes, diagrams and runnable Go and Python examples.">
+  <meta name="theme-color" content="#f3ede2">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%23b8402e'/%3E%3Ctext%20x='16'%20y='23'%20font-family='Georgia,serif'%20font-size='19'%20font-weight='700'%20fill='%23f3ede2'%20text-anchor='middle'%3EB%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;0,900;1,400;1,600;1,700;1,800;1,900&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --paper:#efe9dd;
-    --paper-2:#e8e1d2;
-    --ink:#1c1813;
-    --ink-soft:#3a342c;
-    --muted:#8a8175;
-    --muted-2:#a59b8b;
-    --line:#d6cdbb;
-    --line-strong:#c5bba6;
-    --red:#cc1133;
-    --red-deep:#a30d28;
-    --code-bg:#211d17;
-    --code-ink:#e9e2d3;
-    --code-dim:#9a917f;
-    --code-red:#ff6a82;
-    --code-amber:#e8b96a;
-    --code-green:#9ec77f;
-    --code-blue:#88b8d6;
-    --maxw:1180px;
-  }
+  --paper: #f3ede2;
+  --paper-2: #ece3d4;
+  --ink: #211e1a;
+  --ink-soft: #5b5347;
+  --muted: #8d8475;
+  --muted-2: #8d8475;
+  --line: #d8cfbe;
+  --line-strong: #c7bca6;
+  --red: #b8402e;
+  --red-deep: #8f2f20;
+  --code-bg: #232019;
+  --code-ink: #e9e2d3;
+  --code-dim: #9c948a;
+  --code-red: #e0896a;
+  --code-amber: #d8b66a;
+  --code-green: #a9c98a;
+  --code-blue: #7fb0c9;
+  --maxw: 1180px;
+}
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
   body{
     margin:0;
     background:var(--paper);
     color:var(--ink);
-    font-family:"Newsreader",Georgia,serif;
-    font-size:18px;
-    line-height:1.62;
+    font-family:"Spline Sans", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.7;
     -webkit-font-smoothing:antialiased;
     background-image:radial-gradient(circle at 1px 1px, rgba(120,108,86,.05) 1px, transparent 0);
     background-size:22px 22px;
   }
   /* ---------- Layout shell ---------- */
-  .shell{display:grid;grid-template-columns:300px 1fr;max-width:var(--maxw);margin:0 auto;}
+  .shell{display:grid;grid-template-columns:280px 1fr;max-width:var(--maxw);margin:0 auto;}
   /* ---------- Sidebar ---------- */
   aside{
     border-right:1px solid var(--line);
@@ -51,69 +53,69 @@
   }
   aside::-webkit-scrollbar{width:7px;}
   aside::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:4px;}
-  .brand{font-family:"Playfair Display",serif;font-weight:800;font-size:25px;line-height:1.12;letter-spacing:-.01em;margin-bottom:2px;}
+  .brand{font-family:"Fraunces", Georgia, serif;font-weight:800;font-size:25px;line-height:1.12;letter-spacing:-.01em;margin-bottom:2px;}
   .brand em{font-style:italic;font-weight:600;}
   .brand .slash{color:var(--red);font-style:normal;font-weight:700;}
-  .kicker{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);line-height:1.9;margin-top:16px;}
+  .kicker{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);line-height:1.9;margin-top:16px;}
   nav{margin-top:26px;}
-  .part{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted-2);margin:26px 0 12px;line-height:1.5;}
+  .part{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted-2);margin:26px 0 12px;line-height:1.5;}
   .toc-link{display:flex;gap:14px;align-items:baseline;text-decoration:none;color:var(--ink-soft);padding:5px 0;transition:color .18s,transform .18s;}
-  .toc-link .n{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--red);min-width:18px;font-weight:500;}
+  .toc-link .n{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:11px;color:var(--red);min-width:18px;font-weight:500;}
   .toc-link .t{font-size:15.5px;line-height:1.3;}
   .toc-link:hover{color:var(--red);transform:translateX(3px);}
   /* ---------- Main ---------- */
   main{padding:42px 60px 120px;min-width:0;}
-  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:var(--red);margin-bottom:18px;}
-  h1.title{font-family:"Playfair Display",serif;font-weight:800;font-size:clamp(54px,8vw,104px);line-height:.92;letter-spacing:-.02em;margin:0 0 6px;}
+  .eyebrow{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:var(--red);margin-bottom:18px;}
+  h1.title{font-family:"Fraunces", Georgia, serif;font-weight:800;font-size:clamp(54px,8vw,104px);line-height:.92;letter-spacing:-.02em;margin:0 0 6px;}
   h1.title .it{font-style:italic;color:var(--red);font-weight:800;display:block;}
-  .lede{font-size:20px;line-height:1.55;max-width:680px;margin:30px 0 30px;color:var(--ink-soft);}
+  .lede{font-size: 19px;line-height: 1.6;max-width:680px;margin:30px 0 30px;color:var(--ink-soft);}
   .lede em{font-style:italic;}
   .pills{display:flex;flex-wrap:wrap;gap:11px;margin-bottom:30px;}
-  .pill{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;border:1px solid var(--line-strong);border-radius:30px;padding:8px 16px;color:var(--ink-soft);background:rgba(255,255,255,.18);}
+  .pill{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:11px;letter-spacing:.06em;border:1px solid var(--line-strong);border-radius:30px;padding:8px 16px;color:var(--ink-soft);background:rgba(255,255,255,.18);}
   .rule-sm{width:90px;height:3px;background:var(--red);margin:8px 0 0;}
   /* ---------- Section ---------- */
   section{margin-top:78px;scroll-margin-top:20px;}
-  .part-head{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--red);border-top:1px solid var(--line-strong);padding-top:14px;margin-bottom:30px;display:flex;justify-content:space-between;}
+  .part-head{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--red);border-top:1px solid var(--line-strong);padding-top:14px;margin-bottom:30px;display:flex;justify-content:space-between;}
   .part-head span:last-child{color:var(--muted-2);}
-  h2{font-family:"Playfair Display",serif;font-weight:800;font-size:clamp(34px,4.6vw,52px);line-height:1.02;letter-spacing:-.018em;margin:0 0 26px;display:flex;align-items:center;gap:18px;}
-  h2 .badge{display:inline-flex;align-items:center;justify-content:center;background:var(--red);color:#fff;font-family:"JetBrains Mono",monospace;font-weight:700;font-size:18px;width:46px;height:46px;border-radius:9px;flex:none;box-shadow:3px 3px 0 rgba(163,13,40,.28);}
-  h3{font-family:"Playfair Display",serif;font-weight:700;font-size:27px;letter-spacing:-.01em;margin:46px 0 14px;}
-  h4{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--red-deep);margin:30px 0 10px;}
+  h2{font-family:"Fraunces", Georgia, serif;font-weight:800;font-size:clamp(34px,4.6vw,52px);line-height:1.02;letter-spacing:-.018em;margin:0 0 26px;display:flex;align-items:center;gap:18px;}
+  h2 .badge{display:inline-flex;align-items:center;justify-content:center;background:var(--red);color:#fff;font-family:"JetBrains Mono", ui-monospace, monospace;font-weight:700;font-size:18px;width:46px;height:46px;border-radius:9px;flex:none;box-shadow:3px 3px 0 rgba(143,47,32,.28);}
+  h3{font-family:"Fraunces", Georgia, serif;font-weight:700;font-size:27px;letter-spacing:-.01em;margin:46px 0 14px;}
+  h4{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--red-deep);margin:30px 0 10px;}
   p{margin:0 0 18px;max-width:760px;}
   strong{font-weight:600;color:var(--ink);}
   em{font-style:italic;}
-  code.inl{font-family:"JetBrains Mono",monospace;font-size:.82em;background:var(--paper-2);border:1px solid var(--line);padding:1.5px 6px;border-radius:5px;color:var(--red-deep);}
-  a.x{color:var(--red);text-decoration:none;border-bottom:1px solid rgba(204,17,51,.3);}
+  code.inl{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:.82em;background:var(--paper-2);border:1px solid var(--line);padding:1.5px 6px;border-radius:5px;color:var(--red-deep);}
+  a.x{color:var(--red);text-decoration:none;border-bottom:1px solid rgba(184,64,46,.3);}
   /* ---------- Definition rows ---------- */
-  .def{display:grid;grid-template-columns:200px 1fr;gap:30px;border-top:1px solid var(--line);padding:22px 0;align-items:start;}
-  .def .label{font-family:"Playfair Display",serif;font-weight:700;font-size:21px;}
-  .def .label .tag{display:block;font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--red);margin-bottom:6px;font-weight:400;}
+  .def{display:grid;grid-template-columns:280px 1fr;gap:30px;border-top:1px solid var(--line);padding:22px 0;align-items:start;}
+  .def .label{font-family:"Fraunces", Georgia, serif;font-weight:700;font-size:21px;}
+  .def .label .tag{display:block;font-family:"JetBrains Mono", ui-monospace, monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--red);margin-bottom:6px;font-weight:400;}
   .def .body{max-width:660px;}
   .def .body p{margin:0;}
   /* ---------- Callout ---------- */
   .note{border-left:3px solid var(--red);background:rgba(255,255,255,.28);padding:18px 22px;margin:26px 0;max-width:760px;border-radius:0 8px 8px 0;}
-  .note .h{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--red-deep);margin-bottom:8px;}
+  .note .h{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--red-deep);margin-bottom:8px;}
   .note p{margin:0;font-size:17px;}
   /* ---------- Steps ---------- */
   ol.steps{list-style:none;counter-reset:s;padding:0;margin:24px 0;max-width:760px;}
   ol.steps>li{counter-increment:s;position:relative;padding:16px 0 16px 58px;border-top:1px solid var(--line);}
-  ol.steps>li::before{content:counter(s,decimal-leading-zero);position:absolute;left:0;top:16px;font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:700;color:#fff;background:var(--ink);width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;}
-  ol.steps>li .st-h{font-family:"Playfair Display",serif;font-weight:700;font-size:19px;margin-bottom:3px;}
+  ol.steps>li::before{content:counter(s,decimal-leading-zero);position:absolute;left:0;top:16px;font-family:"JetBrains Mono", ui-monospace, monospace;font-size:13px;font-weight:700;color:#fff;background:var(--ink);width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;}
+  ol.steps>li .st-h{font-family:"Fraunces", Georgia, serif;font-weight:700;font-size:19px;margin-bottom:3px;}
   ol.steps>li .st-b{font-size:16.5px;color:var(--ink-soft);}
   ul.clean{max-width:760px;padding-left:0;list-style:none;}
   ul.clean li{padding:7px 0 7px 26px;position:relative;border-bottom:1px dotted var(--line);}
   ul.clean li::before{content:"";position:absolute;left:4px;top:18px;width:7px;height:7px;background:var(--red);border-radius:2px;transform:rotate(45deg);}
   /* ---------- Code blocks ---------- */
-  .code{margin:26px 0;border-radius:11px;overflow:hidden;border:1px solid #34302a;box-shadow:0 14px 30px -18px rgba(33,29,23,.6);max-width:840px;}
-  .code-bar{background:#2b2620;display:flex;align-items:stretch;border-bottom:1px solid #3a352e;}
+  .code{margin:26px 0;border-radius:11px;overflow:hidden;border:1px solid #35302a;box-shadow:0 14px 30px -18px rgba(35,32,25,.6);max-width:840px;}
+  .code-bar{background:#1a1813;display:flex;align-items:stretch;border-bottom:1px solid #35302a;}
   .code-bar .dots{display:flex;gap:6px;align-items:center;padding:0 16px;}
   .code-bar .dots i{width:11px;height:11px;border-radius:50%;display:block;}
-  .code-bar .fname{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--code-dim);display:flex;align-items:center;letter-spacing:.04em;}
+  .code-bar .fname{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:11px;color:var(--code-dim);display:flex;align-items:center;letter-spacing:.04em;}
   .tabs{margin-left:auto;display:flex;}
-  .tabs button{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.08em;background:transparent;border:none;color:var(--code-dim);padding:11px 18px;cursor:pointer;border-left:1px solid #3a352e;transition:.15s;text-transform:uppercase;}
+  .tabs button{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:11px;letter-spacing:.08em;background:transparent;border:none;color:var(--code-dim);padding:11px 18px;cursor:pointer;border-left:1px solid #35302a;transition:.15s;text-transform:uppercase;}
   .tabs button.active{background:var(--code-bg);color:var(--code-amber);}
   .tabs button:hover{color:var(--code-ink);}
-  pre{margin:0;background:var(--code-bg);color:var(--code-ink);font-family:"JetBrains Mono",monospace;font-size:13px;line-height:1.7;padding:20px 22px;overflow-x:auto;}
+  pre{margin:0;background:var(--code-bg);color:var(--code-ink);font-family:"JetBrains Mono", ui-monospace, monospace;font-size:13px;line-height:1.7;padding:20px 22px;overflow-x:auto;}
   pre[hidden]{display:none;}
   pre .c{color:var(--code-dim);font-style:italic;}
   pre .k{color:var(--code-red);}
@@ -125,20 +127,20 @@
   /* ---------- Diagram frame ---------- */
   figure{margin:34px 0;max-width:840px;}
   .diagram{background:rgba(255,255,255,.32);border:1px solid var(--line-strong);border-radius:12px;padding:26px 22px;}
-  figcaption{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.04em;color:var(--muted);margin-top:12px;text-align:center;}
+  figcaption{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:11px;letter-spacing:.04em;color:var(--muted);margin-top:12px;text-align:center;}
   figcaption b{color:var(--red-deep);font-weight:500;}
   svg{display:block;width:100%;height:auto;}
-  .sv-lbl{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;fill:var(--muted);text-transform:uppercase;}
-  .sv-ttl{font-family:"Playfair Display",serif;font-weight:700;}
-  .sv-sub{font-family:"Newsreader",serif;font-style:italic;}
-  .sv-mono{font-family:"JetBrains Mono",monospace;}
+  .sv-lbl{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:11px;letter-spacing:.06em;fill:var(--muted);text-transform:uppercase;}
+  .sv-ttl{font-family:"Fraunces", Georgia, serif;font-weight:700;}
+  .sv-sub{font-family:"Spline Sans", system-ui, sans-serif;font-style:italic;}
+  .sv-mono{font-family:"JetBrains Mono", ui-monospace, monospace;}
   /* status chips */
   .chips{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 24px;max-width:760px;}
-  .chip{font-family:"JetBrains Mono",monospace;font-size:12px;padding:6px 13px;border-radius:6px;border:1px solid var(--line-strong);}
-  .chip.ok{background:rgba(120,160,90,.14);border-color:#9bb87a;color:#5d7a3f;}
-  .chip.bad{background:rgba(204,17,51,.1);border-color:#cc8a96;color:var(--red-deep);}
-  .chip.warn{background:rgba(220,160,60,.14);border-color:#cbab68;color:#8a6a1f;}
-  footer{margin-top:90px;border-top:1px solid var(--line-strong);padding-top:24px;font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+  .chip{font-family:"JetBrains Mono", ui-monospace, monospace;font-size:12px;padding:6px 13px;border-radius:6px;border:1px solid var(--line-strong);}
+  .chip.ok{background:rgba(120,160,90,.14);border-color:#bcd3b6;color:#3f6f4e;}
+  .chip.bad{background:rgba(184,64,46,.1);border-color:#e3c4b8;color:var(--red-deep);}
+  .chip.warn{background:rgba(220,160,60,.14);border-color:#ddc79a;color:#b07d2b;}
+  footer{margin-top:90px;border-top:1px solid var(--line-strong);padding-top:24px;font-family:"JetBrains Mono", ui-monospace, monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;}
   /* mobile */
   @media(max-width:920px){
     .shell{grid-template-columns:1fr;}
@@ -153,7 +155,7 @@
   }
 </style>
 <style>
-.chapter-nav{position:fixed;bottom:0;left:0;right:0;z-index:9998;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(16px,4vw,48px);background:rgba(243,237,226,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1.5px solid #c7bca6;box-shadow:0 -8px 32px -16px rgba(40,30,20,.18);font-family:"JetBrains Mono","Spline Sans",monospace;}
+.chapter-nav{position:fixed;bottom:0;left:0;right:0;z-index:9998;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(16px,4vw,48px);background:rgba(243,237,226,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1.5px solid #c7bca6;box-shadow:0 -8px 32px -16px rgba(40,30,20,.18);font-family:"JetBrains Mono", ui-monospace, monospace;}
 .nav-chapter-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:#5b5347;padding:10px 18px;border-radius:10px;transition:all .2s ease;max-width:38%;}
 .nav-chapter-link:hover{background:rgba(184,64,46,.08);color:#b8402e;transform:translateY(-1px);}
 .nav-chapter-link.nav-next{text-align:right;flex-direction:row;}
@@ -165,19 +167,21 @@
 .nav-dot{display:inline-block;width:7px;height:7px;background:#b8402e;border-radius:50%;margin-right:4px;vertical-align:middle;}
 .nav-sep{color:#c7bca6;margin:0 2px;}
 .nav-disabled{visibility:hidden;pointer-events:none;}
-@media(max-width:700px){.nav-label{font-size:11.5px;}.nav-chapter-link{padding:8px 10px;max-width:42%;}.chapter-nav{padding:10px 12px;}}
+@media(max-width:700px){.nav-label{font-size:11.5px;}.nav-chapter-link{padding:8px 10px;max-width:38%;}.chapter-nav{padding:10px 12px;}.nav-small{font-size:9px;letter-spacing:.16em;}}
+@media(max-width:520px){.nav-label{display:none;}.nav-chapter-link{max-width:none;padding:8px 12px;}.nav-arrow{font-size:20px;}.nav-indicator{font-size:11px;padding:7px 13px;letter-spacing:.12em;}}
 body{padding-bottom:80px;}
 </style>
   <link rel="stylesheet" href="../../assets/copy-button.css">
   <link rel="stylesheet" href="../../assets/enhancements.css">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,400;1,9..144,600&family=Spline+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 <div class="shell">
 
 <!-- ================= SIDEBAR ================= -->
 <aside>
-  <div class="brand"><span style="font-family:'Playfair Display'">LAYERS</span> <span class="slash">/</span> <em>the backend lens</em></div>
-  <div class="kicker">FIELD MANUAL ·<br>HANDLERS · SERVICES ·<br>REPOSITORIES · MIDDLEWARE ·<br>REQUEST CONTEXT</div>
+  <div class="brand"><span style="font-family:'Fraunces', Georgia, serif">LAYERS</span> <span class="slash">/</span> <em>the backend lens</em></div>
+  <div class="kicker">Chapter 06 · Field Manual</div>
 
   <nav>
     <div class="part">Part I · The Request's Journey</div>
@@ -207,9 +211,9 @@ body{padding-bottom:80px;}
 
 <!-- ================= MAIN ================= -->
 <main>
-  <div class="eyebrow">A Detailed Backend Reference</div>
+  <div class="eyebrow">A detailed backend reference</div>
   <h1 class="title">Handlers,<br>Services <span class="it">&amp; Repositories.</span></h1>
-  <p class="lede">A first-principles walkthrough of how a single HTTP request travels <em>inside</em> your server — through routing, the three architectural layers, the middleware chain, and the request context that ties it all together. Complete implementations in <strong>Go</strong> and <strong>Python</strong> shown side by side.</p>
+  <p class="lede">A first-principles walkthrough of how a single HTTP request travels <em>inside</em> your server, through routing, the three architectural layers, the middleware chain, and the request context that ties it all together. Complete implementations in <strong>Go</strong> and <strong>Python</strong> shown side by side.</p>
 
   <div class="pills">
     <span class="pill">Separation of Concerns</span>
@@ -226,7 +230,7 @@ body{padding-bottom:80px;}
     <div class="part-head"><span>Part I · The Request's Journey</span><span>01 / 15</span></div>
     <h2><span class="badge">01</span>Client &amp; Server</h2>
     <p>Everything begins with two participants talking over <strong>HTTP</strong>: a <strong>client</strong> (a browser, a mobile app, another service) and a <strong>server</strong>. The client sends a request; the server eventually sends back a response.</p>
-    <p>We have already studied the lifecycle <em>external</em> to the server — how the request is packaged, sent across the network, and how the response comes back. What we have <em>not</em> traced yet is what happens <em>inside</em> the server: the long sequence of events between the instant a request arrives and the instant a response leaves. That internal sequence is the subject of this manual.</p>
+    <p>We have already studied the lifecycle <em>external</em> to the server, how the request is packaged, sent across the network, and how the response comes back. What we have <em>not</em> traced yet is what happens <em>inside</em> the server: the long sequence of events between the instant a request arrives and the instant a response leaves. That internal sequence is the subject of this manual.</p>
 
     <figure>
       <div class="diagram">
@@ -256,7 +260,7 @@ body{padding-bottom:80px;}
   <section id="s2">
     <div class="part-head"><span>Part I · The Request's Journey</span><span>02 / 15</span></div>
     <h2><span class="badge">02</span>The Request Lifecycle Inside the Server</h2>
-    <p>From the moment a request reaches the server until the moment a response is returned, a great deal happens. We call this the <strong>request lifecycle</strong>. To understand the architecture, it helps to trace the request from <em>top to bottom</em> — following it in the exact order it is processed: arrival, routing, the handler, the service, the repository, and finally the response on its way back out.</p>
+    <p>From the moment a request reaches the server until the moment a response is returned, a great deal happens. We call this the <strong>request lifecycle</strong>. To understand the architecture, it helps to trace the request from <em>top to bottom</em>, following it in the exact order it is processed: arrival, routing, the handler, the service, the repository, and finally the response on its way back out.</p>
     <p>This top-to-bottom ordering is deliberate. Each topic builds on the last, mirroring the path the data physically takes through your code.</p>
 
     <figure>
@@ -267,7 +271,7 @@ body{padding-bottom:80px;}
           <g font-family="Playfair Display" font-weight="700" font-size="15">
             <rect x="250" y="44" width="260" height="36" rx="7" fill="var(--ink)"/><text x="380" y="68" text-anchor="middle" fill="#fff">Entry Point</text>
             <rect x="250" y="92" width="260" height="36" rx="7" fill="none" stroke="var(--line-strong)" stroke-width="1.5"/><text x="380" y="116" text-anchor="middle" fill="var(--ink)">Routing</text>
-            <rect x="250" y="140" width="260" height="36" rx="7" fill="rgba(204,17,51,.1)" stroke="var(--red)" stroke-width="1.5"/><text x="380" y="164" text-anchor="middle" fill="var(--red-deep)">Handler / Controller</text>
+            <rect x="250" y="140" width="260" height="36" rx="7" fill="rgba(184,64,46,.1)" stroke="var(--red)" stroke-width="1.5"/><text x="380" y="164" text-anchor="middle" fill="var(--red-deep)">Handler / Controller</text>
             <rect x="250" y="188" width="260" height="36" rx="7" fill="none" stroke="var(--line-strong)" stroke-width="1.5"/><text x="380" y="212" text-anchor="middle" fill="var(--ink)">Service</text>
             <rect x="250" y="236" width="260" height="36" rx="7" fill="none" stroke="var(--line-strong)" stroke-width="1.5"/><text x="380" y="260" text-anchor="middle" fill="var(--ink)">Repository &#8594; Database</text>
           </g>
@@ -289,10 +293,10 @@ body{padding-bottom:80px;}
   <section id="s3">
     <div class="part-head"><span>Part I · The Request's Journey</span><span>03 / 15</span></div>
     <h2><span class="badge">03</span>Entry Point &amp; Routing</h2>
-    <p>When a request arrives, the operating system forwards the HTTP request to whichever <strong>port</strong> your server is listening on — <code class="inl">:3000</code>, <code class="inl">:4000</code>, or any port you configured. The point where your server first receives that request is its <strong>entry point</strong>. Your server is always <em>listening</em> on that port, and that listening is how it picks up incoming requests.</p>
+    <p>When a request arrives, the operating system forwards the HTTP request to whichever <strong>port</strong> your server is listening on, <code class="inl">:3000</code>, <code class="inl">:4000</code>, or any port you configured. The point where your server first receives that request is its <strong>entry point</strong>. Your server is always <em>listening</em> on that port, and that listening is how it picks up incoming requests.</p>
 
     <h3>Routing</h3>
-    <p>Immediately after the entry point comes <strong>routing</strong>. A server exposes many routes — <code class="inl">/users</code>, <code class="inl">/users/123</code>, dynamic routes like <code class="inl">/users/:id</code>, and so on. The <strong>routing algorithm</strong> inspects the incoming request's method and path and <strong>maps it to a particular handler</strong>: a predefined function responsible for that route.</p>
+    <p>Immediately after the entry point comes <strong>routing</strong>. A server exposes many routes, <code class="inl">/users</code>, <code class="inl">/users/123</code>, dynamic routes like <code class="inl">/users/:id</code>, and so on. The <strong>routing algorithm</strong> inspects the incoming request's method and path and <strong>maps it to a particular handler</strong>: a predefined function responsible for that route.</p>
     <div class="note">
       <div class="h">Definition · Handler</div>
       <p>A <strong>handler</strong> (also called a <strong>controller</strong>) is any function you have predefined to handle the requests for a given route. Routing's whole job is to decide <em>which</em> handler runs for <em>which</em> incoming request.</p>
@@ -303,7 +307,7 @@ body{padding-bottom:80px;}
     <div class="part-head"><span>Part I · The Request's Journey</span><span>04 / 15</span></div>
     <h2><span class="badge">04</span>Why Three Layers?</h2>
     <p>Once routing picks a handler, we encounter the three-part structure at the heart of a well-organized backend: <strong>handlers (controllers)</strong>, <strong>services</strong>, and <strong>repositories</strong>. A natural question: why split things into three components instead of cramming all the logic into a single handler?</p>
-    <p>The honest answer: there is <strong>no hard requirement</strong> to separate them. You <em>can</em> do everything in one handler. The separation is a <strong>design pattern</strong> — a choice that buys you real benefits:</p>
+    <p>The honest answer: there is <strong>no hard requirement</strong> to separate them. You <em>can</em> do everything in one handler. The separation is a <strong>design pattern</strong>: a choice that buys you real benefits:</p>
     <ul class="clean">
       <li>Your codebase becomes <strong>scalable</strong> as it grows.</li>
       <li>It is more <strong>maintainable</strong> over time.</li>
@@ -316,7 +320,7 @@ body{padding-bottom:80px;}
       <div class="diagram">
         <svg viewBox="0 0 760 240" role="img" aria-label="The three layers and their responsibilities">
           <g>
-            <rect x="40" y="50" width="210" height="150" rx="10" fill="rgba(204,17,51,.08)" stroke="var(--red)" stroke-width="1.6"/>
+            <rect x="40" y="50" width="210" height="150" rx="10" fill="rgba(184,64,46,.08)" stroke="var(--red)" stroke-width="1.6"/>
             <text x="145" y="78" text-anchor="middle" class="sv-ttl" font-size="17" fill="var(--red-deep)">Handler</text>
             <text x="145" y="96" text-anchor="middle" class="sv-sub" font-size="12" fill="var(--muted)">controller</text>
             <text x="145" y="128" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--ink-soft)">data in / out</text>
@@ -356,26 +360,26 @@ body{padding-bottom:80px;}
   <section id="s5">
     <div class="part-head"><span>Part II · The Three Layers</span><span>05 / 15</span></div>
     <h2><span class="badge">05</span>The Controller / Handler Layer</h2>
-    <p>The handler is the entry point for a route once routing has matched it. Its overarching job is to <strong>control the flow of data</strong> — from the client into the server, and from the server back to the client. Crucially, in nearly every framework and language, your handler is <em>given</em> two things by the runtime itself.</p>
+    <p>The handler is the entry point for a route once routing has matched it. Its overarching job is to <strong>control the flow of data</strong>: from the client into the server, and from the server back to the client. Crucially, in nearly every framework and language, your handler is <em>given</em> two things by the runtime itself.</p>
 
-    <div class="def"><div class="label"><span class="tag">Provided by the runtime</span>The request object</div><div class="body"><p>Carries everything the client sent: method, path, headers, query parameters, body. You do <strong>not</strong> create it — Go, Express, Flask, etc. hand it to you on every request.</p></div></div>
-    <div class="def"><div class="label"><span class="tag">Provided by the runtime</span>The response object</div><div class="body"><p>The handle through which you set status codes, modify response headers, and send the body back. Also provided automatically — you receive it, you don't construct it.</p></div></div>
+    <div class="def"><div class="label"><span class="tag">Provided by the runtime</span>The request object</div><div class="body"><p>Carries everything the client sent: method, path, headers, query parameters, body. You do <strong>not</strong> create it, Go, Express, Flask, etc. hand it to you on every request.</p></div></div>
+    <div class="def"><div class="label"><span class="tag">Provided by the runtime</span>The response object</div><div class="body"><p>The handle through which you set status codes, modify response headers, and send the body back. Also provided automatically, you receive it, you don't construct it.</p></div></div>
 
     <p>With those two objects in hand, the handler runs through a precise, ordered workflow.</p>
 
     <ol class="steps">
       <li><div class="st-h">Data Extraction</div><div class="st-b">Pull the relevant data out of the request object. <em>What</em> you pull depends on the method: <strong>GET</strong> &#8594; query parameters; <strong>POST / PUT / PATCH</strong> &#8594; the request body; <strong>DELETE</strong> &#8594; usually nothing, sometimes a body.</div></li>
-      <li><div class="st-h">Binding (Deserialization)</div><div class="st-b">The body arrived as a <strong>JSON</strong> string because JSON is a serializable format that travels well across the front-end/back-end boundary. The handler <strong>deserializes</strong> it into the language's native type — a Go struct, a Python dict/class, a Rust struct. Frameworks call this <strong>binding</strong>. If it fails, halt immediately and return <span class="chip bad">400 Bad Request</span>.</div></li>
-      <li><div class="st-h">Validation</div><div class="st-b">Confirm the data matches the expected shape: mandatory fields present, types correct, no malicious payloads. Validate <em>everything</em> from an external client — path params, query params, and body — and be as specific as possible.</div></li>
-      <li><div class="st-h">Transformation</div><div class="st-b">Optionally reshape the validated data for the convenience of downstream layers — for example, injecting default values.</div></li>
+      <li><div class="st-h">Binding (Deserialization)</div><div class="st-b">The body arrived as a <strong>JSON</strong> string because JSON is a serializable format that travels well across the front-end/back-end boundary. The handler <strong>deserializes</strong> it into the language's native type, a Go struct, a Python dict/class, a Rust struct. Frameworks call this <strong>binding</strong>. If it fails, halt immediately and return <span class="chip bad">400 Bad Request</span>.</div></li>
+      <li><div class="st-h">Validation</div><div class="st-b">Confirm the data matches the expected shape: mandatory fields present, types correct, no malicious payloads. Validate <em>everything</em> from an external client, path params, query params, and body, and be as specific as possible.</div></li>
+      <li><div class="st-h">Transformation</div><div class="st-b">Optionally reshape the validated data for the convenience of downstream layers, for example, injecting default values.</div></li>
       <li><div class="st-h">Delegation</div><div class="st-b">Pass the clean, validated, transformed data (plus context like the authenticated user ID) <strong>down to the Service layer</strong>.</div></li>
       <li><div class="st-h">Sending the Response</div><div class="st-b">When the service returns, choose the correct status code and send the final response back to the client.</div></li>
     </ol>
 
     <h3>A note on Node.js vs Go &amp; Python</h3>
-    <p>In a Node.js/Express app the deserialization step often happens <em>upstream</em> in a middleware (the <code class="inl">json()</code> body parser), so JSON is already a JavaScript object by the time your handler runs. In <strong>Go</strong> and <strong>Python</strong> you typically deserialize <em>explicitly</em> inside the handler — into a struct, a dictionary, or a class.</p>
+    <p>In a Node.js/Express app the deserialization step often happens <em>upstream</em> in a middleware (the <code class="inl">json()</code> body parser), so JSON is already a JavaScript object by the time your handler runs. In <strong>Go</strong> and <strong>Python</strong> you typically deserialize <em>explicitly</em> inside the handler, into a struct, a dictionary, or a class.</p>
 
-    <h4>Step 1–2 · Extract &amp; bind the body; 400 on failure</h4>
+    <h4>Step 1: 2 · Extract &amp; bind the body; 400 on failure</h4>
     <div class="code">
       <div class="code-bar">
         <span class="dots"><i style="background:#e06c5b"></i><i style="background:#e0b15b"></i><i style="background:#8bbf6e"></i></span>
@@ -385,7 +389,7 @@ body{padding-bottom:80px;}
           <button data-lang="py">Python</button>
         </div>
       </div>
-<pre data-group="g1" data-lang="go"><span class="c">// CreateBookRequest is our native format — the bind target.</span>
+<pre data-group="g1" data-lang="go"><span class="c">// CreateBookRequest is our native format, the bind target.</span>
 <span class="k">type</span> CreateBookRequest <span class="k">struct</span> {
     Title  <span class="k">string</span> <span class="s">`json:"title"`</span>
     Author <span class="k">string</span> <span class="s">`json:"author"`</span>
@@ -420,8 +424,8 @@ body{padding-bottom:80px;}
     <span class="c"># ... validation, transformation, delegation follow ...</span></pre>
     </div>
 
-    <h4>Step 3–4 · Validate, then transform (inject a default for an optional query param)</h4>
-    <p>A good API design rule: make query parameters <strong>optional</strong> wherever possible. Consider <code class="inl">GET /books?sort=name|date</code>. If the client sends nothing, validation must still pass — so the transformation step injects a sensible default.</p>
+    <h4>Step 3: 4 · Validate, then transform (inject a default for an optional query param)</h4>
+    <p>A good API design rule: make query parameters <strong>optional</strong> wherever possible. Consider <code class="inl">GET /books?sort=name|date</code>. If the client sends nothing, validation must still pass, so the transformation step injects a sensible default.</p>
     <div class="code">
       <div class="code-bar">
         <span class="dots"><i style="background:#e06c5b"></i><i style="background:#e0b15b"></i><i style="background:#8bbf6e"></i></span>
@@ -476,7 +480,7 @@ body{padding-bottom:80px;}
   <section id="s6">
     <div class="part-head"><span>Part II · The Three Layers</span><span>06 / 15</span></div>
     <h2><span class="badge">06</span>The Service Layer</h2>
-    <p>The service layer is where the <strong>actual processing</strong> — the business logic — happens. The single most important rule governs it:</p>
+    <p>The service layer is where the <strong>actual processing</strong>: the business logic, happens. The single most important rule governs it:</p>
     <div class="note">
       <div class="h">The Golden Rule of Services</div>
       <p>The service layer should know <strong>absolutely nothing about HTTP</strong>. No request/response objects, no status codes, no validation concerns. If you glance at a service method, you should <em>not</em> be able to tell it's used in an API at all. It is just a function: data in, processing, data out.</p>
@@ -484,7 +488,7 @@ body{padding-bottom:80px;}
     <p>This isolation is what keeps the system decoupled. The service decides <em>what to do</em>; the handler decides <em>how to report it over HTTP</em>. That is where we draw the responsibility line.</p>
 
     <h4>Orchestration</h4>
-    <p>A single service method can do a great deal. It can call <strong>one or several repository methods</strong> and merge their results, make external API calls, send emails, fire notifications — anything the business operation requires. This coordinating role is called <strong>orchestration</strong>: the service stitches together data from multiple sources and returns a single clean result to the handler. A service that only sends an email may never touch the repository at all.</p>
+    <p>A single service method can do a great deal. It can call <strong>one or several repository methods</strong> and merge their results, make external API calls, send emails, fire notifications, anything the business operation requires. This coordinating role is called <strong>orchestration</strong>: the service stitches together data from multiple sources and returns a single clean result to the handler. A service that only sends an email may never touch the repository at all.</p>
 
     <div class="code">
       <div class="code-bar">
@@ -516,7 +520,7 @@ body{padding-bottom:80px;}
         self.repo = repo
         self.mailer = mailer
 
-    <span class="c"># No request, no response, no status codes — just logic.</span>
+    <span class="c"># No request, no response, no status codes, just logic.</span>
     <span class="k">def</span> <span class="f">list_books</span>(self, sort: <span class="k">str</span>) -> <span class="k">list</span>:
         <span class="c"># Orchestration: ask the repository for what it needs.</span>
         books = self.repo.<span class="f">find_all_books</span>(sort)
@@ -532,7 +536,7 @@ body{padding-bottom:80px;}
   <section id="s7">
     <div class="part-head"><span>Part II · The Three Layers</span><span>07 / 15</span></div>
     <h2><span class="badge">07</span>The Repository Layer</h2>
-    <p>The repository (or <em>database</em>) layer has a single concern: <strong>talking to the database</strong>. It receives data from the service, <strong>constructs the database query</strong> — for inserting, filtering, or sorting — runs it, and returns the raw result back up to the service.</p>
+    <p>The repository (or <em>database</em>) layer has a single concern: <strong>talking to the database</strong>. It receives data from the service, <strong>constructs the database query</strong>: for inserting, filtering, or sorting, runs it, and returns the raw result back up to the service.</p>
 
     <div class="note">
       <div class="h">Single Responsibility</div>
@@ -595,11 +599,11 @@ body{padding-bottom:80px;}
   <section id="s8">
     <div class="part-head"><span>Part II · The Three Layers</span><span>08 / 15</span></div>
     <h2><span class="badge">08</span>The Full Lifecycle, End to End</h2>
-    <p>Putting the layers together, here is the complete round trip for a single API call — say <code class="inl">GET /books</code>:</p>
+    <p>Putting the layers together, here is the complete round trip for a single API call, say <code class="inl">GET /books</code>:</p>
     <ol class="steps">
       <li><div class="st-h">Binding</div><div class="st-b">The handler extracts data from the request object and deserializes it into the native format.</div></li>
       <li><div class="st-h">Validation &amp; Transformation</div><div class="st-b">The handler validates the data and injects defaults / reshapes as needed.</div></li>
-      <li><div class="st-h">Service call</div><div class="st-b">The handler delegates to the service, which performs the real processing — calling the repository for any database work.</div></li>
+      <li><div class="st-h">Service call</div><div class="st-b">The handler delegates to the service, which performs the real processing, calling the repository for any database work.</div></li>
       <li><div class="st-h">Result returns</div><div class="st-b">The repository returns rows to the service; the service returns a clean result to the handler.</div></li>
       <li><div class="st-h">Response</div><div class="st-b">The handler picks the status code and sends the response. <span class="chip ok">200 / 201 / 204</span> on success; <span class="chip bad">400</span> for client error; <span class="chip bad">500</span> for server error.</div></li>
     </ol>
@@ -617,7 +621,7 @@ body{padding-bottom:80px;}
         <svg viewBox="0 0 760 250" role="img" aria-label="Full data flow across the three layers and back">
           <g font-family="Playfair Display" font-weight="700" font-size="14">
             <rect x="30" y="100" width="120" height="50" rx="9" fill="var(--ink)"/><text x="90" y="130" text-anchor="middle" fill="#fff">Client</text>
-            <rect x="190" y="100" width="130" height="50" rx="9" fill="rgba(204,17,51,.1)" stroke="var(--red)" stroke-width="1.5"/><text x="255" y="123" text-anchor="middle" fill="var(--red-deep)" font-size="13">Handler</text><text x="255" y="140" text-anchor="middle" class="sv-mono" font-size="9" fill="var(--muted)">validate</text>
+            <rect x="190" y="100" width="130" height="50" rx="9" fill="rgba(184,64,46,.1)" stroke="var(--red)" stroke-width="1.5"/><text x="255" y="123" text-anchor="middle" fill="var(--red-deep)" font-size="13">Handler</text><text x="255" y="140" text-anchor="middle" class="sv-mono" font-size="9" fill="var(--muted)">validate</text>
             <rect x="360" y="100" width="130" height="50" rx="9" fill="none" stroke="var(--ink)" stroke-width="1.5"/><text x="425" y="123" text-anchor="middle" fill="var(--ink)" font-size="13">Service</text><text x="425" y="140" text-anchor="middle" class="sv-mono" font-size="9" fill="var(--muted)">logic</text>
             <rect x="530" y="100" width="130" height="50" rx="9" fill="none" stroke="var(--ink)" stroke-width="1.5"/><text x="595" y="123" text-anchor="middle" fill="var(--ink)" font-size="13">Repository</text><text x="595" y="140" text-anchor="middle" class="sv-mono" font-size="9" fill="var(--muted)">query</text>
             <rect x="690" y="100" width="50" height="50" rx="9" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="3 3"/><text x="715" y="130" text-anchor="middle" fill="var(--muted)" font-size="11">DB</text>
@@ -653,9 +657,9 @@ body{padding-bottom:80px;}
   <section id="s9">
     <div class="part-head"><span>Part III · Middleware</span><span>09 / 15</span></div>
     <h2><span class="badge">09</span>What Middleware Is</h2>
-    <p>Now replay the lifecycle, but watch the <em>gaps</em>. Between the entry point and routing, between routing and the handler, and between the handler and the response, there are <strong>boundaries</strong> — points where extra functions can run. The functions that run in those gaps are <strong>middlewares</strong>. The name is literal: they execute <em>in the middle</em> of the other execution contexts.</p>
+    <p>Now replay the lifecycle, but watch the <em>gaps</em>. Between the entry point and routing, between routing and the handler, and between the handler and the response, there are <strong>boundaries</strong>: points where extra functions can run. The functions that run in those gaps are <strong>middlewares</strong>. The name is literal: they execute <em>in the middle</em> of the other execution contexts.</p>
     <p>Middlewares are <strong>optional</strong>. There may be many, or none at all; a request can flow straight from routing to the handler. You add them only when a requirement calls for one.</p>
-    <p>A middleware is essentially a special kind of handler. Like a normal handler it receives the <strong>request object</strong> and the <strong>response object</strong> from the runtime — so it, too, can read values from the request, modify the response headers, and even send a response back to the client directly. But it receives a third thing as well, which Part 10 explains.</p>
+    <p>A middleware is essentially a special kind of handler. Like a normal handler it receives the <strong>request object</strong> and the <strong>response object</strong> from the runtime, so it, too, can read values from the request, modify the response headers, and even send a response back to the client directly. But it receives a third thing as well, which Part 10 explains.</p>
 
     <figure>
       <div class="diagram">
@@ -665,7 +669,7 @@ body{padding-bottom:80px;}
             <rect x="100" y="55" width="74" height="42" rx="7" fill="none" stroke="var(--red)" stroke-width="1.4"/><text x="137" y="80" text-anchor="middle" fill="var(--red-deep)" font-size="10">MW 1</text>
             <rect x="194" y="55" width="74" height="42" rx="7" fill="none" stroke="var(--line-strong)" stroke-width="1.4"/><text x="231" y="80" text-anchor="middle" fill="var(--ink)" font-size="10">routing</text>
             <rect x="288" y="55" width="74" height="42" rx="7" fill="none" stroke="var(--red)" stroke-width="1.4"/><text x="325" y="80" text-anchor="middle" fill="var(--red-deep)" font-size="10">MW 2</text>
-            <rect x="382" y="55" width="84" height="42" rx="7" fill="rgba(204,17,51,.1)" stroke="var(--red)" stroke-width="1.4"/><text x="424" y="80" text-anchor="middle" fill="var(--red-deep)" font-size="10">handler</text>
+            <rect x="382" y="55" width="84" height="42" rx="7" fill="rgba(184,64,46,.1)" stroke="var(--red)" stroke-width="1.4"/><text x="424" y="80" text-anchor="middle" fill="var(--red-deep)" font-size="10">handler</text>
             <rect x="486" y="55" width="74" height="42" rx="7" fill="none" stroke="var(--red)" stroke-width="1.4"/><text x="523" y="80" text-anchor="middle" fill="var(--red-deep)" font-size="10">MW 3</text>
             <rect x="600" y="55" width="74" height="42" rx="7" fill="var(--ink)"/><text x="637" y="80" text-anchor="middle" fill="#fff" font-size="10">response</text>
           </g>
@@ -685,10 +689,10 @@ body{padding-bottom:80px;}
   <section id="s10">
     <div class="part-head"><span>Part III · Middleware</span><span>10 / 15</span></div>
     <h2><span class="badge">10</span>The next() Function</h2>
-    <p>The third thing a middleware receives is <strong><code class="inl">next</code></strong>, a function. Calling <code class="inl">next()</code> <strong>passes execution to the next context</strong> — whether that's the next middleware, the routing step, or the final handler. It's how the request crosses from one boundary to the next.</p>
+    <p>The third thing a middleware receives is <strong><code class="inl">next</code></strong>, a function. Calling <code class="inl">next()</code> <strong>passes execution to the next context</strong>: whether that's the next middleware, the routing step, or the final handler. It's how the request crosses from one boundary to the next.</p>
     <div class="note">
       <div class="h">Two ways a middleware ends</div>
-      <p><strong>(1)</strong> Do its work, then call <code class="inl">next()</code> to continue the chain. <strong>(2)</strong> <em>Not</em> call <code class="inl">next()</code> and instead <strong>send a response immediately</strong> — short-circuiting the request before it ever reaches the handler. This early exit is exactly why a failed auth check or a tripped rate limit can stop a request cheaply.</p>
+      <p><strong>(1)</strong> Do its work, then call <code class="inl">next()</code> to continue the chain. <strong>(2)</strong> <em>Not</em> call <code class="inl">next()</code> and instead <strong>send a response immediately</strong>: short-circuiting the request before it ever reaches the handler. This early exit is exactly why a failed auth check or a tripped rate limit can stop a request cheaply.</p>
     </div>
     <p>Because a middleware has both the request and response objects, it can read and modify the request, and it can terminate the request right where it stands by returning a response. That is the full extent of a middleware's power.</p>
 
@@ -731,13 +735,13 @@ body{padding-bottom:80px;}
     </div>
 
     <h4>Why middleware at all?</h4>
-    <p>The same reason we use functions: to avoid repeating the same lines everywhere. A backend may serve thousands or millions of requests and expose hundreds of endpoints. Common operations — security, logging, authentication, parsing, compression — need to run for <em>every</em> request. Without middleware you would duplicate that code in every handler. Even extracting a helper function still forces you to <em>call</em> it in every handler. Middleware <strong>centralizes</strong> the common logic and applies it automatically across the chain.</p>
+    <p>The same reason we use functions: to avoid repeating the same lines everywhere. A backend may serve thousands or millions of requests and expose hundreds of endpoints. Common operations, security, logging, authentication, parsing, compression, need to run for <em>every</em> request. Without middleware you would duplicate that code in every handler. Even extracting a helper function still forces you to <em>call</em> it in every handler. Middleware <strong>centralizes</strong> the common logic and applies it automatically across the chain.</p>
   </section>
 
   <section id="s11">
     <div class="part-head"><span>Part III · Middleware</span><span>11 / 15</span></div>
     <h2><span class="badge">11</span>Why Order Matters</h2>
-    <p>Each middleware uses <code class="inl">next()</code> to pass execution to the one after it, so the request flows through them <strong>sequentially, in the order you register them</strong>. That order is not cosmetic — it changes behavior.</p>
+    <p>Each middleware uses <code class="inl">next()</code> to pass execution to the one after it, so the request flows through them <strong>sequentially, in the order you register them</strong>. That order is not cosmetic, it changes behavior.</p>
     <p>The sharpest example is <strong>global error handling</strong>, which is typically placed <strong>last</strong>. Because the request flows in <em>one direction</em>, a middleware can only catch errors that originate <em>upstream</em> of it. If you placed the error handler in the middle, an error thrown later in the handler would flow <em>past</em> it and never be caught. Position it last and it can capture errors from anywhere earlier in the chain.</p>
     <div class="note">
       <div class="h">A sensible default ordering</div>
@@ -752,12 +756,12 @@ body{padding-bottom:80px;}
 
     <div class="def"><div class="label"><span class="tag">Security</span>CORS</div><div class="body"><p>Browsers enforce a same-origin policy: a web app at <code class="inl">example.com</code> may only access resources from <code class="inl">example.com</code> unless the remote server sends the right headers. The CORS middleware reads the request's <strong>origin</strong> (provided automatically by the runtime); if it matches an allowed front-end origin, it adds the appropriate response headers so the browser won't block the response, then calls <code class="inl">next()</code>. If not, it omits the headers and the browser blocks it by default. Placed <strong>early</strong>.</p></div></div>
     <div class="def"><div class="label"><span class="tag">Security</span>Security headers</div><div class="body"><p>Sets headers like <code class="inl">Content-Security-Policy</code> on every response, then forwards to the next middleware.</p></div></div>
-    <div class="def"><div class="label"><span class="tag">Security</span>Authentication</div><div class="body"><p>Extracts a token (JWT, session ID, etc.) from headers or payload and verifies it. On <strong>failure</strong>, it returns <span class="chip bad">401 Unauthorized</span> immediately and terminates the request — no handler, no further middleware. On <strong>success</strong>, it extracts the user's details (user ID, role, permissions) and stores them in the <strong>request context</strong> before calling <code class="inl">next()</code>.</p></div></div>
+    <div class="def"><div class="label"><span class="tag">Security</span>Authentication</div><div class="body"><p>Extracts a token (JWT, session ID, etc.) from headers or payload and verifies it. On <strong>failure</strong>, it returns <span class="chip bad">401 Unauthorized</span> immediately and terminates the request, no handler, no further middleware. On <strong>success</strong>, it extracts the user's details (user ID, role, permissions) and stores them in the <strong>request context</strong> before calling <code class="inl">next()</code>.</p></div></div>
     <div class="def"><div class="label"><span class="tag">Security</span>Rate limiting</div><div class="body"><p>Tracks how many requests an IP made within a window you define (e.g. 30 calls in 2 seconds). Over the threshold, it returns <span class="chip bad">429 Too Many Requests</span> to protect server resources; under it, it calls <code class="inl">next()</code>.</p></div></div>
-    <div class="def"><div class="label"><span class="tag">Observability</span>Logging &amp; monitoring</div><div class="body"><p>Records request details — path, method, query params, body — to the terminal or a log file for debugging, reporting, and auditing.</p></div></div>
+    <div class="def"><div class="label"><span class="tag">Observability</span>Logging &amp; monitoring</div><div class="body"><p>Records request details, path, method, query params, body, to the terminal or a log file for debugging, reporting, and auditing.</p></div></div>
     <div class="def"><div class="label"><span class="tag">Reliability</span>Global error handling</div><div class="body"><p>Catches any unstructured error from anywhere upstream, decides whether it is a client (<span class="chip bad">4xx</span>) or server (<span class="chip bad">5xx</span>) error, and returns a clean, structured message (often with a <code class="inl">message</code> and an error <code class="inl">code</code> the front end can map to a friendly message). Placed <strong>last</strong>.</p></div></div>
     <div class="def"><div class="label"><span class="tag">Performance</span>Compression</div><div class="body"><p>Compresses large responses (e.g. gzip) so they travel efficiently; modern browsers transparently decompress them back into a usable format.</p></div></div>
-    <div class="def"><div class="label"><span class="tag">Convenience</span>Data parsing</div><div class="body"><p>Serialization/deserialization — and even validation/transformation — can be delegated to a middleware (e.g. a body parser) so handlers don't repeat it. This is exactly why Node's <code class="inl">json()</code> body parser means JSON is already a JS object by the time a handler runs.</p></div></div>
+    <div class="def"><div class="label"><span class="tag">Convenience</span>Data parsing</div><div class="body"><p>Serialization/deserialization, and even validation/transformation, can be delegated to a middleware (e.g. a body parser) so handlers don't repeat it. This is exactly why Node's <code class="inl">json()</code> body parser means JSON is already a JS object by the time a handler runs.</p></div></div>
 
     <h4>The CORS &amp; Authentication middlewares in code</h4>
     <div class="code">
@@ -829,9 +833,9 @@ body{padding-bottom:80px;}
     <p>The auth middleware just did something subtle: it stored the user ID and role somewhere so that a later handler could read them. That "somewhere" is the <strong>request context</strong>.</p>
     <div class="note">
       <div class="h">Definition · Request Context</div>
-      <p>A piece of <strong>storage or state</strong> — usually a simple key&#8211;value store — that is <strong>scoped to a single HTTP request</strong>. Every request gets its own context; it does not leak into other requests. Every framework in every language (Node, Go, Python) ships some implementation of this concept; the mechanics differ, the idea is the same.</p>
+      <p>A piece of <strong>storage or state</strong>: usually a simple key&#8211;value store, that is <strong>scoped to a single HTTP request</strong>. Every request gets its own context; it does not leak into other requests. Every framework in every language (Node, Go, Python) ships some implementation of this concept; the mechanics differ, the idea is the same.</p>
     </div>
-    <p>Why does it exist? Because a request passes through many <strong>isolated function boundaries</strong> — CORS, logging, routing, auth, permission checks, the handler, the error handler. The context gives all of them a shared place to read and write state <strong>without tightly coupling</strong> them — without one middleware having to explicitly pass values into the next by hand.</p>
+    <p>Why does it exist? Because a request passes through many <strong>isolated function boundaries</strong>: CORS, logging, routing, auth, permission checks, the handler, the error handler. The context gives all of them a shared place to read and write state <strong>without tightly coupling</strong> them, without one middleware having to explicitly pass values into the next by hand.</p>
 
     <figure>
       <div class="diagram">
@@ -840,10 +844,10 @@ body{padding-bottom:80px;}
             <rect x="40" y="30" width="90" height="40" rx="7" fill="none" stroke="var(--red)" stroke-width="1.4"/><text x="85" y="55" text-anchor="middle" fill="var(--red-deep)">auth MW</text>
             <rect x="170" y="30" width="90" height="40" rx="7" fill="none" stroke="var(--line-strong)" stroke-width="1.4"/><text x="215" y="55" text-anchor="middle" fill="var(--ink)">logging</text>
             <rect x="300" y="30" width="90" height="40" rx="7" fill="none" stroke="var(--line-strong)" stroke-width="1.4"/><text x="345" y="55" text-anchor="middle" fill="var(--ink)">perm check</text>
-            <rect x="430" y="30" width="90" height="40" rx="7" fill="rgba(204,17,51,.1)" stroke="var(--red)" stroke-width="1.4"/><text x="475" y="55" text-anchor="middle" fill="var(--red-deep)">handler</text>
+            <rect x="430" y="30" width="90" height="40" rx="7" fill="rgba(184,64,46,.1)" stroke="var(--red)" stroke-width="1.4"/><text x="475" y="55" text-anchor="middle" fill="var(--red-deep)">handler</text>
             <rect x="560" y="30" width="90" height="40" rx="7" fill="none" stroke="var(--line-strong)" stroke-width="1.4"/><text x="605" y="55" text-anchor="middle" fill="var(--ink)">error MW</text>
           </g>
-          <rect x="40" y="105" width="610" height="48" rx="9" fill="rgba(204,17,51,.06)" stroke="var(--red)" stroke-width="1.4" stroke-dasharray="5 4"/>
+          <rect x="40" y="105" width="610" height="48" rx="9" fill="rgba(184,64,46,.06)" stroke="var(--red)" stroke-width="1.4" stroke-dasharray="5 4"/>
           <text x="345" y="125" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--red-deep)">REQUEST CONTEXT &#183; shared key&#8211;value state, scoped to this one request</text>
           <text x="345" y="142" text-anchor="middle" class="sv-mono" font-size="10" fill="var(--muted)">{ user_id, role, request_id, deadline }</text>
           <g stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="2 3">
@@ -853,7 +857,7 @@ body{padding-bottom:80px;}
           </g>
         </svg>
       </div>
-      <figcaption>Every boundary can read and write the <b>same per-request store</b> — no manual hand-off needed.</figcaption>
+      <figcaption>Every boundary can read and write the <b>same per-request store</b>: no manual hand-off needed.</figcaption>
     </figure>
   </section>
 
@@ -862,8 +866,8 @@ body{padding-bottom:80px;}
     <h2><span class="badge">14</span>Use Case · Passing Authentication Data</h2>
     <p>The canonical use. The auth middleware verifies credentials, extracts the <code class="inl">user_id</code> and <code class="inl">role</code>, and writes them into the context. Far downstream, a <code class="inl">POST /books</code> handler needs to stamp the new book with its owner. Instead of trusting a <code class="inl">user_id</code> sent in the client's JSON payload, it reads the ID <strong>from the context</strong>.</p>
     <div class="note">
-      <div class="h">Security — why this matters</div>
-      <p>If you took the <code class="inl">user_id</code> from the client payload, a malicious client could send <em>someone else's</em> ID and act as them. Reading identity from the context — populated only by your verified auth middleware — closes that hole. The same context-stored role drives permission checks (is this user an admin? does it have write access?).</p>
+      <div class="h">Security, why this matters</div>
+      <p>If you took the <code class="inl">user_id</code> from the client payload, a malicious client could send <em>someone else's</em> ID and act as them. Reading identity from the context, populated only by your verified auth middleware, closes that hole. The same context-stored role drives permission checks (is this user an admin? does it have write access?).</p>
     </div>
 
     <div class="code">
@@ -889,7 +893,7 @@ body{padding-bottom:80px;}
         <span class="k">return</span>
     }
 
-    <span class="c">// Persist with the SERVER-VERIFIED owner id — never the client's.</span>
+    <span class="c">// Persist with the SERVER-VERIFIED owner id, never the client's.</span>
     book, _ := bookService.<span class="f">Create</span>(r.<span class="f">Context</span>(), req, userID)
     w.<span class="f">WriteHeader</span>(http.<span class="n">StatusCreated</span>) <span class="c">// 201</span>
     json.<span class="f">NewEncoder</span>(w).<span class="f">Encode</span>(book)
@@ -905,7 +909,7 @@ body{padding-bottom:80px;}
     <span class="k">if</span> role <span class="k">not</span> <span class="k">in</span> (<span class="s">"admin"</span>, <span class="s">"user"</span>):
         <span class="k">return</span> <span class="f">Response</span>(<span class="s">"forbidden"</span>, status=<span class="n">403</span>)
 
-    <span class="c"># Persist with the SERVER-VERIFIED owner id — never the client's.</span>
+    <span class="c"># Persist with the SERVER-VERIFIED owner id, never the client's.</span>
     book = book_service.<span class="f">create</span>(req, user_id)
     <span class="k">return</span> <span class="f">jsonify</span>(book), <span class="n">201</span></pre>
     </div>
@@ -916,7 +920,7 @@ body{padding-bottom:80px;}
     <h2><span class="badge">15</span>Use Cases · Tracing &amp; Cancellation</h2>
 
     <h3>Request tracing</h3>
-    <p>An early middleware can generate a unique ID (a UUID) and save it in the context. For the entire lifecycle of that request, every log line can include this ID, and any outbound calls to other microservices can forward it in a header like <code class="inl">X-Request-ID</code>. When you later audit your logs to debug a problem, that single ID lets you <strong>trace one request across every service it touched</strong> — where it started and everywhere it went.</p>
+    <p>An early middleware can generate a unique ID (a UUID) and save it in the context. For the entire lifecycle of that request, every log line can include this ID, and any outbound calls to other microservices can forward it in a header like <code class="inl">X-Request-ID</code>. When you later audit your logs to debug a problem, that single ID lets you <strong>trace one request across every service it touched</strong>: where it started and everywhere it went.</p>
 
     <div class="code">
       <div class="code-bar">
@@ -954,7 +958,7 @@ body{padding-bottom:80px;}
 
     <div class="note">
       <div class="h">The whole picture</div>
-      <p>A request enters at the entry point, flows through an ordered chain of middlewares and routing, lands in a handler that validates and transforms the data, delegates to a service that orchestrates the business logic, which calls repositories for database work — all while a per-request <strong>context</strong> carries identity, a trace ID, and deadlines alongside it. The result climbs back up, and the handler chooses a status code and sends the response. That is the full request lifecycle.</p>
+      <p>A request enters at the entry point, flows through an ordered chain of middlewares and routing, lands in a handler that validates and transforms the data, delegates to a service that orchestrates the business logic, which calls repositories for database work, all while a per-request <strong>context</strong> carries identity, a trace ID, and deadlines alongside it. The result climbs back up, and the handler chooses a status code and sends the response. That is the full request lifecycle.</p>
     </div>
   </section>
 
@@ -967,7 +971,7 @@ body{padding-bottom:80px;}
 </div>
 
 <script>
-  // Code tab switching — scoped per group.
+  // Code tab switching, scoped per group.
   document.querySelectorAll('.tabs').forEach(function(tabs){
     var group = tabs.getAttribute('data-group');
     tabs.querySelectorAll('button').forEach(function(btn){
