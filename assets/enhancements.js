@@ -1963,7 +1963,7 @@
   }
 
   function syncBookmarksFromDoc(activeLesson, doc) {
-    if (!activeLesson || !activeLesson.isChapter) return;
+    if (!activeLesson || !activeLesson.isChapter || typeof doc !== 'string') return;
     var notes = NotesStore.getAll();
     var ch = activeLesson.slug || '';
     var changed = false;
@@ -1973,12 +1973,35 @@
         (n.chapterTitle && activeLesson.title && n.chapterTitle.toLowerCase().indexOf(activeLesson.title.toLowerCase()) !== -1) ||
         (n.chapterTitle && activeLesson.shortTitle && n.chapterTitle.toLowerCase().indexOf(activeLesson.shortTitle.toLowerCase()) !== -1);
       if (!isThisChapter) return true;
-      var assetId = (n.text || '').match(/attachment:\/\/([^\)\s]+)/);
-      var key = assetId ? assetId[1] : (n.text || '').substring(0, 30).trim();
-      var keep = key ? doc.indexOf(key) !== -1 : false;
+
+      var keep = false;
+      if (n.type === 'diagram') {
+        var assetMatch = (n.text || '').match(/attachment:\/\/([^\)\s]+)/);
+        if (assetMatch && doc.indexOf(assetMatch[1]) !== -1) {
+          keep = true;
+        } else {
+          var diagTitle = (n.text || '').replace(/^### Diagram:\s*/m, '').split('\n')[0].trim();
+          if (diagTitle && doc.indexOf(diagTitle) !== -1) keep = true;
+        }
+      } else if (n.type === 'code') {
+        var codeTitle = (n.text || '').split('\n')[0].replace(/:\s*$/, '').replace(/^### Code:\s*/, '').trim();
+        if (codeTitle && doc.indexOf(codeTitle) !== -1) {
+          keep = true;
+        } else {
+          var codeSnippet = (n.text || '').split('\n').slice(1).join('\n').trim();
+          var testSnippet = codeSnippet ? codeSnippet.substring(0, 30).trim() : '';
+          if (testSnippet && doc.indexOf(testSnippet) !== -1) keep = true;
+        }
+      } else {
+        var snippet = (n.text || '').substring(0, 30).trim();
+        if (snippet && doc.indexOf(snippet) !== -1) keep = true;
+      }
+
       if (!keep) {
         changed = true;
-        if (n.id && n.id.indexOf('ann_') === 0) unwrapHighlight(n.id);
+        if (n.id && n.id.indexOf('ann_') === 0) {
+          try { unwrapHighlight(n.id); } catch (e) {}
+        }
       }
       return keep;
     });
