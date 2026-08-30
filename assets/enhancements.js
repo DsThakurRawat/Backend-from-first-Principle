@@ -1962,6 +1962,29 @@
     }
   }
 
+  function syncBookmarksFromDoc(activeLesson, doc) {
+    if (!activeLesson || !activeLesson.isChapter) return;
+    var notes = NotesStore.getAll();
+    var ch = activeLesson.slug || '';
+    var changed = false;
+    var remaining = notes.filter(function (n) {
+      if (!n) return false;
+      var isThisChapter = (n.targetId && ch && n.targetId.indexOf(ch) !== -1) ||
+        (n.chapterTitle && activeLesson.title && n.chapterTitle.toLowerCase().indexOf(activeLesson.title.toLowerCase()) !== -1) ||
+        (n.chapterTitle && activeLesson.shortTitle && n.chapterTitle.toLowerCase().indexOf(activeLesson.shortTitle.toLowerCase()) !== -1);
+      if (!isThisChapter) return true;
+      var assetId = (n.text || '').match(/attachment:\/\/([^\)\s]+)/);
+      var key = assetId ? assetId[1] : (n.text || '').substring(0, 30).trim();
+      var keep = key ? doc.indexOf(key) !== -1 : false;
+      if (!keep) {
+        changed = true;
+        if (n.id && n.id.indexOf('ann_') === 0) unwrapHighlight(n.id);
+      }
+      return keep;
+    });
+    if (changed) NotesStore.saveAll(remaining);
+  }
+
   var autoSaveTimer = null;
   function handleNotepadInput() {
     var textarea = document.getElementById('lessonNotepadTextarea');
@@ -1979,6 +2002,7 @@
     autoSaveTimer = setTimeout(function () {
       var activeLesson = getActiveLessonInfo();
       setLessonDoc(activeLesson.slug, textarea.value);
+      syncBookmarksFromDoc(activeLesson, textarea.value);
       if (statusEl) {
         var timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         statusEl.textContent = '● Saved ' + timeStr;
