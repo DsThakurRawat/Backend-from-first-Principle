@@ -7,6 +7,13 @@
   var toc = document.querySelector('.bfp-toc');
   if (!toc) return;
 
+  /* ---------- home link ---------- */
+  var home = document.createElement('a');
+  home.className = 'bfp-home-link';
+  home.href = '../../index.html';
+  home.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12.5" y1="8" x2="2.5" y2="8"/><polyline points="6.5,4 2.5,8 6.5,12"/></svg><span>Home</span>';
+  toc.insertBefore(home, toc.firstChild);
+
   var toggle = document.querySelector('.bfp-toc-toggle');
   var scrim = document.querySelector('.bfp-toc-scrim');
   var links = [].slice.call(document.querySelectorAll('.bfp-toc-link'));
