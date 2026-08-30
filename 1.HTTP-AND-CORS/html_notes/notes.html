@@ -2466,6 +2466,24 @@ Cookie: session=abc123</code></pre>
           but only the holder of the key can <em>forge</em> a valid signature, which is what lets a server trust it
           without a database lookup. The common refinement is a short-lived access token plus a long-lived refresh
           token, mitigating the revocation weakness.</p>
+
+        <h3>How JWTs prevent tampering (encoded vs. encrypted)</h3>
+        <p>A common point of confusion: a JWT's header and payload are only <strong>base64url-encoded</strong>, not
+          encrypted. Anyone who intercepts the token can decode it and read the claims in plain text, including a
+          field like <code>"role": "user"</code>. So why can't an attacker just decode it, change the role to
+          <code>"admin"</code>, and send the edited token back?</p>
+        <p>The answer is the third segment: the <strong>signature</strong>. It's computed as
+          <code>HMAC(header + payload, secret)</code> (or a private-key equivalent) using a secret key that never
+          leaves the server. When a tampered token comes back, the server recomputes the signature over the (now
+          different) payload with that same secret; because the payload changed, the resulting hash is completely
+          different from the one attached to the token. The comparison fails and the server rejects the request with
+          <span class="sc s4">401</span>, before the modified claim is ever trusted.</p>
+        <div class="box gotcha"><span class="tag">Encoded is not encrypted</span>
+          <p>Never put secrets in a JWT payload, anyone can read it. The signature only guarantees the payload wasn't
+            <em>altered</em> after issuance, not that it's confidential. Without the server's secret key, forging a
+            valid signature for a modified payload is computationally infeasible.</p>
+        </div>
+
         <p>On the protocol side, the <code>WWW-Authenticate</code> response header (paired with a <span
             class="sc s4">401</span>) tells the client which authentication scheme to use, and
           <code>Authorization</code> is the request header that carries the credentials back.</p>
@@ -2702,6 +2720,29 @@ app.add_middleware(
 )</code></pre>
           </div>
         </div>
+
+        <h3>Common misconception: does CORS protect the server?</h3>
+        <p>A frequent question is: "if a script can just ignore CORS with <code>curl</code> or a custom HTTP client,
+          isn't CORS useless for security?" The premise is right, CORS is trivial to bypass outside a browser, but
+          the conclusion is wrong, because <strong>CORS was never designed to protect the server; it protects the
+            user</strong>.</p>
+        <p>When a tool like <code>curl</code> or a custom script ignores CORS, it can read whatever the server
+          returns, but it doesn't have the user's cookies or session tokens, so the server simply rejects it as
+          unauthenticated (sec 8). CORS instead enforces the Same-Origin Policy inside <em>legitimate browsers</em>:
+          if a user is logged into their bank and visits a malicious site, that site's JavaScript runs inside the
+          user's own browser, which automatically attaches the bank's session cookie to any request it fires. CORS
+          is the mechanism by which the browser asks the bank "does this malicious origin have permission to read
+          this response?", and blocks the response when the answer is no.</p>
+        <div class="box key"><span class="tag">Who protects what</span>
+          <p>The server protects itself through authentication, authorization, and CSRF tokens. CORS protects the
+            user's already-trusted, cookie-carrying session from being read by an origin it never agreed to share it
+            with.</p>
+        </div>
+        <h4>The threat of malicious extensions</h4>
+        <p>A malicious browser extension breaks this chain of trust entirely: it runs <em>inside</em> the trusted
+          browser, alongside the page, so it can bypass CORS, read cookies directly, log keystrokes, and rewrite
+          outgoing requests before they ever hit the network. Securing the client environment is just as critical as
+          securing the backend, no server-side header stops code that already runs where your cookies live.</p>
       </section>
 
       <div class="part-label">Part IV / Responses, Caching &amp; Concurrency</div>
@@ -4526,6 +4567,18 @@ Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=</code></pre>
           <li><strong>HTTPS</strong>: simply HTTP carried inside a TLS connection. Identical protocol, identical
             semantics; everything in this manual applies unchanged, just with encryption underneath.</li>
         </ul>
+
+        <h3>Defeating man-in-the-middle (MitM) attacks</h3>
+        <p>A <strong>man-in-the-middle attack</strong> happens when someone sits on the network path between client
+          and server, for example by controlling a public Wi-Fi router, and intercepts the traffic. Over plain HTTP
+          that attacker acts like a dishonest mail carrier: they can read passwords in transit, modify request
+          bodies, and rewrite server responses, while both sides believe they're talking directly to each other.</p>
+        <p><strong>This is precisely the vulnerability TLS closes.</strong> Once the handshake below completes,
+          every byte leaving the client is sealed inside an encrypted channel before it touches the wire. An
+          attacker on a compromised network still sees the traffic, they just see an indecipherable stream of
+          ciphertext, because they never obtained the session key negotiated during the handshake. Without that key
+          the interception is useless: nothing can be read, and nothing can be altered without breaking the
+          integrity check the receiving side verifies.</p>
 
         <div class="viz">
           <div class="viz-cap">What the handshake buys</div>
