@@ -10,13 +10,17 @@
   var STORAGE_KEY = 'bfp_theme_mode';
   var THEMES = ['default', 'dark', 'light'];
   var THEME_COLORS = { default: '#f3ede2', dark: '#17120e', light: '#ffffff' };
-  var theme = 'default';
+
+  // Light is the default for a first visit. The OS `prefers-color-scheme` hint
+  // is deliberately not consulted: a saved choice wins, and everyone else gets
+  // light. (With JS off no data-theme is set and the CSS falls back to the
+  // parchment `:root` baseline, which is what the static theme-color matches.)
+  var theme = 'light';
 
   try {
     var saved = window.localStorage.getItem(STORAGE_KEY);
     if (saved === 'paper' || saved === 'neutral') saved = 'default';
     if (saved && THEMES.indexOf(saved) !== -1) theme = saved;
-    else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark';
   } catch (_) { /* storage blocked: keep the default theme */ }
 
   document.documentElement.setAttribute('data-theme', theme);

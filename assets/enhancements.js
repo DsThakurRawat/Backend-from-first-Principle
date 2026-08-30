@@ -327,14 +327,15 @@
   var THEME_COLORS = { default: '#f3ede2', dark: '#17120e', light: '#ffffff' };
   var transitionTimer = null;
 
+  // Must match the bootstrap in assets/theme.js: light is the default for a
+  // first visit, and the OS `prefers-color-scheme` hint is not consulted.
   function getSavedTheme() {
     try {
       var saved = localStorage.getItem(STORAGE_THEME_KEY);
       if (saved === 'paper' || saved === 'neutral') saved = 'default';
       if (saved && THEMES.indexOf(saved) !== -1) return saved;
-      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
     } catch (e) {}
-    return 'default';
+    return 'light';
   }
 
   function applyTheme(theme, animate) {
@@ -350,7 +351,7 @@
     try { localStorage.setItem(STORAGE_THEME_KEY, theme); } catch (e) {}
 
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', THEME_COLORS[theme] || THEME_COLORS.default);
+    if (meta) meta.setAttribute('content', THEME_COLORS[theme] || THEME_COLORS.light);
 
     var btn = document.getElementById('dockThemeBtn');
     if (btn) {

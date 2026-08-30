@@ -67,4 +67,11 @@ assert.doesNotMatch(themeJs, /'bfp-theme'/, 'theme.js must not keep a second the
 assert.doesNotMatch(themeJs, /createElement/, 'the dock owns the theme control; theme.js must not add a second one');
 assert.match(themeCss, /--accent-rgb:/, 'the dark palette must define --accent-rgb, which shell.css and enhancements.css derive colors from');
 
+// A first visit lands on light, and neither entry point may follow the OS to
+// dark — otherwise the two disagree and the default is not actually light.
+assert.match(themeJs, /var theme = 'light';/, 'theme.js must default a first visit to light');
+assert.match(enhancementsJs, /return 'light';\s*\n\s*}/, 'getSavedTheme must default to light');
+assert.doesNotMatch(themeJs, /prefers-color-scheme[^\n]*matches/, 'theme.js must not auto-switch to dark');
+assert.doesNotMatch(enhancementsJs, /prefers-color-scheme[^\n]*matches/, 'enhancements.js must not auto-switch to dark');
+
 console.log('dark mode checks passed');
