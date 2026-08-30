@@ -56,7 +56,15 @@ assert.equal(chapterPages.length, 24, 'all 24 chapter pages should be present');
 for (const page of chapterPages) {
   const html = fs.readFileSync(page, 'utf8');
   assert.match(html, /assets\/theme\.css/, `${page} is missing dark-mode CSS`);
-  assert.match(html, /assets\/theme\.js" defer/, `${page} is missing deferred theme JavaScript`);
+  // theme.js must NOT be deferred: it sets data-theme before the first paint.
+  assert.match(html, /<script src="[^"]*assets\/theme\.js"><\/script>/, `${page} is missing the theme bootstrap script`);
 }
+
+const enhancementsJs = fs.readFileSync(path.join(root, 'assets/enhancements.js'), 'utf8');
+assert.match(themeJs, /'bfp_theme_mode'/, 'theme.js must read the theme key the dock writes');
+assert.match(enhancementsJs, /STORAGE_THEME_KEY = 'bfp_theme_mode'/);
+assert.doesNotMatch(themeJs, /'bfp-theme'/, 'theme.js must not keep a second theme key');
+assert.doesNotMatch(themeJs, /createElement/, 'the dock owns the theme control; theme.js must not add a second one');
+assert.match(themeCss, /--accent-rgb:/, 'the dark palette must define --accent-rgb, which shell.css and enhancements.css derive colors from');
 
 console.log('dark mode checks passed');

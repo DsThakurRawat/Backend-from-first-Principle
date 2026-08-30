@@ -1,35 +1,25 @@
+/* Pre-paint theme bootstrap.
+
+   The visible theme control lives in the study dock (assets/enhancements.js).
+   This file only restores the saved choice before the first paint, so the page
+   never flashes the wrong theme. It must stay in sync with the dock: same
+   storage key, same theme names. Load it without `defer` so it runs first. */
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'bfp-theme';
-  var stored = null;
-  try { stored = window.localStorage.getItem(STORAGE_KEY); } catch (_) { /* session-only */ }
-  var theme = stored === 'dark' || stored === 'light' ? stored : 'light';
+  var STORAGE_KEY = 'bfp_theme_mode';
+  var THEMES = ['default', 'dark', 'light'];
+  var THEME_COLORS = { default: '#f3ede2', dark: '#17120e', light: '#ffffff' };
+  var theme = 'default';
 
-  function apply(next) {
-    theme = next === 'dark' ? 'dark' : 'light';
-    document.documentElement.dataset.theme = theme;
-    var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'dark' ? '#17120e' : '#f3ede2');
-    var button = document.querySelector('[data-theme-toggle]');
-    if (button) {
-      var nextTheme = theme === 'dark' ? 'light' : 'dark';
-      button.textContent = nextTheme === 'dark' ? '☾' : '☀';
-      button.setAttribute('aria-label', 'Switch to ' + nextTheme + ' theme');
-      button.title = 'Switch to ' + nextTheme + ' theme';
-    }
-    try { window.localStorage.setItem(STORAGE_KEY, theme); } catch (_) { /* session-only */ }
-  }
+  try {
+    var saved = window.localStorage.getItem(STORAGE_KEY);
+    if (saved === 'paper' || saved === 'neutral') saved = 'default';
+    if (saved && THEMES.indexOf(saved) !== -1) theme = saved;
+    else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark';
+  } catch (_) { /* storage blocked: keep the default theme */ }
 
-  // Apply before the body paints to avoid a dark-mode flash.
-  document.documentElement.dataset.theme = theme;
-  document.addEventListener('DOMContentLoaded', function () {
-    var button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'theme-toggle';
-    button.dataset.themeToggle = 'true';
-    button.addEventListener('click', function () { apply(theme === 'dark' ? 'light' : 'dark'); });
-    document.body.appendChild(button);
-    apply(theme);
-  });
+  document.documentElement.setAttribute('data-theme', theme);
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', THEME_COLORS[theme]);
 }());

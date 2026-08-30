@@ -324,6 +324,7 @@
   var STORAGE_NOTES_KEY = 'bfp_masterclass_notes_v1';
   var THEMES = ['default', 'dark', 'light'];
   var THEME_LABELS = { default: 'Original', neutral: 'Original', paper: 'Original', dark: 'Dark', light: 'Light' };
+  var THEME_COLORS = { default: '#f3ede2', dark: '#17120e', light: '#ffffff' };
   var transitionTimer = null;
 
   function getSavedTheme() {
@@ -347,6 +348,9 @@
     }
     document.documentElement.setAttribute('data-theme', theme);
     try { localStorage.setItem(STORAGE_THEME_KEY, theme); } catch (e) {}
+
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', THEME_COLORS[theme] || THEME_COLORS.default);
 
     var btn = document.getElementById('dockThemeBtn');
     if (btn) {
@@ -554,6 +558,7 @@
     try {
       localStorage.removeItem(STORAGE_NOTES_KEY);
       localStorage.removeItem(STORAGE_LESSON_DOCS_KEY);
+      localStorage.removeItem(STORAGE_LESSON_ASSETS_KEY);
       localStorage.removeItem('bfp_diagram_assets_v1');
     } catch (e) {}
     _memStore = {};
@@ -1682,8 +1687,13 @@
       return '<span class="obsidian-wikilink" title="' + escapeHtml(target) + '"><span class="wikilink-icon">' + SVG_ICONS.wikilinkSmall + '</span>' + escapeHtml(label) + '</span>';
     });
 
-    // Links: [text](url)
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="md-link">$1</a>');
+    // Links: [text](url) — only http(s), mailto and in-page anchors are linked,
+    // so a pasted javascript: URL cannot execute when the note is previewed.
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (m, label, url) {
+      var href = url.trim();
+      if (!/^(https?:\/\/|mailto:|#|\/|\.\.?\/)/i.test(href)) return m;
+      return '<a href="' + href.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener noreferrer" class="md-link">' + label + '</a>';
+    });
 
     // Obsidian Tags: #tag
     s = s.replace(/(^|\s)#([a-zA-Z][a-zA-Z0-9_\-\/]*)/g, '$1<span class="obsidian-tag">#$2</span>');
@@ -1811,7 +1821,7 @@
   }
 
   function saveStoredAsset(id, dataUrl, meta) {
-    if (!id || !dataUrl) return;
+    if (!id || !dataUrl) return false;
     try {
       var cleanId = id.replace(/^attachment:\/\//i, '').trim();
       var assets = getStoredAssets();
@@ -1821,7 +1831,13 @@
         updatedAt: new Date().toISOString()
       };
       localStorage.setItem(STORAGE_LESSON_ASSETS_KEY, JSON.stringify(assets));
-    } catch (e) {}
+      return true;
+    } catch (e) {
+      // Almost always QuotaExceededError. The caller must not link an asset
+      // that will be missing on the next page load.
+      console.warn('[BFP] could not store attachment ' + id + ':', e);
+      return false;
+    }
   }
 
   function getStoredAsset(id) {
@@ -2386,7 +2402,14 @@
       function handleImportedImage(dataUrl, name) {
         var cleanName = (name || 'image').replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
         var assetId = 'img_' + cleanName + '_' + Date.now().toString(36);
-        saveStoredAsset(assetId, dataUrl, { name: cleanName, type: 'image' });
+        if (!saveStoredAsset(assetId, dataUrl, { name: cleanName, type: 'image' })) {
+          var statsEl = document.getElementById('notesFooterStats');
+          if (statsEl) {
+            statsEl.textContent = 'Image not saved \u2014 browser storage is full';
+            setTimeout(updateNotepadStats, 4000);
+          }
+          return;
+        }
         if (currentNotepadMode === 'preview') switchNotepadMode('edit');
         insertFormatting(textarea, '\n![' + cleanName + '](attachment://' + assetId + ')\n', '', '');
         handleNotepadInput();
