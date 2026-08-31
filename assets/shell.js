@@ -21,6 +21,7 @@
   /* ---------- drawer ---------- */
   function setOpen(open) {
     toc.classList.toggle('is-open', open);
+    document.body.classList.toggle('bfp-toc-open', open);
     if (scrim) scrim.classList.toggle('is-open', open);
     if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     document.body.style.overflow = open && window.matchMedia('(max-width: 1000px)').matches ? 'hidden' : '';
@@ -31,7 +32,13 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && toc.classList.contains('is-open')) setOpen(false);
   });
-  links.forEach(function (l) { l.addEventListener('click', function () { setOpen(false); }); });
+  /* On the mobile drawer, picking a link should close it. On desktop the
+     panel pushes the content rather than covering it, so leave it open. */
+  links.forEach(function (l) {
+    l.addEventListener('click', function () {
+      if (window.matchMedia('(max-width: 1000px)').matches) setOpen(false);
+    });
+  });
 
   /* ---------- scroll spy ---------- */
   var byId = {};
