@@ -46,43 +46,57 @@
     });
   }
 
-  // --- Code Runner (Piston API, supports Go + Python, free, no auth) ---
+  // --- Code Runner (Piston API, supports Go + Python + JS + TS, free, no auth) ---
   var PISTON_URL = 'https://emkc.org/api/v2/piston/execute';
+
+  // data-panel value -> Piston runtime + button label + optional playground link.
+  // To support a new language, add an entry here and a panel with the matching
+  // data-panel value in the chapter notes.
+  var RUNTIMES = {
+    py: { lang: 'python', version: '3.10.0', label: 'Run Python' },
+    go: {
+      lang: 'go', version: '1.16.2', label: 'Run Go',
+      playground: { href: 'https://go.dev/play/', text: 'Go Playground' }
+    },
+    js: { lang: 'javascript', version: '18.15.0', label: 'Run JavaScript' },
+    ts: {
+      lang: 'typescript', version: '5.0.3', label: 'Run TypeScript',
+      playground: { href: 'https://www.typescriptlang.org/play', text: 'TS Playground' }
+    }
+  };
 
   function initCodeRunner() {
     var blocks = document.querySelectorAll('[data-cb]');
     blocks.forEach(function (block) {
-      var pyPanel = block.querySelector('[data-panel="py"]');
-      var goPanel = block.querySelector('[data-panel="go"]');
-
-      if (pyPanel) addRunButton(pyPanel, block, 'python', '3.10.0');
-      if (goPanel) addRunButton(goPanel, block, 'go', '1.16.2');
+      Object.keys(RUNTIMES).forEach(function (key) {
+        var panel = block.querySelector('[data-panel="' + key + '"]');
+        if (panel) addRunButton(panel, block, RUNTIMES[key]);
+      });
     });
   }
 
-  function addRunButton(panel, block, lang, version) {
+  function addRunButton(panel, block, runtime) {
     var wrap = document.createElement('div');
     wrap.className = 'code-run-wrap';
 
     var btn = document.createElement('button');
     btn.className = 'code-run-btn';
-    btn.textContent = lang === 'python' ? 'Run Python' : 'Run Go';
-    btn.setAttribute('data-lang', lang);
-    btn.setAttribute('data-version', version);
+    btn.textContent = runtime.label;
+    btn.setAttribute('data-lang', runtime.lang);
+    btn.setAttribute('data-version', runtime.version);
 
     btn.addEventListener('click', function () {
-      runCode(panel, block, btn, lang, version);
+      runCode(panel, block, btn, runtime.lang, runtime.version);
     });
     wrap.appendChild(btn);
 
-    // Add playground link for Go
-    if (lang === 'go') {
+    if (runtime.playground) {
       var link = document.createElement('a');
       link.className = 'code-playground-link';
-      link.href = 'https://go.dev/play/';
+      link.href = runtime.playground.href;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
-      link.textContent = 'Go Playground';
+      link.textContent = runtime.playground.text;
       wrap.appendChild(link);
     }
 

@@ -6,7 +6,7 @@
   <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HTTP & CORS / Chapter 01 / Backend from First Principles</title>
-  <meta name="description" content="Chapter 01 of Backend from First Principles: HTTP & CORS. First-principles notes, diagrams and runnable Go and Python examples.">
+  <meta name="description" content="Chapter 01 of Backend from First Principles: HTTP & CORS. First-principles notes, diagrams and runnable Go, Python, JavaScript and TypeScript examples.">
   <meta name="theme-color" content="#f3ede2">
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%23b8402e'/%3E%3Ctext%20x='16'%20y='23'%20font-family='Georgia,serif'%20font-size='19'%20font-weight='700'%20fill='%23f3ede2'%20text-anchor='middle'%3EB%3C/text%3E%3C/svg%3E">
 
@@ -450,6 +450,14 @@
       color: #d8b66a;
     }
 
+    .lang-js {
+      color: #f1e05a;
+    }
+
+    .lang-ts {
+      color: #3178c6;
+    }
+
     .code-panel {
       display: none;
     }
@@ -833,7 +841,7 @@ body{padding-bottom:80px;}
         <p class="lede">A first-principles walkthrough of the application-layer protocol every backend touches, from
           statelessness and method semantics to caching, conditional requests, proxies, and TLS. Written to explain not
           just <em>what</em> each piece does but <em>why</em> it exists and <em>how</em> it works underneath.
-          Implementations in both Go and Python, grounded in MDN and RFC 9110.</p>
+          Implementations in Go, Python, JavaScript and TypeScript, grounded in MDN and RFC 9110.</p>
         <div class="meta">
           <span>Layer 7 / Application</span>
           <span>TCP / QUIC</span>
@@ -1445,7 +1453,7 @@ Date: Sat, 30 May 2026 12:00:00 GMT
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">package main
@@ -1499,6 +1507,48 @@ def create_note(note: Note, response: Response):
     return {"id": 42, **note.model_dump()}
 
 # run: uvicorn main:app --port 8080</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">import express from 'express'
+
+const app = express()
+app.use(express.json())            // parses the body; malformed JSON -&gt; 400 automatically
+
+app.post('/api/v1/notes', (req, res) =&gt; {
+  const { title, done = false } = req.body ?? {}
+  if (typeof title !== 'string') {
+    return res.status(400).json({ error: 'invalid JSON' })
+  }
+  res.set('Content-Type', 'application/json')  // 1. headers FIRST
+  res.status(201)                              // 2. status
+  res.json({ id: 42, title, done })            // 3. body LAST
+})
+
+app.listen(8080)</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import express, { Request, Response } from 'express'
+
+interface Note {
+  id: number
+  title: string
+  done: boolean
+}
+
+const app = express()
+app.use(express.json())            // parses the body; malformed JSON -&gt; 400 automatically
+
+app.post('/api/v1/notes', (req: Request, res: Response&lt;Note | { error: string }&gt;) =&gt; {
+  const { title, done = false } = req.body ?? {}
+  if (typeof title !== 'string') {
+    return res.status(400).json({ error: 'invalid JSON' })
+  }
+  res.set('Content-Type', 'application/json')  // 1. headers FIRST
+  res.status(201)                              // 2. status
+  res.json({ id: 42, title, done })            // 3. body LAST
+})
+
+app.listen(8080)</code></pre>
           </div>
         </div>
       </section>
@@ -1720,7 +1770,7 @@ def create_note(note: Note, response: Response):
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">func securityHeaders(next http.Handler) http.Handler {
@@ -1748,6 +1798,32 @@ class SecurityHeaders(BaseHTTPMiddleware):
         return resp
 
 app.add_middleware(SecurityHeaders)</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">function securityHeaders(req, res, next) {
+  res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  res.set('Content-Security-Policy', "default-src 'self'")
+  res.set('X-Frame-Options', 'DENY')
+  res.set('X-Content-Type-Options', 'nosniff')
+  next() // headers MUST be set before the handler writes the body (see sec 3)
+}
+
+app.use(securityHeaders)
+// In production `helmet()` sets these, and more, for you.</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import { Request, Response, NextFunction } from 'express'
+
+function securityHeaders(req: Request, res: Response, next: NextFunction): void {
+  res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  res.set('Content-Security-Policy', "default-src 'self'")
+  res.set('X-Frame-Options', 'DENY')
+  res.set('X-Content-Type-Options', 'nosniff')
+  next() // headers MUST be set before the handler writes the body (see sec 3)
+}
+
+app.use(securityHeaders)
+// In production `helmet()` sets these, and more, for you.</code></pre>
           </div>
         </div>
       </section>
@@ -2128,7 +2204,7 @@ app.add_middleware(SecurityHeaders)</code></pre>
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">mux := http.NewServeMux()
@@ -2175,6 +2251,51 @@ def patch_note(id: int, patch: dict): ...
 
 @app.delete("/notes/{id}", status_code=204)     # remove (idempotent)
 def delete_note(id: int): ...</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">const app = express()
+
+// Express matches method + path. An unmatched method falls through to the 404
+// handler; add an `app.all` catch-all per route to answer 405 Method Not Allowed.
+app.get('/notes', listNotes)          // safe, cacheable read
+app.get('/notes/:id', getNote)        // GET also serves HEAD automatically
+app.post('/notes', createNote)        // create (server assigns id)
+app.put('/notes/:id', putNote)        // full replace (idempotent)
+app.patch('/notes/:id', patchNote)    // partial update
+app.delete('/notes/:id', deleteNote)  // remove (idempotent)
+
+function getNote(req, res) {
+  const { id } = req.params           // built-in path params
+  const note = db.find(id)
+  if (!note) return res.status(404).json({ error: 'not found' }) // 404
+  res.set('Content-Type', 'application/json')
+  res.json(note)                                                 // 200
+}</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import express, { Request, Response } from 'express'
+
+const app = express()
+
+// Express matches method + path. An unmatched method falls through to the 404
+// handler; add an `app.all` catch-all per route to answer 405 Method Not Allowed.
+app.get('/notes', listNotes)          // safe, cacheable read
+app.get('/notes/:id', getNote)        // GET also serves HEAD automatically
+app.post('/notes', createNote)        // create (server assigns id)
+app.put('/notes/:id', putNote)        // full replace (idempotent)
+app.patch('/notes/:id', patchNote)    // partial update
+app.delete('/notes/:id', deleteNote)  // remove (idempotent)
+
+function getNote(req: Request&lt;{ id: string }&gt;, res: Response): void {
+  const { id } = req.params           // built-in path params, always strings
+  const note = db.find(id)
+  if (!note) {
+    res.status(404).json({ error: 'not found' })  // 404
+    return
+  }
+  res.set('Content-Type', 'application/json')
+  res.json(note)                                  // 200
+}</code></pre>
           </div>
         </div>
       </section>
@@ -2281,7 +2402,7 @@ def delete_note(id: int): ...</code></pre>
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">var seen sync.Map // key -> []byte result. Use Redis with a TTL in production.
@@ -2315,6 +2436,43 @@ def create_payment(payload: dict, idempotency_key: str = Header(...)):
     result = charge(payload)             # the real, non-idempotent work
     seen[idempotency_key] = result       # remember it BEFORE responding
     return result</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">const seen = new Map() // key -&gt; stored result. Use Redis with a TTL in production.
+
+app.post('/payments', async (req, res) =&gt; {
+  const key = req.get('Idempotency-Key')
+  if (!key) {
+    return res.status(400).json({ error: 'missing Idempotency-Key' })
+  }
+  if (seen.has(key)) {                     // replay: return the stored result
+    return res.status(200).json(seen.get(key))
+  }
+  const result = await charge(req.body)    // the real, non-idempotent work
+  seen.set(key, result)                    // remember it BEFORE responding
+  res.status(201).json(result)
+})</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import { Request, Response } from 'express'
+
+interface Charge { id: string; amount: number }
+
+const seen = new Map&lt;string, Charge&gt;() // use Redis with a TTL in production
+
+app.post('/payments', async (req: Request, res: Response) =&gt; {
+  const key = req.get('Idempotency-Key')
+  if (!key) {
+    return res.status(400).json({ error: 'missing Idempotency-Key' })
+  }
+  const cached = seen.get(key)
+  if (cached) {                            // replay: return the stored result
+    return res.status(200).json(cached)
+  }
+  const result = await charge(req.body)    // the real, non-idempotent work
+  seen.set(key, result)                    // remember it BEFORE responding
+  res.status(201).json(result)
+})</code></pre>
           </div>
         </div>
         <p>Idempotency keys protect against <em>duplicate execution</em>. A different but related hazard, two clients
@@ -2493,7 +2651,7 @@ Cookie: session=abc123</code></pre>
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">// Set a secure session cookie after login (stateful)
@@ -2552,6 +2710,70 @@ def require_token(cred: HTTPAuthorizationCredentials = Depends(bearer)):
 @app.get("/me")
 def me(_=Depends(require_token)):
     return {"ok": True}</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">import cookieParser from 'cookie-parser'
+
+app.use(cookieParser())
+
+// Set a secure session cookie after login (stateful)
+app.post('/login', (req, res) =&gt; {
+  const sid = newSessionID()
+  sessions.set(sid, userId)          // server-side session store (use Redis)
+  res.cookie('session', sid, {
+    httpOnly: true,                  // JS can't read it
+    secure: true,                    // HTTPS only
+    sameSite: 'strict',              // CSRF defense
+    maxAge: 3600 * 1000,             // Express takes milliseconds
+    path: '/',
+  })
+  res.sendStatus(204)
+})
+
+// Bearer-token auth middleware (stateless)
+function requireToken(req, res, next) {
+  const auth = req.get('Authorization') ?? ''
+  if (!auth.startsWith('Bearer ') || !validJWT(auth.slice(7))) {
+    res.set('WWW-Authenticate', 'Bearer')
+    return res.status(401).json({ error: 'unauthorized' }) // 401
+  }
+  next()
+}
+
+app.get('/me', requireToken, (req, res) =&gt; res.json({ ok: true }))</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import cookieParser from 'cookie-parser'
+import { Request, Response, NextFunction } from 'express'
+
+app.use(cookieParser())
+
+// Set a secure session cookie after login (stateful)
+app.post('/login', (req: Request, res: Response) =&gt; {
+  const sid = newSessionID()
+  sessions.set(sid, userId)          // server-side session store (use Redis)
+  res.cookie('session', sid, {
+    httpOnly: true,                  // JS can't read it
+    secure: true,                    // HTTPS only
+    sameSite: 'strict',              // CSRF defense
+    maxAge: 3600 * 1000,             // Express takes milliseconds
+    path: '/',
+  })
+  res.sendStatus(204)
+})
+
+// Bearer-token auth middleware (stateless)
+function requireToken(req: Request, res: Response, next: NextFunction): void {
+  const auth = req.get('Authorization') ?? ''
+  if (!auth.startsWith('Bearer ') || !validJWT(auth.slice(7))) {
+    res.set('WWW-Authenticate', 'Bearer')
+    res.status(401).json({ error: 'unauthorized' })  // 401
+    return
+  }
+  next()
+}
+
+app.get('/me', requireToken, (req: Request, res: Response) =&gt; res.json({ ok: true }))</code></pre>
           </div>
         </div>
       </section>
@@ -2688,7 +2910,7 @@ def me(_=Depends(require_token)):
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">func cors(next http.Handler) http.Handler {
@@ -2719,6 +2941,32 @@ app.add_middleware(
     allow_credentials=True,
     max_age=86400,                           # cache the approval for 24h
 )</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">import cors from 'cors'
+
+// Handles the OPTIONS preflight and all the headers for you.
+app.use(cors({
+  origin: 'https://example.com',   // exact origin, not *, when credentials are on
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400,                   // cache the approval for 24h
+}))</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import cors, { CorsOptions } from 'cors'
+
+// Handles the OPTIONS preflight and all the headers for you.
+const options: CorsOptions = {
+  origin: 'https://example.com',   // exact origin, not *, when credentials are on
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400,                   // cache the approval for 24h
+}
+
+app.use(cors(options))</code></pre>
           </div>
         </div>
 
@@ -3027,7 +3275,7 @@ app.add_middleware(
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">func getUser(w http.ResponseWriter, r *http.Request) {
@@ -3060,6 +3308,38 @@ def get_user(id: int, authorization: str = Header(default="")):
     if not user.visible_to(authorization):
         raise HTTPException(403, "forbidden")           # 403: not allowed
     return user                                         # 200</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">app.get('/users/:id', (req, res) =&gt; {
+  if (!req.get('Authorization')) {
+    return res.status(401).json({ error: 'login required' })  // 401: who are you?
+  }
+  const user = db.find(req.params.id)
+  if (!user) {
+    return res.status(404).json({ error: 'no such user' })     // 404
+  }
+  if (!user.visibleTo(req)) {
+    return res.status(403).json({ error: 'forbidden' })         // 403: not allowed
+  }
+  res.json(user)                                                // 200
+})</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import { Request, Response } from 'express'
+
+app.get('/users/:id', (req: Request&lt;{ id: string }&gt;, res: Response) =&gt; {
+  if (!req.get('Authorization')) {
+    return res.status(401).json({ error: 'login required' })  // 401: who are you?
+  }
+  const user = db.find(req.params.id)
+  if (!user) {
+    return res.status(404).json({ error: 'no such user' })     // 404
+  }
+  if (!user.visibleTo(req)) {
+    return res.status(403).json({ error: 'forbidden' })         // 403: not allowed
+  }
+  res.json(user)                                                // 200
+})</code></pre>
           </div>
         </div>
       </section>
@@ -3253,7 +3533,7 @@ def get_user(id: int, authorization: str = Header(default="")):
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">// Permanent move that must keep the method/body -> 308
@@ -3280,6 +3560,32 @@ def old_route(id: int):
 def submit_form():
     rid = save()
     return RedirectResponse(f"/results/{rid}", status_code=303)  # forces GET</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">// Permanent move that must keep the method/body -&gt; 308
+app.all('/user/:id', (req, res) =&gt; {
+  res.redirect(308, `/person/${req.params.id}`)
+})
+
+// Post/Redirect/Get -&gt; 303 so a browser refresh won't re-POST the form
+app.post('/submit', (req, res) =&gt; {
+  const id = save(req.body)
+  res.redirect(303, `/results/${id}`)  // 303 forces the follow-up to be a GET
+})</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import { Request, Response } from 'express'
+
+// Permanent move that must keep the method/body -&gt; 308
+app.all('/user/:id', (req: Request&lt;{ id: string }&gt;, res: Response) =&gt; {
+  res.redirect(308, `/person/${req.params.id}`)
+})
+
+// Post/Redirect/Get -&gt; 303 so a browser refresh won't re-POST the form
+app.post('/submit', (req: Request, res: Response) =&gt; {
+  const id = save(req.body)
+  res.redirect(303, `/results/${id}`)  // 303 forces the follow-up to be a GET
+})</code></pre>
           </div>
         </div>
       </section>
@@ -3433,7 +3739,7 @@ def submit_form():
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">func getResource(w http.ResponseWriter, r *http.Request) {
@@ -3464,6 +3770,38 @@ def get_resource(request: Request):
 
     return Response(content=body, status_code=200,
                     headers={"ETag": etag, "Cache-Control": "max-age=10"})</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">import { createHash } from 'node:crypto'
+
+app.get('/resource', (req, res) =&gt; {
+  const body = loadResource()
+  const etag = `"${createHash('sha256').update(body).digest('hex').slice(0, 16)}"`
+
+  if (req.get('If-None-Match') === etag) {  // client already has this exact version
+    return res.status(304).end()            // 304, no body, payload saved
+  }
+  res.set('ETag', etag)
+  res.set('Cache-Control', 'max-age=10')
+  res.send(body)                            // 200 + body
+})</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import { createHash } from 'node:crypto'
+import { Request, Response } from 'express'
+
+app.get('/resource', (req: Request, res: Response) =&gt; {
+  const body: Buffer = loadResource()
+  const etag = `"${createHash('sha256').update(body).digest('hex').slice(0, 16)}"`
+
+  if (req.get('If-None-Match') === etag) {  // client already has this exact version
+    res.status(304).end()                   // 304, no body, payload saved
+    return
+  }
+  res.set('ETag', etag)
+  res.set('Cache-Control', 'max-age=10')
+  res.send(body)                            // 200 + body
+})</code></pre>
           </div>
         </div>
         <div class="box note"><span class="tag">In practice + the Vary trap</span>
@@ -3642,7 +3980,7 @@ def get_resource(request: Request):
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">func updateDoc(w http.ResponseWriter, r *http.Request) {
@@ -3677,6 +4015,42 @@ def update_doc(id: int, request: Request, if_match: str = Header(default="")):
     doc.etag = new_etag()                     # bump the version
     db.save(doc)
     return Response(status_code=200, headers={"ETag": doc.etag})</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">app.put('/doc/:id', (req, res) =&gt; {
+  const doc = db.get(req.params.id)
+  const want = req.get('If-Match')       // the ETag the client last saw
+  if (!want) {
+    return res.status(400).json({ error: 'If-Match required' })
+  }
+  if (want !== doc.etag) {               // someone changed it first -&gt; conflict
+    return res.status(412).json({ error: 'version conflict' })  // 412
+  }
+  doc.apply(req.body)
+  doc.etag = newETag()                   // bump the version
+  db.save(doc)
+  res.set('ETag', doc.etag)
+  res.sendStatus(200)
+})</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import { Request, Response } from 'express'
+
+app.put('/doc/:id', (req: Request&lt;{ id: string }&gt;, res: Response) =&gt; {
+  const doc = db.get(req.params.id)
+  const want = req.get('If-Match')       // the ETag the client last saw
+  if (!want) {
+    return res.status(400).json({ error: 'If-Match required' })
+  }
+  if (want !== doc.etag) {               // someone changed it first -&gt; conflict
+    return res.status(412).json({ error: 'version conflict' })  // 412
+  }
+  doc.apply(req.body)
+  doc.etag = newETag()                   // bump the version
+  db.save(doc)
+  res.set('ETag', doc.etag)
+  res.sendStatus(200)
+})</code></pre>
           </div>
         </div>
       </section>
@@ -3819,7 +4193,7 @@ def update_doc(id: int, request: Request, if_match: str = Header(default="")):
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">func handler(w http.ResponseWriter, r *http.Request) {
@@ -3848,6 +4222,34 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 def greeting(accept_language: str = Header(default="en")):
     lang = "es" if accept_language.startswith("es") else "en"
     return {"en": "Hello", "es": "Hola"}[lang]</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">import compression from 'compression'
+
+// gzip responses for capable clients, but only above a size threshold
+// (compressing tiny payloads costs more CPU than it saves bytes).
+// The middleware negotiates Accept-Encoding and sets Vary: Accept-Encoding for you.
+app.use(compression({ threshold: 1000 }))
+
+app.get('/greeting', (req, res) =&gt; {
+  const lang = (req.get('Accept-Language') ?? 'en').startsWith('es') ? 'es' : 'en'
+  res.json({ en: 'Hello', es: 'Hola' }[lang])
+})</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import compression from 'compression'
+import { Request, Response } from 'express'
+
+// gzip responses for capable clients, but only above a size threshold
+// (compressing tiny payloads costs more CPU than it saves bytes).
+// The middleware negotiates Accept-Encoding and sets Vary: Accept-Encoding for you.
+app.use(compression({ threshold: 1000 }))
+
+app.get('/greeting', (req: Request, res: Response) =&gt; {
+  const lang: 'en' | 'es' =
+    (req.get('Accept-Language') ?? 'en').startsWith('es') ? 'es' : 'en'
+  res.json({ en: 'Hello', es: 'Hola' }[lang])
+})</code></pre>
           </div>
         </div>
       </section>
@@ -3963,7 +4365,7 @@ Content-Length: 48977</code></pre>
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">// http.ServeContent handles Range, 206, 416 and If-Range for you,
@@ -3982,6 +4384,28 @@ from fastapi.responses import FileResponse
 @app.get("/big.zip")
 def download():
     return FileResponse("big.zip", media_type="application/zip")</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">// res.sendFile handles Range, 206, 416 and If-Range for you,
+// driven by the file's modtime and a generated ETag.
+app.get('/big.zip', (req, res) =&gt; {
+  res.sendFile('/srv/files/big.zip', {
+    acceptRanges: true,
+    headers: { 'Content-Type': 'application/zip' },
+  })
+})</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import { Request, Response } from 'express'
+
+// res.sendFile handles Range, 206, 416 and If-Range for you,
+// driven by the file's modtime and a generated ETag.
+app.get('/big.zip', (req: Request, res: Response) =&gt; {
+  res.sendFile('/srv/files/big.zip', {
+    acceptRanges: true,
+    headers: { 'Content-Type': 'application/zip' },
+  })
+})</code></pre>
           </div>
         </div>
       </section>
@@ -4086,7 +4510,7 @@ def download():
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">srv := &http.Server{
@@ -4106,6 +4530,30 @@ srv.ListenAndServe()
 import uvicorn
 uvicorn.run("main:app", host="0.0.0.0", port=8080,
             timeout_keep_alive=60, workers=4)</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">import http from 'node:http'
+
+const server = http.createServer(app)
+
+server.headersTimeout = 2_000       // mitigates Slowloris (slow-header attacks)
+server.requestTimeout = 5_000       // whole request must arrive within this
+server.keepAliveTimeout = 60_000    // how long to hold an idle keep-alive conn
+server.listen(8080)
+
+// server.closeIdleConnections() // drop idle keep-alives, e.g. during shutdown</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import http from 'node:http'
+
+const server: http.Server = http.createServer(app)
+
+server.headersTimeout = 2_000       // mitigates Slowloris (slow-header attacks)
+server.requestTimeout = 5_000       // whole request must arrive within this
+server.keepAliveTimeout = 60_000    // how long to hold an idle keep-alive conn
+server.listen(8080)
+
+// server.closeIdleConnections() // drop idle keep-alives, e.g. during shutdown</code></pre>
           </div>
         </div>
       </section>
@@ -4229,7 +4677,7 @@ Content-Type: image/png
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">// 1. Receive a multipart upload
@@ -4275,6 +4723,57 @@ async def stream():
             yield f"data: chunk {i}\n\n"
             await asyncio.sleep(1)
     return StreamingResponse(gen(), media_type="text/event-stream")</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">import multer from 'multer'
+import { setTimeout as sleep } from 'node:timers/promises'
+
+// 1. Receive a multipart upload
+const upload = multer({ limits: { fileSize: 32 * 1024 * 1024 } }) // 32 MB cap
+
+app.post('/upload', upload.single('file'), (req, res) =&gt; {
+  if (!req.file) {
+    return res.status(400).json({ error: 'no file' })
+  }
+  res.json({ received: req.file.originalname, size: req.file.size })
+})
+
+// 2. Stream a response in chunks (Server-Sent Events)
+app.get('/stream', async (req, res) =&gt; {
+  res.set('Content-Type', 'text/event-stream')
+  res.set('Connection', 'keep-alive')
+  for (let i = 0; i &lt; 5; i++) {
+    res.write(`data: chunk ${i}\n\n`) // each write is flushed to the client
+    await sleep(1000)
+  }
+  res.end()
+})</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import multer from 'multer'
+import { setTimeout as sleep } from 'node:timers/promises'
+import { Request, Response } from 'express'
+
+// 1. Receive a multipart upload
+const upload = multer({ limits: { fileSize: 32 * 1024 * 1024 } }) // 32 MB cap
+
+app.post('/upload', upload.single('file'), (req: Request, res: Response) =&gt; {
+  if (!req.file) {
+    return res.status(400).json({ error: 'no file' })
+  }
+  res.json({ received: req.file.originalname, size: req.file.size })
+})
+
+// 2. Stream a response in chunks (Server-Sent Events)
+app.get('/stream', async (req: Request, res: Response) =&gt; {
+  res.set('Content-Type', 'text/event-stream')
+  res.set('Connection', 'keep-alive')
+  for (let i = 0; i &lt; 5; i++) {
+    res.write(`data: chunk ${i}\n\n`) // each write is flushed to the client
+    await sleep(1000)
+  }
+  res.end()
+})</code></pre>
           </div>
         </div>
         <div class="box key"><span class="tag">Direction -&gt; tool</span>
@@ -4672,7 +5171,7 @@ Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=</code></pre>
           <div class="code-bar">
             <div class="dots"><i></i><i></i><i></i></div>
             <div class="code-tabs"><button class="on" data-lang="go"><span class="lang-dot lang-go"></span> Go</button><button
-                data-lang="py"><span class="lang-dot lang-py"></span> Python</button></div>
+                data-lang="py"><span class="lang-dot lang-py"></span> Python</button><button data-lang="js"><span class="lang-dot lang-js"></span> JavaScript</button><button data-lang="ts"><span class="lang-dot lang-ts"></span> TypeScript</button></div>
           </div>
           <div class="code-panel on" data-panel="go">
             <pre><code class="language-go">// Serve HTTPS directly with a certificate + private-key pair.
@@ -4689,6 +5188,32 @@ import uvicorn
 uvicorn.run("main:app", host="0.0.0.0", port=443,
             ssl_certfile="server.crt", ssl_keyfile="server.key")
 # Production note: usually terminate TLS at a proxy/LB and run plain HTTP behind it.</code></pre>
+          </div>
+          <div class="code-panel" data-panel="js">
+            <pre><code class="language-javascript">import https from 'node:https'
+import { readFileSync } from 'node:fs'
+
+// Serve HTTPS directly with a certificate + private-key pair.
+https.createServer({
+  cert: readFileSync('server.crt'),
+  key: readFileSync('server.key'),
+}, app).listen(443)
+
+// Production note: usually you terminate TLS at a proxy/LB and run plain HTTP behind it.</code></pre>
+          </div>
+          <div class="code-panel" data-panel="ts">
+            <pre><code class="language-typescript">import https from 'node:https'
+import { readFileSync } from 'node:fs'
+
+// Serve HTTPS directly with a certificate + private-key pair.
+const options: https.ServerOptions = {
+  cert: readFileSync('server.crt'),
+  key: readFileSync('server.key'),
+}
+
+https.createServer(options, app).listen(443)
+
+// Production note: usually you terminate TLS at a proxy/LB and run plain HTTP behind it.</code></pre>
           </div>
         </div>
       </section>
@@ -4865,7 +5390,7 @@ uvicorn.run("main:app", host="0.0.0.0", port=443,
       </section>
 
     
-      <footer class="bfp-footer">Backend from First Principles / Chapter 01 / HTTP. Code targets Go 1.22+ and Python 3.11+.</footer>
+      <footer class="bfp-footer">Backend from First Principles / Chapter 01 / HTTP. Code targets Go 1.22+, Python 3.11+ and Node 20+.</footer>
 </main>
 </div>
 <button class="toc-toggle" onclick="document.querySelector('.toc').classList.toggle('open')"> Contents</button>
