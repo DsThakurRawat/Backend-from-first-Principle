@@ -1,0 +1,446 @@
+---
+order: 2
+title: "Routing, the where of every request."
+navTitle: "Routing in Backend"
+summary: "HTTP methods describe the what of a request, your intent. Routing describes the where : which resource on the server your intent is aimed at. This manual covers routing end to end, static and dynamic routes, path and query parameters, nesting, versioning, and catch-alls, with worked routers in Go and Python."
+readingTime: "2-3 hours"
+keywords:
+  - "routing"
+  - "path"
+  - "parameters"
+  - "query"
+  - "strings"
+  - "mux"
+  - "dynamic"
+  - "routes"
+---
+01
+
+## What Routing Is
+
+Every request carries two things bundled together. The **HTTP method** answers _"what do I want to do?"_, fetch, add, update, or delete data. That is your _intent_, your action. The **route** answers _"where do I want to do it?"_, which resource, at which address on the server, you want to perform that action on.
+
+You have to tell the server _where_ to go. Send a GET request (intent: fetch) to the route `/users` (the address), and the server replies with an array of users. Routing is the machinery that takes the _what_ and the _where_, maps them to a particular handler, and lets that handler run the business logic and return the data.
+
+Routing, definition
+
+Routing is **mapping URL paths (plus the HTTP method) to server-side logic**: a handler that performs the business logic, database operations, and whatever else is needed, then returns a response. That is all there is to it.
+
+#### The words used in this manual
+
+- **Intent / action**: what the request wants to do, expressed by the HTTP method (fetch, add, update, delete).
+- **Resource**: the "thing" the request acts on, usually a noun in the path such as `books` or `users`. (Resources are studied properly under REST APIs; here we treat them simply as the route's target.)
+- **Route / route path / URL path**: the address part that says _where_ on the server you are going, e.g. `/api/books`.
+- **Handler**: the set of instructions the server runs when a request matches a route; it owns the logic for that endpoint.
+
+02
+
+## Method + Path -> Handler
+
+This is the heart of routing. The server takes the **method** and the **route** and treats the two together as a **unique key** that maps to one handler. It checks the method first, then the route, concatenates them, and forms a unique routing path.
+
+Consider two requests to the same address. GET `/api/books` fetches the books; POST `/api/books` creates one. The route is identical, but the method differs, so the keys are different and they route to different handlers. The methods differentiate between two otherwise identical routes, and the keys never clash.
+
+<Diagram>
+<svg viewBox="0 0 900 340" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="13"><g><rect x="10" y="40" width="230" height="46" rx="9" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)"></rect><text x="28" y="60" fill="var(--dg-ok)" font-weight="700">GET</text><text x="70" y="60" fill="var(--dg-ink)">/api/books</text><text x="28" y="78" fill="var(--dg-ink-3)" font-size="11">intent: fetch the books</text><rect x="10" y="150" width="230" height="46" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)"></rect><text x="28" y="170" fill="var(--dg-warn)" font-weight="700">POST</text><text x="78" y="170" fill="var(--dg-ink)">/api/books</text><text x="28" y="188" fill="var(--dg-ink-3)" font-size="11">intent: add a book</text><rect x="10" y="260" width="230" height="46" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)"></rect><text x="28" y="280" fill="var(--dg-accent)" font-weight="700">DELETE</text><text x="98" y="280" fill="var(--dg-ink)">/api/books/9</text><text x="28" y="298" fill="var(--dg-ink-3)" font-size="11">intent: remove book 9</text></g><rect x="350" y="90" width="180" height="170" rx="14" fill="var(--dg-inverse)"></rect><text x="440" y="120" fill="var(--dg-on-inverse-accent)" text-anchor="middle" font-weight="700" font-size="14">ROUTER</text><text x="440" y="142" fill="var(--dg-on-inverse-3)" text-anchor="middle" font-size="10.5">method + path</text><text x="440" y="156" fill="var(--dg-on-inverse-3)" text-anchor="middle" font-size="10.5">= unique key</text><g font-size="10.5" fill="var(--dg-surface)"><text x="370" y="186" fill="var(--dg-on-inverse)">GET  /books</text><text x="370" y="208" fill="var(--dg-on-inverse)">POST /books</text><text x="370" y="230" fill="var(--dg-on-inverse)">DEL  /books/:id</text></g><g stroke-width="2" fill="none"><path d="M240 63 C300 63 300 150 348 150" stroke="var(--dg-ok)" marker-end="url(#a)"></path><path d="M240 173 L348 173" stroke="var(--dg-warn)" marker-end="url(#a)"></path><path d="M240 283 C300 283 300 210 348 210" stroke="var(--dg-accent)" marker-end="url(#a)"></path></g><g><rect x="650" y="40" width="240" height="46" rx="9" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="668" y="60" fill="var(--dg-ink)" font-weight="600">listBooks()</text><text x="668" y="78" fill="var(--dg-ink-3)" font-size="11">-> returns all books</text><rect x="650" y="150" width="240" height="46" rx="9" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="668" y="170" fill="var(--dg-ink)" font-weight="600">createBook()</text><text x="668" y="188" fill="var(--dg-ink-3)" font-size="11">-> creates, returns books</text><rect x="650" y="260" width="240" height="46" rx="9" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="668" y="280" fill="var(--dg-ink)" font-weight="600">deleteBook(id)</text><text x="668" y="298" fill="var(--dg-ink-3)" font-size="11">-> removes the book</text></g><g stroke-width="2" fill="none"><path d="M530 150 C590 150 590 63 648 63" stroke="var(--dg-ok)" marker-end="url(#a)"></path><path d="M530 175 L648 173" stroke="var(--dg-warn)" marker-end="url(#a)"></path><path d="M530 210 C590 210 590 283 648 283" stroke="var(--dg-accent)" marker-end="url(#a)"></path></g><defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ink-3)"></path></marker></defs></svg>
+</Diagram>
+
+**One key, one handler.** The server checks method, then route, concatenates them into a unique key, and dispatches to the matching handler. Same path + different method = different destination.
+
+<Callout type="info" title="The method is the &quot;what&quot; (brief)">
+Routing only needs to know the method as the other half of the key. The common verbs and their intent: GET fetch / POST add/create / PUT / PATCH update / DELETE remove. The deep study of methods belongs to the HTTP topic; here they simply pair with a route to form the key.
+</Callout>
+
+03
+
+## Static Routes
+
+A **static route** is a fixed path with _no variable parameters_ inside it. `/api/books` is static: the string stays consistent, it is a constant. You always use that same string when you make the request, nothing in it changes, and it always returns the same _kind_ of response. That is exactly why it is called "static."
+
+Static route
+
+A constant path string with no dynamic segments, e.g. `/api/books`. The first two examples from the source, GET and POST on `/api/books`, are both static routes.
+
+Matching a static route is a literal string comparison. Most APIs begin here: one endpoint that lists a collection and one that creates an item, both on the same constant path.
+
+04
+
+## Dynamic Routes & Path Parameters
+
+A **dynamic route** has a variable parameter inside the path, so one pattern can serve many specific resources. GET `/api/users/123` fetches the details of _one_ user, the `123` is the user's ID, which the server extracts from the route to do its work (fetch that user from the database and return them).
+
+On the server side, the route definition for this looks like a method plus a pattern. Written out, the matching part is something like:
+
+```text title="route definitionpattern"
+r.get("/api/users/:id", handler)
+        //          +--- ":id" = a dynamic parameter slot
+```
+
+The method part matches GET; the path part matches `/api/users/` followed by _any string_. The colon convention, `:id`, says "this segment is dynamic; the client supplies a value here." You will find this `:name` convention across Node, Python, Go, Rust, and Java; it is an industry-wide practice.
+
+<Diagram>
+<svg viewBox="0 0 900 250" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="14"><rect x="300" y="20" width="300" height="48" rx="10" fill="var(--dg-inverse)"></rect><text x="318" y="50" fill="var(--dg-on-inverse)">/api/users/</text><text x="445" y="50" fill="var(--dg-on-inverse-accent)" font-weight="700">:id</text><text x="450" y="88" fill="var(--dg-ink-3)" text-anchor="middle" font-size="11">pattern (the route definition)</text><g><rect x="40" y="150" width="180" height="42" rx="9" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)"></rect><text x="60" y="176" fill="var(--dg-ink)">/api/users/123</text><rect x="360" y="150" width="180" height="42" rx="9" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)"></rect><text x="380" y="176" fill="var(--dg-ink)">/api/users/abc</text><rect x="680" y="150" width="180" height="42" rx="9" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)"></rect><text x="700" y="176" fill="var(--dg-ink)">/api/users/9f2</text></g><g stroke="var(--dg-line-2)" stroke-width="2" fill="none" stroke-dasharray="4 4"><path d="M450 68 L130 148" marker-end="url(#b)"></path><path d="M450 68 L450 148" marker-end="url(#b)"></path><path d="M450 68 L770 148" marker-end="url(#b)"></path></g><text x="450" y="225" text-anchor="middle" fill="var(--dg-ink-3)" font-size="11">each binds -><tspan fill="var(--dg-accent)" font-weight="700">id</tspan> = "123" | "abc" | "9f2"</text><defs><marker id="b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-line-2)"></path></marker></defs></svg>
+</Diagram>
+
+**One pattern, many matches.** The dynamic segment **:id** matches any string in that position and binds it to a named value the handler reads.
+
+Path parameter (route parameter)
+
+A dynamic value that lives **inside the path, right after a forward slash**. Because it is part of the route, it is called a _path parameter_ or _route parameter_, and it carries **semantic meaning**: it identifies _which_ resource the request is about.
+
+- Everything in a path arrives as a **string**. `123` looks like a number, but in route paths numbers and special characters are all treated as strings; the handler casts it if needed.
+- Read aloud, `GET /api/users/123` says "fetch the data of the user whose ID is 123." That human-readable construct is the whole idea behind REST-style routing, it gives routes a clear semantic meaning.
+
+05
+
+## Query Parameters
+
+A **query parameter** is a key/value pair attached to the end of the route after a **question mark**. Multiple pairs are joined by an ampersand. For example, `/api/search?query=some+value`, the route is `/api/search`, and after the `?` comes the key `query` with the value `some+value`.
+
+<Diagram>
+<svg viewBox="0 0 900 180" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="16"><text x="20" y="55" fill="var(--dg-accent)" font-weight="600">/api/search</text><text x="160" y="55" fill="var(--dg-accent-2)" font-weight="700">?</text><text x="176" y="55" fill="var(--dg-info)">query</text><text x="240" y="55" fill="var(--dg-ink-3)">=</text><text x="252" y="55" fill="var(--dg-ok)">some+value</text><text x="380" y="55" fill="var(--dg-accent-2)" font-weight="700">&#x26;</text><text x="396" y="55" fill="var(--dg-info)">page</text><text x="448" y="55" fill="var(--dg-ink-3)">=</text><text x="460" y="55" fill="var(--dg-ok)">2</text><text x="480" y="55" fill="var(--dg-accent-2)" font-weight="700">&#x26;</text><text x="496" y="55" fill="var(--dg-info)">limit</text><text x="556" y="55" fill="var(--dg-ink-3)">=</text><text x="568" y="55" fill="var(--dg-ok)">20</text><g font-size="11.5"><text x="20" y="95" fill="var(--dg-accent)">the route</text><text x="150" y="118" fill="var(--dg-accent-2)">? begins the query</text><text x="176" y="140" fill="var(--dg-info)">keys</text><text x="252" y="160" fill="var(--dg-ok)">values</text><text x="380" y="95" fill="var(--dg-accent-2)">&#x26; joins pairs</text></g><g stroke="var(--dg-line-2)" stroke-width="1" stroke-dasharray="3 3" fill="none"><path d="M190 60 L190 110"></path><path d="M200 60 L200 132"></path><path d="M290 60 L290 152"></path></g></svg>
+</Diagram>
+
+**Structure.** First pair after **?**, the rest after **&**, each a **key=value**. A space in a value is written as **+**.
+
+#### Why query parameters exist
+
+POST and PUT requests have a **body**: a container for sending user-defined data to the server. But GET requests, by REST convention, have no body. So how does a GET send extra values? Query parameters are the answer: they let a GET ship a set of key/value pairs carrying **metadata about the request**: not the identity of the resource, but instructions for shaping the response.
+
+Query parameter
+
+An optional `key=value` pair in the query string, used to **filter, sort, paginate, or search**. Typically used with GET requests because they have no body. Optional, repeatable, and order-independent.
+
+#### The main example: pagination
+
+Imagine an endpoint that returns a list of books in paged format. The first call, `/api/books`, takes the server defaults and returns a chunk of data plus some _metadata_ describing the whole set:
+
+```json title="JSON / responseGET /api/books"
+{
+  "data": [ /* ...the first 20 books (the default page)... */ ],
+  "total":        100,   // how many books exist in total
+  "currentPage":  1,     // which page this is (default = 1)
+  "limit":        20,    // page size (default limit)
+  "totalPages":   5      // 100 / 20 = 5 pages
+}
+```
+
+The client uses this response metadata to make the next request. The default needed no parameter; to get page two the client sends `/api/books?page=2`. The same mechanism carries filters (e.g. filter by a user-defined value) and sort order (ascending or descending), all as key/value pairs in the query.
+
+06
+
+## Path vs Query Parameters
+
+Both put data in the URL, and it is easy to confuse them, so it is worth being precise. They serve different purposes.
+
+<Diagram>
+<svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="15"><text x="20" y="60" fill="var(--dg-accent)" font-weight="600">/api/users/123</text><text x="218" y="60" fill="var(--dg-accent-2)" font-weight="600">?sort=name&#x26;page=2</text><rect x="14" y="80" width="190" height="3" fill="var(--dg-accent)"></rect><rect x="214" y="80" width="270" height="3" fill="var(--dg-accent-2)"></rect><g font-size="13"><text x="20" y="120" fill="var(--dg-accent)" font-weight="700">PATH PARAMETER</text><text x="20" y="146" fill="var(--dg-ink-2)">Identifies WHICH resource.</text><text x="20" y="168" fill="var(--dg-ink-2)">Part of the route. Semantic.</text><text x="20" y="190" fill="var(--dg-ink-2)">e.g. user whose ID is 123.</text><text x="360" y="120" fill="var(--dg-accent-2)" font-weight="700">QUERY PARAMETER</text><text x="360" y="146" fill="var(--dg-ink-2)">Shapes HOW it's returned.</text><text x="360" y="168" fill="var(--dg-ink-2)">After the route. Metadata.</text><text x="360" y="190" fill="var(--dg-ink-2)">filter / sort / paginate / search.</text></g></svg>
+</Diagram>
+
+**Rule of thumb.** If it decides **which thing** you get -> path parameter. If it only changes **the shape or subset** of the response -> query parameter.
+
+Path parameters serve a particular purpose: a semantic expression of _which_ resource, "the user whose ID is 123." You _could_ technically push a search value into the path (`/api/search/some+value`), but it is hard to maintain and defeats the whole purpose of giving routes a clear semantic meaning. Metadata like a search term belongs in the query string instead: `/api/search?query=some+value`.
+
+07
+
+## Nested Routes
+
+Nesting is not really a separate _type_ of route, it is a practice you will see everywhere. In REST-style APIs, you often nest different resources to express a semantic relationship. Each deeper level narrows the meaning and maps to its own handler, returning a different granularity of data.
+
+<Diagram>
+<svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="14"><g><rect x="40" y="20" width="300" height="40" rx="8" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="58" y="46" fill="var(--dg-ink)">/api/users</text><text x="360" y="46" fill="var(--dg-ink-3)" font-size="12">-> list all users</text><rect x="90" y="86" width="300" height="40" rx="8" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="108" y="112" fill="var(--dg-ink)">/api/users/<tspan fill="var(--dg-accent)" font-weight="700">123</tspan></text><text x="410" y="112" fill="var(--dg-ink-3)" font-size="12">-> one user</text><rect x="140" y="152" width="320" height="40" rx="8" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="158" y="178" fill="var(--dg-ink)">/api/users/<tspan fill="var(--dg-accent)" font-weight="700">123</tspan>/posts</text><text x="480" y="178" fill="var(--dg-ink-3)" font-size="12">-> that user's posts</text><rect x="190" y="218" width="380" height="40" rx="8" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)"></rect><text x="208" y="244" fill="var(--dg-ink)">/api/users/<tspan fill="var(--dg-accent)" font-weight="700">123</tspan>/posts/<tspan fill="var(--dg-accent)" font-weight="700">456</tspan></text><text x="590" y="244" fill="var(--dg-ink-3)" font-size="12">-> one post</text></g><g stroke="var(--dg-line-2)" stroke-width="2" fill="none"><path d="M70 60 L70 86 L88 86" marker-end="url(#c)"></path><path d="M120 126 L120 152 L138 152" marker-end="url(#c)"></path><path d="M170 192 L170 218 L188 218" marker-end="url(#c)"></path></g><defs><marker id="c" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-line-2)"></path></marker></defs></svg>
+</Diagram>
+
+**Each level is its own endpoint.** Stop at any rung and you get a different response: all users, one user, that user's posts, or one specific post.
+
+Walking the deepest example, `/api/users/123/posts/456`:
+
+- `/api/users`, a **static** part; on its own it returns the list of all users.
+- `123`, a **path parameter** for the user ID; `/api/users/123` returns that one user.
+- `posts`, a **static** part naming a sub-collection; `/api/users/123/posts` returns all posts of that user.
+- `456`, a **path parameter** for a specific post; the full route fetches "the post with ID 456 belonging to the user with ID 123."
+
+That is why it is called a nested route, you nest different types of information at different levels to express different semantic meanings, and each produces a different response. You will see this used pretty much everywhere once an API has even medium complexity.
+
+08
+
+## The Routing Lifecycle
+
+Putting the pieces together, here is the path a single request travels, the routing step in context.
+
+<Diagram>
+<svg viewBox="0 0 900 260" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="12"><defs><marker id="d" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker></defs><g><rect x="20" y="40" width="150" height="64" rx="11" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)"></rect><text x="95" y="68" text-anchor="middle" fill="var(--dg-ok)" font-weight="700">1 / ARRIVE</text><text x="95" y="86" text-anchor="middle" fill="var(--dg-ink-2)">GET /api/users/123</text><rect x="200" y="40" width="150" height="64" rx="11" fill="var(--dg-info-tint)" stroke="var(--dg-info)"></rect><text x="275" y="68" text-anchor="middle" fill="var(--dg-info)" font-weight="700">2 / READ</text><text x="275" y="86" text-anchor="middle" fill="var(--dg-ink-2)">split route / query</text><rect x="380" y="40" width="150" height="64" rx="11" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)"></rect><text x="455" y="68" text-anchor="middle" fill="var(--dg-accent)" font-weight="700">3 / MATCH</text><text x="455" y="86" text-anchor="middle" fill="var(--dg-ink-2)">method+route -> route</text><rect x="560" y="40" width="150" height="64" rx="11" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)"></rect><text x="635" y="68" text-anchor="middle" fill="var(--dg-warn)" font-weight="700">4 / EXTRACT</text><text x="635" y="86" text-anchor="middle" fill="var(--dg-ink-2)">id = 123</text><rect x="380" y="160" width="150" height="64" rx="11" fill="var(--dg-inverse)" stroke="var(--dg-inverse)"></rect><text x="455" y="188" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-weight="700">5 / HANDLER</text><text x="455" y="206" text-anchor="middle" fill="var(--dg-on-inverse-3)">business logic / DB</text><rect x="200" y="160" width="150" height="64" rx="11" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)"></rect><text x="275" y="188" text-anchor="middle" fill="var(--dg-ok)" font-weight="700">6 / RESPOND</text><text x="275" y="206" text-anchor="middle" fill="var(--dg-ink-2)">return the data</text></g><g stroke="var(--dg-accent)" stroke-width="2" fill="none"><path d="M170 72 L198 72" marker-end="url(#d)"></path><path d="M350 72 L378 72" marker-end="url(#d)"></path><path d="M530 72 L558 72" marker-end="url(#d)"></path><path d="M635 104 C635 150 555 150 533 168" marker-end="url(#d)"></path><path d="M380 192 L352 192" marker-end="url(#d)"></path></g></svg>
+</Diagram>
+
+**Six beats.** Arrive -> read the route -> **match** (the routing step) -> extract parameters -> run the handler -> return the response.
+
+09
+
+## Versioning & Deprecation
+
+**Route versioning** is a very common practice for managing change in API endpoints. You put a version keyword in the route, `/api/v1/products` and `/api/v2/products`. It looks like an ordinary route with a `v1` or `v2` segment added.
+
+Why bother? Suppose v1 returns each product as `{ id, name, price }`. Later, new requirements arrive, say you now serve a mobile app and must change the response shape, renaming `name` to `title`. If you mutate the live route, you break every existing client. Versioning lets both shapes live at once:
+
+| /api/v1/products      | /api/v2/products       |
+| --------------------- | ---------------------- |
+| `{ id, name, price }` | `{ id, title, price }` |
+
+This does two things. It expresses intent clearly, v1 of the response and v2 of the response side by side. And it means you did not have to change the whole route (you didn't need a `/api/new-products`); you just bumped the version.
+
+<Diagram>
+<svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="12"><line x1="40" y1="180" x2="860" y2="180" stroke="var(--dg-line-2)" stroke-width="2"></line><text x="40" y="205" fill="var(--dg-ink-3)">time -></text><rect x="40" y="60" width="560" height="34" rx="8" fill="var(--dg-info-tint)" stroke="var(--dg-info)"></rect><text x="60" y="82" fill="var(--dg-info)" font-weight="700">/api/v1/products, live</text><rect x="360" y="110" width="500" height="34" rx="8" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)"></rect><text x="380" y="132" fill="var(--dg-ok)" font-weight="700">/api/v2/products, live</text><rect x="360" y="50" width="240" height="100" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-dasharray="5 4"></rect><text x="480" y="42" text-anchor="middle" fill="var(--dg-accent)" font-weight="700">MIGRATION WINDOW</text><circle cx="360" cy="180" r="5" fill="var(--dg-ok)"></circle><text x="360" y="170" text-anchor="middle" fill="var(--dg-ok)">v2 ships</text><circle cx="600" cy="180" r="5" fill="var(--dg-accent)"></circle><text x="600" y="170" text-anchor="middle" fill="var(--dg-accent)">v1 deprecated -> removed</text></svg>
+</Diagram>
+
+**The safe workflow.** v2 ships beside v1; clients get a window to migrate; then v1 is deprecated and removed. Eventually v2 may be promoted to the default.
+
+Deprecation
+
+Announcing that an endpoint (e.g. v1) is going away once v2 is released. Engineers get a defined **migration window** to move their requests over to v2; only after that does the team remove v1. Versioning plus deprecation gives a stable workflow for shipping **breaking changes without breaking clients in the moment.**
+
+10
+
+## Catch-All Routes
+
+A **catch-all route** handles requests for routes the server does not actually serve. Suppose a request comes in for `/api/v3/products` but there is no handler for it. The server places a catch-all _last_, after all the specific routes and methods, typically written with a wildcard, `/*`. Any request that falls through every earlier match lands there.
+
+<Diagram>
+<svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="13"><text x="40" y="34" fill="var(--dg-ink-2)">incoming: <tspan fill="var(--dg-ink)" font-weight="700">GET /api/v3/products</tspan>  (no handler exists)</text><g><rect x="40" y="50" width="380" height="34" rx="7" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="58" y="72" fill="var(--dg-ink-2)">match GET /api/v1/products ?</text><text x="390" y="72" fill="var(--dg-accent)" font-weight="700">No</text><rect x="40" y="92" width="380" height="34" rx="7" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="58" y="114" fill="var(--dg-ink-2)">match GET /api/v2/products ?</text><text x="390" y="114" fill="var(--dg-accent)" font-weight="700">No</text><rect x="40" y="134" width="380" height="34" rx="7" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="58" y="156" fill="var(--dg-ink-2)">match GET /api/users/:id ?</text><text x="390" y="156" fill="var(--dg-accent)" font-weight="700">No</text><rect x="40" y="180" width="380" height="40" rx="7" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)"></rect><text x="58" y="205" fill="var(--dg-accent)" font-weight="700">match  /&#42;  (catch-all)</text><text x="388" y="205" fill="var(--dg-ok)" font-weight="700">Yes</text></g><path d="M450 67 L450 198 L468 198" stroke="var(--dg-accent)" stroke-width="2" fill="none" stroke-dasharray="4 4" marker-end="url(#e)"></path><rect x="500" y="150" width="340" height="70" rx="11" fill="var(--dg-inverse)"></rect><text x="670" y="180" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-weight="700">friendly 404</text><text x="670" y="202" text-anchor="middle" fill="var(--dg-on-inverse-3)" font-size="11">"this route does not exist"</text><defs><marker id="e" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker></defs></svg>
+</Diagram>
+
+**Fall-through.** Because it sits last, the catch-all only fires when nothing else matched, turning a confusing default into a clear "not found".
+
+Without catch-all handling, the default behaviour is often a null response, which is confusing. With it, the handler returns a user-friendly message, "this route does not exist" / "route not found", so the client clearly understands the server does not cater to that endpoint.
+
+Wildcard & ordering
+
+The `*` wildcard matches anything, which is exactly why the catch-all must be registered **last**. Placed early, it would intercept every request before the real routes get a turn. The reliable rule: specific routes first, the catch-all at the very end.
+
+11
+
+## A Router in Go
+
+A router is, at bottom, a small object-oriented dispatch problem: a table from "method + route" to a handler. Go expresses the four OOP pillars through interfaces (abstraction + polymorphism), unexported fields (encapsulation), and struct embedding (composition, Go's form of inheritance). The comments tagged OOP point out each one.
+
+```go title="Go 1.22+router.go"
+package main
+
+import ("fmt"; "strings")
+
+// ABSTRACTION: Handler is an interface, it names a capability
+// ("be able to Handle a request") without saying how. Any type
+// with a Handle method IS-A Handler. The router depends only on
+// this contract, never on a concrete type.
+type Handler interface {
+    Handle(req Request) Response
+}
+
+type Request struct {
+    Method string
+    Path   string
+    Params map[string]string // extracted path params (:id)
+    Query  map[string]string // query params (?page=2)
+}
+type Response struct { Status int; Body string }
+
+// ENCAPSULATION: "routes" is lowercase => unexported => private to
+// the package. Outsiders cannot touch the table directly; they go
+// through the methods we expose (Register / Dispatch).
+type Router struct {
+    routes map[string]Handler // key = "METHOD /route"
+}
+
+func NewRouter() *Router {
+    return &Router{routes: make(map[string]Handler)}
+}
+
+// Register binds method + route -> handler (the dispatch table).
+func (r *Router) Register(method, pattern string, h Handler) {
+    r.routes[method+" "+pattern] = h // method + path = the unique key
+}
+
+// POLYMORPHISM: Dispatch calls h.Handle(req) without knowing which
+// concrete type h is. Same call, different behaviour per handler.
+func (r *Router) Dispatch(req Request) Response {
+    for key, h := range r.routes {
+        method, pattern, _ := strings.Cut(key, " ")
+        if method == req.Method && match(pattern, req.Path, &req) {
+            return h.Handle(req) // polymorphic dispatch
+        }
+    }
+    return Response{404, "route not found"} // catch-all fallback
+}
+
+// match compares "/users/:id" against "/users/123", filling Params.
+func match(pattern, path string, req *Request) bool {
+    p, q := strings.Split(pattern, "/"), strings.Split(path, "/")
+    if len(p) != len(q) { return false }
+    for i := range p {
+        if strings.HasPrefix(p[i], ":") { // dynamic segment
+            req.Params[p[i][1:]] = q[i] // bind :id => "123"
+        } else if p[i] != q[i] { // static segment must match exactly
+            return false
+        }
+    }
+    return true
+}
+
+// "INHERITANCE" via COMPOSITION: BaseHandler holds shared logic;
+// concrete handlers EMBED it and reuse its methods.
+type BaseHandler struct{ Name string }
+
+func (b BaseHandler) log(req Request) {
+    fmt.Printf("[%s] %s %s\n", b.Name, req.Method, req.Path)
+}
+
+// GetUser embeds BaseHandler (composition) and satisfies Handler.
+type GetUser struct{ BaseHandler }
+func (h GetUser) Handle(req Request) Response {
+    h.log(req) // reused (inherited) behaviour
+    return Response{200, "user id = " + req.Params["id"]}
+}
+
+type ListBooks struct{ BaseHandler }
+func (h ListBooks) Handle(req Request) Response {
+    h.log(req)
+    page := req.Query["page"] // query param drives pagination
+    if page == "" { page = "1" }
+    return Response{200, "books page " + page}
+}
+
+func main() {
+    r := NewRouter()
+    r.Register("GET", "/api/users/:id", GetUser{BaseHandler{"users"}})
+    r.Register("GET", "/api/books",     ListBooks{BaseHandler{"books"}})
+
+    req := Request{Method: "GET", Path: "/api/users/123",
+        Params: map[string]string{}, Query: map[string]string{}}
+    fmt.Println(r.Dispatch(req).Body) // => user id = 123
+}
+```
+
+12
+
+## A Router in Python
+
+The same architecture in classic class syntax: an abstract base class for the contract (abstraction), real subclassing (inheritance), overridden methods (polymorphism), and a name-mangled private attribute (encapsulation).
+
+```python title="Python 3.11+router.py"
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from urllib.parse import urlsplit, parse_qs
+
+# ABSTRACTION: Handler is an Abstract Base Class. @abstractmethod
+# forces every subclass to define handle(). You cannot create a
+# Handler directly, it is a pure contract.
+class Handler(ABC):
+    @abstractmethod
+    def handle(self, req: "Request") -> "Response": ...
+
+@dataclass
+class Request:
+    method: str
+    path: str
+    params: dict = field(default_factory=dict)  # path params (:id)
+    query: dict = field(default_factory=dict)   # query params (?page=2)
+
+@dataclass
+class Response:
+    status: int
+    body: str
+
+# INHERITANCE: BaseHandler is a concrete parent holding shared
+# behaviour (logging). Subclasses inherit and reuse _log().
+class BaseHandler(Handler):
+    def __init__(self, name): self._name = name   # protected by convention
+    def _log(self, req): print(f"[{self._name}] {req.method} {req.path}")
+
+# POLYMORPHISM: each subclass OVERRIDES handle() differently, yet
+# the router calls them all identically, handler.handle(req).
+class GetUser(BaseHandler):           # IS-A BaseHandler IS-A Handler
+    def handle(self, req):
+        self._log(req)              # inherited from parent
+        return Response(200, f"user id = {req.params['id']}")
+
+class ListBooks(BaseHandler):
+    def handle(self, req):
+        self._log(req)
+        page = req.query.get("page", ["1"])[0]   # query param
+        return Response(200, f"books page {page}")
+
+# ENCAPSULATION: self.__routes is name-mangled to _Router__routes,
+# so it is effectively private. The public surface is register()
+# and dispatch(); the table stays hidden.
+class Router:
+    def __init__(self):
+        self.__routes: dict[tuple[str, str], Handler] = {}
+
+    def register(self, method, pattern, handler):
+        self.__routes[(method, pattern)] = handler  # method + path key
+
+    def dispatch(self, method, url):
+        parts = urlsplit(url)
+        query = parse_qs(parts.query)               # ?a=1&b=2 -> dict
+        for (m, pattern), handler in self.__routes.items():
+            params = self.__match(pattern, parts.path)
+            if m == method and params is not None:
+                return handler.handle(
+                    Request(method, parts.path, params, query))  # polymorphic
+        return Response(404, "route not found")       # catch-all
+
+    @staticmethod
+    def __match(pattern, path):
+        p = pattern.strip("/").split("/")
+        q = path.strip("/").split("/")
+        if len(p) != len(q): return None
+        params = {}
+        for seg, val in zip(p, q):
+            if seg.startswith(":"):       # dynamic segment
+                params[seg[1:]] = val    # bind :id -> "123"
+            elif seg != val:            # static must match exactly
+                return None
+        return params
+
+if __name__ == "__main__":
+    r = Router()
+    r.register("GET", "/api/users/:id", GetUser("users"))
+    r.register("GET", "/api/books",     ListBooks("books"))
+    print(r.dispatch("GET", "/api/users/123").body)   # user id = 123
+    print(r.dispatch("GET", "/api/books?page=2").body) # books page 2
+```
+
+<Callout type="info" title="Same architecture, two languages">
+Go reaches it through interfaces + embedding; Python through ABCs + class inheritance. Both are a private dispatch table keyed on **method + route**, an abstract **handler** contract, polymorphic dispatch, and a catch-all fallback, the whole routing model from this manual, in code.
+</Callout>
+
+13
+
+## Routing Glossary
+
+Every routing term used above, in one place.
+
+| Term                   | Meaning                                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------------------------- |
+| **Routing**            | Mapping a URL path (+ HTTP method) to a server-side handler / logic.                           |
+| **Intent / action**    | What the request wants to do, fetch, add, update, delete (the HTTP method).                    |
+| **Route / route path** | The address part saying _where_ on the server, e.g. `/api/books`.                              |
+| **Handler**            | The instructions that run when a route matches; runs the business logic.                       |
+| **Resource**           | The "thing" a route targets, a noun like `users` or `books`.                                   |
+| **Unique key**         | Method + route concatenated; what the server looks a handler up by.                            |
+| **Static route**       | Fixed, constant path with no variable parameters.                                              |
+| **Dynamic route**      | Route with a variable parameter in the path.                                                   |
+| **Path parameter**     | A dynamic value inside the path (`:id`); identifies _which_ resource. Also "route parameter".  |
+| **Query parameter**    | A `key=value` pair after `?`; metadata for filter/sort/paginate/search.                        |
+| **Pagination**         | Returning a list in pages, driven by query params like `page` and `limit`.                     |
+| **Nested route**       | Hierarchy of segments expressing ownership, `/users/123/posts/456`.                            |
+| **Semantic meaning**   | A route written so it reads like a clear, human-readable statement (the goal of REST routing). |
+| **Versioning**         | Putting `/v1/`, `/v2/` in the route to evolve an API safely.                                   |
+| **Deprecation**        | Marking an old version as going away; clients get a migration window.                          |
+| **Catch-all route**    | Last-resort `/*` route returning a friendly "route not found".                                 |
+| **Wildcard**           | A token (`*`) that matches anything; lives in the catch-all.                                   |
+
+<Callout type="info" title="The whole model in one breath">
+A request bundles a **method** (the what) and a **route** (the where). The server joins them into a unique key, matches it against its table, static routes first, dynamic next, catch-all last, extracts any **path params** from the route and **query params** from the query string, then calls the matched **handler**. Version the route to evolve, deprecate to retire, and catch-all to fail gracefully.
+</Callout>
+
+Backend from First Principles / Chapter 02 / Routing. Code targets Go 1.22+ and Python 3.11+.

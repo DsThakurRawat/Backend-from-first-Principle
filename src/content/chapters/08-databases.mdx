@@ -1,0 +1,750 @@
+---
+order: 8
+title: "Databases"
+navTitle: "Databases"
+summary: "Interacting with a database is the single most frequent thing a backend engineer does. This chapter builds the whole picture from the ground up, why databases exist at all, why they live on disk, how to model real relationships, how to query them safely and fast, and the two performance levers (indexes and triggers) that separate a toy from production. Everything is grounded in one running example: a project-management platform."
+readingTime: "2-3 hours"
+keywords:
+  - "database"
+  - "postgres"
+  - "sql"
+  - "orm"
+  - "queries"
+  - "transactions"
+  - "connection"
+  - "pooling"
+  - "indexes"
+---
+## Why Databases Exist
+
+At its core a database is simply a way to **persist information across sessions**. Persistence means storing data so it survives even after the program that created it has stopped. Think of a to-do app: you add items, check some off, close the app, and when you reopen it, everything is exactly as you left it. Without persistence you'd start from an empty list every single time and lose all your progress. That continuity, across time and across machines, is the whole point.
+
+### "Database" is a surprisingly broad word
+
+In the simplest sense, _any structured storage_ is a database. Your phone's contact list is a database. The browser's `localStorage`, `sessionStorage`, and cookies, all key-value stores you can inspect under DevTools -> Application, are databases. Even a plain text file you jot notes into is a very basic database. The common thread: a persistent system that lets you **create, read, update, and delete** data, CRUD.
+
+### What "database" means in a backend context
+
+That generic definition isn't what engineers usually mean. In the context of servers and backend systems, "database" almost always means a **disk-based database**: data stored on a hard disk (HDD) or solid-state drive (SSD). _Why disk?_ That's the next section, and it's the most important foundational idea here.
+
+<Callout type="info" title="Mental model">
+A database is a persistence layer offering CRUD. In backend work specifically, it's a **disk-based** persistence layer, chosen deliberately for capacity over raw speed. Everything else in this chapter follows from that one trade-off.
+</Callout>
+
+## Disk vs RAM
+
+Your CPU can reach two kinds of memory. **RAM (primary memory)** is extremely fast but expensive and limited in supply, most machines have 8, 16, 32, maybe 64-128 GB. **Disk (secondary memory)**: HDD or SSD, is much cheaper and far more plentiful, commonly 512 GB to several TB, but it's slower to read from and write to.
+
+<Diagram caption="The core trade-off">
+<svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="11"><rect x="30" y="24" width="300" height="160" rx="11" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="180" y="52" text-anchor="middle" fill="var(--dg-info)" font-size="14" font-weight="600">RAM / primary</text><text x="180" y="80" text-anchor="middle" fill="var(--dg-ink)" font-size="11">very fast</text><text x="180" y="102" text-anchor="middle" fill="var(--dg-ink)" font-size="11">expensive / scarce</text><text x="180" y="124" text-anchor="middle" fill="var(--dg-ink)" font-size="11">volatile (lost on power-off)</text><text x="180" y="150" text-anchor="middle" fill="var(--dg-info)" font-size="10.5" font-weight="600">used for CACHING (Redis)</text><text x="180" y="170" text-anchor="middle" fill="var(--dg-ink-2)" font-size="9.5">~8-128 GB</text><rect x="390" y="24" width="300" height="160" rx="11" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="540" y="52" text-anchor="middle" fill="var(--dg-warn)" font-size="14" font-weight="600">DISK / secondary</text><text x="540" y="80" text-anchor="middle" fill="var(--dg-ink)" font-size="11">slower</text><text x="540" y="102" text-anchor="middle" fill="var(--dg-ink)" font-size="11">cheap / abundant</text><text x="540" y="124" text-anchor="middle" fill="var(--dg-ink)" font-size="11">persistent (survives power-off)</text><text x="540" y="150" text-anchor="middle" fill="var(--dg-warn)" font-size="10.5" font-weight="600">used for DATABASES (Postgres)</text><text x="540" y="170" text-anchor="middle" fill="var(--dg-ink-2)" font-size="9.5">~512 GB, multiple TB</text></svg>
+</Diagram>
+
+So the pattern is: **caching = RAM** (speed-critical, small), **databases = disk** (capacity-critical, large). Postgres, MySQL, MongoDB, all store their data on disk. _How_ they lay bytes out on disk is a deep, fascinating area, but as an application-level backend engineer the essential takeaway is just this trade-off. (And it's exactly why indexes, in section 11, matter so much: they're how we claw back speed from slow disk lookups.)
+
+## DBMS & Why Not Just Text Files
+
+Storing data on disk isn't enough, we need efficient ways to retrieve, change, and delete it, across hundreds of gigabytes. That's the job of a **DBMS (Database Management System)**: software whose sole purpose is to store data and provide efficient CRUD operations on it. On a high level a DBMS has two jobs, **store the data** and **serve operations** on it, plus a set of responsibilities:
+
+| Responsibility        | What it means                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| **Data organization** | Lay data out so fetch/update/insert are efficient.                                               |
+| **Access**            | Provide methods for CRUD, create, read, update, delete.                                          |
+| **Integrity**         | Keep data accurate and valid, e.g. a `payment` field accepts only numbers, never a stray string. |
+| **Security**          | Protect data from unauthorized access via users and roles.                                       |
+
+### Why a plain text file falls apart
+
+Before DBMS software existed, people tried storing everything in text files. It breaks down for three concrete reasons:
+
+#### 1. Parsing is slow and error-prone
+
+To find one customer you'd write application code to read the file, split every line, and compare each field, a slow operation, and slower still in languages like JavaScript or Python than in something like Rust. Worse, hand-rolled parsing is fragile: one mistake and you corrupt data or hand a customer the wrong record.
+
+#### 2. There's no structure
+
+Text files have no formal schema. You can dump any text in any shape, so you cannot enforce "this field must always be a number." There's no way to guarantee consistency, it's all just strings.
+
+#### 3. No concurrency control
+
+This is the killer. What happens when two people update the same value at once?
+
+<Diagram caption="The lost-update race / amount starts at 40">
+<svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="11"><line x1="360" y1="14" x2="360" y2="216" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="3 4"></line><text x="360" y="206" text-anchor="middle" fill="var(--dg-ink-3)" font-size="9">same moment</text><text x="20" y="44" fill="var(--dg-info)" font-weight="600">User A (+20)</text><rect x="150" y="28" width="120" height="30" rx="6" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="210" y="48" text-anchor="middle" fill="var(--dg-ink)">reads 40</text><rect x="400" y="28" width="150" height="30" rx="6" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="475" y="48" text-anchor="middle" fill="var(--dg-ink)">writes 60</text><text x="20" y="104" fill="var(--dg-accent)" font-weight="600">User B (-20)</text><rect x="150" y="88" width="120" height="30" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="210" y="108" text-anchor="middle" fill="var(--dg-ink)">reads 40</text><rect x="400" y="88" width="150" height="30" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="475" y="108" text-anchor="middle" fill="var(--dg-ink)">writes 20</text><rect x="150" y="150" width="400" height="52" rx="9" fill="var(--dg-inverse)"></rect><text x="350" y="172" text-anchor="middle" fill="var(--dg-on-inverse)" font-size="11">final value = 60 OR 20, whoever saved last wins</text><text x="350" y="190" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-size="11" font-weight="600">one update silently lost / no consistency</text></svg>
+</Diagram>
+
+These three failures, slow parsing, no structure, no concurrency control, are exactly why DBMS software exists. Try to grow a text-file "database" today and you'll hit every one of them.
+
+## Relational vs Non-Relational
+
+On a high level there are two major families of DBMS.
+
+<Diagram caption="Two ways to shape data">
+<svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="10.5"><text x="30" y="26" fill="var(--dg-ok)" font-size="12" font-weight="600">RELATIONAL / rows in a strict table</text><g><rect x="30" y="38" width="300" height="26" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="44" y="55" fill="var(--dg-ok)" font-weight="600">id   name      status</text><rect x="30" y="64" width="300" height="24" fill="var(--dg-surface-2)" stroke="var(--dg-accent-soft)"></rect><text x="44" y="80" fill="var(--dg-ink)">1    Alice     active</text><rect x="30" y="88" width="300" height="24" fill="var(--dg-surface-2)" stroke="var(--dg-accent-soft)"></rect><text x="44" y="104" fill="var(--dg-ink)">2    Bob       active</text><rect x="30" y="112" width="300" height="24" fill="var(--dg-surface-2)" stroke="var(--dg-accent-soft)"></rect><text x="44" y="128" fill="var(--dg-ink)">3    Carol     archived</text></g><text x="30" y="160" fill="var(--dg-ink-2)" font-size="9.5">every row has the SAME columns / schema fixed up front</text><text x="30" y="176" fill="var(--dg-ink-2)" font-size="9.5">queried with SQL / linked by foreign keys</text><text x="390" y="26" fill="var(--dg-warn)" font-size="12" font-weight="600">NON-RELATIONAL / documents</text><rect x="390" y="38" width="300" height="46" rx="7" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="404" y="56" fill="var(--dg-ink)">&#123; id:1, name:"Alice",</text><text x="404" y="72" fill="var(--dg-ink)">  tags:&#91;"x"&#93;, active:true &#125;</text><rect x="390" y="90" width="300" height="46" rx="7" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="404" y="108" fill="var(--dg-ink)">&#123; id:2, name:"Bob",</text><text x="404" y="124" fill="var(--dg-ink)">  address:&#123; city:"BLR" &#125; &#125;</text><text x="390" y="160" fill="var(--dg-ink-2)" font-size="9.5">each document can differ / flexible schema</text><text x="390" y="176" fill="var(--dg-ink-2)" font-size="9.5">"table"->collection / "row"->document</text></svg>
+</Diagram>
+
+### Relational (SQL)
+
+A relational database organizes data into **tables** of rows and columns, with relationships between tables defined by **foreign keys**. Its defining feature is a **strict, predefined schema**: before inserting anything you must declare the table, its columns, and each column's data type. Nothing happens "on the fly." That strictness buys the big payoff, **data integrity**: at any moment you can bet on the shape and types of your data. You interact with it using **SQL** (Structured Query Language). Examples: PostgreSQL, MySQL, SQL Server.
+
+### Non-relational (NoSQL)
+
+NoSQL databases like MongoDB don't enforce a schema. In Mongo's vocabulary a table is a **collection** and a row is a **document**, and two documents in the same collection can have completely different shapes. The advantage is **flexibility**: great when prototyping fast or when you genuinely don't know the data's shape in advance. The cost is weaker integrity: with no schema enforced at the database level, you must enforce correctness in application code, which adds complexity and is more error-prone (application code changes constantly and bugs slip in).
+
+### Picking with two examples
+
+- **CRM (customer relationship management)** -> **relational**. Contacts, sales opportunities, and their relationships are critical, structured data that demands strong integrity and complex queries. Postgres is a great fit.
+- **CMS (content management system)** -> **non-relational** (or JSON in Postgres). An article can contain an image, a code block, a YouTube embed, wildly varied content you can't pin to a fixed schema. "Take it all and dump it" suits a document store.
+
+## Why Postgres
+
+Among all the options, Postgres is the sensible default for most projects, for five reasons:
+
+1. **Open source & free.** Not proprietary, companies can self-host it on their own servers and inspect the source.
+2. **SQL-standard compliant.** Standard SQL runs the same way it would on MySQL or SQL Server, so migrating to another engine later means far less rework.
+3. **Extensible.** The docs run \~1400 pages; it covers nearly every use case a typical SaaS hits, and has a strong extension system to customize it.
+4. **Reliable & scalable.** A proven track record at scale.
+5. **Excellent JSON support, the deciding feature.** The main reason people reach for MongoDB is "store any JSON." But Postgres offers a `JSON`/`JSONB` type with strong indexing and query capability, so you can store dynamic, schemaless data _inside_ a relational database. That removes the usual reason to leave Postgres for a NoSQL store.
+
+<Callout type="info" title="The pragmatic call">
+You'll find articles claiming MySQL has performance edges, but until you're serving millions of users and chasing a specific bottleneck, that difference won't matter. The rich feature set plus first-class JSON makes Postgres a strong first choice for nearly any project. That's what the rest of this chapter uses.
+</Callout>
+
+<Callout type="info" title="SQL vs Postgres / the distinction">
+**SQL** is the _language_ you write queries in. **Postgres** is the _database system_, the software that executes those queries. This chapter assumes you've picked up SQL basics (SELECT, CREATE TABLE, ORDER BY, GROUP BY) elsewhere, and focuses on the concepts that actually matter day-to-day in backend work.
+</Callout>
+
+## Data Types
+
+Every column in a relational table has a fixed type. Here are the ones you'll actually use, with the decisions that matter.
+
+| Type                              | What it stores / when to use                                                                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `serial` / `bigserial`            | Auto-incrementing integer (1, 2, 3...) when you omit it on insert. Use `bigserial` in production for higher capacity. Common for integer IDs / primary keys. |
+| `smallint` / `integer` / `bigint` | Integers of increasing capacity. Pick by the largest number you need to store.                                                                               |
+| `decimal(10,2)` / `numeric`       | Exact-precision number, here, up to 10 total digits, 2 after the decimal. **Always use for money/price.**                                                    |
+| `real` / `double precision`       | Floating-point. Fast, but values can differ slightly across systems. Use for scientific/measurement data where tiny discrepancies don't matter.              |
+| `char(n)`                         | Fixed-length text, **padded with spaces** to `n`. Avoid, legacy.                                                                                             |
+| `varchar(n)`                      | Variable-length text with a max of `n`. The famous `255` is just a MySQL habit, meaningless in Postgres.                                                     |
+| `text`                            | Variable-length, no limit. **Prefer this** in Postgres (see below).                                                                                          |
+| `boolean`                         | `true` / `false`.                                                                                                                                            |
+| `date` / `time` / `timestamp`     | A date, a time, or both together.                                                                                                                            |
+| `timestamptz`                     | Timestamp _with time zone_, stores the zone too. Prefer for created/updated columns.                                                                         |
+| `interval`                        | A span like "10 days" or "1 week".                                                                                                                           |
+| `uuid`                            | Universally unique identifier. Great for primary keys, especially in distributed systems. Postgres has it natively.                                          |
+| `json` / `jsonb`                  | JSON data. **Prefer `jsonb`** (binary), Postgres serializes it to its own format so it can index and query it fast. Plain `json` is stored as text.          |
+| `type[]` (array)                  | An array of any type, `integer[]`, `text[]`, etc.                                                                                                            |
+| inet / macaddr / point / xml      | Network addresses, MAC addresses, geometric points, XML. Rarely needed day-to-day.                                                                           |
+
+### Decimal vs float: the money rule
+
+First, decode the parameters: `decimal(10,2)` means **10 total digits, with 2 after the decimal point**. So you can store `12345678.90`, count them, that's 10 digits across the whole number, two of them on the right of the point. Try to store a number needing 11 digits and the database rejects it.
+
+Floating-point numbers are _fast_ but represented in a way that can differ slightly across systems, so the same value can render as `89.87` here and `89.9` there. For a **price**, where the number feeds calculations and accuracy is critical, that's unacceptable, **always use `decimal`/`numeric`**. For something like an area measurement (`567.8987`) where a tiny rounding difference is harmless, use `float` for the speed.
+
+And the natural follow-up: _if decimals are always accurate, why not use them everywhere?_ Because that exactness costs performance, floats are stored and computed faster, which is exactly why scientific/measurement domains prefer them. Rule of thumb: **accuracy matters -> decimal; speed matters and small discrepancies are fine -> float.**
+
+### char vs varchar vs text: prefer text
+
+All three store text; the difference is how they handle length. `char(10)` always **pads to the full length with spaces**: store `"ab"` and the database adds 8 trailing spaces before saving, because a `char` field always occupies its declared length. `varchar(255)` stores only what you give (storing `"ab"` uses length 2, `"abcd"` uses 4) up to a maximum of 255, exceed it and you get a database-level error. `text` is `varchar` with no length limit at all (technically a very high ceiling, \~1 GB, which you'll never approach).
+
+<Diagram caption="Storing &quot;ab&quot; in each string type">
+<svg viewBox="0 0 720 130" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="10.5"><text x="20" y="30" fill="var(--dg-accent)" font-weight="600">char(10)</text><rect x="120" y="16" width="200" height="22" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="130" y="31" fill="var(--dg-ink)">ab&#95;&#95;&#95;&#95;&#95;&#95;&#95;&#95;</text><text x="335" y="31" fill="var(--dg-ink-2)" font-size="9">padded to 10 / wastes space / avoid</text><text x="20" y="66" fill="var(--dg-info)" font-weight="600">varchar(255)</text><rect x="120" y="52" width="44" height="22" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="130" y="67" fill="var(--dg-ink)">ab</text><text x="180" y="67" fill="var(--dg-ink-2)" font-size="9">length 2 / max 255 / the "255" is a meaningless MySQL habit</text><text x="20" y="102" fill="var(--dg-ok)" font-weight="600">text</text><rect x="120" y="88" width="44" height="22" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="130" y="103" fill="var(--dg-ink)">ab</text><text x="180" y="103" fill="var(--dg-ink-2)" font-size="9">length 2 / no limit / &#x3C;- prefer this in Postgres</text></svg>
+</Diagram>
+
+Postgres's own docs recommend `text`, there's essentially **no performance difference** between them, and you can index `text` just fine (a common misconception borrowed from other engines like MySQL/SQL Server, which behave differently and confuse people switching over). Two practical reasons to default to `text`:
+
+- **No migration headaches.** If you set `varchar(255)` and later need longer values, you must run a schema migration that touches lots of data, riskier than just enforcing length in application code. As backend engineers we interact with the DB through a driver and have application code anyway, so enforce length there and keep the migration simple.
+- **Self-documenting.** A number like `varchar(255)` _looks_ meaningful, so a new teammate wastes time hunting for why it's 255 (answer: it isn't meaningful, it's a copied MySQL habit). `text` reads cleanly as "a text field," with no phantom number to explain.
+
+Only use `char(n)` when the length is genuinely _always_ identical, e.g. two-letter day codes `Mo`, `Tu`, `We`, where padding never happens and you save space versus variable-length overhead.
+
+### json vs jsonb: prefer jsonb
+
+`json` is stored as plain text; `jsonb` is serialized into Postgres's own binary format. Almost always choose **`jsonb`**: it queries and indexes far faster. (It's a Postgres feature, not standard SQL.)
+
+## Migrations
+
+In production you don't just open a GUI like TablePlus and start running queries, there'd be no record of _what_ changed, _when_, or _who_ did it, and no way to control the database's state over time. Instead, databases use **migrations**: version control for your schema.
+
+### How the workflow works
+
+You keep a folder of sequentially-named SQL files. A command-line tool (**dbmate**, **golang-migrate**, etc.) walks them in order and applies the SQL inside each to the configured database.
+
+<Diagram caption="Migration files run in sequence; a tracking table remembers where you are">
+<svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="10.5"><rect x="20" y="40" width="120" height="60" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="80" y="66" text-anchor="middle" font-weight="600" fill="var(--dg-ink)">001.sql</text><text x="80" y="84" text-anchor="middle" fill="var(--dg-ink-2)" font-size="9">create users</text><rect x="170" y="40" width="120" height="60" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="230" y="66" text-anchor="middle" font-weight="600" fill="var(--dg-ink)">002.sql</text><text x="230" y="84" text-anchor="middle" fill="var(--dg-ink-2)" font-size="9">seed data</text><rect x="320" y="40" width="120" height="60" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="380" y="66" text-anchor="middle" font-weight="600" fill="var(--dg-ink)">003.sql</text><text x="380" y="84" text-anchor="middle" fill="var(--dg-ink-2)" font-size="9">indexes + triggers</text><line x1="140" y1="70" x2="170" y2="70" stroke="var(--dg-line-2)" stroke-width="1.5"></line><line x1="290" y1="70" x2="320" y2="70" stroke="var(--dg-line-2)" stroke-width="1.5"></line><line x1="440" y1="70" x2="500" y2="70" stroke="var(--dg-line-2)" stroke-width="1.5"></line><rect x="500" y="34" width="200" height="72" rx="9" fill="var(--dg-inverse)"></rect><text x="600" y="60" text-anchor="middle" fill="var(--dg-on-inverse)" font-size="10">schema&#95;migrations</text><text x="600" y="80" text-anchor="middle" fill="var(--dg-on-inverse-warn)" font-size="10">version = 003</text><text x="600" y="96" text-anchor="middle" fill="var(--dg-on-inverse-3)" font-size="9">tool knows what to apply next</text></svg>
+</Diagram>
+
+Each file has two halves: an **up migration** (the change, `CREATE TABLE`, `CREATE INDEX`...) and a **down migration** (the exact reverse, `DROP TABLE`...). The down half exists so that if a change breaks production you can **roll back** to the previous state cleanly. The tool maintains a `schema_migrations` table holding the current version, so it never re-runs an already-applied file (which would error with "table already exists").
+
+______
+
+SQL
+
+a dbmate migration file, up & down halves
+
+```sql
+-- migrate:up
+CREATE TABLE users (
+  id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL UNIQUE
+);
+
+-- migrate:down
+DROP TABLE users;
+```
+
+### Why migrations matter
+
+- **Tracked history.** The files live in git alongside your code, so every schema change over months or years is recorded, reviewable, and reproducible on any machine or server.
+- **Rollback.** The down migrations let you revert a bad change to a known-good version.
+
+### Seeding
+
+For local/dev testing you want sample data to work against before deploying. That's **seeding**: a separate migration that inserts test rows (sample users, projects, etc.). Best practice keeps seed data in its own migration file so it's clearly distinct from schema changes.
+
+## Modeling Relationships
+
+We'll model a project-management platform (think Jira/Linear). From the requirements we pull the **nouns** -> tables: `users`, `user_profiles`, `projects`, `tasks`, `project_members`.
+
+<Callout type="info" title="Naming conventions">
+**Plural** table names (`users`, `projects`) by industry standard, and **snake\_case** columns (`full_name`, `password_hash`). Why snake\_case? Postgres is _case-insensitive_ by nature, write `fullName` and it reads it as `fullname` unless you wrap it in double quotes everywhere, which makes application code ugly. Lowercase snake\_case sidesteps the whole problem.
+</Callout>
+
+The three relationship shapes are the heart of data modeling. Here's how each is implemented:
+
+<Diagram caption="The three relationship shapes">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="10"><text x="20" y="22" fill="var(--dg-ok)" font-weight="600" font-size="11">ONE-TO-ONE</text><rect x="20" y="32" width="90" height="34" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="65" y="53" text-anchor="middle" fill="var(--dg-ink)">users</text><line x1="110" y1="49" x2="170" y2="49" stroke="var(--dg-ok)" stroke-width="2"></line><rect x="170" y="32" width="110" height="34" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="225" y="53" text-anchor="middle" fill="var(--dg-ink)">user&#95;profiles</text><text x="20" y="84" fill="var(--dg-ink-2)" font-size="9">profile's user&#95;id is BOTH its primary &#x26; foreign key</text><text x="20" y="120" fill="var(--dg-info)" font-weight="600" font-size="11">ONE-TO-MANY</text><rect x="20" y="130" width="90" height="34" rx="6" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="65" y="151" text-anchor="middle" fill="var(--dg-ink)">projects</text><line x1="110" y1="147" x2="175" y2="135" stroke="var(--dg-info)" stroke-width="1.6"></line><line x1="110" y1="147" x2="175" y2="147" stroke="var(--dg-info)" stroke-width="1.6"></line><line x1="110" y1="147" x2="175" y2="159" stroke="var(--dg-info)" stroke-width="1.6"></line><rect x="175" y="124" width="80" height="20" rx="4" fill="var(--dg-surface-2)" stroke="var(--dg-accent-soft)"></rect><text x="215" y="138" text-anchor="middle" fill="var(--dg-ink)">task</text><rect x="175" y="148" width="80" height="20" rx="4" fill="var(--dg-surface-2)" stroke="var(--dg-accent-soft)"></rect><text x="215" y="162" text-anchor="middle" fill="var(--dg-ink)">task</text><text x="20" y="186" fill="var(--dg-ink-2)" font-size="9">each task holds a project&#95;id foreign key</text><text x="400" y="120" fill="var(--dg-warn)" font-weight="600" font-size="11">MANY-TO-MANY</text><rect x="400" y="130" width="80" height="34" rx="6" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="440" y="151" text-anchor="middle" fill="var(--dg-ink)">users</text><rect x="500" y="124" width="110" height="46" rx="6" fill="var(--dg-inverse)"></rect><text x="555" y="143" text-anchor="middle" fill="var(--dg-on-inverse)" font-size="9">project&#95;members</text><text x="555" y="158" text-anchor="middle" fill="var(--dg-on-inverse-3)" font-size="8">linking table</text><rect x="630" y="130" width="80" height="34" rx="6" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="670" y="151" text-anchor="middle" fill="var(--dg-ink)">projects</text><line x1="480" y1="147" x2="500" y2="147" stroke="var(--dg-warn)" stroke-width="1.6"></line><line x1="610" y1="147" x2="630" y2="147" stroke="var(--dg-warn)" stroke-width="1.6"></line><text x="400" y="190" fill="var(--dg-ink-2)" font-size="9">linking table with a COMPOSITE primary key (user&#95;id + project&#95;id)</text></svg>
+</Diagram>
+
+### One-to-one: users &lt;-> user\_profiles
+
+Why split profile data into its own table instead of piling it onto `users`? Because a profile grows over time (bio, phone, avatar, social links, websites...) and would force constant migrations on the core `users` table. Abstracting it into a separate table that can evolve independently keeps the primary table lightweight. Since each user has exactly one profile, you don't even need a separate ID, make the profile's `user_id` serve as **both its primary key and its foreign key**.
+
+### One-to-many: projects &lt;-> tasks
+
+One project has many tasks; each task belongs to one project. Implement it by putting a `project_id` **foreign key** on the `tasks` table (not a primary key). Many task rows can share the same `project_id`, that's the "many" side.
+
+### Many-to-many: users &lt;-> projects
+
+A user can be in many projects, and a project can have many users, and you want to query it both directions. When the same relationship makes sense from both sides, it's many-to-many. You can't express that with a single foreign key, so you create a **linking table** (`project_members`) holding two foreign keys, `user_id` and `project_id`, and make the pair a **composite primary key**. That combination is implicitly unique and not-null, so "user 1 is in project 2" can exist exactly once.
+
+______
+
+SQL
+
+the full schema, enums, then the five tables
+
+```sql
+-- custom enum types: a fixed set of allowed values
+CREATE TYPE project_status AS ENUM ('active', 'completed', 'archived');
+CREATE TYPE task_status    AS ENUM ('pending', 'in_progress', 'completed', 'cancelled');
+CREATE TYPE member_role    AS ENUM ('owner', 'admin', 'member');
+
+CREATE TABLE users (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email         TEXT NOT NULL UNIQUE,
+  full_name     TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ONE-TO-ONE: user_id is BOTH primary key and foreign key
+CREATE TABLE user_profiles (
+  user_id     UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  avatar_url  TEXT,             -- optional -> no NOT NULL
+  bio         TEXT,
+  phone       TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE projects (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        TEXT NOT NULL,
+  description TEXT,
+  status      project_status NOT NULL DEFAULT 'active',
+  owner_id    UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ONE-TO-MANY: a project has many tasks via project_id
+CREATE TABLE tasks (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title       TEXT NOT NULL,
+  description TEXT,
+  priority    INTEGER NOT NULL DEFAULT 1 CHECK (priority BETWEEN 1 AND 5),
+  status      task_status NOT NULL DEFAULT 'pending',
+  due_date    DATE,
+  assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- MANY-TO-MANY: linking table with a COMPOSITE primary key
+CREATE TABLE project_members (
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id    UUID NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
+  role       member_role NOT NULL DEFAULT 'member',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (project_id, user_id)   -- the pair is unique & not-null
+);
+```
+
+<Callout type="info" title="Version note / gen\_random\_uuid()">
+This schema is verified against **PostgreSQL 16**. `gen_random_uuid()` is built into Postgres core from **13 onward**. On older versions (&lt;=12) you must first enable the crypto extension: `CREATE EXTENSION IF NOT EXISTS pgcrypto;`, then the same call works.
+</Callout>
+
+## Constraints & Integrity
+
+Constraints are conditions you attach to a column so the database itself protects the data from going corrupt. The whole philosophy: push integrity checks _down to the database_ rather than trusting application code alone. App code is one layer of defense; a database constraint is the guarantee.
+
+### Primary key
+
+A unique field that identifies one row. It implicitly carries two constraints, **not null** and **unique**: plus foreign-key referencing behavior. By convention every table has an `id`, often `UUID PRIMARY KEY DEFAULT gen_random_uuid()` so Postgres generates a random ID when you omit it on insert.
+
+### Not null: the 70% rule
+
+By default every Postgres column _allows_ null unless you say otherwise. **More than 70% of your columns should be `NOT NULL`**, because nulls quietly creep in, especially via automated scripts with bugs, and leave you with a messy, inconsistent table. Add `NOT NULL` unless a field is genuinely optional (like a user's bio or phone).
+
+### Unique
+
+No two rows may share that value, e.g. `email TEXT NOT NULL UNIQUE` means inserting a duplicate email throws a database-level error.
+
+### Foreign key constraint
+
+`REFERENCES users(id)` guarantees that whatever you put in `assigned_to` or `owner_id` must be a real, existing user ID. Pass a random (even valid-looking) UUID with no matching user and the insert fails. You can't reference something that doesn't exist.
+
+### Check constraint
+
+A custom rule the row must satisfy, the transaction only goes through while the condition holds. `CHECK (priority BETWEEN 1 AND 5)` blocks anyone from inserting `priority = 55`.
+
+### Enums: integrity + documentation
+
+An enum is a custom type limited to a fixed set of values (e.g. `project_status` in \{active, completed, archived\}). Two wins:
+
+- **Data integrity**: insert any other string into a `project_status` column and you get a database-level error; you don't have to rely solely on app-code validation.
+- **Self-documentation**: arguably the bigger win. A future teammate reading the migration sees the allowed values at a glance. If the column were plain `text`, they'd have to grep the entire application code to discover which strings are actually valid.
+
+### Referential integrity: ON DELETE behavior
+
+When you delete a row other tables point at, what happens to those references? You declare it per foreign key:
+
+| Clause                  | On deleting the referenced row\...                          | Used here for                                                     |
+| ----------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------- |
+| `ON DELETE RESTRICT`    | Block the delete if any child rows still reference it.      | `projects.owner_id`, can't delete a user who still owns projects. |
+| `ON DELETE CASCADE`     | Delete the children too.                                    | `tasks.project_id`, deleting a project deletes its tasks.         |
+| `ON DELETE SET NULL`    | Set the child's reference to null (column must allow null). | `tasks.assigned_to`, deleting a user un-assigns their tasks.      |
+| `ON DELETE SET DEFAULT` | Set the child's reference to its declared default.          | -                                                                 |
+
+<Callout type="info" title="The integrity mindset">
+Every constraint, primary key, not null, unique, foreign key, check, enum, ON DELETE, exists so the _database_ guarantees correctness, not just hopeful application code. The more you encode at this level, the harder it is for a future bug to corrupt your data.
+</Callout>
+
+## Querying & Joins
+
+### Build queries from FROM, not SELECT
+
+A habit worth adopting: when writing a SQL query, **start with the `FROM` clause**, not `SELECT`. Decide _where_ your data comes from first, which tables, joined how, and only then decide _what_ to pull out. It keeps you oriented: you always know the source before you reach for columns. We'll build the "list users with profile" query in exactly that order, source first, then shape, then ordering.
+
+1
+
+**Source.** `FROM users u`, and give it a short _alias_ (`u`) so you can refer to it concisely throughout the query.
+
+2
+
+**Join the related table.** The profile lives elsewhere, linked by the foreign key, so `LEFT JOIN user_profiles up ON u.id = up.user_id`.
+
+3
+
+**Shape.** Now pick columns: `u.*` plus the folded profile, `to_jsonb(up.*) AS profile`.
+
+4
+
+**Order.** Finish with `ORDER BY u.created_at DESC` so results are deterministic and newest-first.
+
+### Joining tables: and why LEFT JOIN
+
+To return each user _with_ their profile in one API call, you join `users` to `user_profiles` on the foreign key. Use **LEFT JOIN**, not INNER JOIN: a user might never have created a profile row, and an INNER JOIN only returns rows where _both_ sides have a match, so those profile-less users would silently vanish from the result, returning fewer users than exist. A LEFT JOIN keeps _every_ row from the left (main) table regardless, filling the profile side with null when there's no match. Since we always want the user back, profile or not, LEFT JOIN is correct here. (INNER and LEFT joins cover the vast majority of real queries; the others are rare.)
+
+Two more details in that query. The short **aliases** (`u`, `up`) just make a long query readable, you assign them once in `FROM`/`JOIN` and reuse them everywhere. And `to_jsonb(up.*)` is a built-in Postgres function that converts the matched profile row into a JSON object, embedded as a single `profile` field on each user, so the frontend gets `user.profile` nested, in one round trip, instead of making a second call. Always end a list query with an `ORDER BY` (here `created_at DESC`): query results come back in _arbitrary_ order otherwise, and that order can change between calls, so you sort explicitly, usually newest-first by creation time.
+
+______
+
+SQL
+
+GET /v1/users, list users with embedded profile
+
+```sql
+SELECT
+  u.*,
+  to_jsonb(up.*) AS profile          -- fold the profile row into one JSON field
+FROM users u
+LEFT JOIN user_profiles up           -- LEFT so users without a profile still appear
+  ON u.id = up.user_id               -- the foreign-key join condition
+ORDER BY u.created_at DESC;          -- newest first; never rely on default order
+```
+
+### Parameterized queries: never concatenate
+
+This is the single most important security habit with databases. A **parameterized query** leaves a placeholder slot and supplies the value separately; the database treats whatever you pass as **pure data (a string), never executable SQL**. If an attacker passes `'; DELETE FROM users; --` into a parameter, it's stored/compared as a harmless literal string, not run as a command.
+
+<Callout type="info" title="SQL injection / the cardinal sin">
+The vulnerability appears when you build queries by **concatenating strings** with user input. Then a crafted input can break out and run its own SQL, reading, altering, or wiping your data. **Never** string-concatenate user values into a query. Always use parameter placeholders; your driver/ORM handles the safe substitution. This isn't optional.
+</Callout>
+
+______
+
+SQLGoPython
+
+GET /v1/users/:id, same query, parameter-safe in each layer
+
+```sql
+SELECT u.*, to_jsonb(up.*) AS profile
+FROM users u
+LEFT JOIN user_profiles up ON u.id = up.user_id
+WHERE u.id = $1;        -- $1 is a parameter slot; the value is sent separately
+```
+
+```go
+// database/sql, the driver substitutes the parameter safely
+row := db.QueryRow(`
+  SELECT u.*, to_jsonb(up.*) AS profile
+  FROM users u
+  LEFT JOIN user_profiles up ON u.id = up.user_id
+  WHERE u.id = $1`, userID) // userID is treated strictly as data, never SQL
+```
+
+```python
+# psycopg, pass params as a tuple; NEVER use f-strings to build SQL
+cur.execute(
+    """
+    SELECT u.*, to_jsonb(up.*) AS profile
+    FROM users u
+    LEFT JOIN user_profiles up ON u.id = up.user_id
+    WHERE u.id = %s
+    """,
+    (user_id,),  # the driver escapes it; injection is impossible
+)
+```
+
+### Insert & update
+
+______
+
+SQL
+
+POST create / PATCH partial update
+
+```sql
+-- POST /v1/users  -> returning the new row back to the client
+INSERT INTO users (email, full_name, password_hash)
+VALUES ($1, $2, $3)
+RETURNING *;
+
+-- PATCH /v1/users/:id  -> only the fields the client actually sent
+UPDATE user_profiles
+SET bio = $1, phone = $2
+WHERE user_id = $3
+RETURNING *;
+```
+
+### Dynamic filter, sort & pagination
+
+List endpoints support filtering, sorting, and pagination, built dynamically in app code from the query params, with sane defaults (no `page` -> 1, no `limit` -> 10, no sort -> `created_at DESC`). At the SQL level:
+
+- **Filter** with `ILIKE`, case-insensitive pattern match. `WHERE u.full_name ILIKE $1 || '%'` matches names starting with a letter regardless of case.
+- **Sort** from an _allow-list_ of columns the client may sort by (`full_name`, `email`, `created_at`) plus a direction.
+- **Paginate** with `LIMIT` + `OFFSET`. Note: the API's page 1 maps to database `OFFSET 0`, the offset is zero-based.
+
+______
+
+SQL
+
+list with filter + sort + pagination
+
+```sql
+SELECT u.*, to_jsonb(up.*) AS profile
+FROM users u
+LEFT JOIN user_profiles up ON u.id = up.user_id
+WHERE u.full_name ILIKE $1 || '%'   -- filter: names starting with $1 (case-insensitive)
+ORDER BY u.created_at DESC           -- sort (column from an allow-list, direction chosen)
+LIMIT $2 OFFSET $3;                  -- page 1 -> OFFSET 0, page 2 -> OFFSET (limit), ...
+```
+
+## Indexes
+
+Indexes are the biggest performance lever you have, and they're best understood through the book analogy. A book's index lists each chapter and its page number, so to reach chapter 4 you don't flip through 50 pages one by one, you look it up and jump straight there.
+
+### The problem: sequential scan
+
+Remember databases store rows scattered across the disk, not in neat order. Without an index, finding one task by ID means a **sequential scan**: the database checks row after row, location after location, until it finds a match. With six rows that's instant; with a million or a billion rows it's painfully slow.
+
+<Diagram caption="Sequential scan vs index lookup">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="10"><text x="20" y="22" fill="var(--dg-accent)" font-weight="600" font-size="11">WITHOUT INDEX / scan every row</text><g fill="var(--dg-surface-2)" stroke="var(--dg-accent-soft)"><rect x="20" y="34" width="150" height="22"></rect><rect x="20" y="58" width="150" height="22"></rect><rect x="20" y="82" width="150" height="22"></rect><rect x="20" y="106" width="150" height="22"></rect><rect x="20" y="130" width="150" height="22"></rect></g><text x="30" y="49" fill="var(--dg-ink)">task / check...</text><text x="30" y="73" fill="var(--dg-ink)">task / check...</text><text x="30" y="97" fill="var(--dg-ink)">task / check...</text><text x="30" y="121" fill="var(--dg-ink)">task / check...</text><text x="30" y="145" fill="var(--dg-ok)">task / MATCH </text><text x="20" y="172" fill="var(--dg-ink-2)" font-size="9">scattered on disk / O(n), brutal at a million rows</text><text x="400" y="22" fill="var(--dg-ok)" font-weight="600" font-size="11">WITH INDEX / lookup table -> jump</text><rect x="400" y="34" width="150" height="118" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="412" y="52" fill="var(--dg-ok)" font-weight="600">id -> location</text><text x="412" y="72" fill="var(--dg-ink)">a1 -> 0x4F</text><text x="412" y="90" fill="var(--dg-ink)">a2 -> 0x1C</text><text x="412" y="108" fill="var(--dg-ink)">a3 -> 0x9B  &#x3C; found</text><text x="412" y="126" fill="var(--dg-ink)">a4 -> 0x22</text><line x1="550" y1="104" x2="640" y2="104" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#ar)"></line><rect x="610" y="92" width="90" height="24" rx="5" fill="var(--dg-inverse)"></rect><text x="655" y="108" text-anchor="middle" fill="var(--dg-on-inverse)" font-size="9">0x9B -> row</text><text x="400" y="172" fill="var(--dg-ink-2)" font-size="9">sorted lookup -> direct jump to the disk location</text><defs><marker id="ar" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="var(--dg-ok)"></path></marker></defs></svg>
+</Diagram>
+
+### The solution: a lookup table
+
+An index is essentially a separate, ordered **lookup table** mapping each indexed value to the disk **location** of its row. Query by an indexed field and the database scans this compact, sorted structure (internally a B-tree), finds the entry fast, reads the location, and jumps straight to the row, no full scan. Two properties matter:
+
+- **Direct lookup**: value -> location, instead of checking every row.
+- **Order**: an index can be ascending or descending. If you frequently run `ORDER BY created_at DESC`, build the index _descending_ so the rows come back already in order, with no extra sort step.
+
+### When to create an index
+
+The rule of thumb, index a column when it's used in a **`WHERE` clause**, a **`JOIN` condition**, or an **`ORDER BY`**. One important detail: **primary keys are auto-indexed**, but **foreign keys are not**: so foreign keys you join on (like `tasks.project_id`, `tasks.assigned_to`) are prime index candidates.
+
+Walking the actual reasoning behind each index in our schema makes the rule concrete:
+
+- `users.email` -> there's a "find user by email" lookup and joins on email, so it appears in `WHERE`/`JOIN` -> index it.
+- `users.created_at DESC` -> the list-users API sorts newest-first by default and is called constantly, so index it _descending_ to match the `ORDER BY` exactly.
+- `tasks.project_id` -> "fetch all tasks of a project" joins `projects` to `tasks` on this foreign key. The `projects.id` side is the primary key (already indexed), but `project_id` here is a foreign key and _isn't_, so index it.
+- `tasks.assigned_to` -> "fetch all tasks for a user" joins on this foreign key. Same logic, foreign key, not auto-indexed, used in a join -> index it.
+- `tasks.status` -> "fetch all pending tasks" filters on status in a `WHERE` clause -> index it.
+- `tasks.created_at DESC` -> the list-tasks API sorts newest-first -> index descending.
+
+Internally a B-tree keeps these entries sorted, which is what makes both the direct lookup and the ordered scan fast, but you don't need the internals to apply the rule; the three triggers (WHERE / JOIN / ORDER BY) are enough to decide.
+
+______
+
+SQL
+
+indexes chosen from real WHERE / JOIN / ORDER BY usage
+
+```sql
+CREATE INDEX idx_users_email        ON users (email);              -- WHERE / JOIN on email
+CREATE INDEX idx_users_created_at    ON users (created_at DESC);    -- ORDER BY newest first
+CREATE INDEX idx_tasks_project_id    ON tasks (project_id);         -- FK join (not auto-indexed)
+CREATE INDEX idx_tasks_assigned_to   ON tasks (assigned_to);        -- FK join (not auto-indexed)
+CREATE INDEX idx_tasks_status        ON tasks (status);             -- WHERE status = ...
+CREATE INDEX idx_tasks_created_at    ON tasks (created_at DESC);    -- ORDER BY newest first
+```
+
+<Callout type="info" title="The write-overhead trade-off">
+Indexes speed up **reads** but slightly slow down **writes**: every `INSERT`/`UPDATE` must also keep the index up to date. So don't blindly index everything. Evaluate how _frequently_ the query runs and whether the read win is worth the write cost. Practical move: create indexes for hot WHERE/JOIN/ORDER BY columns, then monitor, drop ones whose queries turn out to be rare.
+</Callout>
+
+## Triggers
+
+Every table here has an `updated_at` column that should be refreshed to "now" each time the row changes. You could set it manually in every UPDATE, or you can **automate** it with a trigger so the application never has to think about it.
+
+A **trigger** runs a function automatically when a condition is met. Here: define a function that sets `NEW.updated_at = now()` and returns the row, then attach a `BEFORE UPDATE` trigger on each table that calls it.
+
+<Diagram caption="UPDATE fires the trigger automatically">
+<svg viewBox="0 0 720 100" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="10.5"><rect x="20" y="34" width="170" height="34" rx="7" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="105" y="55" text-anchor="middle" fill="var(--dg-ink)">UPDATE row</text><line x1="190" y1="51" x2="250" y2="51" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#a2)"></line><rect x="250" y="34" width="200" height="34" rx="7" fill="var(--dg-accent)"></rect><text x="350" y="55" text-anchor="middle" fill="var(--dg-on-accent)">BEFORE UPDATE trigger</text><line x1="450" y1="51" x2="510" y2="51" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#a2)"></line><rect x="510" y="34" width="190" height="34" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="605" y="55" text-anchor="middle" fill="var(--dg-ok)">updated&#95;at = now()</text><defs><marker id="a2" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="var(--dg-line-2)"></path></marker></defs></svg>
+</Diagram>
+
+______
+
+SQL
+
+one function, reused as a trigger on every table
+
+```sql
+-- the function: stamp updated_at, return the modified row
+CREATE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- attach it before every UPDATE on each table
+CREATE TRIGGER trg_users_updated
+  BEFORE UPDATE ON users
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_projects_updated
+  BEFORE UPDATE ON projects
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- ...and likewise for user_profiles, tasks, project_members
+```
+
+Now any UPDATE, from anywhere, app code or a manual query, automatically refreshes `updated_at`. No column gets forgotten, and the logic lives in one place.
+
+<Callout type="info" title="The chapter in one breath">
+Databases persist data on cheap, roomy **disk**; a **DBMS** gives you efficient, safe CRUD that text files can't. Default to **Postgres** for its integrity plus JSONB. Model with the right **relationships** (one-to-one, one-to-many, many-to-many via a linking table), enforce correctness with **constraints & enums**, evolve safely through **migrations**, query with **joins** and always-**parameterized** SQL, and reach for the two performance levers, **indexes** (on WHERE/JOIN/ORDER BY columns) and **triggers** (to automate the tedious). That's \~80% of database work as a backend engineer.
+</Callout>
+
+## Transactions & ACID
+
+Back in section 3 we saw why a text file can't handle two people editing the same value at once, the lost-update race. A real DBMS solves that with **transactions**: a group of operations that either _all_ succeed together or _none_ do. This is the machinery that makes concurrency safe, and it's worth understanding because money, inventory, and any "read-then-write" logic depend on it.
+
+### The classic example: a money transfer
+
+Move INR 500 from account A to account B. That's two writes: subtract from A, add to B. If the server crashes _between_ them, A has lost INR 500 that never arrived at B, money vanished. A transaction makes the pair atomic: wrap them in `BEGIN ... COMMIT`, and either both happen or, on any failure, `ROLLBACK` undoes everything as if nothing occurred.
+
+______
+
+SQLGoPython
+
+both writes commit together, or neither does
+
+```sql
+BEGIN;                                              -- start the transaction
+  UPDATE accounts SET balance = balance - 500 WHERE id = $1;  -- debit A
+  UPDATE accounts SET balance = balance + 500 WHERE id = $2;  -- credit B
+COMMIT;                                             -- both are now permanent
+-- if anything fails between BEGIN and COMMIT -> ROLLBACK undoes it all
+```
+
+```go
+tx, err := db.Begin()
+if err != nil { return err }
+defer tx.Rollback() // safety net: a no-op if we already committed
+
+if _, err = tx.Exec(`UPDATE accounts SET balance = balance - 500 WHERE id = $1`, a); err != nil {
+	return err // deferred Rollback fires -> A is untouched
+}
+if _, err = tx.Exec(`UPDATE accounts SET balance = balance + 500 WHERE id = $1`, b); err != nil {
+	return err // deferred Rollback fires -> both reverted
+}
+return tx.Commit() // only here do both writes become permanent
+```
+
+```python
+conn = pool.getconn()
+try:
+    with conn:                       # commits on success, ROLLBACKs on any exception
+        with conn.cursor() as cur:
+            cur.execute("UPDATE accounts SET balance = balance - 500 WHERE id = %s", (a,))
+            cur.execute("UPDATE accounts SET balance = balance + 500 WHERE id = %s", (b,))
+    # reaching here means both writes committed atomically
+finally:
+    pool.putconn(conn)
+```
+
+### ACID: the four guarantees
+
+Transactions give you four properties, abbreviated ACID:
+
+| Property        | Guarantee                                                                | In the transfer example                        |
+| --------------- | ------------------------------------------------------------------------ | ---------------------------------------------- |
+| **Atomicity**   | All operations succeed, or none do.                                      | You never debit A without crediting B.         |
+| **Consistency** | The DB moves from one valid state to another; constraints always hold.   | Total money across accounts stays correct.     |
+| **Isolation**   | Concurrent transactions don't step on each other; each runs as if alone. | Two transfers at once can't corrupt a balance. |
+| **Durability**  | Once committed, it survives crashes/power loss.                          | After COMMIT, the transfer is permanent.       |
+
+This is a major reason to reach for a relational database like Postgres when data is critical, ACID transactions are a first-class guarantee, exactly the thing the section-3 text file could never provide.
+
+### Isolation & the lost-update race, revisited
+
+**Isolation** is the property that actually fixes our two-writers-on-40 problem. Under the hood the database uses **locking** and **MVCC (multi-version concurrency control)** so that concurrent transactions see a consistent snapshot and serialize their conflicting writes, rather than blindly overwriting each other.
+
+For read-then-write logic specifically, there are two standard tools:
+
+- **Atomic write**: push the computation into the SQL itself: `UPDATE accounts SET balance = balance - 500 ...` reads and writes in one locked step, so there's no gap for another writer to slip into. (Far safer than reading the balance into app code, computing, and writing it back.)
+- **Row locking**: `SELECT ... FOR UPDATE` locks the rows you read until your transaction ends, so a concurrent transaction must wait its turn instead of racing you.
+
+______
+
+SQL
+
+SELECT ... FOR UPDATE, lock the row, then safely modify
+
+```sql
+BEGIN;
+  -- lock this account's row so no other transaction can change it until we're done
+  SELECT balance FROM accounts WHERE id = $1 FOR UPDATE;
+  -- ... compute safely in app code ...
+  UPDATE accounts SET balance = $2 WHERE id = $1;
+COMMIT;
+```
+
+<Callout type="info" title="Don't read-then-write in app code without protection">
+The naive pattern, `SELECT balance` into your program, add in code, `UPDATE` it back, is precisely the section-3 race condition, just moved into your backend. Two requests both read the old balance and one overwrites the other. Use an **atomic SQL update** (`balance = balance - 500`) or **`FOR UPDATE`** row locking inside a transaction. This is one of the most common real-world concurrency bugs.
+</Callout>
+
+<Callout type="info" title="Where transactions fit">
+Any time a single logical operation spans **multiple writes** that must all hold together, transfers, "create order + decrement stock," "archive org + cascade cleanup", wrap it in a transaction. ACID is what lets you treat that group as one indivisible, crash-safe, concurrency-safe unit. It's the database keeping the promise a text file never could.
+</Callout>
+
+## Production Essentials
+
+The transcript stops at the fundamentals. These four topics aren't in it, but you'll hit every one of them the moment your database serves real traffic. They're the difference between "it works on my machine with six rows" and "it works at scale."
+
+### The N+1 query problem: the most common DB performance bug
+
+You fetch a list of N projects, then loop over them and fire _one more query per project_ to load its tasks. That's **1 + N queries**: for 100 projects, 101 round trips to the database. Each round trip has network + planning overhead, so this is death by a thousand cuts. It's especially insidious with ORMs, where lazy-loading a relationship inside a loop hides the extra queries behind innocent-looking code.
+
+<Diagram caption="N+1 vs a single join">
+<svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="10"><text x="20" y="22" fill="var(--dg-accent)" font-weight="600" font-size="11">N+1 / 1 list query, then one per row</text><rect x="20" y="32" width="120" height="22" rx="5" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="80" y="47" text-anchor="middle" fill="var(--dg-ink)">list projects</text><rect x="160" y="32" width="64" height="22" rx="5" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="192" y="47" text-anchor="middle" fill="var(--dg-ink)">tasks?</text><rect x="230" y="32" width="64" height="22" rx="5" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="262" y="47" text-anchor="middle" fill="var(--dg-ink)">tasks?</text><rect x="300" y="32" width="64" height="22" rx="5" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="332" y="47" text-anchor="middle" fill="var(--dg-ink)">tasks?</text><text x="374" y="47" fill="var(--dg-accent)">... xN</text><text x="20" y="78" fill="var(--dg-ink-2)" font-size="9">100 projects -> 101 round trips</text><text x="20" y="108" fill="var(--dg-ok)" font-weight="600" font-size="11">Fixed / ONE query with a join</text><rect x="20" y="118" width="280" height="22" rx="5" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="160" y="133" text-anchor="middle" fill="var(--dg-ink)">projects LEFT JOIN tasks, 1 round trip</text></svg>
+</Diagram>
+
+The fix is to fetch related data in **one** query, a JOIN, or a batched `WHERE project_id = ANY($1)`, or an aggregate that builds nested JSON server-side. With an ORM, the equivalent is "eager loading" (e.g. `JOIN`/`preload`/`include`) instead of lazy loading inside a loop.
+
+______
+
+SQL
+
+N+1 collapsed into one query with aggregated tasks
+
+```sql
+-- instead of: SELECT * FROM projects;  then per row: SELECT * FROM tasks WHERE project_id = ?
+SELECT
+  p.*,
+  COALESCE(jsonb_agg(t.*) FILTER (WHERE t.id IS NOT NULL), '[]') AS tasks
+FROM projects p
+LEFT JOIN tasks t ON t.project_id = p.id
+GROUP BY p.id;        -- one round trip, every project with its tasks nested
+```
+
+### Connection pooling
+
+Opening a Postgres connection is **expensive**: Postgres spawns a process per connection, and there's a hard ceiling (default \~100 `max_connections`). If every web request opens its own connection, you exhaust the server and pay the setup cost constantly. The fix is a **connection pool**: a small set of long-lived connections that requests borrow and return.
+
+<Diagram caption="Many requests, a few reused connections">
+<svg viewBox="0 0 720 120" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="10"><text x="20" y="20" fill="var(--dg-ink-2)" font-size="9">hundreds of requests</text><rect x="20" y="28" width="40" height="16" rx="3" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><rect x="20" y="48" width="40" height="16" rx="3" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><rect x="20" y="68" width="40" height="16" rx="3" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><rect x="20" y="88" width="40" height="16" rx="3" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><line x1="60" y1="66" x2="150" y2="66" stroke="var(--dg-line-2)" stroke-width="1.4"></line><rect x="150" y="40" width="150" height="52" rx="8" fill="var(--dg-accent)"></rect><text x="225" y="62" text-anchor="middle" fill="var(--dg-on-accent)">pool / ~10-20 conns</text><text x="225" y="78" text-anchor="middle" fill="var(--dg-on-accent)" font-size="9">borrow -> use -> return</text><line x1="300" y1="66" x2="390" y2="66" stroke="var(--dg-line-2)" stroke-width="1.4"></line><rect x="390" y="44" width="110" height="44" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="445" y="70" text-anchor="middle" fill="var(--dg-warn)">Postgres</text></svg>
+</Diagram>
+
+Two layers, often combined: the **driver's built-in pool** (Go's `database/sql` pools automatically; Python uses `psycopg_pool`/SQLAlchemy's pool) for a single app instance, and an **external pooler like PgBouncer** when many app instances would otherwise each hold their own pool and overwhelm Postgres. Tune pool size to your workload, bigger isn't better; too many connections degrade Postgres.
+
+### EXPLAIN ANALYZE: verify the index is actually used
+
+Creating an index doesn't guarantee the planner uses it. `EXPLAIN` shows the query plan; `EXPLAIN ANALYZE` actually _runs_ the query and reports real timings. You read it looking for **"Index Scan"** (good, your index is working) versus **"Seq Scan"** (the planner read every row).
+
+<Callout type="info" title="Verified live / this is real output">
+Running `EXPLAIN SELECT * FROM tasks WHERE status = 'pending'` against the chapter's actual schema on Postgres 16 produced: `Bitmap Index Scan on idx_tasks_status`, confirming the status index from section 11 is genuinely used for that filter, not just created and ignored.
+</Callout>
+
+One caveat that confuses people: on a _tiny_ table the planner may correctly choose a Seq Scan anyway (reading 6 rows directly is faster than the index round-trip). That's not a bug, index benefits show up at scale. `EXPLAIN ANALYZE` on production-sized data is how you confirm an index earns its keep, and how you debug a slow query that _should_ be using one but isn't.
+
+### Soft deletes
+
+Often you don't want a row truly gone, you want it kept for audit, recovery, or historical integrity, but hidden from normal queries. That's a **soft delete**: add a nullable `deleted_at TIMESTAMPTZ` column (null = live, a timestamp = deleted). "Deleting" becomes an UPDATE; every read filters out the deleted rows.
+
+______
+
+SQL
+
+soft delete / the column, the "delete", the reads, and the unique-index gotcha
+
+```sql
+ALTER TABLE users ADD COLUMN deleted_at TIMESTAMPTZ;   -- null = alive
+
+-- "delete" = mark, don't remove
+UPDATE users SET deleted_at = now() WHERE id = $1;
+
+-- every read must exclude the dead rows
+SELECT * FROM users WHERE deleted_at IS NULL ORDER BY created_at DESC;
+
+-- gotcha: a plain UNIQUE now blocks reusing a soft-deleted email.
+-- a PARTIAL unique index fixes it, uniqueness only among LIVE rows:
+CREATE UNIQUE INDEX uniq_active_email
+  ON users (email) WHERE deleted_at IS NULL;
+```
+
+The trade-offs are real: every query must remember the `WHERE deleted_at IS NULL` filter (easy to forget, a leak), unique constraints need the partial-index treatment shown above, and the table only ever grows. Use soft deletes where history matters (orders, user accounts, anything auditable); use hard `DELETE` for genuinely disposable data.
+
+<Callout type="info" title="Production mindset">
+The fundamentals get you a correct database; these get you a _fast, safe, operable_ one. Collapse N+1 into joins, pool your connections, prove your indexes with `EXPLAIN ANALYZE`, and reach for soft deletes when data must survive its own deletion. None of it is exotic, it's the day-two reality of running a database in production.
+</Callout>
+
+The Backend Lens / Field Manual v2, Chapter 12.\
+Schema, constraints, trigger, joins and index usage in this chapter were executed and verified against PostgreSQL 16.\
+Companion chapter: 11 / Complete REST API Design (same project-management example).
+
+Backend from First Principles / Chapter 08 / Postgres. Code targets Go 1.22+ and Python 3.11+.

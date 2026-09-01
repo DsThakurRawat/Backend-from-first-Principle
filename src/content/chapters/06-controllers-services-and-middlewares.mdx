@@ -1,0 +1,608 @@
+---
+order: 6
+title: "Handlers, Services & Repositories."
+navTitle: "Controllers, Services & Middlewares"
+summary: "A first-principles walkthrough of how a single HTTP request travels inside your server, through routing, the three architectural layers, the middleware chain, and the request context that ties it all together. Complete implementations in Go and Python shown side by side."
+readingTime: "2-3 hours"
+keywords:
+  - "controllers"
+  - "services"
+  - "repositories"
+  - "middleware"
+  - "request"
+  - "context"
+  - "layers"
+---
+## 01Client & Server
+
+Everything begins with two participants talking over **HTTP**: a **client** (a browser, a mobile app, another service) and a **server**. The client sends a request; the server eventually sends back a response.
+
+We have already studied the lifecycle _external_ to the server, how the request is packaged, sent across the network, and how the response comes back. What we have _not_ traced yet is what happens _inside_ the server: the long sequence of events between the instant a request arrives and the instant a response leaves. That internal sequence is the subject of this manual.
+
+<Diagram>
+<svg viewBox="0 0 760 200" role="img" aria-label="Client and server communicating over HTTP"><rect x="40" y="60" width="170" height="80" rx="10" fill="none" stroke="var(--dg-ink)" stroke-width="2"></rect><text x="125" y="95" text-anchor="middle" class="sv-ttl" font-size="20" fill="var(--dg-ink)">Client</text><text x="125" y="118" text-anchor="middle" class="sv-sub" font-size="13" fill="var(--dg-ink-3)">browser / app</text><rect x="550" y="60" width="170" height="80" rx="10" fill="none" stroke="var(--dg-ink)" stroke-width="2"></rect><text x="635" y="95" text-anchor="middle" class="sv-ttl" font-size="20" fill="var(--dg-ink)">Server</text><text x="635" y="118" text-anchor="middle" class="sv-sub" font-size="13" fill="var(--dg-ink-3)">your backend</text><line x1="212" y1="82" x2="548" y2="82" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#ah)"></line><text x="380" y="74" text-anchor="middle" class="sv-mono" font-size="12" fill="var(--dg-accent-2)">HTTP request →</text><line x1="548" y1="120" x2="212" y2="120" stroke="var(--dg-ink)" stroke-width="2" marker-end="url(#ahd)"></line><text x="380" y="142" text-anchor="middle" class="sv-mono" font-size="12" fill="var(--dg-ink-2)">← HTTP response</text><defs><marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="var(--dg-accent)"></path></marker><marker id="ahd" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="var(--dg-ink)"></path></marker></defs></svg>
+</Diagram>
+
+The two ends of every interaction. This manual zooms into the **right-hand box**.
+
+## 02The Request Lifecycle Inside the Server
+
+From the moment a request reaches the server until the moment a response is returned, a great deal happens. We call this the **request lifecycle**. To understand the architecture, it helps to trace the request from _top to bottom_, following it in the exact order it is processed: arrival, routing, the handler, the service, the repository, and finally the response on its way back out.
+
+This top-to-bottom ordering is deliberate. Each topic builds on the last, mirroring the path the data physically takes through your code.
+
+<Diagram>
+<svg viewBox="0 0 760 300" role="img" aria-label="Request lifecycle inside the server"><text x="380" y="26" text-anchor="middle" class="sv-lbl" fill="var(--dg-ink)">The journey of one request</text><g font-family="var(--font-prose)" font-weight="700" font-size="15"><rect x="250" y="44" width="260" height="36" rx="7" fill="var(--dg-ink)"></rect><text x="380" y="68" text-anchor="middle" fill="var(--dg-on-accent)">Entry Point</text><rect x="250" y="92" width="260" height="36" rx="7" fill="none" stroke="var(--dg-line-2)" stroke-width="1.5"></rect><text x="380" y="116" text-anchor="middle" fill="var(--dg-ink)">Routing</text><rect x="250" y="140" width="260" height="36" rx="7" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.5"></rect><text x="380" y="164" text-anchor="middle" fill="var(--dg-accent-2)">Handler / Controller</text><rect x="250" y="188" width="260" height="36" rx="7" fill="none" stroke="var(--dg-line-2)" stroke-width="1.5"></rect><text x="380" y="212" text-anchor="middle" fill="var(--dg-ink)">Service</text><rect x="250" y="236" width="260" height="36" rx="7" fill="none" stroke="var(--dg-line-2)" stroke-width="1.5"></rect><text x="380" y="260" text-anchor="middle" fill="var(--dg-ink)">Repository → Database</text></g><g stroke="var(--dg-ink-3)" stroke-width="1.5" marker-end="url(#dn)"><line x1="380" y1="80" x2="380" y2="90"></line><line x1="380" y1="128" x2="380" y2="138"></line><line x1="380" y1="176" x2="380" y2="186"></line><line x1="380" y1="224" x2="380" y2="234"></line></g><text x="540" y="64" class="sv-mono" font-size="11" fill="var(--dg-ink-3)">OS forwards :3000</text><text x="540" y="112" class="sv-mono" font-size="11" fill="var(--dg-ink-3)">/users/:id → fn</text><defs><marker id="dn" markerWidth="10" markerHeight="10" refX="3" refY="8" orient="auto"><path d="M0,0 L6,0 L3,8 Z" fill="var(--dg-ink-3)"></path></marker></defs></svg>
+</Diagram>
+
+The five internal stops. The response then climbs back up the same path.
+
+## 03Entry Point & Routing
+
+When a request arrives, the operating system forwards the HTTP request to whichever **port** your server is listening on, `:3000`, `:4000`, or any port you configured. The point where your server first receives that request is its **entry point**. Your server is always _listening_ on that port, and that listening is how it picks up incoming requests.
+
+### Routing
+
+Immediately after the entry point comes **routing**. A server exposes many routes, `/users`, `/users/123`, dynamic routes like `/users/:id`, and so on. The **routing algorithm** inspects the incoming request's method and path and **maps it to a particular handler**: a predefined function responsible for that route.
+
+<Callout type="info" title="Definition / Handler">
+A **handler** (also called a **controller**) is any function you have predefined to handle the requests for a given route. Routing's whole job is to decide _which_ handler runs for _which_ incoming request.
+</Callout>
+
+## 04Why Three Layers?
+
+Once routing picks a handler, we encounter the three-part structure at the heart of a well-organized backend: **handlers (controllers)**, **services**, and **repositories**. A natural question: why split things into three components instead of cramming all the logic into a single handler?
+
+The honest answer: there is **no hard requirement** to separate them. You _can_ do everything in one handler. The separation is a **design pattern**: a choice that buys you real benefits:
+
+- Your codebase becomes **scalable** as it grows.
+- It is more **maintainable** over time.
+- It is **easier to add features** without breaking unrelated parts.
+- It is **easier to debug** because each layer has one clear responsibility.
+
+This is the principle of **separation of concerns**. The rest of Part II walks each layer in the order the request meets them.
+
+<Diagram>
+<svg viewBox="0 0 760 240" role="img" aria-label="The three layers and their responsibilities"><g><rect x="40" y="50" width="210" height="150" rx="10" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.6"></rect><text x="145" y="78" text-anchor="middle" class="sv-ttl" font-size="17" fill="var(--dg-accent-2)">Handler</text><text x="145" y="96" text-anchor="middle" class="sv-sub" font-size="12" fill="var(--dg-ink-3)">controller</text><text x="145" y="128" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-ink-2)">data in / out</text><text x="145" y="148" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-ink-2)">validate</text><text x="145" y="168" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-ink-2)">status codes</text></g><g><rect x="275" y="50" width="210" height="150" rx="10" fill="none" stroke="var(--dg-ink)" stroke-width="1.6"></rect><text x="380" y="78" text-anchor="middle" class="sv-ttl" font-size="17" fill="var(--dg-ink)">Service</text><text x="380" y="96" text-anchor="middle" class="sv-sub" font-size="12" fill="var(--dg-ink-3)">business logic</text><text x="380" y="128" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-ink-2)">processing</text><text x="380" y="148" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-ink-2)">orchestrate</text><text x="380" y="168" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-ink-2)">no HTTP</text></g><g><rect x="510" y="50" width="210" height="150" rx="10" fill="none" stroke="var(--dg-ink)" stroke-width="1.6"></rect><text x="615" y="78" text-anchor="middle" class="sv-ttl" font-size="17" fill="var(--dg-ink)">Repository</text><text x="615" y="96" text-anchor="middle" class="sv-sub" font-size="12" fill="var(--dg-ink-3)">database</text><text x="615" y="128" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-ink-2)">build query</text><text x="615" y="148" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-ink-2)">read / write</text><text x="615" y="168" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-ink-2)">one job each</text></g><line x1="252" y1="125" x2="273" y2="125" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#a3)"></line><line x1="487" y1="125" x2="508" y2="125" stroke="var(--dg-ink)" stroke-width="2" marker-end="url(#a3b)"></line><defs><marker id="a3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--dg-accent)"></path></marker><marker id="a3b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--dg-ink)"></path></marker></defs></svg>
+</Diagram>
+
+One responsibility per layer. The request flows left→right, the result returns right→left.
+
+## 05The Controller / Handler Layer
+
+The handler is the entry point for a route once routing has matched it. Its overarching job is to **control the flow of data**: from the client into the server, and from the server back to the client. Crucially, in nearly every framework and language, your handler is _given_ two things by the runtime itself.
+
+Provided by the runtimeThe request object
+
+Carries everything the client sent: method, path, headers, query parameters, body. You do **not** create it, Go, Express, Flask, etc. hand it to you on every request.
+
+Provided by the runtimeThe response object
+
+The handle through which you set status codes, modify response headers, and send the body back. Also provided automatically, you receive it, you don't construct it.
+
+With those two objects in hand, the handler runs through a precise, ordered workflow.
+
+1. Data Extraction
+
+   Pull the relevant data out of the request object. _What_ you pull depends on the method: **GET** → query parameters; **POST / PUT / PATCH** → the request body; **DELETE** → usually nothing, sometimes a body.
+
+2. Binding (Deserialization)
+
+   The body arrived as a **JSON** string because JSON is a serializable format that travels well across the front-end/back-end boundary. The handler **deserializes** it into the language's native type, a Go struct, a Python dict/class, a Rust struct. Frameworks call this **binding**. If it fails, halt immediately and return 400 Bad Request.
+
+3. Validation
+
+   Confirm the data matches the expected shape: mandatory fields present, types correct, no malicious payloads. Validate _everything_ from an external client, path params, query params, and body, and be as specific as possible.
+
+4. Transformation
+
+   Optionally reshape the validated data for the convenience of downstream layers, for example, injecting default values.
+
+5. Delegation
+
+   Pass the clean, validated, transformed data (plus context like the authenticated user ID) **down to the Service layer**.
+
+6. Sending the Response
+
+   When the service returns, choose the correct status code and send the final response back to the client.
+
+### A note on Node.js vs Go & Python
+
+In a Node.js/Express app the deserialization step often happens _upstream_ in a middleware (the `json()` body parser), so JSON is already a JavaScript object by the time your handler runs. In **Go** and **Python** you typically deserialize _explicitly_ inside the handler, into a struct, a dictionary, or a class.
+
+#### Step 1: 2 / Extract & bind the body; 400 on failure
+
+```go title="create_book / handler Go Python"
+// CreateBookRequest is our native format, the bind target.
+type CreateBookRequest struct {
+    Title  string `json:"title"`
+    Author string `json:"author"`
+}
+
+func CreateBookHandler(w http.ResponseWriter, r *http.Request) {
+    var req CreateBookRequest
+
+    // Step 1 + 2: extract the body and deserialize (bind) into the struct.
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        // Deserialization failed -> the payload is malformed.
+        http.Error(w, "invalid request body", http.StatusBadRequest) // 400
+        return // terminate the request here; do not proceed.
+    }
+    // ... validation, transformation, delegation follow ...
+}
+```
+
+```python
+from dataclasses import dataclass
+from flask import request, jsonify
+
+@dataclass
+class CreateBookRequest:
+    title: str
+    author: str
+
+def create_book_handler():
+    # Step 1 + 2: extract body and deserialize into a native dict/class.
+    payload = request.get_json(silent=True)
+    if payload is None:
+        # Deserialization failed -> malformed payload.
+        return jsonify({"error": "invalid request body"}), 400
+    req = CreateBookRequest(**payload)
+    # ... validation, transformation, delegation follow ...
+```
+
+#### Step 3: 4 / Validate, then transform (inject a default for an optional query param)
+
+A good API design rule: make query parameters **optional** wherever possible. Consider `GET /books?sort=name|date`. If the client sends nothing, validation must still pass, so the transformation step injects a sensible default.
+
+```go title="list_books / validate + transform Go Python"
+func ListBooksHandler(w http.ResponseWriter, r *http.Request) {
+    sort := r.URL.Query().Get("sort") // "" if absent
+
+    // VALIDATION: if present, it must be one of the allowed values.
+    if sort != "" && sort != "name" && sort != "date" {
+        http.Error(w, "sort must be 'name' or 'date'", http.StatusBadRequest)
+        return
+    }
+
+    // TRANSFORMATION: query params are optional -> inject a default.
+    if sort == "" {
+        sort = "date" // downstream layers never see an empty value
+    }
+
+    books, err := bookService.ListBooks(r.Context(), sort) // delegate
+    if err != nil {
+        http.Error(w, "could not fetch books", http.StatusInternalServerError) // 500
+        return
+    }
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(books) // 200 with the array of books
+}
+```
+
+```python
+def list_books_handler():
+    sort = request.args.get("sort")  # None if absent
+
+    # VALIDATION: if present, must be an allowed value.
+    if sort is not None and sort not in ("name", "date"):
+        return jsonify({"error": "sort must be 'name' or 'date'"}), 400
+
+    # TRANSFORMATION: optional param -> inject a default.
+    if sort is None:
+        sort = "date"
+
+    try:
+        books = book_service.list_books(sort)  # delegate
+    except Exception:
+        return jsonify({"error": "could not fetch books"}), 500
+
+    return jsonify(books), 200  # array of books
+```
+
+## 06The Service Layer
+
+The service layer is where the **actual processing**: the business logic, happens. The single most important rule governs it:
+
+<Callout type="info" title="The Golden Rule of Services">
+The service layer should know **absolutely nothing about HTTP**. No request/response objects, no status codes, no validation concerns. If you glance at a service method, you should _not_ be able to tell it's used in an API at all. It is just a function: data in, processing, data out.
+</Callout>
+
+This isolation is what keeps the system decoupled. The service decides _what to do_; the handler decides _how to report it over HTTP_. That is where we draw the responsibility line.
+
+#### Orchestration
+
+A single service method can do a great deal. It can call **one or several repository methods** and merge their results, make external API calls, send emails, fire notifications, anything the business operation requires. This coordinating role is called **orchestration**: the service stitches together data from multiple sources and returns a single clean result to the handler. A service that only sends an email may never touch the repository at all.
+
+```go title="book_service / pure business logic Go Python"
+// Notice: no http.Request, no ResponseWriter, no status codes.
+// You cannot tell from this signature that it serves an API.
+func (s *BookService) ListBooks(ctx context.Context, sort string) ([]Book, error) {
+    // Orchestration: call the repository for the data it needs.
+    books, err := s.repo.FindAllBooks(ctx, sort)
+    if err != nil {
+        return nil, err // bubble the error up; the handler decides the code
+    }
+    // Could also: enrich, merge other repo calls, send notifications...
+    return books, nil
+}
+
+// A service that needs no database at all is perfectly valid:
+func (s *BookService) NotifyOwner(email string) error {
+    return s.mailer.Send(email, "Your book was added")
+}
+```
+
+```python
+class BookService:
+    def __init__(self, repo, mailer):
+        self.repo = repo
+        self.mailer = mailer
+
+    # No request, no response, no status codes, just logic.
+    def list_books(self, sort: str) -> list:
+        # Orchestration: ask the repository for what it needs.
+        books = self.repo.find_all_books(sort)
+        # Could merge other repo calls, enrich, notify, etc.
+        return books
+
+    # A purely-logic service that never touches the DB:
+    def notify_owner(self, email: str) -> None:
+        self.mailer.send(email, "Your book was added")
+```
+
+## 07The Repository Layer
+
+The repository (or _database_) layer has a single concern: **talking to the database**. It receives data from the service, **constructs the database query**: for inserting, filtering, or sorting, runs it, and returns the raw result back up to the service.
+
+<Callout type="info" title="Single Responsibility">
+A repository method should do **one thing** and return **one kind of data**. Do _not_ write a single method that, depending on an optional parameter, returns either one book or all books. Instead write two distinct methods: `FindAllBooks()` and `FindBookByID(id)`.
+</Callout>
+
+```go title="book_repository / one job per method Go Python"
+// ONE method, ONE shape of result: all books, sorted.
+func (r *BookRepo) FindAllBooks(ctx context.Context, sort string) ([]Book, error) {
+    // Build the query from the data the service handed down.
+    query := fmt.Sprintf("SELECT id, title, author FROM books ORDER BY %s", sort)
+    rows, err := r.db.QueryContext(ctx, query)
+    if err != nil { return nil, err }
+    defer rows.Close()
+
+    var books []Book
+    for rows.Next() {
+        var b Book
+        rows.Scan(&b.ID, &b.Title, &b.Author)
+        books = append(books, b)
+    }
+    return books, nil
+}
+
+// A SEPARATE method for the single-book case. No optional toggles.
+func (r *BookRepo) FindBookByID(ctx context.Context, id int) (Book, error) {
+    var b Book
+    err := r.db.QueryRowContext(ctx,
+        "SELECT id, title, author FROM books WHERE id = $1", id).
+        Scan(&b.ID, &b.Title, &b.Author)
+    return b, err
+}
+```
+
+```python
+class BookRepo:
+    def __init__(self, db):
+        self.db = db
+
+    # ONE method, ONE result shape: all books, sorted.
+    def find_all_books(self, sort: str) -> list:
+        # Build the query from data passed down by the service.
+        query = f"SELECT id, title, author FROM books ORDER BY {sort}"
+        cur = self.db.execute(query)
+        return [dict(row) for row in cur.fetchall()]
+
+    # SEPARATE method for one book. No optional toggle parameter.
+    def find_book_by_id(self, book_id: int) -> dict:
+        cur = self.db.execute(
+            "SELECT id, title, author FROM books WHERE id = ?", (book_id,))
+        return dict(cur.fetchone())
+```
+
+## 08The Full Lifecycle, End to End
+
+Putting the layers together, here is the complete round trip for a single API call, say `GET /books`:
+
+1. Binding
+
+   The handler extracts data from the request object and deserializes it into the native format.
+
+2. Validation & Transformation
+
+   The handler validates the data and injects defaults / reshapes as needed.
+
+3. Service call
+
+   The handler delegates to the service, which performs the real processing, calling the repository for any database work.
+
+4. Result returns
+
+   The repository returns rows to the service; the service returns a clean result to the handler.
+
+5. Response
+
+   The handler picks the status code and sends the response. 200 / 201 / 204 on success; 400 for client error; 500 for server error.
+
+200 OK 201 Created 204 No Content 400 Bad Request 500 Internal Server Error
+
+<Diagram>
+<svg viewBox="0 0 760 250" role="img" aria-label="Full data flow across the three layers and back"><g font-family="var(--font-prose)" font-weight="700" font-size="14"><rect x="30" y="100" width="120" height="50" rx="9" fill="var(--dg-ink)"></rect><text x="90" y="130" text-anchor="middle" fill="var(--dg-on-accent)">Client</text><rect x="190" y="100" width="130" height="50" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.5"></rect><text x="255" y="123" text-anchor="middle" fill="var(--dg-accent-2)" font-size="13">Handler</text><text x="255" y="140" text-anchor="middle" class="sv-mono" font-size="9" fill="var(--dg-ink-3)">validate</text><rect x="360" y="100" width="130" height="50" rx="9" fill="none" stroke="var(--dg-ink)" stroke-width="1.5"></rect><text x="425" y="123" text-anchor="middle" fill="var(--dg-ink)" font-size="13">Service</text><text x="425" y="140" text-anchor="middle" class="sv-mono" font-size="9" fill="var(--dg-ink-3)">logic</text><rect x="530" y="100" width="130" height="50" rx="9" fill="none" stroke="var(--dg-ink)" stroke-width="1.5"></rect><text x="595" y="123" text-anchor="middle" fill="var(--dg-ink)" font-size="13">Repository</text><text x="595" y="140" text-anchor="middle" class="sv-mono" font-size="9" fill="var(--dg-ink-3)">query</text><rect x="690" y="100" width="50" height="50" rx="9" fill="none" stroke="var(--dg-ink-3)" stroke-width="1.5" stroke-dasharray="3 3"></rect><text x="715" y="130" text-anchor="middle" fill="var(--dg-ink-3)" font-size="11">DB</text></g><g stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#fwd)"><line x1="152" y1="115" x2="188" y2="115"></line><line x1="322" y1="115" x2="358" y2="115"></line><line x1="492" y1="115" x2="528" y2="115"></line><line x1="662" y1="115" x2="688" y2="115"></line></g><g stroke="var(--dg-ink)" stroke-width="2" marker-end="url(#bwd)"><line x1="688" y1="138" x2="662" y2="138"></line><line x1="528" y1="138" x2="492" y2="138"></line><line x1="358" y1="138" x2="322" y2="138"></line><line x1="188" y1="138" x2="152" y2="138"></line></g><text x="380" y="55" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-accent-2)">request flows → down the layers</text><text x="380" y="200" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-ink-2)">← result returns back up → response</text><defs><marker id="fwd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--dg-accent)"></path></marker><marker id="bwd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--dg-ink)"></path></marker></defs></svg>
+</Diagram>
+
+Handlers move **data formats** in and out / the service does the **processing** / the repository does the **database work**.
+
+## 09What Middleware Is
+
+Now replay the lifecycle, but watch the _gaps_. Between the entry point and routing, between routing and the handler, and between the handler and the response, there are **boundaries**: points where extra functions can run. The functions that run in those gaps are **middlewares**. The name is literal: they execute _in the middle_ of the other execution contexts.
+
+Middlewares are **optional**. There may be many, or none at all; a request can flow straight from routing to the handler. You add them only when a requirement calls for one.
+
+A middleware is essentially a special kind of handler. Like a normal handler it receives the **request object** and the **response object** from the runtime, so it, too, can read values from the request, modify the response headers, and even send a response back to the client directly. But it receives a third thing as well, which Part 10 explains.
+
+<Diagram>
+<svg viewBox="0 0 760 150" role="img" aria-label="Middleware chain between entry point and response"><g font-family="var(--font-diagram-mono)" font-size="11"><rect x="20" y="55" width="60" height="42" rx="7" fill="var(--dg-ink)"></rect><text x="50" y="80" text-anchor="middle" fill="var(--dg-on-accent)" font-size="10">entry</text><rect x="100" y="55" width="74" height="42" rx="7" fill="none" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="137" y="80" text-anchor="middle" fill="var(--dg-accent-2)" font-size="10">MW 1</text><rect x="194" y="55" width="74" height="42" rx="7" fill="none" stroke="var(--dg-line-2)" stroke-width="1.4"></rect><text x="231" y="80" text-anchor="middle" fill="var(--dg-ink)" font-size="10">routing</text><rect x="288" y="55" width="74" height="42" rx="7" fill="none" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="325" y="80" text-anchor="middle" fill="var(--dg-accent-2)" font-size="10">MW 2</text><rect x="382" y="55" width="84" height="42" rx="7" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="424" y="80" text-anchor="middle" fill="var(--dg-accent-2)" font-size="10">handler</text><rect x="486" y="55" width="74" height="42" rx="7" fill="none" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="523" y="80" text-anchor="middle" fill="var(--dg-accent-2)" font-size="10">MW 3</text><rect x="600" y="55" width="74" height="42" rx="7" fill="var(--dg-ink)"></rect><text x="637" y="80" text-anchor="middle" fill="var(--dg-on-accent)" font-size="10">response</text></g><g stroke="var(--dg-ink-3)" stroke-width="1.6" marker-end="url(#mw)"><line x1="82" y1="76" x2="98" y2="76"></line><line x1="176" y1="76" x2="192" y2="76"></line><line x1="270" y1="76" x2="286" y2="76"></line><line x1="364" y1="76" x2="380" y2="76"></line><line x1="468" y1="76" x2="484" y2="76"></line><line x1="562" y1="76" x2="598" y2="76"></line></g><text x="347" y="120" text-anchor="middle" class="sv-mono" font-size="10" fill="var(--dg-ink-3)">each red box is an optional middleware sitting in a boundary</text><defs><marker id="mw" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--dg-ink-3)"></path></marker></defs></svg>
+</Diagram>
+
+Middlewares occupy the **boundaries** between execution contexts.
+
+## 10The next() Function
+
+The third thing a middleware receives is **`next`**, a function. Calling `next()` **passes execution to the next context**: whether that's the next middleware, the routing step, or the final handler. It's how the request crosses from one boundary to the next.
+
+<Callout type="info" title="Two ways a middleware ends">
+**(1)** Do its work, then call `next()` to continue the chain. **(2)** _Not_ call `next()` and instead **send a response immediately**: short-circuiting the request before it ever reaches the handler. This early exit is exactly why a failed auth check or a tripped rate limit can stop a request cheaply.
+</Callout>
+
+Because a middleware has both the request and response objects, it can read and modify the request, and it can terminate the request right where it stands by returning a response. That is the full extent of a middleware's power.
+
+```go title="middleware shape / req, res, next Go Python"
+// In Go, middleware wraps the "next" handler. Calling next.ServeHTTP
+// is the equivalent of next(): pass execution along the chain.
+func LoggingMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        log.Printf("%s %s", r.Method, r.URL.Path) // do work
+
+        // EARLY EXIT example (short-circuit, never calls next):
+        if r.Header.Get("X-Blocked") == "yes" {
+            http.Error(w, "forbidden", http.StatusForbidden)
+            return // request stops here
+        }
+
+        next.ServeHTTP(w, r) // === next(): continue the chain ===
+    })
+}
+```
+
+```python
+# A WSGI/Flask-style middleware receives the request and a `next`
+# callable that invokes the rest of the chain.
+def logging_middleware(next):
+    def wrapper(request):
+        print(f"{request.method} {request.path}")  # do work
+
+        # EARLY EXIT example (short-circuit, never calls next):
+        if request.headers.get("X-Blocked") == "yes":
+            return Response("forbidden", status=403)  # stops here
+
+        return next(request)  # === next(): continue the chain ===
+    return wrapper
+```
+
+#### Why middleware at all?
+
+The same reason we use functions: to avoid repeating the same lines everywhere. A backend may serve thousands or millions of requests and expose hundreds of endpoints. Common operations, security, logging, authentication, parsing, compression, need to run for _every_ request. Without middleware you would duplicate that code in every handler. Even extracting a helper function still forces you to _call_ it in every handler. Middleware **centralizes** the common logic and applies it automatically across the chain.
+
+## 11Why Order Matters
+
+Each middleware uses `next()` to pass execution to the one after it, so the request flows through them **sequentially, in the order you register them**. That order is not cosmetic, it changes behavior.
+
+The sharpest example is **global error handling**, which is typically placed **last**. Because the request flows in _one direction_, a middleware can only catch errors that originate _upstream_ of it. If you placed the error handler in the middle, an error thrown later in the handler would flow _past_ it and never be caught. Position it last and it can capture errors from anywhere earlier in the chain.
+
+<Callout type="info" title="A sensible default ordering">
+**CORS** first (reject foreign origins as early as possible) → **logging** → **authentication** → application-specific checks → **handler** → **global error handling last**. Spend real time deciding this order for your app.
+</Callout>
+
+## 12Common Middlewares
+
+Each of the following qualifies as a middleware for the same two reasons: it must run for _every_ request, and it needs to read the request and/or modify the response.
+
+SecurityCORS
+
+Browsers enforce a same-origin policy: a web app at `example.com` may only access resources from `example.com` unless the remote server sends the right headers. The CORS middleware reads the request's **origin** (provided automatically by the runtime); if it matches an allowed front-end origin, it adds the appropriate response headers so the browser won't block the response, then calls `next()`. If not, it omits the headers and the browser blocks it by default. Placed **early**.
+
+SecuritySecurity headers
+
+Sets headers like `Content-Security-Policy` on every response, then forwards to the next middleware.
+
+SecurityAuthentication
+
+Extracts a token (JWT, session ID, etc.) from headers or payload and verifies it. On **failure**, it returns 401 Unauthorized immediately and terminates the request, no handler, no further middleware. On **success**, it extracts the user's details (user ID, role, permissions) and stores them in the **request context** before calling `next()`.
+
+SecurityRate limiting
+
+Tracks how many requests an IP made within a window you define (e.g. 30 calls in 2 seconds). Over the threshold, it returns 429 Too Many Requests to protect server resources; under it, it calls `next()`.
+
+ObservabilityLogging & monitoring
+
+Records request details, path, method, query params, body, to the terminal or a log file for debugging, reporting, and auditing.
+
+ReliabilityGlobal error handling
+
+Catches any unstructured error from anywhere upstream, decides whether it is a client (4xx) or server (5xx) error, and returns a clean, structured message (often with a `message` and an error `code` the front end can map to a friendly message). Placed **last**.
+
+PerformanceCompression
+
+Compresses large responses (e.g. gzip) so they travel efficiently; modern browsers transparently decompress them back into a usable format.
+
+ConvenienceData parsing
+
+Serialization/deserialization, and even validation/transformation, can be delegated to a middleware (e.g. a body parser) so handlers don't repeat it. This is exactly why Node's `json()` body parser means JSON is already a JS object by the time a handler runs.
+
+#### The CORS & Authentication middlewares in code
+
+```go title="cors + auth middleware Go Python"
+var allowedOrigin = "https://app.example.com"
+
+func CORSMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        origin := r.Header.Get("Origin") // runtime gives us this
+        if origin == allowedOrigin {
+            w.Header().Set("Access-Control-Allow-Origin", origin)
+        }
+        next.ServeHTTP(w, r) // pass along; browser blocks if header absent
+    })
+}
+
+func AuthMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        token := r.Header.Get("Authorization")
+        userID, role, err := verifyToken(token)
+        if err != nil {
+            http.Error(w, "unauthorized", http.StatusUnauthorized) // 401, stop
+            return
+        }
+        // SUCCESS: stash identity in the request context, then continue.
+        ctx := context.WithValue(r.Context(), "userID", userID)
+        ctx = context.WithValue(ctx, "role", role)
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
+}
+```
+
+```python
+ALLOWED_ORIGIN = "https://app.example.com"
+
+def cors_middleware(next):
+    def wrapper(request):
+        resp = next(request)
+        origin = request.headers.get("Origin")  # runtime gives us this
+        if origin == ALLOWED_ORIGIN:
+            resp.headers["Access-Control-Allow-Origin"] = origin
+        return resp
+    return wrapper
+
+def auth_middleware(next):
+    def wrapper(request):
+        token = request.headers.get("Authorization")
+        try:
+            user_id, role = verify_token(token)
+        except Exception:
+            return Response("unauthorized", status=401)  # stop
+        # SUCCESS: stash identity in the request context, then continue.
+        request.context["user_id"] = user_id
+        request.context["role"] = role
+        return next(request)
+    return wrapper
+```
+
+## 13What Request Context Is
+
+The auth middleware just did something subtle: it stored the user ID and role somewhere so that a later handler could read them. That "somewhere" is the **request context**.
+
+<Callout type="info" title="Definition / Request Context">
+A piece of **storage or state**: usually a simple key–value store, that is **scoped to a single HTTP request**. Every request gets its own context; it does not leak into other requests. Every framework in every language (Node, Go, Python) ships some implementation of this concept; the mechanics differ, the idea is the same.
+</Callout>
+
+Why does it exist? Because a request passes through many **isolated function boundaries**: CORS, logging, routing, auth, permission checks, the handler, the error handler. The context gives all of them a shared place to read and write state **without tightly coupling** them, without one middleware having to explicitly pass values into the next by hand.
+
+<Diagram>
+<svg viewBox="0 0 760 180" role="img" aria-label="Request context shared across the chain"><g font-family="var(--font-diagram-mono)" font-size="10"><rect x="40" y="30" width="90" height="40" rx="7" fill="none" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="85" y="55" text-anchor="middle" fill="var(--dg-accent-2)">auth MW</text><rect x="170" y="30" width="90" height="40" rx="7" fill="none" stroke="var(--dg-line-2)" stroke-width="1.4"></rect><text x="215" y="55" text-anchor="middle" fill="var(--dg-ink)">logging</text><rect x="300" y="30" width="90" height="40" rx="7" fill="none" stroke="var(--dg-line-2)" stroke-width="1.4"></rect><text x="345" y="55" text-anchor="middle" fill="var(--dg-ink)">perm check</text><rect x="430" y="30" width="90" height="40" rx="7" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="475" y="55" text-anchor="middle" fill="var(--dg-accent-2)">handler</text><rect x="560" y="30" width="90" height="40" rx="7" fill="none" stroke="var(--dg-line-2)" stroke-width="1.4"></rect><text x="605" y="55" text-anchor="middle" fill="var(--dg-ink)">error MW</text></g><rect x="40" y="105" width="610" height="48" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.4" stroke-dasharray="5 4"></rect><text x="345" y="125" text-anchor="middle" class="sv-mono" font-size="11" fill="var(--dg-accent-2)">REQUEST CONTEXT · shared key–value state, scoped to this one request</text><text x="345" y="142" text-anchor="middle" class="sv-mono" font-size="10" fill="var(--dg-ink-3)">&#123; user&#95;id, role, request&#95;id, deadline &#125;</text><g stroke="var(--dg-ink-3)" stroke-width="1.2" stroke-dasharray="2 3"><line x1="85" y1="70" x2="85" y2="104"></line><line x1="215" y1="70" x2="215" y2="104"></line><line x1="345" y1="70" x2="345" y2="104"></line><line x1="475" y1="70" x2="475" y2="104"></line><line x1="605" y1="70" x2="605" y2="104"></line></g></svg>
+</Diagram>
+
+Every boundary can read and write the **same per-request store**: no manual hand-off needed.
+
+## 14Use Case / Passing Authentication Data
+
+The canonical use. The auth middleware verifies credentials, extracts the `user_id` and `role`, and writes them into the context. Far downstream, a `POST /books` handler needs to stamp the new book with its owner. Instead of trusting a `user_id` sent in the client's JSON payload, it reads the ID **from the context**.
+
+<Callout type="info" title="Security, why this matters">
+If you took the `user_id` from the client payload, a malicious client could send _someone else's_ ID and act as them. Reading identity from the context, populated only by your verified auth middleware, closes that hole. The same context-stored role drives permission checks (is this user an admin? does it have write access?).
+</Callout>
+
+```go title="handler reads identity from context Go Python"
+func CreateBookHandler(w http.ResponseWriter, r *http.Request) {
+    var req CreateBookRequest
+    json.NewDecoder(r.Body).Decode(&req)
+
+    // Read the trusted user ID FROM THE CONTEXT, not from req.
+    // The auth middleware put it there after verifying the token.
+    userID := r.Context().Value("userID").(int)
+    role := r.Context().Value("role").(string)
+
+    if role != "admin" && role != "user" {
+        http.Error(w, "forbidden", http.StatusForbidden)
+        return
+    }
+
+    // Persist with the SERVER-VERIFIED owner id, never the client's.
+    book, _ := bookService.Create(r.Context(), req, userID)
+    w.WriteHeader(http.StatusCreated) // 201
+    json.NewEncoder(w).Encode(book)
+}
+```
+
+```python
+def create_book_handler(request):
+    req = CreateBookRequest(**request.get_json())
+
+    # Read the trusted user id FROM THE CONTEXT, not from the body.
+    # The auth middleware put it there after verifying the token.
+    user_id = request.context["user_id"]
+    role = request.context["role"]
+
+    if role not in ("admin", "user"):
+        return Response("forbidden", status=403)
+
+    # Persist with the SERVER-VERIFIED owner id, never the client's.
+    book = book_service.create(req, user_id)
+    return jsonify(book), 201
+```
+
+## 15Use Cases / Tracing & Cancellation
+
+### Request tracing
+
+An early middleware can generate a unique ID (a UUID) and save it in the context. For the entire lifecycle of that request, every log line can include this ID, and any outbound calls to other microservices can forward it in a header like `X-Request-ID`. When you later audit your logs to debug a problem, that single ID lets you **trace one request across every service it touched**: where it started and everywhere it went.
+
+```go title="request-id middleware Go Python"
+func RequestIDMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        id := uuid.NewString() // one unique id for this request
+        ctx := context.WithValue(r.Context(), "requestID", id)
+        w.Header().Set("X-Request-ID", id) // echo it back / forward it
+        log.Printf("[%s] %s %s", id, r.Method, r.URL.Path)
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
+}
+```
+
+```python
+import uuid
+
+def request_id_middleware(next):
+    def wrapper(request):
+        rid = str(uuid.uuid4())  # one unique id for this request
+        request.context["request_id"] = rid
+        print(f"[{rid}] {request.method} {request.path}")
+        resp = next(request)
+        resp.headers["X-Request-ID"] = rid  # echo it back / forward it
+        return resp
+    return wrapper
+```
+
+### Cancellation, abort signals & deadlines
+
+The request context is also the standard place to carry **cancellation signals** and **deadlines**. If a client disconnects or a deadline passes, those signals propagate to downstream external calls, so a service never **hangs perpetually** waiting on work that no longer matters. In Go this is the built-in `context.Context` with `WithTimeout`; in Python it surfaces as timeouts / cancellation tokens passed along the call chain.
+
+<Callout type="info" title="The whole picture">
+A request enters at the entry point, flows through an ordered chain of middlewares and routing, lands in a handler that validates and transforms the data, delegates to a service that orchestrates the business logic, which calls repositories for database work, all while a per-request **context** carries identity, a trace ID, and deadlines alongside it. The result climbs back up, and the handler chooses a status code and sends the response. That is the full request lifecycle.
+</Callout>
+
+Backend from First Principles / Chapter 06 / Layers. Code targets Go 1.22+ and Python 3.11+.

@@ -1,0 +1,591 @@
+---
+order: 14
+title: "Configuration Management"
+navTitle: "Configuration Management"
+summary: "The DNA of your application, how the same code behaves differently across environments without ever touching the codebase."
+readingTime: "2-3 hours"
+keywords:
+  - "configuration"
+  - "environment"
+  - "variables"
+  - "yaml"
+  - "dotenv"
+  - "secrets"
+  - "config"
+  - "management"
+---
+## What is Configuration Management?
+
+Config management is the systematic approach to organize, store, access and maintain all the settings of our backend app.
+
+If we go by the definition, configuration management (or just "config management") is the **systematic approach to organize, store, access, or basically maintaining all the settings** of our backend app. The key word there is _settings_.
+
+You can think of configuration as the DNA of your application. It decides how your code runs in different environments. The exact same application code can behave in completely different ways depending purely on its configuration, and that's by design.
+
+### The Common Misconception
+
+When you say "configuration management" to most people, the first impression, the first idea that hits the mind, is storing things like:
+
+- Database passwords and the secure connection URL of your database
+- Secure authentication keys, secret keys for your JWT secrets, etc.
+- API keys of external services, like your email delivery service
+
+Those are the things that come to mind whenever we talk about config management. But thinking like that **misses a lot of the scope**.
+
+<Callout type="ok" title="The Car Analogy">
+Thinking config management is just secrets and DB URLs is like saying _"a car is just about the engine."_ The engine is definitely the most important part of a car, but you're still missing out on 90% of the other features of the car. Similarly, configuration management has a lot of other dimensions.
+</Callout>
+
+### The Full Scope of Config Management
+
+Configuration management actually covers a wide range of application behaviors:
+
+- **How your application starts up**: the bootstrap sequence and what it needs to begin running
+- **How it connects to external services**: databases, caches, message queues, third-party APIs
+- **How it behaves in different environments**: dev vs staging vs production behaviour
+- **What it logs, whether it logs, and where it logs**: logging behaviour and destinations
+- **Where it sends metrics**: performance metrics and business metrics destinations
+- **Which features are enabled or disabled**: for this version of the deployment, and for which users
+
+There is a lot of scope for config management. It's not just limited to your database URL or secret keys, it affects a lot of important behaviors of your backend application. That's exactly why it's such an important topic.
+
+## The E-Commerce Platform Example
+
+Let's say you are building an e-commerce platform, and you're working on the backend. Your configuration might include a whole range of things, each with very different characteristics. Let's walk through every category that such a backend would need.
+
+<Diagram caption="Fig 1.1: The six configuration categories of an e-commerce backend">
+<svg width="100%" viewBox="0 0 720 280" role="img"><title>E-commerce backend configuration categories</title><rect x="280" y="120" width="160" height="48" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="1"></rect><text x="360" y="140" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">E-Commerce</text><text x="360" y="156" text-anchor="middle" font-size="11" fill="var(--dg-accent)">Backend Config</text><rect x="20" y="20" width="180" height="46" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="110" y="40" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">DB Connection</text><text x="110" y="55" text-anchor="middle" font-size="10" fill="var(--dg-ok)">host, port, user, pass, timeout</text><rect x="270" y="20" width="180" height="46" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="360" y="40" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Payment API Keys</text><text x="360" y="55" text-anchor="middle" font-size="10" fill="var(--dg-warn)">e.g. Stripe keys</text><rect x="520" y="20" width="180" height="46" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="610" y="40" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Feature Flags</text><text x="610" y="55" text-anchor="middle" font-size="10" fill="var(--dg-ok)">new vs old checkout</text><rect x="20" y="222" width="180" height="46" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="110" y="242" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Performance Tuning</text><text x="110" y="257" text-anchor="middle" font-size="10" fill="var(--dg-warn)">connection pool size</text><rect x="270" y="222" width="180" height="46" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="360" y="242" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Security Settings</text><text x="360" y="257" text-anchor="middle" font-size="10" fill="var(--dg-ok)">session timeouts</text><rect x="520" y="222" width="180" height="46" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="610" y="242" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Business Rules</text><text x="610" y="257" text-anchor="middle" font-size="10" fill="var(--dg-warn)">max order amount</text><line x1="200" y1="48" x2="285" y2="120" stroke="var(--dg-line)" stroke-width="1"></line><line x1="360" y1="66" x2="360" y2="118" stroke="var(--dg-line)" stroke-width="1"></line><line x1="520" y1="48" x2="435" y2="120" stroke="var(--dg-line)" stroke-width="1"></line><line x1="200" y1="240" x2="285" y2="168" stroke="var(--dg-line)" stroke-width="1"></line><line x1="360" y1="222" x2="360" y2="170" stroke="var(--dg-line)" stroke-width="1"></line><line x1="520" y1="240" x2="435" y2="168" stroke="var(--dg-line)" stroke-width="1"></line></svg>
+</Diagram>
+
+Breaking down each category in detail:
+
+- **Database connection details**: timeout details, host, port, username, password, etc. All the connection details of your database.
+- **Payment processor API keys**: if you're using Stripe, you'd have your Stripe API keys here.
+- **Feature flags**: what features are enabled for this deployment and what's kept disabled. For example: you built a new checkout flow, and a feature flag controls whether you're still using the old checkout flow or the new one. You can even **conditionally enable the new flow for some users and the old flow for others**.
+- **Performance tuning parameters**: like your connection pool size (the pool used for your database connections).
+- **Security settings**: like session timeouts, whether it's 30 seconds, 60 seconds, etc.
+- **Business rules**: for e-commerce, this might contain things like the maximum order amount allowed for a user.
+
+### Why These Configs Have Different Characteristics
+
+Each of these configurations has fundamentally different characteristics, and recognising these differences is what drives every decision about how to store and protect them:
+
+| Characteristic                      | Examples                            | Implication                                  |
+| ----------------------------------- | ----------------------------------- | -------------------------------------------- |
+| Sensitive / secret                  | DB password, Stripe key, JWT secret | Must never leak, can cause major loss/damage |
+| Non-secret but behavior-controlling | Log level, feature flags, pool size | Controls how the app behaves at runtime      |
+| Frequently changing                 | Feature flags during a rollout      | Need a fast, dynamic update path             |
+| Rarely changing                     | Business rules (monthly/quarterly)  | Can be stored more statically                |
+| Same across all environments        | Certain business rules              | Shared config                                |
+| Different per environment           | DB host, pool size, log level       | Environment-specific config                  |
+
+Some are sensitive and supposed to be kept secret, leaking them might cause a lot of damage and loss. Some are not secretive but they control how your application behaves while it's running. Some change frequently; others change once a month or once a quarter. Some stay the same across development, staging and production; others differ depending on the environment. This diversity is the core reason config management needs a real strategy.
+
+## The Distributed Systems Challenge
+
+On top of all that diversity sits one big challenge: distributed systems. Most of our modern applications, all our modern backends, don't run in isolation anymore. Most of them are now part of a complex distributed system.
+
+A distributed system consists of multiple moving parts:
+
+- Multiple services
+- Databases
+- Caches (like Redis)
+- Message queues
+- Third-party integrations
+- Authentication providers
+- Email services
+- ...and a lot more
+
+All these different integration points, where you connect a separate service to your main backend, **they all require configuration**. Your backend obviously needs to know how to connect to these services. But on top of that, it also needs to know:
+
+- **How to handle failures**: what happens when a service is down or slow
+- **How to optimize performance**: depending on the environment and settings
+- **How to maintain security**: depending on the environment and config sources
+
+All of this depends on different environments, different settings, and different configs, which we can control from different sources. This is the reason that, because most modern backends run on distributed systems, configuration management becomes such an important part of your application.
+
+<Callout type="info" title="Why Backend Config Stakes Are So High">
+The stakes are higher for backend engineers because they handle the **core business logic and data**: pretty much the most important part of any platform or enterprise.\
+\
+A **misconfigured frontend** might show a wrong feature, a wrong dialogue it's not supposed to show, or redirect to a wrong route, annoying, but recoverable.\
+\
+A **misconfigured backend** can expose customer data, process payments incorrectly, or bring down your entire platform if an important part is affected. The blast radius is enormous.
+</Callout>
+
+And backend systems run in diverse environments, different cloud providers, on-premises servers, containers, serverless functions, edge functions, and all of these have their own requirements for different configurations. There's no single uniform target, which makes a systematic approach essential.
+
+## Configuration Chaos
+
+If you don't have a systematic approach, if you don't have a dedicated pipeline, a dedicated strategy to manage your config, you will end up with what we call configuration chaos.
+
+Configuration chaos means that instead of controlling configs from a centralized point, you have a mess. Here's what it looks like:
+
+#### Hard-coded scattered values
+
+Configuration values are hard-coded and scattered throughout your codebase instead of living in one centralized place.
+
+#### Inconsistent behavior
+
+Your application behaves inconsistently across different environments because configs aren't managed uniformly.
+
+#### Security vulnerabilities
+
+Exposed secrets leak into your codebase, version control, and logs, creating real security holes.
+
+#### Debugging nightmare
+
+You can't reproduce issues because there's no centralized way of managing config. You don't know which config caused which break in production.
+
+This last point is the killer: debugging your application becomes a nightmare because you cannot reproduce the issues. You don't really know what exactly happened, what particular config caused a particular issue, or what particular config caused a break in production. Centralized config management is what gives you that traceability.
+
+## Types of Configuration
+
+Not all configurations are created equal. Understanding the different types of configuration data is very important for choosing the right **storage mechanism, security measures, and access patterns**: who can access what, and in which environments a particular config should be accessible. Let's go through each type.
+
+### 5.1: Application Settings
+
+The most common kind of config you'll see in most backend apps. This includes:
+
+- **Log level**: In development we set the log level to `debug` so we can see and differentiate between different logs while building the app locally. In production we change it to `info` so we don't clutter our valuable production logs.
+- **Port**: Which port the backend runs on. Usually `8080` locally; in production (VPS or Kubernetes) you might have different ports.
+- **Connection pool size**: The maximum pool size for your database connections. Backend apps use connection pooling to optimize DB connections.
+- **Timeout values**: How long the server should wait for a request to complete.
+
+<Callout type="ok" title="Timeout Example / The AI Image Case">
+Say you set a server timeout of 60 seconds, and you initiate a request that generates an AI image (returned to the frontend in base64). If AI image generation takes \~80 seconds on average, but your server timeout is 60 seconds, your request gets **dropped**: you'll get a `504 Gateway Timeout` status. The timeout config directly determines whether a legitimate slow request succeeds or fails.
+</Callout>
+
+### 5.2: Database Configuration
+
+Database config includes all the details your application needs to connect to your database:
+
+- **Host**: where your database is running
+- **Port**: the database port
+- **Username**: database user
+- **Password**: database password (sensitive!)
+- **Database name**: the specific DB to connect to
+
+All these parameters combined let you construct a **connection URL**, which your application uses at runtime to connect to the database. It might also have other parameters, like query timeouts (how long a database query should run before it times out).
+
+### 5.3: External Services
+
+External services come in many types, and each has its own configuration needs, usually some kind of API key:
+
+- **Email providers**: Mailchimp, Resend, etc. -> you'll need an API key to initiate the client and send emails
+- **Payment processors**: Stripe -> a Stripe API key
+- **Authentication providers**: Clerk -> a Clerk API key
+
+It doesn't matter which provider you use, you'll most probably have some kind of API key in your config that you need to cater to.
+
+### 5.4: Feature Flags
+
+Feature flags exist so that you can **dynamically enable or disable particular features** of your application without changing code.
+
+<Diagram caption="Fig 2.1: Feature flag enabling new checkout for US users while India keeps the old flow (A/B testing)">
+<svg width="100%" viewBox="0 0 720 180" role="img"><title>Feature flag A/B testing by region</title><defs><marker id="ff" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="270" y="20" width="180" height="50" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="1"></rect><text x="360" y="40" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Feature Flag</text><text x="360" y="56" text-anchor="middle" font-size="10" fill="var(--dg-warn)">new&#95;checkout&#95;enabled</text><rect x="60" y="120" width="220" height="46" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="170" y="140" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">US users -> NEW checkout</text><text x="170" y="155" text-anchor="middle" font-size="10" fill="var(--dg-ok)">flag = true</text><rect x="440" y="120" width="220" height="46" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="550" y="140" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">India users -> OLD checkout</text><text x="550" y="155" text-anchor="middle" font-size="10" fill="var(--dg-accent)">flag = false</text><line x1="320" y1="70" x2="190" y2="118" stroke="var(--dg-ok)" stroke-width="1.2" marker-end="url(#ff)" stroke-dasharray="4 3"></line><line x1="400" y1="70" x2="530" y2="118" stroke="var(--dg-accent)" stroke-width="1.2" marker-end="url(#ff)" stroke-dasharray="4 3"></line><text x="360" y="100" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)" font-style="italic">conditional rollout by location</text></svg>
+</Diagram>
+
+The classic example: you've built a new checkout flow (using a different API) and you don't want to roll it out to all users at once. You want to do **A/B testing**: only enable the new feature for a particular segment of users depending on their location. For instance, enable the new checkout for users from the US, but keep the old flow for users from India. Feature flags make this dynamic enabling/disabling possible, and they also need config management.
+
+### 5.5: Other Config Types
+
+Beyond the four main categories, there are several more:
+
+- **Infra config**: All your DevOps-related configurations.
+- **Security config**: Your JWT secret, session secret, and anything related to security that affects your application.
+- **Performance tuning**: If your backend is built with Go (Golang), you can set environment variables like the maximum number of CPUs (`GOMAXPROCS`), etc.
+- **Business rules**: Different logic-related rules you want to enforce at the application level, but centralized in config rather than hard-coded.
+
+## Sources of Config (Storage)
+
+With all these diverse config needs, we also have to think about **where to store** the configs. Where you store your configurations depends on a lot of parameters, security, speed, and your environment. Let's look at the main storage mechanisms.
+
+### 6.1: Environment Variables
+
+The most common kind of config storage that most people have seen. If you've worked with backends before, you've encountered `.env` files. These are most common among Node.js apps, but they're also supported in Python, Go, and any language you build backends in.
+
+#### How it works locally
+
+In local environments, you have a file called `.env`. A very famous library called **dotenv** takes all your environment variables from the `.env` file and loads them into your operating system's environment.
+
+<Callout type="info" title="Important Distinction">
+Environment variables are a feature provided by your **operating system**: this is not something you build. Libraries like dotenv simply take values from files and load them into your environment automatically, instead of you doing it manually with `export` commands.
+</Callout>
+
+#### How it works in deployment
+
+If you're not local, say you're deploying in a containerized environment using Kubernetes, those technologies also support loading environment variables while deploying your application. Here's the typical cloud deployment workflow:
+
+<Diagram caption="Fig 3.1: Cloud deployment env var workflow: deploy triggers fetch from a secrets service, loads into the environment, app reads on startup">
+<svg width="100%" viewBox="0 0 720 175" role="img"><title>Cloud deployment env var loading workflow</title><defs><marker id="ev" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="15" y="65" width="120" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="75" y="86" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Deployment</text><text x="75" y="101" text-anchor="middle" font-size="10" fill="var(--dg-accent)">triggers</text><line x1="137" y1="90" x2="168" y2="90" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#ev)"></line><rect x="170" y="50" width="170" height="80" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="255" y="74" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Fetch secrets from</text><text x="255" y="90" text-anchor="middle" font-size="10" fill="var(--dg-warn)">Vault / Param Store</text><text x="255" y="104" text-anchor="middle" font-size="10" fill="var(--dg-warn)">Azure / GCP Secret Mgr</text><text x="255" y="120" text-anchor="middle" font-size="9" fill="var(--dg-ink-3)">at a particular stage</text><line x1="342" y1="90" x2="373" y2="90" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#ev)"></line><rect x="375" y="65" width="155" height="50" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="452" y="86" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Load into env</text><text x="452" y="101" text-anchor="middle" font-size="10" fill="var(--dg-ok)">OS environment</text><line x1="532" y1="90" x2="563" y2="90" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#ev)"></line><rect x="565" y="65" width="140" height="50" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="635" y="86" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">App starts</text><text x="635" y="101" text-anchor="middle" font-size="10" fill="var(--dg-ok)">reads env, runs</text><text x="360" y="25" text-anchor="middle" font-size="11" fill="var(--dg-ink-3)" font-style="italic">Deployment -> fetch from secret manager -> load into environment -> app boots</text></svg>
+</Diagram>
+
+The deployment triggers; at a particular stage it fetches all your environment variables from a service, Vault (HashiCorp), Parameter Store, Azure, or Google Secret Manager (any cloud provider that offers secrets management), and loads them into your environment. Then when your application starts, it reads those environment variables and functions accordingly. This is the most common storage mechanism for configurations.
+
+### 6.2: Config Files
+
+The second kind of storage is files, which come in different formats:
+
+| Format | Comments support? | Notes                                                                            |
+| ------ | ----------------- | -------------------------------------------------------------------------------- |
+| JSON   | No                | Major disadvantage, cannot add comments, so harder to share knowledge in a team  |
+| YAML   | Yes               | More famous for configs these days; supports comments for team knowledge-sharing |
+| TOML   | Yes               | A newer standard, also heavily used for managing configurations                  |
+
+One of the major disadvantages of JSON is that **you cannot add comments**: JSON has no comment support. That's why most people use YAML: you can add your configuration _and_ add comments so it's easier for your team to share knowledge. TOML is a newer standard that's also popular.
+
+<Callout type="ok" title="Real-World Examples">
+**Authelia** (an authentication provider written in Go) uses a `configuration.yaml` file holding server settings, log level (debug), storage, notification details, identity details, regulations, session settings, all in a single YAML file.\
+\
+**Apache Answer** (incubator, open source) also uses `config.yaml` in many places, app settings like which port the server runs on, databases (SQLite for local environments), and Swagger UI config. Storing configurations in YAML is very common across open-source repositories.
+</Callout>
+
+### 6.3: Key-Value Stores & Cloud Providers
+
+#### Key-Value Stores
+
+Beyond simple env values, there are dedicated cloud-native tools like **Consul** and **etcd**. Depending on your use case you can use any of them. Key-value stores are pretty **lightweight and simple** to use compared to more complicated, hierarchical data structures for config management. They act mostly like your environment variables.
+
+#### Dedicated Cloud Secret Managers
+
+Here the major players are:
+
+- **HashiCorp Vault**
+- **AWS Parameter Store**
+- **Azure Key Vault**
+- **Google Secret Manager**
+
+These are dedicated services for config and secrets management that most companies use, because deployments today are distributed, Kubernetes, autoscaling, sometimes multiple cloud providers at once for scaling needs. Having all your configurations centralized in a tool like HashiCorp Vault, which already supports all these different environments, with dedicated docs and integrations, makes the integration as easy as possible. Using an external provider makes a lot of sense if you're running heavy user traffic in production.
+
+#### Hybrid Strategies
+
+Most of the time, teams actually use **hybrid strategies**. You have a loading phase where you construct your runtime application settings by fetching configs from multiple places, each with a priority:
+
+<Diagram caption="Fig 3.2: Hybrid config loading: multiple sources merged by priority into one runtime settings object">
+<svg width="100%" viewBox="0 0 720 165" role="img"><title>Hybrid config loading with priority</title><defs><marker id="hy" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="20" y="20" width="190" height="40" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="115" y="38" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">1. AWS Parameter Store</text><text x="115" y="52" text-anchor="middle" font-size="9" fill="var(--dg-warn)">highest priority</text><rect x="20" y="68" width="190" height="40" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="115" y="86" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">2. config.yaml file</text><text x="115" y="100" text-anchor="middle" font-size="9" fill="var(--dg-ok)">middle priority</text><rect x="20" y="116" width="190" height="40" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="115" y="134" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">3. Environment variables</text><text x="115" y="148" text-anchor="middle" font-size="9" fill="var(--dg-accent)">fallback / defaults</text><line x1="210" y1="40" x2="320" y2="78" stroke="var(--dg-ink-3)" stroke-width="1" marker-end="url(#hy)"></line><line x1="210" y1="88" x2="320" y2="85" stroke="var(--dg-ink-3)" stroke-width="1" marker-end="url(#hy)"></line><line x1="210" y1="136" x2="320" y2="92" stroke="var(--dg-ink-3)" stroke-width="1" marker-end="url(#hy)"></line><rect x="322" y="55" width="170" height="60" rx="8" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="0.8"></rect><text x="407" y="80" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Loading phase</text><text x="407" y="96" text-anchor="middle" font-size="10" fill="var(--dg-ink-2)">merge by priority</text><line x1="492" y1="85" x2="528" y2="85" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#hy)"></line><rect x="530" y="55" width="170" height="60" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="615" y="80" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Runtime Settings</text><text x="615" y="96" text-anchor="middle" font-size="10" fill="var(--dg-ok)">single config object</text></svg>
+</Diagram>
+
+For example, in the first priority you might fetch from AWS Parameter Store, then from a `config.yaml`, then from environment variables. You pre-decide which source has higher priority, and depending on the environment you load those configs conditionally. This gives you flexibility: secrets from a vault, structured settings from a file, and overrides from env vars, all merged into one runtime config.
+
+## Why Config Differs Per Environment
+
+One natural question: why do we have different configs depending on the environment we're running in? The answer is simple, **each environment has a set of priorities that the other environments don't need or shouldn't have**.
+
+<Diagram caption="Fig 4.1: The four environments and their distinct priorities">
+<svg width="100%" viewBox="0 0 720 130" role="img"><title>Four environments and their priorities</title><rect x="15" y="35" width="165" height="60" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="97" y="58" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Development</text><text x="97" y="74" text-anchor="middle" font-size="10" fill="var(--dg-ok)">developer productivity</text><text x="97" y="88" text-anchor="middle" font-size="10" fill="var(--dg-ok)">+ debugging</text><rect x="190" y="35" width="165" height="60" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="272" y="58" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Test</text><text x="272" y="74" text-anchor="middle" font-size="10" fill="var(--dg-warn)">automated validation</text><text x="272" y="88" text-anchor="middle" font-size="10" fill="var(--dg-warn)">+ quality assurance</text><rect x="365" y="35" width="165" height="60" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="447" y="58" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Staging</text><text x="447" y="74" text-anchor="middle" font-size="10" fill="var(--dg-warn)">mirror production</text><text x="447" y="88" text-anchor="middle" font-size="10" fill="var(--dg-warn)">catch issues early</text><rect x="540" y="35" width="165" height="60" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="622" y="58" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Production</text><text x="622" y="74" text-anchor="middle" font-size="10" fill="var(--dg-accent)">reliability, security</text><text x="622" y="88" text-anchor="middle" font-size="10" fill="var(--dg-accent)">+ performance</text></svg>
+</Diagram>
+
+Walking through each environment's priority:
+
+- **Development (local)**: Running on localhost. Number one priority is **developer productivity and debugging capabilities**: so you can work faster and catch issues faster.
+- **Test**: You trigger a GitHub Action that prepares a testing environment to run integration tests, unit tests, etc. Priority is **automated validation and quality assurance**.
+- **Staging**: A hosted version of your application that functions as similar to production as possible, so you have a clear idea of how production will behave and can fix/debug issues accordingly. Priority is **mirroring production**.
+- **Production**: The real thing. Priority is **reliability, security, and performance**.
+
+<Callout type="ok" title="The Whole Point / Code Stays the Same">
+We create configs keeping these priorities in mind. The **application code remains the same** across all environments, but depending on the config, the behavior changes. That's exactly what we want. Without changing the code (which we'd have to do if we were hard-coding things), centralized config management means we never have to touch our application code. We just change the config, and that reflects in the behavior.
+</Callout>
+
+### Worked Example: Database Pool Size Across Environments
+
+Take the database connection pool size as a concrete example of how the same setting differs per environment:
+
+| Environment | Max Pool Size | Reasoning                                                                                          |
+| ----------- | ------------- | -------------------------------------------------------------------------------------------------- |
+| Development | 10            | Works fine locally; modern high-end dev machines have plenty of capacity for testing/development   |
+| Staging     | 2             | Deliberately minimal to **save cloud costs**: we accept some delay since it's used by devs/testers |
+| Production  | 50            | Must handle a large user base and traffic spikes, so a higher pool size is needed                  |
+
+In production you set the pool size to 50 because you have to cater to a large user base and prepare for traffic spikes. In development, 10 works fine. The interesting one is **staging**: even though staging's main priority is to mirror production as much as possible to catch issues early, running a system that functions _exactly_ like production would cost the same in cloud bills, and that's not something most teams want.
+
+<Callout type="info" title="The Cost Tradeoff in Staging">
+Staging has a secondary priority: **minimizing cloud costs**. Since staging is usually used only by developers and testers, you can make decisions like keeping the database pool size to a minimum (e.g. 2). You accommodate some delay there, but you save a lot of money on cloud costs. This is a deliberate, config-driven tradeoff, and it's possible precisely because the pool size lives in config, not code.
+</Callout>
+
+## Configuration Security
+
+These are fairly obvious points, but for the sake of covering the full scope, they're worth stating explicitly. There are five key security practices for config management.
+
+### 8.1: Never Hardcode Secrets
+
+If you have secrets like your production database URL, the API key of your Clerk service, your email delivery service, or your payment processing service, you should **never hardcode those secrets in your codebase**. This is so obvious it barely needs explaining: hardcoded secrets end up in version control, get exposed in logs, and become permanent liabilities.
+
+### 8.2: Use a Cloud Secrets Manager
+
+If possible, always go for a cloud secrets management service, HashiCorp Vault, AWS Parameter Store, Azure Key Vault, or Google Secret Manager. It's always a good idea to "over-engineer" when it comes to the security of your backend application.
+
+These services already handle critical security features automatically:
+
+<Diagram caption="Fig 5.1: Secret managers encrypt configs at rest AND in transit; decryption happens with your private key in your infra">
+<svg width="100%" viewBox="0 0 720 150" role="img"><title>Encryption at rest and in transit</title><defs><marker id="sec" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="20" y="50" width="180" height="56" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="110" y="73" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Secret Manager</text><text x="110" y="89" text-anchor="middle" font-size="10" fill="var(--dg-warn)">encrypted at rest </text><line x1="200" y1="78" x2="280" y2="78" stroke="var(--dg-ok)" stroke-width="1.2" marker-end="url(#sec)"></line><text x="350" y="58" text-anchor="middle" font-size="10" fill="var(--dg-ok)" font-style="italic">encrypted in transit (API call)</text><rect x="282" y="50" width="180" height="56" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="372" y="73" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Your Infra</text><text x="372" y="89" text-anchor="middle" font-size="10" fill="var(--dg-ok)">decrypt w/ private key</text><line x1="462" y1="78" x2="542" y2="78" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#sec)"></line><rect x="544" y="50" width="160" height="56" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="624" y="73" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">App uses config</text><text x="624" y="89" text-anchor="middle" font-size="10" fill="var(--dg-accent)">decrypted, in memory</text><text x="360" y="130" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)" font-style="italic">Encrypted both at rest (storage) and in transit (transfer)</text></svg>
+</Diagram>
+
+- **Encryption at rest**: It doesn't matter where they store your config; whenever they store it, they encrypt it first, then store it in their database/storage.
+- **Encryption in transit**: When you make an API call to fetch configs, they send the encrypted version. With your private key (stored in your infra, GitHub Action, repository secret, or Kubernetes environment), the configs are decoded and then used.
+
+These are essential security features, and when you use a cloud provider like Vault or Parameter Store, all of this is already taken care of, you don't have to think about it.
+
+### 8.3: Access Control (Least Privilege)
+
+If you have a fairly large developer team, take time to strategize who should have access to which configs, following the principle of least privilege:
+
+- **Frontend developers**: should only have access to the configs they need: the backend API URL and API keys for frontend integrations.
+- **Backend engineers**: should only have access to databases, Redis instances, Elasticsearch, etc.
+- **DevOps team only**: configs for accessing cloud instances (e.g. EC2 instances) should be restricted to DevOps.
+
+Following the least privilege principle, you strategize your access control so that each person only has access to what they actually need.
+
+### 8.4: Rotation
+
+You should **periodically rotate** all your configs, API key secrets, JWT secrets, and similar sensitive values, so that they're not very prone to leakage. Regular rotation limits the damage window if a secret is ever compromised.
+
+### 8.5: Validation (The Most Important Point)
+
+Most of the time, teams don't validate their environment variables or whatever source their configs are coming from. With dotenv, for example, you load all the variables into your environment and just access them via `process.env.WHATEVER`, with no checks.
+
+<Callout type="ok" title="The One Thing to Take Away From This Whole Topic">
+If you take just one thing away: **always validate your configs**, no matter where they come from. Validate at startup, before your application starts, right after it's deployed. Use a proper validation library:\
+\
+\- **TypeScript backend** -> use `Zod`\
+\- **Go backend** -> use `go-playground/validator`\
+\
+Use whatever validation library your language/framework offers, and properly validate every variable, which ones are mandatory, which are optional, which have application-code defaults.
+</Callout>
+
+Why does this matter so much? It's learned the hard way. If you have a mandatory environment variable requirement but fail to provide it, your production system either breaks or behaves in a strange way because it doesn't have access to a particular environment variable, and it's **not easy to spot**. Validating at startup turns a silent, mysterious production failure into a loud, immediate, obvious error message that tells you exactly which config is missing.
+
+## Code Examples
+
+Below are practical implementations of config loading and validation in Go and Python, covering env vars, per-environment loading, hybrid sources, and startup validation.
+
+### 9.1: Config Loading & Validation in Go
+
+```go title="config.go / Go + go-playground/validator + godotenv"
+package config
+
+import (
+    "fmt"
+    "log"
+    "os"
+    "strconv"
+
+    "github.com/go-playground/validator/v10"
+    "github.com/joho/godotenv"
+)
+
+// Config holds all runtime application settings.
+// The `validate` tags enforce rules at startup, this is the
+// single most important safeguard for config management.
+type Config struct {
+    // Application settings
+    Port     int    `validate:"required,min=1,max=65535"`
+    LogLevel string `validate:"required,oneof=debug info warn error"`
+    Env      string `validate:"required,oneof=development staging production"`
+
+    // Database config (sensitive)
+    DBHost     string `validate:"required"`
+    DBPort     int    `validate:"required"`
+    DBUser     string `validate:"required"`
+    DBPassword string `validate:"required"`
+    DBName     string `validate:"required"`
+    DBPoolSize int    `validate:"required,min=1"`
+
+    // External services (sensitive)
+    StripeAPIKey string `validate:"required"`
+
+    // Feature flags (optional, default false)
+    NewCheckoutEnabled bool
+}
+
+// DatabaseURL constructs the connection URL from the parts.
+func (c *Config) DatabaseURL() string {
+    return fmt.Sprintf(
+        "postgres://%s:%s@%s:%d/%s",
+        c.DBUser, c.DBPassword, c.DBHost, c.DBPort, c.DBName,
+    )
+}
+
+// Load reads env vars, applies defaults, then VALIDATES before returning.
+// Called once at startup, fail loudly here, never silently in production.
+func Load() (*Config, error) {
+    // In local dev, load .env into the OS environment.
+    // In production this is a no-op (vars already injected by the platform).
+    _ = godotenv.Load()
+
+    cfg := &Config{
+        Port:               getEnvInt("PORT", 8080),        // default 8080
+        LogLevel:           getEnv("LOG_LEVEL", "info"),    // default info
+        Env:                getEnv("APP_ENV", "development"),
+        DBHost:             os.Getenv("DB_HOST"),
+        DBPort:             getEnvInt("DB_PORT", 5432),
+        DBUser:             os.Getenv("DB_USER"),
+        DBPassword:         os.Getenv("DB_PASSWORD"),
+        DBName:             os.Getenv("DB_NAME"),
+        DBPoolSize:         getEnvInt("DB_POOL_SIZE", 10),  // dev=10, prod=50
+        StripeAPIKey:       os.Getenv("STRIPE_API_KEY"),
+        NewCheckoutEnabled: getEnv("NEW_CHECKOUT", "false") == "true",
+    }
+
+    // THE critical step, validate everything before the app boots
+    if err := validator.New().Struct(cfg); err != nil {
+        return nil, fmt.Errorf("config validation failed: %w", err)
+    }
+
+    return cfg, nil
+}
+
+func getEnv(key, fallback string) string {
+    if v := os.Getenv(key); v != "" {
+        return v
+    }
+    return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+    if v := os.Getenv(key); v != "" {
+        if n, err := strconv.Atoi(v); err == nil {
+            return n
+        }
+    }
+    return fallback
+}
+
+// Usage in main.go:
+//   cfg, err := config.Load()
+//   if err != nil { log.Fatal(err) }  // crash early, crash loud
+```
+
+### 9.2: Config Loading & Validation in Python
+
+```python title="config.py / Python + pydantic-settings (the Python equivalent of Zod)"
+from enum import Enum
+from functools import lru_cache
+
+from pydantic import Field, computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Environment(str, Enum):
+    DEVELOPMENT = "development"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+class Settings(BaseSettings):
+    """
+    All runtime config. pydantic VALIDATES every field automatically
+    when the object is constructed, mandatory fields without a default
+    raise an error immediately at startup, not silently in production.
+    """
+    model_config = SettingsConfigDict(
+        env_file=".env",        # load .env in local dev
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
+
+    # Application settings (with sensible defaults)
+    port: int = Field(default=8080, ge=1, le=65535)
+    log_level: str = Field(default="info", pattern="^(debug|info|warn|error)$")
+    app_env: Environment = Environment.DEVELOPMENT
+
+    # Database config, mandatory, no defaults (will fail if missing)
+    db_host: str
+    db_port: int = 5432
+    db_user: str
+    db_password: str          # sensitive, never hardcoded
+    db_name: str
+    db_pool_size: int = Field(default=10, ge=1)  # dev=10, prod=50, staging=2
+
+    # External services, mandatory secret
+    stripe_api_key: str
+
+    # Feature flag, optional, defaults off
+    new_checkout_enabled: bool = False
+
+    @computed_field
+    @property
+    def database_url(self) -> str:
+        return (
+            f"postgresql://{self.db_user}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+
+@lru_cache  # load & validate once, reuse everywhere (singleton)
+def get_settings() -> Settings:
+    # Construction triggers validation. If a mandatory var is
+    # missing, pydantic raises here, at startup, loudly.
+    return Settings()
+
+# Usage:
+#   settings = get_settings()   # crashes early if config invalid
+#   print(settings.database_url)
+#   if settings.new_checkout_enabled: ...
+```
+
+### 9.3: Example YAML Config File
+
+For non-secret, structured settings, a YAML file (with comments, unlike JSON) is a common choice, as seen in real codebases like Authelia and Apache Answer:
+
+```yaml title="config.yaml / structured app settings (non-secret)"
+# Server settings, note: YAML supports comments, JSON does not
+server:
+  port: 8080
+  timeout_seconds: 60      # raise this for slow ops like AI image gen
+
+log:
+  level: debug             # debug in dev, info in production
+
+database:
+  host: localhost
+  port: 5432
+  name: ecommerce
+  pool_size: 10            # dev=10, staging=2, prod=50
+  query_timeout_seconds: 30
+
+# Feature flags, dynamically enable/disable features
+features:
+  new_checkout_enabled: false
+  rollout_regions: ["US"]   # A/B test: US gets new checkout
+
+# Business rules, centralized, not hardcoded
+business:
+  max_order_amount: 500000
+
+# NOTE: secrets (db password, Stripe key, JWT secret) do NOT
+# belong here, those come from a secrets manager / env vars.
+```
+
+## Further Reading & Documentation
+
+#### Secrets Management Tools
+
+<Callout type="info">
+[HashiCorp Vault, Official Docs](https://developer.hashicorp.com/vault/docs) [AWS Systems Manager, Parameter Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html) [Azure Key Vault, Documentation](https://learn.microsoft.com/en-us/azure/key-vault/) [Google Cloud, Secret Manager Docs](https://cloud.google.com/secret-manager/docs)
+</Callout>
+
+#### Key-Value / Config Stores
+
+<Callout type="info">
+[HashiCorp Consul, Docs](https://developer.hashicorp.com/consul/docs) [etcd, Distributed key-value store](https://etcd.io/docs/)
+</Callout>
+
+#### Validation Libraries
+
+<Callout type="info">
+[Zod, TypeScript schema validation](https://zod.dev/) [go-playground/validator, Go struct validation](https://github.com/go-playground/validator) [pydantic-settings, Python config validation](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
+</Callout>
+
+#### Config File Formats & Libraries
+
+<Callout type="info">
+[YAML, Specification](https://yaml.org/spec/) [TOML, Tom's Obvious Minimal Language](https://toml.io/en/) [dotenv, .env loader (Node.js)](https://github.com/motdotla/dotenv) [godotenv, .env loader (Go)](https://github.com/joho/godotenv)
+</Callout>
+
+#### MDN Web Docs
+
+<Callout type="info">
+[MDN, HTTP 504 Gateway Timeout](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/504) [MDN, Environment variable (Glossary)](https://developer.mozilla.org/en-US/docs/Glossary/Environment_variable)
+</Callout>
+
+BACKEND ENGINEERING FIELD MANUAL / V2 / CHAPTER 13 / CONFIGURATION MANAGEMENT\
+Notes compiled from lecture transcript / Go + Python examples / Vault/MDN references inline
+
+Backend from First Principles / Chapter 14 / Config. Code targets Go 1.22+ and Python 3.11+.

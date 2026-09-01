@@ -1,0 +1,981 @@
+---
+order: 13
+title: "gRPC & Inter-Service Communication"
+navTitle: "gRPC & Inter-Service Communication"
+summary: "A first-principles walkthrough of the RPC framework that powers the internals of Google, Netflix, Uber and most modern microservice fleets, from the contract (Protocol Buffers) and the binary wire format , through the HTTP/2 transport and the four streaming shapes, to deadlines, interceptors, mTLS and production resilience. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in both Go and Python."
+readingTime: "3-4 hours"
+keywords:
+  - "grpc"
+  - "protobuf"
+  - "microservices"
+  - "inter-service"
+  - "rpc"
+  - "streaming"
+  - "unary"
+---
+Part I / Foundations
+
+## What gRPC Actually Is
+
+**gRPC is a framework for calling a function that lives on another machine as if it were a local function in your own process.** The name expands to _gRPC Remote Procedure Call_ (a recursive acronym; the "g" has been backronymed to a different word in every release for fun). The phrase that matters is the middle one, **Remote Procedure Call**. You write `user, err := client.GetUser(ctx, &pb.GetUserRequest{Id: 42})` and it _looks_ like an ordinary method call, but under the hood the arguments are serialized, shipped across the network to a server, executed there, and the return value is shipped back, all hidden behind that one line.
+
+Three things are true about gRPC and you need all three in your head at once. It is (1) a **contract-first RPC framework**: you describe your API in a `.proto` file and code is generated from it; (2) it serializes data with **Protocol Buffers**, a compact binary format, instead of text like JSON; and (3) it transports those bytes over **HTTP/2**, which gives it multiplexing and real bidirectional streaming. Everything else in this manual is a consequence of those three facts.
+
+REST hands you a building with addressable rooms (_resources_) and a fixed set of things you may do to each room (GET, POST, ...). gRPC hands you a remote control with labelled buttons (_methods_), you don't think about rooms, you press `GetUser` or `SendPayment` and the work happens elsewhere. One models _nouns_; the other models _verbs_.
+
+<Diagram caption="Where gRPC sits">
+<svg viewBox="0 0 720 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The gRPC stack: generated stubs on top, Protocol Buffers serialization in the middle, HTTP/2 transport below, TCP/TLS underneath"><defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="var(--dg-accent)"></stop><stop offset="1" stop-color="var(--dg-accent-2)"></stop></linearGradient></defs><text x="14" y="46" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent)" transform="rotate(-90 14 46)" text-anchor="middle">YOU WORK HERE</text><path d="M30 16 H38 V76 H30" fill="none" stroke="var(--dg-accent)" stroke-width="2"></path><g><rect x="52" y="16" width="640" height="60" rx="9" fill="url(#g1)"></rect><text x="74" y="42" font-size="15" font-weight="700" fill="var(--dg-ink)">Your service, generated stubs &#x26; servers</text><text x="74" y="62" class="mono" font-size="11" fill="var(--dg-ink)">client.GetUser(ctx, req) / func (s) GetUser(ctx, req) / the methods you call &#x26; implement</text></g><g><rect x="92" y="90" width="600" height="48" rx="9" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="114" y="111" font-size="14" font-weight="700" fill="var(--dg-ok)">Protocol Buffers, the contract + binary serialization</text><text x="114" y="128" class="mono" font-size="10.5" fill="var(--dg-ink-2)">messages -> compact bytes / sec 04-05</text></g><g><rect x="92" y="152" width="600" height="48" rx="9" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="114" y="173" font-size="14" font-weight="700" fill="var(--dg-ink)">HTTP/2, multiplexed, bidirectional framed transport</text><text x="114" y="190" class="mono" font-size="10.5" fill="var(--dg-ink-2)">streams carry the bytes / enables all 4 call types / sec 06</text></g><g><rect x="92" y="214" width="600" height="40" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-line)"></rect><text x="114" y="239" font-size="13.5" font-weight="600" fill="var(--dg-ink-2)">TCP + TLS, the reliable, encrypted pipe</text></g></svg>
+</Diagram>
+
+### "Procedure call" is the whole idea
+
+In ordinary code, calling a function is invisible plumbing: you pass arguments, the CPU jumps to the function, it returns a value. RPC asks a simple question, _what if that function lived on a different computer?_ The dream of RPC (which dates back to the 1980s) is to make the network **disappear**, so a distributed system feels like one program. gRPC is the modern, production-grade realization of that dream: you never write socket code, never parse a response by hand, never build a URL. You call a typed method and handle a typed result or a typed error.
+
+The one-sentence definition
+
+gRPC = **typed remote method calls**, defined by a **Protobuf contract**, serialized as **compact binary**, carried over **HTTP/2 streams**: so a client in any language can call a server in any other language as if it were local.
+
+## Why gRPC Exists
+
+gRPC isn't a replacement for REST everywhere, it was built to solve specific pains that show up when many services (often in different languages) talk to each other constantly, at high volume, _inside_ a system. Google built it (open-sourced in 2015, evolved from an internal system called Stubby) precisely because REST-over-JSON was too slow, too loose, and too limited for service-to-service traffic at their scale. Five concrete problems drove its design.
+
+| The problem with REST/JSON                                                                                              | What gRPC does instead                                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **JSON is bulky & slow.** Text, with repeated field names on every object; parsing is CPU-heavy.                        | Protobuf binary: field _numbers_ not names, varint-packed. Often 3-10x smaller and far faster to (de)serialize.           |
+| **No enforced contract.** The shape of a JSON payload lives in docs (or someone's head); drift causes runtime breakage. | The `.proto` file _is_ the contract. Client & server generate code from the same source, mismatches fail at compile time. |
+| **Weak streaming.** Plain HTTP/1.1 REST is request->response; streaming needs bolt-ons (SSE, polling, raw WebSockets).  | Four call types including full bidirectional streaming, native to the framework over HTTP/2.                              |
+| **Polyglot friction.** Every language hand-writes its own client & serialization, inconsistently.                       | One `.proto` generates idiomatic clients/servers for Go, Python, Java, C++, Rust, and more.                               |
+| **HTTP/1.1 connection overhead.** One request per connection (or head-of-line blocking), repeated handshakes.           | HTTP/2 multiplexes many concurrent calls over _one_ long-lived connection.                                                |
+
+#### The honest scope
+
+Those strengths are aimed at **internal, machine-to-machine** communication, microservices, backend-to-backend, mobile-to-backend where you control both ends. gRPC is _weaker_ than REST for public, browser-facing APIs (browsers can't speak raw gRPC, see sec 19) and for human-debuggable, cache-friendly, broadly-compatible endpoints. The full comparison is sec 18; for now, hold the frame: **gRPC is the internal nervous system; REST is the public front door.**
+
+<Callout type="info" title="Where you'll meet it">
+Service meshes (Istio, Linkerd), Kubernetes' own API machinery, etcd, CockroachDB, Envoy's xDS, and the internal call graphs of most large fintech/consumer platforms. If you've sent a payment or streamed a video, gRPC almost certainly carried some hop of that request between backend services.
+</Callout>
+
+## The RPC Mental Model
+
+Before any syntax, internalize the machinery that makes a remote call _look_ local, because every gRPC concept later is just a named part of this picture. A local function call and a remote one differ in exactly one place: between "call" and "execute," the arguments have to cross a network. RPC inserts two pieces of generated code, a **stub** on the client and a **skeleton/handler** on the server, to hide that crossing.
+
+<Diagram caption="The anatomy of a remote call">
+<svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A client calls a stub which serializes the request, sends it over the network to the server skeleton which deserializes, runs the real method, and the response travels back the reverse way"><defs><marker id="rar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker><marker id="tar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><text x="120" y="22" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">CLIENT PROCESS</text><rect x="30" y="34" width="180" height="44" rx="8" fill="var(--dg-accent)"></rect><text x="120" y="54" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">your code</text><text x="120" y="70" class="mono" font-size="9.5" fill="var(--dg-on-accent)" text-anchor="middle">client.GetUser(req)</text><rect x="30" y="92" width="180" height="56" rx="8" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="120" y="113" font-size="12.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">STUB (generated)</text><text x="120" y="130" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">serialize args -> bytes</text><text x="120" y="143" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">send over HTTP/2</text><text x="600" y="22" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">SERVER PROCESS</text><rect x="510" y="34" width="180" height="44" rx="8" fill="var(--dg-ok)"></rect><text x="600" y="54" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">real method runs</text><text x="600" y="70" class="mono" font-size="9.5" fill="var(--dg-on-accent)" text-anchor="middle">query DB, compute...</text><rect x="510" y="92" width="180" height="56" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="600" y="113" font-size="12.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">SKELETON (generated)</text><text x="600" y="130" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">deserialize bytes -> args</text><text x="600" y="143" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">dispatch to handler</text><rect x="250" y="170" width="220" height="40" rx="20" fill="var(--dg-inverse)"></rect><text x="360" y="194" class="mono" font-size="11" fill="var(--dg-on-inverse-info)" text-anchor="middle">network, Protobuf over HTTP/2</text><path d="M150 148 C150 210 220 250 250 232" fill="none" stroke="var(--dg-accent)" stroke-width="1.8" marker-end="url(#rar)"></path><text x="170" y="250" class="mono" font-size="10" fill="var(--dg-accent-2)">request bytes -></text><path d="M470 232 C500 250 560 210 580 150" fill="none" stroke="var(--dg-accent)" stroke-width="1.8" marker-end="url(#rar)"></path><path d="M580 90 C560 60 360 60 360 168" fill="none" stroke="var(--dg-ok)" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#tar)"></path><text x="360" y="285" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">&#x3C;- response bytes travel the reverse path, deserialized back into a typed return value</text></svg>
+</Diagram>
+
+#### The leaky-abstraction warning
+
+RPC tries to make the network invisible, but the network is _never_ truly invisible, and pretending otherwise is the classic RPC trap. A local call can't time out, get lost, or be reordered; a remote one can do all three. That's why gRPC gives first-class tools for the things a local call never needed: **deadlines** (sec 13), **status codes** for partial failure (sec 14), **retries** (sec 17), and **cancellation**. Treat every remote call as "a local call that can fail in network-shaped ways," and you'll design resilient systems instead of brittle ones.
+
+Don't pretend the wire isn't there
+
+The single biggest mistake with RPC is writing remote calls as if they were free and infallible, no timeout, no error handling for `UNAVAILABLE`, no thought about latency in a loop. The abstraction is a convenience, not a guarantee. Always pass a context/deadline and always handle the error.
+
+Part II / The Two Pillars
+
+## Protocol Buffers: the Contract
+
+Protocol Buffers ("protobuf") is two things wearing one name: an **IDL** (Interface Definition Language) for _describing_ your messages and services, and a **binary serialization format** for _encoding_ them on the wire. This section is the IDL half, the `.proto` file that is the single source of truth both sides generate code from. Get the contract right and the client and server literally cannot disagree about the shape of the data.
+
+A `.proto` file defines **messages** (the data structures) and **services** (collections of RPC methods). Here is a complete, realistic example, a user service, annotated with every rule that matters:
+
+```protobuf title="user.proto"
+syntax = "proto3";              // always declare the syntax; proto3 is current
+
+package user.v1;                // namespace + a versioning convention (v1, v2...)
+
+option go_package = "example.com/gen/userv1;userv1";  // where generated Go lands
+
+// A message is a typed record. Each FIELD has a type, a name, and a NUMBER.
+message User {
+  string id          = 1;       // the "= 1" is the FIELD NUMBER, not a value
+  string email       = 2;
+  string full_name   = 3;
+  Role   role        = 4;       // a nested enum (declared below)
+  repeated string tags = 5;     // "repeated" = a list/array of strings
+  int64  created_at  = 6;       // unix seconds; proto3 has no native date
+}
+
+// An enum is a fixed set of named values. The first MUST be 0 (the default).
+enum Role {
+  ROLE_UNSPECIFIED = 0;         // 0 is the implicit default, reserve it
+  ROLE_MEMBER      = 1;
+  ROLE_ADMIN       = 2;
+}
+
+message GetUserRequest  { string id = 1; }
+message GetUserResponse { User user = 1; }   // messages nest inside messages
+
+message CreateUserRequest {
+  string email     = 1;
+  string full_name = 2;
+  optional string phone = 3;    // "optional" tracks presence: set vs unset vs ""
+}
+
+// A SERVICE is a set of methods. Each takes one message and returns one message.
+service UserService {
+  rpc GetUser    (GetUserRequest)    returns (GetUserResponse);
+  rpc CreateUser (CreateUserRequest) returns (User);
+}
+```
+
+### The rules that actually bite
+
+- **Field numbers are the real identity, not names.** On the wire, `email` is transmitted as field `2`, never as the string "email" (this is why protobuf is compact, sec 05). The name is for _your_ code; the number is the contract.
+- **Never change or reuse a field number.** This is the cardinal rule of schema evolution. Renaming a field is safe (names aren't on the wire); changing its _number_ or _type_ silently corrupts data for any peer still using the old definition. To remove a field, mark it `reserved` so the number can never be accidentally reused.
+- **Adding fields is backward-compatible.** Give a new field a fresh number; old clients simply don't see it, new servers treat it as unset when an old client omits it. This is how a gRPC API evolves without breaking deployed consumers, the same additive-change discipline you know from REST versioning.
+- **proto3 has defaults, not nulls.** An unset `string` is `""`, an unset `int` is `0`, an unset `bool` is `false`. If you must distinguish "absent" from "zero," use `optional` (which adds presence tracking), the same trap as Go's zero values, solved the same way (sec 13 of the REST/handlers manuals echoes this).
+
+| Construct | Means                                                              | Notes                                                                 |
+| --------- | ------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| scalar    | `int32 int64 uint32 sint32 fixed64 float double bool string bytes` | Pick `sint*` for often-negative numbers; `bytes` for raw binary.      |
+| repeated  | An ordered list of the field's type                                | The protobuf equivalent of an array/slice.                            |
+| enum      | A fixed value set; first entry must be `0`                         | Integrity + self-documentation, like a Postgres enum.                 |
+| oneof     | At most one of several fields is set                               | A tagged union, e.g. a result that is _either_ a value _or_ an error. |
+| map\&lt;k,v> | An associative array                                               | Sugar over a repeated key/value message.                              |
+| optional  | Adds explicit presence tracking to a scalar                        | Distinguishes "unset" from the zero value.                            |
+
+The contract is the API
+
+In REST the contract is prose in a Swagger doc that code may or may not match. In gRPC the `.proto` _is_ executable truth: both sides generate from it, so a field you added or a type you changed is reflected in both clients and servers the moment they regenerate. The schema can't silently drift from the implementation.
+
+## How Protobuf Encodes: the Wire Format
+
+The reason gRPC is fast and small comes down to _how_ protobuf turns a message into bytes. You don't hand-write this, but understanding it explains every performance claim and every gotcha. The core trick: each field is written as a tiny **tag** (which encodes the field _number_ and a _wire type_) followed by the value, and integers are packed using **varints** that use fewer bytes for smaller numbers. No field names, no quotes, no commas, no whitespace.
+
+<Diagram caption="JSON vs Protobuf, same data">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A comparison showing a JSON object of about 52 bytes versus the equivalent protobuf encoding of about 20 bytes"><text x="20" y="24" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent)">JSON, text, names repeated every time</text><rect x="20" y="34" width="680" height="58" rx="8" fill="var(--dg-inverse)"></rect><text x="34" y="58" class="mono" font-size="12" fill="var(--dg-on-inverse-info)">&#123;"id":"u42","role":2,"created&#95;at":1717</text><text x="34" y="78" class="mono" font-size="12" fill="var(--dg-on-inverse-info)">careful: every key, quote, brace and comma is bytes on the wire</text><text x="640" y="58" class="mono" font-size="13" font-weight="700" fill="var(--dg-on-inverse-accent)" text-anchor="end">~52 B</text><text x="20" y="124" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)">Protobuf, field numbers + varints, no names</text><rect x="20" y="134" width="680" height="58" rx="8" fill="var(--dg-inverse)"></rect><g class="mono" font-size="11" fill="var(--dg-paper)"><rect x="34" y="148" width="58" height="30" rx="4" fill="var(--dg-ok)"></rect><text x="63" y="168" text-anchor="middle" fill="var(--dg-on-accent)">0A 03</text><rect x="96" y="148" width="64" height="30" rx="4" fill="var(--dg-ok)"></rect><text x="128" y="168" text-anchor="middle" fill="var(--dg-on-accent)">u 4 2</text><rect x="164" y="148" width="44" height="30" rx="4" fill="var(--dg-warn)"></rect><text x="186" y="168" text-anchor="middle" fill="var(--dg-on-accent)">20 02</text><rect x="212" y="148" width="92" height="30" rx="4" fill="var(--dg-accent-2)"></rect><text x="258" y="168" text-anchor="middle" fill="var(--dg-on-accent)">30 ...varint</text></g><text x="640" y="158" class="mono" font-size="13" font-weight="700" fill="var(--dg-on-inverse-ok)" text-anchor="end">~20 B</text><text x="320" y="176" class="mono" font-size="9" fill="var(--dg-on-inverse-info)">tag len value / tag value</text><text x="360" y="218" class="serif" font-size="13" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Same information, well under half the size, and no text parsing to decode it.</text></svg>
+</Diagram>
+
+### The tag: field number + wire type in one byte (usually)
+
+Each field on the wire begins with a tag computed as `(field_number << 3) | wire_type`. The low 3 bits are the **wire type** (how to read the bytes that follow: varint, 64-bit, length-delimited, 32-bit); the rest is the **field number**. So the decoder reads the tag, learns "this is field 2, and it's length-delimited," and knows exactly how to consume what comes next, even if it has never seen that field before (it can skip unknown fields, which is what makes forward-compatibility work).
+
+<Diagram caption="Decoding one field">
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A tag byte split into a field number portion and a 3-bit wire type portion, driving how the following bytes are interpreted"><text x="20" y="28" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent)">tag byte = (field&#95;number &#x3C;&#x3C; 3) | wire&#95;type</text><rect x="20" y="42" width="300" height="46" rx="8" fill="var(--dg-accent)"></rect><text x="120" y="62" font-size="12" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">field number</text><text x="120" y="79" class="mono" font-size="10" fill="var(--dg-on-accent)" text-anchor="middle">upper bits</text><rect x="240" y="42" width="80" height="46" rx="8" fill="var(--dg-warn)"></rect><text x="280" y="62" font-size="11.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">wire type</text><text x="280" y="79" class="mono" font-size="10" fill="var(--dg-on-accent)" text-anchor="middle">3 bits</text><path d="M360 65 H470" stroke="var(--dg-ink-2)" stroke-width="1.6" marker-end="url(#war)"></path><defs><marker id="war" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ink-2)"></path></marker></defs><g class="mono" font-size="10.5" fill="var(--dg-inverse)"><text x="486" y="40" fill="var(--dg-ink)">0 = VARINT, int32/64, bool, enum</text><text x="486" y="60" fill="var(--dg-ink)">1 = I64, fixed64, double</text><text x="486" y="80" fill="var(--dg-ink)">2 = LEN, string, bytes, messages</text><text x="486" y="100" fill="var(--dg-ink)">5 = I32, fixed32, float</text></g><text x="20" y="124" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)">varint: small numbers cost fewer bytes</text><g class="mono" font-size="10.5" fill="var(--dg-ink-2)"><text x="20" y="146" fill="var(--dg-ink)">1 -> 1 byte  /  300 -> 2 bytes /  70000 -> 3 bytes</text><text x="20" y="166" fill="var(--dg-ink)">each byte uses 7 bits for data + 1 "continue" bit, so values grow their encoding only as needed</text></g></svg>
+</Diagram>
+
+The cost of binary: it isn't human-readable
+
+You can't `curl` a gRPC endpoint and eyeball the JSON. Debugging needs tools that understand the schema (`grpcurl`, reflection, sec 20). That opacity is the price of the speed and size; it's the main reason public/debuggable APIs often stay on REST.
+
+## HTTP/2: the Transport Underneath
+
+gRPC doesn't invent its own transport, it rides on **HTTP/2**, and almost every gRPC superpower (concurrency, all four streaming shapes, low overhead) is really an HTTP/2 feature. The thing to understand is HTTP/2's central idea: a single TCP connection is divided into many independent, interleaved **streams**, each carrying a sequence of binary **frames**. That's what lets one connection carry hundreds of concurrent RPCs, and lets data flow in both directions at once.
+
+<Diagram caption="Multiplexing">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="HTTP/1.1 needing many connections versus HTTP/2 interleaving four streams of frames over one connection"><text x="20" y="22" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent)">HTTP/1.1, one call blocks the line (or needs many connections)</text><rect x="20" y="32" width="120" height="22" rx="4" fill="var(--dg-accent)"></rect><text x="80" y="48" font-size="10" fill="var(--dg-on-accent)" text-anchor="middle">call A</text><rect x="148" y="32" width="120" height="22" rx="4" fill="var(--dg-surface)"></rect><text x="208" y="48" font-size="10" fill="var(--dg-ink)" text-anchor="middle">call B waits</text><rect x="276" y="32" width="120" height="22" rx="4" fill="var(--dg-surface)"></rect><text x="336" y="48" font-size="10" fill="var(--dg-ink)" text-anchor="middle">call C waits</text><text x="20" y="92" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)">HTTP/2, one connection, 4 streams interleaved</text><line x1="20" y1="104" x2="700" y2="104" stroke="var(--dg-line)"></line><g class="mono" font-size="9.5" fill="var(--dg-ink-2)"><text x="22" y="128" fill="var(--dg-ink)">A</text><text x="22" y="154" fill="var(--dg-ink)">B</text><text x="22" y="180" fill="var(--dg-ink)">C</text><text x="22" y="206" fill="var(--dg-ink)">D</text></g><rect x="44" y="116" width="38" height="18" rx="3" fill="var(--dg-ok)"></rect><rect x="150" y="116" width="38" height="18" rx="3" fill="var(--dg-ok)"></rect><rect x="44" y="142" width="34" height="18" rx="3" fill="var(--dg-accent)"></rect><rect x="210" y="142" width="34" height="18" rx="3" fill="var(--dg-accent)"></rect><rect x="380" y="142" width="34" height="18" rx="3" fill="var(--dg-accent)"></rect><rect x="92" y="168" width="38" height="18" rx="3" fill="var(--dg-ok)"></rect><rect x="250" y="168" width="38" height="18" rx="3" fill="var(--dg-ok)"></rect><rect x="120" y="194" width="38" height="18" rx="3" fill="var(--dg-warn)"></rect><rect x="300" y="194" width="38" height="18" rx="3" fill="var(--dg-warn)"></rect><text x="430" y="160" font-size="11" font-style="italic" fill="var(--dg-ok)">frames from different calls share the wire, in any order</text><text x="360" y="236" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">No head-of-line blocking at the HTTP layer: a slow call never freezes the others on the connection.</text></svg>
+</Diagram>
+
+#### How a gRPC call maps onto HTTP/2
+
+Concretely, an RPC is an HTTP/2 `POST` to a path shaped like `/package.Service/Method` (e.g. `/user.v1.UserService/GetUser`). gRPC metadata travels as HTTP/2 **headers**; the serialized protobuf travels in **DATA frames** as the body; and the final status (the gRPC status code, sec 14) arrives in HTTP/2 **trailers** after the body. Streaming simply means more than one message flows in one or both directions on that stream before it closes.
+
+| gRPC concept                      | HTTP/2 mechanism                                   |
+| --------------------------------- | -------------------------------------------------- |
+| One RPC call                      | One HTTP/2 stream (request + response)             |
+| Method being called               | `:path` header = `/pkg.Service/Method`             |
+| Metadata (auth tokens, trace IDs) | HTTP/2 request & response **headers**              |
+| The request/response message(s)   | length-prefixed protobuf in **DATA frames**        |
+| Final status + message            | `grpc-status` / `grpc-message` **trailers**        |
+| Streaming                         | multiple DATA frames before the stream half-closes |
+
+<Callout type="info" title="Why this matters for you">
+Because gRPC needs HTTP/2 _end to end_, any proxy/load balancer in the path must speak HTTP/2 and do _L7_ (request-aware) balancing, a naive L4 TCP balancer will pin every call to one backend, since they all share one connection (sec 17). And because browsers can't expose raw HTTP/2 framing to JS, browsers can't speak native gRPC at all (sec 19). The transport choice shapes the whole deployment story.
+</Callout>
+
+Part III / The Four Call Types
+
+## Unary RPC
+
+The simplest and most common shape: **one request, one response**: exactly like a normal function call. The client sends a single message, the server does its work and returns a single message. \~90% of real-world RPCs are unary. We'll build the `GetUser` method from the `user.proto` in sec 04, in full, both languages.
+
+<Diagram caption="Unary">
+<svg viewBox="0 0 720 130" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Client sends one request, server returns one response"><rect x="40" y="20" width="150" height="40" rx="8" fill="var(--dg-accent)"></rect><text x="115" y="45" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Client</text><rect x="530" y="20" width="150" height="40" rx="8" fill="var(--dg-ok)"></rect><text x="605" y="45" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Server</text><defs><marker id="u1" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker><marker id="u2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><path d="M195 40 H525" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#u1)"></path><text x="360" y="32" class="mono" font-size="11" fill="var(--dg-accent-2)" text-anchor="middle">1 request</text><path d="M525 75 H195" stroke="var(--dg-ok)" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#u2)"></path><text x="360" y="98" class="mono" font-size="11" fill="var(--dg-ok)" text-anchor="middle">1 response</text></svg>
+</Diagram>
+
+______
+
+● Go● Python
+
+```go
+// ===== SERVER =====
+package main
+
+import (
+    "context"
+    "log"
+    "net"
+
+    "google.golang.org/grpc"
+    "google.golang.org/grpc/codes"
+    "google.golang.org/grpc/status"
+    userv1 "example.com/gen/userv1" // generated from user.proto
+)
+
+// Embed the generated UnimplementedUserServiceServer for forward-compat.
+type server struct {
+    userv1.UnimplementedUserServiceServer
+}
+
+// The method signature is generated FROM the proto: ctx, *Request -> *Response, error
+func (s *server) GetUser(ctx context.Context, req *userv1.GetUserRequest) (*userv1.GetUserResponse, error) {
+    if req.GetId() == "" {
+        return nil, status.Error(codes.InvalidArgument, "id is required") // typed error, sec 14
+    }
+    // ...real work: query the DB by req.GetId()...
+    u := &userv1.User{Id: req.GetId(), Email: "ada@example.com", FullName: "Ada", Role: userv1.Role_ROLE_ADMIN}
+    return &userv1.GetUserResponse{User: u}, nil
+}
+
+func main() {
+    lis, _ := net.Listen("tcp", ":50051")
+    s := grpc.NewServer()
+    userv1.RegisterUserServiceServer(s, &server{}) // wire the impl to the service
+    log.Println("gRPC on :50051")
+    s.Serve(lis)
+}
+
+// ===== CLIENT =====
+func callGetUser() {
+    // NewClient replaces the deprecated grpc.Dial; insecure creds for local dev only
+    conn, _ := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+    defer conn.Close()
+
+    client := userv1.NewUserServiceClient(conn) // the generated STUB
+    ctx, cancel := context.WithTimeout(context.Background(), time.Second) // always a deadline, sec 13
+    defer cancel()
+
+    resp, err := client.GetUser(ctx, &userv1.GetUserRequest{Id: "u42"}) // looks local, runs remote
+    if err != nil {
+        log.Fatalf("GetUser failed: %v", err) // err carries the gRPC status code
+    }
+    log.Printf("got user: %s", resp.GetUser().GetFullName())
+}
+```
+
+```python
+# ===== SERVER =====
+from concurrent import futures
+import grpc
+import user_pb2 as pb          # generated: messages
+import user_pb2_grpc as pb_grpc  # generated: service base classes
+
+class UserService(pb_grpc.UserServiceServicer):
+    # Method signature generated FROM the proto: (self, request, context) -> response
+    def GetUser(self, request, context):
+        if not request.id:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "id is required")  # typed error, sec 14
+        # ...real work: query the DB by request.id...
+        user = pb.User(id=request.id, email="ada@example.com",
+                       full_name="Ada", role=pb.ROLE_ADMIN)
+        return pb.GetUserResponse(user=user)
+
+def serve():
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    pb_grpc.add_UserServiceServicer_to_server(UserService(), server)  # wire impl to service
+    server.add_insecure_port("[::]:50051")  # insecure = local dev only
+    server.start()
+    print("gRPC on :50051")
+    server.wait_for_termination()
+
+# ===== CLIENT =====
+def call_get_user():
+    with grpc.insecure_channel("localhost:50051") as channel:
+        stub = pb_grpc.UserServiceStub(channel)        # the generated STUB
+        try:
+            # timeout= is the deadline, sec 13; looks local, runs remote
+            resp = stub.GetUser(pb.GetUserRequest(id="u42"), timeout=1.0)
+            print("got user:", resp.user.full_name)
+        except grpc.RpcError as e:
+            print("failed:", e.code(), e.details())     # carries the gRPC status code
+
+if __name__ == "__main__":
+    serve()
+```
+
+Notice the symmetry across languages: a generated _stub_ on the client, a generated _servicer/server_ base class on the server, and a method whose exact signature came from the proto.
+
+## Server Streaming
+
+**One request, a stream of responses.** The client asks once; the server sends back many messages over time, then closes the stream. Perfect for: returning a large result set in chunks, a live feed of events, progress updates on a long job, or paginating without repeated round trips. The proto marks the _response_ as `stream`.
+
+<Diagram caption="Server streaming">
+<svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Client sends one request and the server streams back several responses"><rect x="40" y="55" width="150" height="40" rx="8" fill="var(--dg-accent)"></rect><text x="115" y="80" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Client</text><rect x="530" y="55" width="150" height="40" rx="8" fill="var(--dg-ok)"></rect><text x="605" y="80" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Server</text><defs><marker id="ss1" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker><marker id="ss2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><path d="M195 60 H525" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#ss1)"></path><text x="360" y="52" class="mono" font-size="11" fill="var(--dg-accent-2)" text-anchor="middle">1 request</text><path d="M525 80 H195" stroke="var(--dg-ok)" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#ss2)"></path><path d="M525 100 H195" stroke="var(--dg-ok)" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#ss2)"></path><path d="M525 120 H195" stroke="var(--dg-ok)" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#ss2)"></path><text x="360" y="140" class="mono" font-size="11" fill="var(--dg-ok)" text-anchor="middle">many responses, then close</text></svg>
+</Diagram>
+
+______
+
+● Go● Python
+
+```go
+// proto:  rpc ListUsers(ListUsersRequest) returns (stream User);
+
+// ===== SERVER: receive one req, call stream.Send(...) repeatedly =====
+func (s *server) ListUsers(req *userv1.ListUsersRequest, stream userv1.UserService_ListUsersServer) error {
+    for _, u := range queryUsers(req.GetFilter()) { // imagine this yields a big result set
+        if err := stream.Send(u); err != nil {       // push one message down the stream
+            return err                                // client gone / cancelled
+        }
+    }
+    return nil // returning nil closes the stream cleanly (sends OK trailer)
+}
+
+// ===== CLIENT: call once, then Recv() in a loop until io.EOF =====
+func listUsers(client userv1.UserServiceClient) {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    stream, _ := client.ListUsers(ctx, &userv1.ListUsersRequest{Filter: "active"})
+    for {
+        u, err := stream.Recv()
+        if err == io.EOF { break } // server closed the stream, we're done
+        if err != nil { log.Fatal(err) }
+        log.Printf("user: %s", u.GetFullName())
+    }
+}
+```
+
+```python
+# proto:  rpc ListUsers(ListUsersRequest) returns (stream User);
+
+# ===== SERVER: a generator, every `yield` sends one message =====
+class UserService(pb_grpc.UserServiceServicer):
+    def ListUsers(self, request, context):
+        for u in query_users(request.filter):  # big result set
+            yield u                             # yielding pushes one message down the stream
+        # function returning ends the stream cleanly
+
+# ===== CLIENT: the call returns an ITERABLE of responses =====
+def list_users(stub):
+    responses = stub.ListUsers(pb.ListUsersRequest(filter="active"), timeout=10.0)
+    for u in responses:        # iterate until the server closes the stream
+        print("user:", u.full_name)
+```
+
+Go uses an explicit `stream.Send`/`stream.Recv` pair; Python expresses the server side as a _generator_ (`yield`) and the client side as a plain _iterable_, idiomatic to each language, same wire behavior.
+
+## Client Streaming
+
+**A stream of requests, one response.** The client sends many messages, then the server replies once with a summary/result. Ideal for uploads, batch ingestion, or aggregating a series of readings into a single computed answer. The proto marks the _request_ as `stream`.
+
+<Diagram caption="Client streaming">
+<svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Client streams several requests and the server returns one response"><rect x="40" y="55" width="150" height="40" rx="8" fill="var(--dg-accent)"></rect><text x="115" y="80" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Client</text><rect x="530" y="55" width="150" height="40" rx="8" fill="var(--dg-ok)"></rect><text x="605" y="80" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Server</text><defs><marker id="cs1" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker><marker id="cs2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><path d="M195 50 H525" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#cs1)"></path><path d="M195 70 H525" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#cs1)"></path><path d="M195 90 H525" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#cs1)"></path><text x="360" y="44" class="mono" font-size="11" fill="var(--dg-accent-2)" text-anchor="middle">many requests, then close</text><path d="M525 115 H195" stroke="var(--dg-ok)" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#cs2)"></path><text x="360" y="135" class="mono" font-size="11" fill="var(--dg-ok)" text-anchor="middle">1 response</text></svg>
+</Diagram>
+
+______
+
+● Go● Python
+
+```go
+// proto:  rpc UploadEvents(stream Event) returns (UploadSummary);
+
+// ===== SERVER: Recv() in a loop, then SendAndClose() once at the end =====
+func (s *server) UploadEvents(stream userv1.UserService_UploadEventsServer) error {
+    count := 0
+    for {
+        ev, err := stream.Recv()
+        if err == io.EOF { // client finished sending, now reply once
+            return stream.SendAndClose(&userv1.UploadSummary{Received: int32(count)})
+        }
+        if err != nil { return err }
+        store(ev)
+        count++
+    }
+}
+
+// ===== CLIENT: Send() many, then CloseAndRecv() for the single reply =====
+func uploadEvents(client userv1.UserServiceClient, events []*userv1.Event) {
+    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+    defer cancel()
+    stream, _ := client.UploadEvents(ctx)
+    for _, ev := range events {
+        stream.Send(ev) // push each one up
+    }
+    summary, err := stream.CloseAndRecv() // close our side, await the summary
+    if err != nil { log.Fatal(err) }
+    log.Printf("server received %d events", summary.GetReceived())
+}
+```
+
+```python
+# proto:  rpc UploadEvents(stream Event) returns (UploadSummary);
+
+# ===== SERVER: request_iterator yields incoming messages; return once =====
+class UserService(pb_grpc.UserServiceServicer):
+    def UploadEvents(self, request_iterator, context):
+        count = 0
+        for ev in request_iterator:   # iterate the client's stream
+            store(ev)
+            count += 1
+        return pb.UploadSummary(received=count)  # single reply after client closes
+
+# ===== CLIENT: pass an iterable/generator of requests; get one response =====
+def upload_events(stub, events):
+    def gen():
+        for ev in events:
+            yield ev
+    summary = stub.UploadEvents(gen(), timeout=30.0)  # returns the single summary
+    print("server received", summary.received, "events")
+```
+
+The asymmetry is the point: `SendAndClose`/`CloseAndRecv` in Go, a `request_iterator` plus a normal `return` in Python, the server consumes the whole request stream _before_ producing its one answer.
+
+## Bidirectional Streaming
+
+**A stream of requests and a stream of responses, simultaneously and independently.** Both sides read and write on the same stream at the same time, in any order, this is what HTTP/2's full-duplex framing (sec 06) buys you. It's the shape behind chat, real-time collaboration, live telemetry with control messages, and interactive sessions. Both request and response are `stream` in the proto.
+
+<Diagram caption="Bidirectional streaming">
+<svg viewBox="0 0 720 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Client and server both stream messages to each other concurrently over one stream"><rect x="40" y="60" width="150" height="40" rx="8" fill="var(--dg-accent)"></rect><text x="115" y="85" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Client</text><rect x="530" y="60" width="150" height="40" rx="8" fill="var(--dg-ok)"></rect><text x="605" y="85" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Server</text><defs><marker id="bd1" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker><marker id="bd2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><path d="M195 50 H525" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#bd1)"></path><path d="M195 72 H525" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#bd1)"></path><path d="M525 92 H195" stroke="var(--dg-ok)" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#bd2)"></path><path d="M525 114 H195" stroke="var(--dg-ok)" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#bd2)"></path><text x="360" y="150" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">interleaved &#x26; independent, neither side waits its turn</text></svg>
+</Diagram>
+
+______
+
+● Go● Python
+
+```go
+// proto:  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+
+// ===== SERVER: loop Recv() and Send() on the same stream =====
+func (s *server) Chat(stream userv1.UserService_ChatServer) error {
+    for {
+        msg, err := stream.Recv()
+        if err == io.EOF { return nil } // client closed its send side
+        if err != nil { return err }
+        // echo back (or broadcast to a room, etc.), can Send anytime, any number
+        reply := &userv1.ChatMessage{User: "server", Text: "ack: " + msg.GetText()}
+        if err := stream.Send(reply); err != nil { return err }
+    }
+}
+
+// ===== CLIENT: typically Send in one goroutine, Recv in another =====
+func chat(client userv1.UserServiceClient) {
+    stream, _ := client.Chat(context.Background())
+    go func() { // concurrent receiver
+        for {
+            in, err := stream.Recv()
+            if err != nil { return }
+            log.Printf("<< %s", in.GetText())
+        }
+    }()
+    for _, t := range []string{"hi", "how are you", "bye"} {
+        stream.Send(&userv1.ChatMessage{User: "ada", Text: t}) // send concurrently
+    }
+    stream.CloseSend() // signal we're done sending; receiver drains the rest
+}
+```
+
+```python
+# proto:  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+
+# ===== SERVER: iterate incoming, yield outgoing, interleaved =====
+class UserService(pb_grpc.UserServiceServicer):
+    def Chat(self, request_iterator, context):
+        for msg in request_iterator:          # read the client's stream
+            yield pb.ChatMessage(user="server", text="ack: " + msg.text)  # write back
+
+# ===== CLIENT: pass a request generator; iterate the response stream =====
+def chat(stub):
+    def outgoing():
+        for t in ["hi", "how are you", "bye"]:
+            yield pb.ChatMessage(user="ada", text=t)
+    responses = stub.Chat(outgoing())   # both directions live at once
+    for reply in responses:
+        print("<<", reply.text)
+
+# (for true concurrency under load, prefer the async API: grpc.aio)
+```
+
+Streaming gotchas to respect
+
+Streams are long-lived, so they consume a connection/goroutine for their lifetime, always set deadlines or idle limits, and handle the client vanishing mid-stream. There's no automatic back-pressure knob beyond HTTP/2 flow control, so a fast producer can overwhelm a slow consumer if you don't pace it. And a single stream is ordered but _not_ a transaction, if it breaks halfway, you've delivered a prefix, so design messages to be resumable or idempotent.
+
+<Diagram caption="The four shapes at a glance">
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Summary grid of unary, server streaming, client streaming, and bidirectional streaming"><g font-family="var(--font-diagram-mono)"><rect x="20" y="20" width="160" height="70" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="100" y="44" font-size="12.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">Unary</text><text x="100" y="64" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">1 -> 1</text><text x="100" y="80" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">normal call</text><rect x="195" y="20" width="160" height="70" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="275" y="44" font-size="12.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Server stream</text><text x="275" y="64" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">1 -> many</text><text x="275" y="80" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">feeds, large results</text><rect x="370" y="20" width="160" height="70" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="450" y="44" font-size="12.5" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">Client stream</text><text x="450" y="64" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">many -> 1</text><text x="450" y="80" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">uploads, batch</text><rect x="545" y="20" width="160" height="70" rx="10" fill="var(--dg-plum-surface)" stroke="var(--dg-ink-2)"></rect><text x="625" y="44" font-size="12.5" font-weight="700" fill="var(--dg-ink-2)" text-anchor="middle">Bidirectional</text><text x="625" y="64" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">many &#x3C;-> many</text><text x="625" y="80" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">chat, realtime</text></g><text x="360" y="140" class="serif" font-size="13" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">All four ride the same HTTP/2 stream machinery; the proto's two <tspan font-style="normal" class="mono" font-size="11" fill="var(--dg-ink)">stream</tspan> keywords decide the shape.</text><text x="360" y="172" class="mono" font-size="10.5" fill="var(--dg-accent-2)" text-anchor="middle">rpc M(Req) returns (Res) | (stream Req) | returns (stream Res) | both</text></svg>
+</Diagram>
+
+Part IV / The Machinery
+
+## The .proto -> Code Workflow
+
+You never write the stubs and skeletons by hand, a compiler, `protoc` (or the buf toolchain), reads your `.proto` and emits idiomatic source for each target language via a language-specific **plugin**. This is the step that turns the contract into callable code, and it's the reason a Go client and a Python server can interoperate flawlessly: both were generated from the same file.
+
+<Diagram caption="Code generation">
+<svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A proto file fed into protoc with language plugins, producing Go and Python generated code that both client and server import"><rect x="40" y="95" width="150" height="56" rx="10" fill="var(--dg-accent)"></rect><text x="115" y="120" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">user.proto</text><text x="115" y="138" class="mono" font-size="9.5" fill="var(--dg-on-accent)" text-anchor="middle">the contract</text><defs><marker id="ga" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ink-2)"></path></marker></defs><path d="M192 123 H262" stroke="var(--dg-ink-2)" stroke-width="1.8" marker-end="url(#ga)"></path><rect x="264" y="92" width="150" height="62" rx="10" fill="var(--dg-inverse)"></rect><text x="339" y="116" font-size="12.5" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">protoc</text><text x="339" y="133" class="mono" font-size="9" fill="var(--dg-on-inverse)" text-anchor="middle">+ lang plugins</text><text x="339" y="146" class="mono" font-size="9" fill="var(--dg-on-inverse)" text-anchor="middle">(protoc-gen-go, grpc&#95;tools)</text><path d="M416 110 C460 90 480 70 520 64" stroke="var(--dg-ok)" stroke-width="1.8" fill="none" marker-end="url(#ga)"></path><path d="M416 138 C460 158 480 178 520 184" stroke="var(--dg-ok)" stroke-width="1.8" fill="none" marker-end="url(#ga)"></path><rect x="522" y="36" width="178" height="56" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="611" y="58" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Go: &#42;.pb.go</text><text x="611" y="76" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">messages + stub + server base</text><rect x="522" y="156" width="178" height="56" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="611" y="178" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Py: &#42;&#95;pb2&#42;.py</text><text x="611" y="196" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">messages + stub + servicer</text><text x="360" y="228" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Regenerate after every proto change, the generated files are build artifacts, committed or generated in CI.</text></svg>
+</Diagram>
+
+______
+
+● Go● Python
+
+```text
+// Install the two plugins once (they sit on your PATH):
+//   go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+//   go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+// Generate messages (--go_out) AND the service stubs/skeleton (--go-grpc_out):
+//   protoc \
+//     --go_out=. --go_opt=paths=source_relative \
+//     --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+//     user.proto
+
+// Produces:
+//   user.pb.go, structs for each message (+ getters)
+//   user_grpc.pb.go, UserServiceClient (stub) + UserServiceServer (to implement)
+
+// Then in code you simply import the generated package:
+//   import userv1 "example.com/gen/userv1"
+```
+
+```text
+# Install the tooling once:
+#   pip install grpcio grpcio-tools
+
+# Generate messages AND service stubs in one command:
+#   python -m grpc_tools.protoc \
+#       -I. \
+#       --python_out=. \
+#       --grpc_python_out=. \
+#       user.proto
+
+# Produces:
+#   user_pb2.py, message classes
+#   user_pb2_grpc.py, UserServiceStub (client) + UserServiceServicer (to implement)
+
+# Then import both in your code:
+#   import user_pb2 as pb
+#   import user_pb2_grpc as pb_grpc
+```
+
+<Callout type="info" title="Use buf in real projects">
+Raw `protoc` invocations get unwieldy fast. The **buf** toolchain wraps it with a config file, dependency management, _breaking-change detection_ (it fails CI if you'd violate the never-reuse-a-field-number rule), and a linter. For anything beyond a toy, prefer buf, it turns the schema-evolution discipline from sec 04 into an automated gate.
+</Callout>
+
+## Channels, Stubs & a Call End-to-End
+
+Two client-side objects matter, and people conflate them. A **channel** (Go calls it a `ClientConn`) is the long-lived, reusable connection to a server, it manages the underlying HTTP/2 connection(s), reconnection, and load-balancing state. A **stub** is the cheap, generated object you create _on top of_ a channel to actually call methods. The rule: **create the channel once and share it; create stubs freely.** Opening a channel per request destroys performance, you throw away the connection reuse that was the whole point of HTTP/2.
+
+<Diagram caption="A unary call, end to end">
+<svg viewBox="0 0 720 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Eight-step lifecycle of a gRPC call from stub call through serialization, HTTP2 stream, server interceptors, handler, and back"><defs><marker id="la" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><g font-family="var(--font-diagram-mono)" font-size="10"><rect x="20" y="20" width="200" height="34" rx="7" fill="var(--dg-accent)"></rect><text x="120" y="42" fill="var(--dg-on-accent)" text-anchor="middle" font-weight="700">1 / you call stub.GetUser(ctx, req)</text><rect x="20" y="62" width="200" height="34" rx="7" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="120" y="84" fill="var(--dg-accent-2)" text-anchor="middle">2 / stub serializes req -> protobuf</text><rect x="20" y="104" width="200" height="34" rx="7" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="120" y="126" fill="var(--dg-accent-2)" text-anchor="middle">3 / client interceptors run</text><rect x="20" y="146" width="200" height="34" rx="7" fill="var(--dg-inverse)"></rect><text x="120" y="168" fill="var(--dg-on-inverse-info)" text-anchor="middle">4 / HTTP/2 stream -> :path, DATA</text><path d="M120 96 V104" stroke="var(--dg-accent-2)" marker-end="url(#la)"></path><path d="M120 138 V146" stroke="var(--dg-accent-2)" marker-end="url(#la)"></path><path d="M220 163 H300" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#la)"></path><rect x="500" y="146" width="200" height="34" rx="7" fill="var(--dg-inverse)"></rect><text x="600" y="168" fill="var(--dg-on-inverse-info)" text-anchor="middle">5 / server reads frames</text><rect x="500" y="104" width="200" height="34" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="600" y="126" fill="var(--dg-ok)" text-anchor="middle">6 / deserialize + interceptors</text><rect x="500" y="62" width="200" height="34" rx="7" fill="var(--dg-ok)"></rect><text x="600" y="84" fill="var(--dg-on-accent)" text-anchor="middle" font-weight="700">7 / YOUR handler runs</text><rect x="500" y="20" width="200" height="34" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="600" y="42" fill="var(--dg-ok)" text-anchor="middle">8 / serialize reply + status</text><path d="M600 146 V138" stroke="var(--dg-ok)" marker-end="url(#la)"></path><path d="M600 104 V96" stroke="var(--dg-ok)" marker-end="url(#la)"></path><path d="M600 62 V54" stroke="var(--dg-ok)" marker-end="url(#la)"></path></g><path d="M500 37 C420 37 300 100 220 79" stroke="var(--dg-ok)" stroke-width="1.6" stroke-dasharray="5 3" fill="none" marker-end="url(#la)"></path><text x="360" y="225" class="serif" font-size="13" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">The reply retraces the path: serialized on the server, framed over the same stream, deserialized by the stub,</text><text x="360" y="247" class="serif" font-size="13" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">and handed back to you as a typed value, or a typed error carrying a status code.</text><text x="360" y="278" class="mono" font-size="10" fill="var(--dg-accent-2)" text-anchor="middle">channel = the reused connection / stub = the cheap per-call caller on top of it</text></svg>
+</Diagram>
+
+The performance rule
+
+One channel per server, shared across your whole app, for its whole lifetime. Stubs are throwaway. If your latency is mysteriously bad, the first thing to check is whether you're creating a channel (and thus a fresh HTTP/2 + TLS handshake) on every call.
+
+## Metadata, Deadlines & Cancellation
+
+These are the tools that acknowledge the network is real (the sec 03 warning, made concrete). **Metadata** is gRPC's key-value side-channel, the equivalent of HTTP headers, for things that aren't the message itself: auth tokens, trace/request IDs, API versions. **Deadlines** put an absolute time bound on a call and, crucially, **propagate** across hops. **Cancellation** lets a caller (or a broken connection) abort in-flight work so servers don't toil on results nobody wants.
+
+#### Deadlines beat timeouts: and they propagate
+
+A gRPC deadline is an _absolute_ point in time, not a per-hop duration. When service A calls B with a 1-second deadline and B calls C, the remaining budget travels along, so C knows it has, say, 600ms left, not a fresh second. This prevents the classic cascade where each layer waits its own full timeout and total latency balloons. **Always set a deadline on every call.** A call with no deadline can hang forever, pinning resources.
+
+______
+
+● Go● Python
+
+```go
+// ===== CLIENT: attach a deadline + metadata =====
+ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second) // absolute deadline
+defer cancel() // cancel frees resources whether we time out or finish early
+
+ctx = metadata.AppendToOutgoingContext(ctx,
+    "authorization", "Bearer "+token,   // auth travels as metadata, sec 16
+    "x-request-id", reqID)              // trace id for correlation, like sec 15 of the layers manual
+
+resp, err := client.GetUser(ctx, &userv1.GetUserRequest{Id: "u42"})
+if status.Code(err) == codes.DeadlineExceeded {
+    log.Println("call timed out") // a network-shaped failure a local call never had
+}
+
+// ===== SERVER: read metadata, respect the inherited deadline =====
+func (s *server) GetUser(ctx context.Context, req *userv1.GetUserRequest) (*userv1.GetUserResponse, error) {
+    md, _ := metadata.FromIncomingContext(ctx)
+    auth := md.Get("authorization") // verify token here (or in an interceptor, sec 15)
+
+    // ctx already carries the client's remaining deadline + cancellation, // pass it straight to the DB driver so slow work is abandoned automatically.
+    if ctx.Err() != nil { return nil, status.FromContextError(ctx.Err()).Err() }
+    _ = auth
+    return s.lookup(ctx, req.GetId())
+}
+```
+
+```python
+# ===== CLIENT: attach a deadline (timeout=) + metadata =====
+metadata = (
+    ("authorization", f"Bearer {token}"),  # auth as metadata, sec 16
+    ("x-request-id", req_id),               # trace id for correlation
+)
+try:
+    resp = stub.GetUser(pb.GetUserRequest(id="u42"),
+                        timeout=1.0,         # the deadline, in seconds
+                        metadata=metadata)
+except grpc.RpcError as e:
+    if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+        print("call timed out")             # a network-shaped failure
+
+# ===== SERVER: read metadata, check for cancellation =====
+class UserService(pb_grpc.UserServiceServicer):
+    def GetUser(self, request, context):
+        md = dict(context.invocation_metadata())
+        auth = md.get("authorization")       # verify token (or in an interceptor, sec 15)
+
+        if not context.is_active():          # client gone / deadline passed?
+            return pb.GetUserResponse()      # abandon the work
+        return self.lookup(request.id)
+```
+
+Pass the context down, always
+
+In Go, thread the incoming `ctx` into _every_ downstream call (DB queries, outbound RPCs). That's what makes deadlines and cancellation actually work, if the client hangs up, the cancellation ripples all the way down and frees everything. A handler that ignores `ctx` keeps grinding on abandoned work.
+
+## Status Codes & Error Handling
+
+gRPC does not use HTTP status codes. It has its own fixed set of **status codes**: an enum of \~16 values, sent in the `grpc-status` trailer (sec 06). Every call ends with exactly one: `OK` for success, or one of the error codes with an optional message. Returning the _right_ code is part of your contract, because clients (and retry policies, sec 17) switch on it.
+
+| Code                 | Means                                                | Closest HTTP analogue |
+| -------------------- | ---------------------------------------------------- | --------------------- |
+| OK                   | Success                                              | 200                   |
+| INVALID\_ARGUMENT    | Client sent bad input (independent of system state)  | 400                   |
+| UNAUTHENTICATED      | No / invalid credentials                             | 401                   |
+| PERMISSION\_DENIED   | Authenticated but not allowed                        | 403                   |
+| NOT\_FOUND           | The requested entity doesn't exist                   | 404                   |
+| ALREADY\_EXISTS      | Create conflicts with an existing entity             | 409                   |
+| FAILED\_PRECONDITION | System not in a state for the operation              | 400/409               |
+| RESOURCE\_EXHAUSTED  | Quota / rate limit hit                               | 429                   |
+| DEADLINE\_EXCEEDED   | Call ran past its deadline                           | 504                   |
+| UNAVAILABLE          | Transient, server down/overloaded; **safe to retry** | 503                   |
+| INTERNAL             | A real bug / invariant broken                        | 500                   |
+| UNIMPLEMENTED        | Method not implemented on this server                | 501                   |
+
+______
+
+● Go● Python
+
+```go
+import (
+    "google.golang.org/grpc/codes"
+    "google.golang.org/grpc/status"
+)
+
+// SERVER: return a typed status, not a bare error string.
+func (s *server) GetUser(ctx context.Context, req *userv1.GetUserRequest) (*userv1.GetUserResponse, error) {
+    if req.GetId() == "" {
+        return nil, status.Error(codes.InvalidArgument, "id is required")
+    }
+    u, found := s.db.Find(req.GetId())
+    if !found {
+        return nil, status.Errorf(codes.NotFound, "no user with id %q", req.GetId())
+    }
+    return &userv1.GetUserResponse{User: u}, nil
+}
+
+// CLIENT: inspect the code to decide what to do.
+resp, err := client.GetUser(ctx, req)
+if err != nil {
+    st := status.Convert(err)        // pull the status out of the error
+    switch st.Code() {
+    case codes.NotFound:        // expected, show "not found" in UI
+    case codes.Unavailable:     // transient, retry with backoff, sec 17
+    default:                    log.Printf("unexpected: %v: %s", st.Code(), st.Message())
+    }
+}
+```
+
+```python
+import grpc
+
+# SERVER: abort with a code + message (or set_code/set_details then return).
+class UserService(pb_grpc.UserServiceServicer):
+    def GetUser(self, request, context):
+        if not request.id:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "id is required")
+        user = self.db.find(request.id)
+        if user is None:
+            context.abort(grpc.StatusCode.NOT_FOUND, f"no user with id {request.id!r}")
+        return pb.GetUserResponse(user=user)
+
+# CLIENT: catch RpcError and switch on .code()
+try:
+    resp = stub.GetUser(req, timeout=1.0)
+except grpc.RpcError as e:
+    if e.code() == grpc.StatusCode.NOT_FOUND:
+        ...   # expected, show "not found"
+    elif e.code() == grpc.StatusCode.UNAVAILABLE:
+        ...   # transient, retry with backoff, sec 17
+    else:
+        print("unexpected:", e.code(), e.details())
+```
+
+<Callout type="info" title="Rich, structured errors">
+When a code + message isn't enough (e.g. per-field validation details, like the REST error envelope), gRPC supports **error details**: typed protobuf messages attached to the status (the `google.rpc` types: `BadRequest`, `QuotaFailure`, `RetryInfo`...). The client deserializes them as structured data, never by parsing a human string, same principle as the machine-readable `code` field in the REST manual's error envelope.
+</Callout>
+
+## Interceptors: the Middleware of gRPC
+
+If you read the handlers/services/middleware chapter, this is the exact same idea with a different name. An **interceptor** is a function that wraps every RPC, running before and/or after your handler, the place to centralize cross-cutting concerns so you don't repeat them in every method: authentication, logging, metrics, tracing, panic recovery, rate limiting. They come in two flavours: **unary** interceptors (wrap one-shot calls) and **stream** interceptors (wrap streaming calls), on both the client and the server side.
+
+<Diagram caption="The interceptor chain">
+<svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An incoming RPC passing through recovery, logging, and auth interceptors before reaching the handler and returning back out"><defs><marker id="ia" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><text x="20" y="22" class="mono" font-size="11" fill="var(--dg-accent)">incoming RPC -></text><rect x="20" y="34" width="120" height="50" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="80" y="56" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">recover</text><text x="80" y="72" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">catch panics</text><rect x="160" y="34" width="120" height="50" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="220" y="56" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">logging</text><text x="220" y="72" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">+ metrics, trace</text><rect x="300" y="34" width="120" height="50" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="360" y="56" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">auth</text><text x="360" y="72" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">verify token</text><rect x="450" y="34" width="150" height="50" rx="9" fill="var(--dg-ok)"></rect><text x="525" y="56" font-size="12" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">your handler</text><text x="525" y="72" font-size="9" fill="var(--dg-on-accent)" text-anchor="middle">business logic</text><path d="M140 59 H160" stroke="var(--dg-accent-2)" marker-end="url(#ia)"></path><path d="M280 59 H300" stroke="var(--dg-accent-2)" marker-end="url(#ia)"></path><path d="M420 59 H450" stroke="var(--dg-accent-2)" marker-end="url(#ia)"></path><text x="360" y="118" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Order matters (recover outermost, auth nearest the handler), the same ordering discipline as HTTP middleware.</text><text x="360" y="138" class="mono" font-size="10" fill="var(--dg-ok)" text-anchor="middle">&#x3C;- response unwinds back through each interceptor (logging records status, recover guards the return)</text></svg>
+</Diagram>
+
+______
+
+● Go● Python
+
+```go
+// A unary server interceptor: signature is fixed by the framework.
+func authInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo,
+    handler grpc.UnaryHandler) (any, error) {
+
+    md, _ := metadata.FromIncomingContext(ctx)
+    tokens := md.Get("authorization")
+    if len(tokens) == 0 || !valid(tokens[0]) {
+        return nil, status.Error(codes.Unauthenticated, "missing or invalid token")
+    }
+    // attach the verified identity for the handler to read from ctx
+    ctx = context.WithValue(ctx, userKey{}, parse(tokens[0]))
+    return handler(ctx, req) // call the next link / the real handler
+}
+
+func loggingInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo,
+    handler grpc.UnaryHandler) (any, error) {
+    start := time.Now()
+    resp, err := handler(ctx, req)
+    log.Printf("%s took %s -> %s", info.FullMethod, time.Since(start), status.Code(err))
+    return resp, err
+}
+
+// Register the chain when building the server (outermost listed first):
+s := grpc.NewServer(
+    grpc.ChainUnaryInterceptor(loggingInterceptor, authInterceptor),
+)
+```
+
+```python
+import grpc
+
+class AuthInterceptor(grpc.ServerInterceptor):
+    def intercept_service(self, continuation, handler_call_details):
+        md = dict(handler_call_details.invocation_metadata)
+        token = md.get("authorization", "")
+        if not valid(token):
+            # short-circuit: abort before the handler ever runs
+            def deny(request, context):
+                context.abort(grpc.StatusCode.UNAUTHENTICATED, "missing or invalid token")
+            return grpc.unary_unary_rpc_method_handler(deny)
+        return continuation(handler_call_details)  # proceed to next / handler
+
+# Register interceptors when building the server (applied in order):
+server = grpc.server(
+    futures.ThreadPoolExecutor(max_workers=10),
+    interceptors=[AuthInterceptor()],
+)
+
+# Client-side interceptors also exist (e.g. to inject auth on every call):
+#   channel = grpc.intercept_channel(base_channel, MyClientInterceptor())
+```
+
+This is the gRPC home for everything the layers manual put in middleware: auth, logging, tracing, rate limiting, panic recovery, written once, applied to every method.
+
+Part V / Production & Interop
+
+## Authentication & Security
+
+gRPC security splits into two orthogonal questions: **channel security** (is the connection encrypted and is the peer who they claim to be? -> TLS / mTLS) and **call credentials** (who is the caller for _this_ request? -> a token in metadata). You combine them: TLS protects the pipe, a per-call token identifies the user. The `insecure` credentials used in earlier examples are for local development only, never ship them.
+
+| Layer     | Mechanism                                  | Answers                                                                            |
+| --------- | ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Transport | **TLS**: server presents a cert            | encrypted? + is the _server_ genuine?                                              |
+| Transport | **mTLS**: both sides present certs         | + is the _client_ service genuine? (service-to-service identity)                   |
+| Per-call  | **token in metadata** (JWT / OAuth bearer) | which _user_ is making this call? (authn/authz, verified in an interceptor sec 15) |
+
+______
+
+● Go● Python
+
+```go
+import "google.golang.org/grpc/credentials"
+
+// ===== SERVER over TLS =====
+creds, _ := credentials.NewServerTLSFromFile("server.crt", "server.key")
+s := grpc.NewServer(grpc.Creds(creds)) // every connection is now encrypted
+
+// ===== CLIENT over TLS =====
+tlsCreds := credentials.NewTLS(&tls.Config{RootCAs: pool}) // trust this CA
+conn, _ := grpc.NewClient("api.example.com:443", grpc.WithTransportCredentials(tlsCreds))
+
+// ===== Per-call token (combine with TLS) =====
+// Implement credentials.PerRPCCredentials so a fresh token rides on every call:
+type tokenCreds struct{ token string }
+func (t tokenCreds) GetRequestMetadata(ctx context.Context, _ ...string) (map[string]string, error) {
+    return map[string]string{"authorization": "Bearer " + t.token}, nil
+}
+func (t tokenCreds) RequireTransportSecurity() bool { return true } // refuse to send token in cleartext
+
+conn, _ = grpc.NewClient("api.example.com:443",
+    grpc.WithTransportCredentials(tlsCreds),
+    grpc.WithPerRPCCredentials(tokenCreds{token}),
+)
+```
+
+```python
+# ===== SERVER over TLS =====
+with open("server.key", "rb") as k, open("server.crt", "rb") as c:
+    creds = grpc.ssl_server_credentials([(k.read(), c.read())])
+server.add_secure_port("[::]:443", creds)   # encrypted port
+
+# ===== CLIENT over TLS =====
+with open("ca.crt", "rb") as f:
+    channel_creds = grpc.ssl_channel_credentials(root_certificates=f.read())
+
+# ===== Per-call token, composed with the channel credentials =====
+class TokenAuth(grpc.AuthMetadataPlugin):
+    def __init__(self, token): self.token = token
+    def __call__(self, context, callback):
+        callback((("authorization", f"Bearer {self.token}"),), None)  # adds metadata per call
+
+call_creds = grpc.metadata_call_credentials(TokenAuth(token))
+composite  = grpc.composite_channel_credentials(channel_creds, call_creds)
+channel    = grpc.secure_channel("api.example.com:443", composite)
+```
+
+Never send tokens over plaintext
+
+Bearer tokens are like passwords, whoever holds one can impersonate the caller (echoing the JWT-theft warning from the auth manual). Always require transport security before attaching credentials. mTLS is the standard for service-to-service identity inside a mesh; user-level authz still rides on a per-call token that an interceptor verifies.
+
+## Resilience & Load Balancing
+
+Because every remote call can fail in network-shaped ways, production gRPC leans on a few resilience features, mostly configured, not hand-coded. The non-obvious one is **load balancing**: gRPC's long-lived, multiplexed connection (sec 06) _breaks_ naive load balancers, and understanding why is essential to deploying it.
+
+<Diagram caption="The load-balancing pitfall">
+<svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An L4 TCP balancer sends one connection to a single backend so all multiplexed calls hit it, versus L7 or client-side balancing spreading calls across backends"><defs><marker id="ra1" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker><marker id="ra2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><text x="20" y="20" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent-soft)">L4 (TCP) balancer, WRONG for gRPC</text><rect x="20" y="34" width="90" height="40" rx="8" fill="var(--dg-accent)"></rect><text x="65" y="58" font-size="11" fill="var(--dg-on-accent)" text-anchor="middle">client</text><rect x="140" y="34" width="80" height="40" rx="8" fill="var(--dg-inverse)"></rect><text x="180" y="54" font-size="10" fill="var(--dg-on-inverse)" text-anchor="middle">L4 LB</text><text x="180" y="68" font-size="8" fill="var(--dg-on-inverse)" text-anchor="middle">per-conn</text><path d="M110 54 H140" stroke="var(--dg-accent-soft)" stroke-width="1.6" marker-end="url(#ra1)"></path><path d="M220 54 H290" stroke="var(--dg-accent-soft)" stroke-width="2.4" marker-end="url(#ra1)"></path><rect x="292" y="32" width="80" height="26" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="332" y="49" font-size="9.5" fill="var(--dg-accent-2)" text-anchor="middle">backend 1 (hot)</text><rect x="292" y="64" width="80" height="22" rx="6" fill="var(--dg-paper)" stroke="var(--dg-line)"></rect><text x="332" y="79" font-size="9" fill="var(--dg-ink-3)" text-anchor="middle">backend 2 idle</text><text x="392" y="58" font-size="10" font-style="italic" fill="var(--dg-accent)">all multiplexed calls land on one box</text><text x="20" y="128" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)">L7 / client-side balancing, RIGHT</text><rect x="20" y="142" width="90" height="40" rx="8" fill="var(--dg-accent)"></rect><text x="65" y="166" font-size="11" fill="var(--dg-on-accent)" text-anchor="middle">client</text><rect x="140" y="142" width="80" height="40" rx="8" fill="var(--dg-ok)"></rect><text x="180" y="162" font-size="10" fill="var(--dg-on-accent)" text-anchor="middle">L7 / mesh</text><text x="180" y="176" font-size="8" fill="var(--dg-on-accent)" text-anchor="middle">per-RPC</text><path d="M110 162 H140" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#ra2)"></path><path d="M220 150 C250 140 270 132 300 130" stroke="var(--dg-ok)" stroke-width="1.6" fill="none" marker-end="url(#ra2)"></path><path d="M220 162 H300" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#ra2)"></path><path d="M220 174 C250 184 270 192 300 194" stroke="var(--dg-ok)" stroke-width="1.6" fill="none" marker-end="url(#ra2)"></path><rect x="302" y="118" width="80" height="24" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="342" y="134" font-size="9" fill="var(--dg-ok)" text-anchor="middle">backend 1</text><rect x="302" y="150" width="80" height="24" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="342" y="166" font-size="9" fill="var(--dg-ok)" text-anchor="middle">backend 2</text><rect x="302" y="182" width="80" height="24" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="342" y="198" font-size="9" fill="var(--dg-ok)" text-anchor="middle">backend 3</text><text x="400" y="166" font-size="10" font-style="italic" fill="var(--dg-ok)">individual RPCs spread across backends</text></svg>
+</Diagram>
+
+#### Retries, keepalive, health
+
+gRPC supports **declarative retries** via a _service config_ (a JSON policy attached to the channel): which status codes are retryable (typically `UNAVAILABLE`), how many attempts, and exponential backoff, no retry loops in your code. **Keepalive** pings detect dead connections and keep idle ones alive through NATs/proxies. A standard **health-checking** service lets load balancers and Kubernetes probes ask "are you ready?" Together these are the resilience baseline.
+
+```json title="service-config.json / declarative retry policy (language-agnostic)"
+{
+  "methodConfig": [{
+    "name": [{ "service": "user.v1.UserService" }],
+    "retryPolicy": {
+      "maxAttempts": 4,
+      "initialBackoff": "0.1s",
+      "maxBackoff": "2s",
+      "backoffMultiplier": 2,
+      "retryableStatusCodes": [ "UNAVAILABLE" ]
+    }
+  }]
+}
+// Attach to the channel (Go: grpc.WithDefaultServiceConfig(json);
+// Python: grpc.insecure_channel(target, options=[("grpc.service_config", json)]))
+// Only retry IDEMPOTENT methods automatically, retrying a non-idempotent
+// "charge card" can double-charge (same lesson as POST idempotency keys in REST).
+```
+
+Retries need idempotency
+
+Automatic retries are safe only for idempotent methods. Retrying a "create payment" on a timeout can charge twice, the exact danger the REST manual solved with idempotency keys. Mark which methods are safe, and for the rest, use an idempotency key or accept that they aren't auto-retried.
+
+## gRPC vs REST: Choosing
+
+Not a rivalry, different tools. The honest decision rule: **gRPC for internal, high-throughput, typed service-to-service traffic; REST/JSON for public, browser-facing, human-debuggable, cache-friendly APIs.** Most real systems run both: gRPC between backend services, a REST (or GraphQL) edge for the outside world.
+
+| Dimension        | gRPC                                           | REST / JSON                                        |
+| ---------------- | ---------------------------------------------- | -------------------------------------------------- |
+| Payload          | Binary protobuf, compact, fast                 | Text JSON, bulky, human-readable                   |
+| Contract         | Enforced by `.proto`; codegen                  | Convention + docs (OpenAPI optional)               |
+| Transport        | HTTP/2 only (multiplexed)                      | Any HTTP, incl. 1.1                                |
+| Streaming        | First-class, bidirectional                     | Bolt-ons (SSE, polling, WebSockets)                |
+| Browser support  | No native, needs gRPC-Web (sec 19)             | Universal                                          |
+| Human-debuggable | Needs tooling (grpcurl)                        | curl, browser, devtools                            |
+| HTTP caching     | Not really                                     | Mature (ETag, Cache-Control)                       |
+| Best fit         | Microservices, internal, low-latency, polyglot | Public APIs, web/mobile front doors, third parties |
+
+<Callout type="info" title="The pragmatic architecture">
+A very common shape: clients hit a **REST/JSON gateway** over HTTP/1.1; behind it, that gateway and all internal services speak **gRPC** to each other. You get the public-friendliness of REST at the edge and the speed/typing of gRPC in the core, and tools like grpc-gateway (sec 19) can even generate the REST edge from the same proto.
+</Callout>
+
+## gRPC-Web & Browser Interop
+
+A hard constraint, and a frequent surprise: **browsers cannot speak native gRPC.** The reason is from sec 06, gRPC needs fine-grained control over HTTP/2 frames and trailers, and browser `fetch`/XHR don't expose that. So talking to gRPC from a web frontend requires a translation layer.
+
+<Diagram caption="Bridging to the browser">
+<svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Browser speaks gRPC-Web to a proxy like Envoy which translates to native gRPC for backend services"><defs><marker id="wa" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><rect x="20" y="55" width="150" height="56" rx="10" fill="var(--dg-accent)"></rect><text x="95" y="80" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Browser</text><text x="95" y="98" class="mono" font-size="9" fill="var(--dg-on-accent)" text-anchor="middle">gRPC-Web client</text><rect x="285" y="50" width="150" height="66" rx="10" fill="var(--dg-inverse)"></rect><text x="360" y="78" font-size="12.5" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">Proxy</text><text x="360" y="96" class="mono" font-size="9" fill="var(--dg-on-inverse)" text-anchor="middle">Envoy / gateway</text><rect x="550" y="55" width="150" height="56" rx="10" fill="var(--dg-ok)"></rect><text x="625" y="80" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">gRPC service</text><text x="625" y="98" class="mono" font-size="9" fill="var(--dg-on-accent)" text-anchor="middle">native gRPC</text><path d="M172 83 H283" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#wa)"></path><text x="227" y="74" class="mono" font-size="9.5" fill="var(--dg-accent-2)" text-anchor="middle">gRPC-Web</text><text x="227" y="103" font-size="9" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">HTTP/1.1-friendly</text><path d="M437 83 H548" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#wa)"></path><text x="492" y="74" class="mono" font-size="9.5" fill="var(--dg-accent-2)" text-anchor="middle">native gRPC</text><text x="492" y="103" font-size="9" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">HTTP/2 + trailers</text></svg>
+</Diagram>
+
+Your options, roughly in order of how much you want gRPC on the frontend:
+
+- **gRPC-Web**: a variant protocol plus a generated JS/TS client; a proxy (Envoy has a built-in filter) translates it to real gRPC. Streaming is limited (server-streaming works; full bidirectional generally doesn't).
+- **Connect** (connectrpc), a modern protocol family that speaks gRPC, gRPC-Web, _and_ its own HTTP/JSON, often without a separate proxy, from the same handlers. Increasingly the friendliest path.
+- **grpc-gateway / transcoding**: generate a _REST+JSON_ facade from your `.proto` (via HTTP annotations). The browser uses plain REST; the gateway transcodes to gRPC. This is the "REST edge from one proto" pattern referenced in sec 18.
+
+Plan the edge before committing
+
+If a browser must call your service directly, decide the bridge strategy up front, you can't just point `fetch` at a gRPC port. For internal-only services this never matters; for anything web-facing it's a first-class design decision.
+
+## Observability & Debugging
+
+Binary payloads mean you can't eyeball traffic like JSON (sec 05), so gRPC ships an ecosystem to see inside. Knowing these turns a gRPC service from a black box into something you can poke, trace, and probe.
+
+| Tool / feature            | What it gives you                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `grpcurl`                 | The `curl` of gRPC, call methods from the CLI with JSON in/out, list services and methods.                                     |
+| **Server reflection**     | Lets clients/tools discover a server's services & message schemas at runtime, so `grpcurl` works without the `.proto` on hand. |
+| **Health checking**       | A standard `grpc.health.v1.Health` service for readiness/liveness probes (K8s, load balancers).                                |
+| **channelz**              | Built-in introspection of live channels, connections, and per-RPC stats for debugging connectivity.                            |
+| **Interceptors** (sec 15) | The hook for metrics (Prometheus), structured logs, and distributed tracing (OpenTelemetry) on every call.                     |
+| **Trace propagation**     | Pass a trace/request ID through metadata (sec 13) so one request is followable across every service it touches.                |
+
+```bash title="grpcurl / debugging from the shell"
+# List every service the server exposes (needs reflection enabled):
+grpcurl localhost:50051 list
+
+# List the methods of one service:
+grpcurl localhost:50051 list user.v1.UserService
+
+# Call a unary method with a JSON request, grpcurl turns it into protobuf for you:
+grpcurl -d '{"id": "u42"}' localhost:50051 user.v1.UserService/GetUser
+
+# Against a TLS server, drop -plaintext; for local insecure servers, add it:
+grpcurl -plaintext -d '{"id":"u42"}' localhost:50051 user.v1.UserService/GetUser
+```
+
+Enable reflection in non-prod
+
+Turn on server reflection in dev/staging so `grpcurl` and GUI tools (like Postman's gRPC mode or grpcui) can explore your API without you shipping `.proto` files around. Many teams disable it in production to avoid advertising the schema, a small attack-surface decision.
+
+## Debug Cheat-Sheet
+
+The whole manual compressed to what you reach for under pressure.
+
+| Concept         | One-liner                                                                             |
+| --------------- | ------------------------------------------------------------------------------------- |
+| gRPC            | Typed remote method calls, Protobuf contract, binary serialization, HTTP/2 transport. |
+| Protobuf (IDL)  | The `.proto` is the contract; both sides generate code from it.                       |
+| Field numbers   | The real wire identity, never change or reuse one; adding fields is safe.             |
+| Wire format     | tag = `(field«3)\|wiretype`, varint-packed; small + fast, not human-readable.         |
+| HTTP/2          | One connection, many interleaved streams; one RPC = one stream.                       |
+| Unary           | 1->1, the normal call (\~90% of RPCs).                                                |
+| Server stream   | 1->many, feeds, big result sets.                                                      |
+| Client stream   | many->1, uploads, batch aggregation.                                                  |
+| Bidi stream     | many&lt;->many, chat, realtime, full-duplex.                                             |
+| Channel vs stub | Channel = reused connection (one, shared); stub = cheap per-call caller.              |
+| Metadata        | Key-value side-channel = HTTP headers; carries tokens & trace IDs.                    |
+| Deadline        | Absolute time bound, propagates across hops, set one on _every_ call.                 |
+| Status codes    | gRPC's own enum (OK, NOT\_FOUND, UNAVAILABLE...), in a trailer, not HTTP codes.       |
+| Interceptors    | gRPC middleware, auth, logging, tracing, recovery; unary & stream.                    |
+| Security        | TLS/mTLS for the pipe + token-in-metadata for the user; never `insecure` in prod.     |
+| Load balancing  | Use L7 / client-side, an L4 TCP balancer pins everything to one backend.              |
+| Retries         | Declarative via service config; only auto-retry idempotent methods.                   |
+| Browser         | No native gRPC, use gRPC-Web, Connect, or a REST gateway.                             |
+| Debug           | `grpcurl` + reflection; channelz for connections; health service for probes.          |
+| vs REST         | gRPC = internal/typed/fast; REST = public/debuggable/cacheable. Run both.             |
+
+**The whole topic in one breath:** gRPC lets a client call a server's method as if it were local. You define the API once in a `.proto` (sec 04), `protoc` generates a typed stub and server skeleton (sec 11), arguments are serialized as compact protobuf (sec 05) and carried over multiplexed HTTP/2 streams (sec 06) in one of four shapes, unary, server-, client-, or bidirectional-streaming (sec 07-10). A long-lived channel hosts cheap per-call stubs (sec 12); metadata carries auth and trace context, deadlines bound and propagate the call, cancellation reclaims work (sec 13); every call ends with a gRPC status code (sec 14); interceptors centralize cross-cutting logic (sec 15); TLS/mTLS plus per-call tokens secure it (sec 16); declarative retries and L7/client-side balancing make it resilient (sec 17). Reach for gRPC inside your system and REST at the public edge (sec 18-19), and lean on grpcurl, reflection and interceptors to see inside (sec 20).
+
+Grounded in grpc.io & protobuf.dev docs / MDN for HTTP/2 background / Go 1.22+ (google.golang.org/grpc) / Python 3.11+ (grpcio) examples.
+
+Backend from First Principles / Chapter 13 / gRPC. Code targets Go 1.22+ and Python 3.11+.

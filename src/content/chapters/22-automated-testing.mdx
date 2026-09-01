@@ -1,0 +1,907 @@
+---
+order: 22
+title: "Automated Testing"
+navTitle: "Automated Testing"
+summary: "A first-principles walkthrough of how backend engineers verify their systems, from a single unit test and the test-double vocabulary, through integration tests against real databases and HTTP handlers, contract tests between services, end-to-end checks, coverage and flakiness, and into TDD, load testing, and tests in the deployment pipeline. Written to explain not just what each kind of test does but why it exists and how to write it well. Examples in both Go ( testing ) and Python ( pytest )."
+readingTime: "2-3 hours"
+keywords:
+  - "testing"
+  - "unit"
+  - "integration"
+  - "e2e"
+  - "test"
+  - "coverage"
+  - "mocking"
+  - "tdd"
+---
+Part I / Why & What
+
+## Why Tests Exist
+
+The honest reason to write automated tests is not "correctness" in the abstract, it's **confidence to change code without fear.** A system without tests calcifies: every edit risks breaking something invisible, so people stop refactoring, stop upgrading dependencies, and route around the scary parts. A well-tested system stays soft, you can restructure it aggressively because a green test suite tells you, in seconds, that behavior still holds. Tests are what let a codebase keep evolving instead of rotting.
+
+A test is also **executable specification**. Prose docs drift from reality (the same problem the gRPC chapter noted about REST contracts); a test that asserts `Divide(10, 2) == 5` can't lie, it either passes against the current code or it doesn't. Read a good test suite and you learn precisely what the code promises, with examples. And tests are a **regression net**: once you've written a test for a bug, that bug can never silently come back, the net catches it on every future run.
+
+Manual testing is checking your work by re-reading it once. Automated testing is hiring a tireless proofreader who re-checks the _entire_ document, instantly, every time you change a single word, and never gets bored or misses a line.
+
+<Diagram caption="The economics">
+<svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A rising cost curve showing a bug is cheap to fix when caught by a unit test and dramatically more expensive when caught in production"><line x1="60" y1="180" x2="680" y2="180" stroke="var(--dg-line)" stroke-width="1.5"></line><line x1="60" y1="180" x2="60" y2="30" stroke="var(--dg-line)" stroke-width="1.5"></line><text x="40" y="40" class="mono" font-size="10" fill="var(--dg-accent-2)" transform="rotate(-90 40 100)" text-anchor="middle">cost to fix -></text><path d="M80 172 C220 168 320 150 440 110 C540 78 600 50 660 40" fill="none" stroke="var(--dg-accent)" stroke-width="2.5"></path><g font-size="10" fill="var(--dg-ink-2)" text-anchor="middle"><circle cx="100" cy="170" r="5" fill="var(--dg-ok)"></circle><text x="100" y="200" fill="var(--dg-ink)">while coding</text><text x="100" y="158" class="mono" font-size="9" fill="var(--dg-ok)">$</text><circle cx="260" cy="160" r="5" fill="var(--dg-ok)"></circle><text x="260" y="200" fill="var(--dg-ink)">unit test (CI)</text><text x="260" y="148" class="mono" font-size="9" fill="var(--dg-ok)">$</text><circle cx="430" cy="115" r="5" fill="var(--dg-warn)"></circle><text x="430" y="200" fill="var(--dg-ink)">code review / staging</text><text x="430" y="103" class="mono" font-size="9" fill="var(--dg-warn)">$$$</text><circle cx="650" cy="42" r="5" fill="var(--dg-accent-2)"></circle><text x="640" y="200" fill="var(--dg-ink)">in production</text><text x="650" y="30" class="mono" font-size="9" fill="var(--dg-accent-2)">$$$$$$</text></g><text x="370" y="222" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Automated tests shift detection left, to the cheapest possible moment, on every change.</text></svg>
+</Diagram>
+
+What tests really buy you
+
+**Confidence to change** (refactor fearlessly), **executable specification** (docs that can't drift), **regression protection** (fixed bugs stay fixed), and **faster feedback** (seconds, not a manual click-through). Correctness is a side effect; changeability is the prize.
+
+## The Testing Pyramid
+
+Not all tests are equal, and the most important strategic decision is the _mix_. The **testing pyramid** is the guiding heuristic: have **many fast, cheap unit tests** at the base, **fewer integration tests** in the middle, and **very few slow, expensive end-to-end tests** at the top. The shape comes from a trade-off that runs through this entire manual: as you climb, tests get more _realistic_ (they exercise more of the real system) but also slower, more brittle, and harder to debug.
+
+<Diagram caption="The pyramid">
+<svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A pyramid with a wide unit-test base, a narrower integration middle, and a small end-to-end top, with speed and realism axes"><polygon points="360,30 470,120 250,120" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></polygon><text x="360" y="95" font-size="13" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">E2E</text><text x="360" y="112" class="mono" font-size="8.5" fill="var(--dg-accent-2)" text-anchor="middle">few / slow</text><polygon points="250,122 470,122 540,210 180,210" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></polygon><text x="360" y="160" font-size="13" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">Integration</text><text x="360" y="178" class="mono" font-size="8.5" fill="var(--dg-warn)" text-anchor="middle">some / medium</text><polygon points="180,212 540,212 610,295 110,295" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></polygon><text x="360" y="250" font-size="13" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Unit</text><text x="360" y="268" class="mono" font-size="8.5" fill="var(--dg-ok)" text-anchor="middle">many / fast / isolated</text><defs><marker id="pyu" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--dg-ink-2)"></path></marker></defs><line x1="650" y1="290" x2="650" y2="40" stroke="var(--dg-ink-2)" stroke-width="1.2" marker-end="url(#pyu)"></line><text x="668" y="170" class="mono" font-size="10" fill="var(--dg-ink-2)" transform="rotate(-90 668 170)" text-anchor="middle">slower / more realistic -></text><line x1="70" y1="40" x2="70" y2="290" stroke="var(--dg-ink-2)" stroke-width="1.2" marker-end="url(#pyu)"></line><text x="52" y="170" class="mono" font-size="10" fill="var(--dg-ink-2)" transform="rotate(-90 52 170)" text-anchor="middle">more tests -></text></svg>
+</Diagram>
+
+| Layer           | Tests                                   | Speed           | Realism | Use for                                  |
+| --------------- | --------------------------------------- | --------------- | ------- | ---------------------------------------- |
+| **Unit**        | One unit, dependencies faked            | Milliseconds    | Low     | Logic, edge cases, branches              |
+| **Integration** | Several units + real deps (DB, cache)   | Seconds         | Medium  | Wiring: queries, handlers, serialization |
+| **E2E**         | The whole system via its real interface | Seconds-minutes | High    | Critical user journeys only              |
+
+The ice-cream-cone anti-pattern
+
+Invert the pyramid, lots of slow E2E tests, few unit tests, and you get the "ice-cream cone": a suite that takes ages to run, fails intermittently (sec 14), and gives vague signals (a failure could be _anywhere_ in the stack). Teams in this trap stop trusting the suite and stop running it. Push detail down to fast unit tests; use E2E sparingly for confidence that the pieces connect.
+
+## Anatomy of a Test
+
+Every good test, at every layer, has the same three-beat structure, **Arrange, Act, Assert** (AAA; the BDD world calls it Given-When-Then). _Arrange_ sets up the world and inputs; _Act_ performs the one operation under test; _Assert_ checks the outcome is what you expect. Keeping these phases distinct and testing _one_ behavior per test is what makes a failure instantly legible: you know exactly which behavior broke.
+
+<Diagram caption="Arrange / Act / Assert">
+<svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three sequential blocks: Arrange the inputs, Act by calling the code, Assert the result matches expectations"><defs><marker id="aaa" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><rect x="30" y="40" width="190" height="64" rx="11" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="125" y="66" font-size="13" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">1 / Arrange</text><text x="125" y="86" class="mono" font-size="9.5" fill="var(--dg-ink-2)" text-anchor="middle">build inputs &#x26; doubles</text><rect x="265" y="40" width="190" height="64" rx="11" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="360" y="66" font-size="13" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">2 / Act</text><text x="360" y="86" class="mono" font-size="9.5" fill="var(--dg-ink-2)" text-anchor="middle">call the unit ONCE</text><rect x="500" y="40" width="190" height="64" rx="11" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="595" y="66" font-size="13" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">3 / Assert</text><text x="595" y="86" class="mono" font-size="9.5" fill="var(--dg-ink-2)" text-anchor="middle">check the outcome</text><path d="M222 72 H263" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#aaa)"></path><path d="M457 72 H498" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#aaa)"></path><text x="360" y="132" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">One behavior per test / a descriptive name / a clear failure message.</text></svg>
+</Diagram>
+
+______
+
+● Go● Python
+
+```go
+// File naming convention: foo.go is tested by foo_test.go in the same package.
+// Test functions are func TestXxx(t *testing.T), the `go test` tool finds them.
+func TestDiscount_AppliesPercentage(t *testing.T) {
+    // Arrange, set up inputs (and any doubles)
+    cart := Cart{Subtotal: 200}
+    coupon := Coupon{Percent: 10}
+
+    // Act, the ONE operation under test
+    total := ApplyDiscount(cart, coupon)
+
+    // Assert, state the expectation; a good message explains the failure
+    if total != 180 {
+        t.Errorf("ApplyDiscount(200, 10%%) = %d; want 180", total)
+    }
+}
+```
+
+```python
+# pytest discovers files named test_*.py and functions named test_*.
+# A bare `assert` is enough, pytest rewrites it to show a rich failure diff.
+def test_discount_applies_percentage():
+    # Arrange, set up inputs (and any doubles)
+    cart = Cart(subtotal=200)
+    coupon = Coupon(percent=10)
+
+    # Act, the ONE operation under test
+    total = apply_discount(cart, coupon)
+
+    # Assert, pytest prints actual vs expected automatically on failure
+    assert total == 180
+```
+
+#### What makes an assertion good
+
+- **Test behavior, not implementation.** Assert the observable result (_the discount is applied_), not internal mechanics (_this private helper was called_). Implementation-coupled tests break on every refactor and defeat the whole purpose (sec 1, sec 20).
+- **One reason to fail.** A test asserting five unrelated things tells you little when it goes red. Prefer focused tests with descriptive names, the name should read like a sentence about the behavior.
+- **Deterministic.** Same inputs, same result, every run, in any order, the property sec 14 is all about protecting.
+
+<Callout type="info" title="The standard tools">
+This manual uses each language's mainstream stack: Go's built-in `testing` package with `go test` (no framework needed; the standard library is the framework), and Python's **pytest**, the de-facto standard with fixtures, parametrization, and plain-`assert` rewriting. Both are what you'll find in real backend repos.
+</Callout>
+
+Part II / Unit Tests
+
+## Unit Tests
+
+A **unit test** verifies one small piece of logic, a function or a method, _in isolation_ from the rest of the system. No database, no network, no filesystem, no clock: just inputs in, output checked. That isolation is what makes them fast (thousands run in seconds) and precise (a failure points at exactly one unit). They are the wide base of the pyramid (sec 2) and where the bulk of your edge-case and branch coverage should live.
+
+The natural target for unit tests is your **domain/business logic**: the pure calculations and decisions that don't inherently need I/O: pricing rules, validation, state transitions, parsing. (This maps directly onto the _service_ layer from the controllers-services-repositories chapter; pushing logic into pure functions there is precisely what makes it unit-testable here.)
+
+<Diagram caption="Isolation">
+<svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A single unit under test with inputs and outputs, while the database, network and clock are crossed out as not involved"><rect x="40" y="60" width="120" height="50" rx="9" fill="var(--dg-accent)"></rect><text x="100" y="82" font-size="11" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">inputs</text><defs><marker id="ua4" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M162 85 H238" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#ua4)"></path><rect x="240" y="50" width="200" height="70" rx="12" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="2"></rect><text x="340" y="80" font-size="13" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">unit under test</text><text x="340" y="100" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">pure logic</text><path d="M442 85 H518" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#ua4)"></path><rect x="520" y="60" width="160" height="50" rx="9" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="600" y="82" font-size="11" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">assert output</text><g font-size="10" fill="var(--dg-accent-2)" font-style="italic"><text x="200" y="150" fill="var(--dg-ink)">✗ no DB</text><text x="320" y="150" fill="var(--dg-ink)">✗ no network</text><text x="450" y="150" fill="var(--dg-ink)">✗ no real clock</text></g></svg>
+</Diagram>
+
+______
+
+● Go● Python
+
+```go
+// The unit: pure logic, no I/O, trivially testable.
+func IsStrongPassword(p string) bool {
+    if len(p) < 8 { return false }
+    var hasDigit, hasUpper bool
+    for _, r := range p {
+        if r >= '0' && r <= '9' { hasDigit = true }
+        if r >= 'A' && r <= 'Z' { hasUpper = true }
+    }
+    return hasDigit && hasUpper
+}
+
+func TestIsStrongPassword(t *testing.T) {
+    if IsStrongPassword("short1A") {            // 7 chars -> too short
+        t.Error("expected short password to be rejected")
+    }
+    if !IsStrongPassword("longEnough9") {        // meets all rules
+        t.Error("expected valid password to be accepted")
+    }
+}
+
+// Run:  go test ./...        (-v for verbose, -run TestIsStrong to filter)
+```
+
+```python
+# The unit: pure logic, no I/O, trivially testable.
+def is_strong_password(p: str) -> bool:
+    if len(p) < 8:
+        return False
+    return any(c.isdigit() for c in p) and any(c.isupper() for c in p)
+
+def test_rejects_short_password():
+    assert is_strong_password("short1A") is False    # 7 chars -> too short
+
+def test_accepts_valid_password():
+    assert is_strong_password("longEnough9") is True  # meets all rules
+
+# Run:  pytest            (-v verbose, -k strong to filter by name)
+```
+
+If a unit is hard to test, the design is the smell
+
+When a function is painful to unit-test, it reaches into a global, opens a connection, reads the clock, or does ten things, the test is telling you the _code_ is poorly factored, not that testing is hard. The fix is almost always to separate pure logic from I/O and inject dependencies (sec 6). Testability and good design are the same property viewed from two angles.
+
+## Test Doubles
+
+Real units depend on other things, a repository, a payment gateway, an email sender. To test a unit in isolation you replace those collaborators with **test doubles**: stand-ins that you control. "Mock" is used loosely in conversation, but the precise vocabulary (from Gerard Meszaros / Martin Fowler) distinguishes five kinds, and knowing the difference sharpens how you test.
+
+| Double    | What it is                                   | You use it to...                                              |
+| --------- | -------------------------------------------- | ------------------------------------------------------------- |
+| **Dummy** | A placeholder passed but never used          | satisfy a required parameter                                  |
+| **Stub**  | Returns canned answers to calls              | feed the unit fixed inputs (e.g. "the DB returns this user")  |
+| **Spy**   | A stub that also records how it was called   | assert later that something _was_ called, and how             |
+| **Mock**  | Pre-programmed with expectations it verifies | assert an _interaction_ happened (e.g. "email was sent once") |
+| **Fake**  | A working but lightweight implementation     | replace a real dependency cheaply (e.g. an in-memory DB)      |
+
+#### State verification vs interaction verification
+
+The deepest distinction: **stubs/fakes** support _state_ verification (you assert the _result_), while **mocks/spies** support _interaction_ verification (you assert a _call happened_). Prefer state verification, it's robust to refactoring. Reach for interaction verification only when the interaction _is_ the behavior (an email genuinely must be sent, a charge must be issued exactly once). Over-mocking interactions is a leading cause of brittle tests (sec 20).
+
+______
+
+● Go● Python
+
+```go
+// The unit depends on an interface, the seam that lets us substitute a double (sec 6).
+type UserRepo interface{ FindByID(id string) (*User, error) }
+
+type Notifier interface{ Send(to, msg string) error }
+
+func Greet(repo UserRepo, n Notifier, id string) error {
+    u, err := repo.FindByID(id)        // collaborator 1
+    if err != nil { return err }
+    return n.Send(u.Email, "Hi "+u.Name) // collaborator 2 (interaction we care about)
+}
+
+// STUB: returns a canned user. SPY: also records what Send received.
+type stubRepo struct{ user *User }
+func (s stubRepo) FindByID(string) (*User, error) { return s.user, nil }
+
+type spyNotifier struct{ calls int; lastTo string }
+func (s *spyNotifier) Send(to, msg string) error { s.calls++; s.lastTo = to; return nil }
+
+func TestGreet_SendsEmail(t *testing.T) {
+    repo := stubRepo{user: &User{Email: "a@x.com", Name: "Ada"}} // arrange (stub)
+    spy := &spyNotifier{}
+
+    _ = Greet(repo, spy, "u1")                                   // act
+
+    if spy.calls != 1 || spy.lastTo != "a@x.com" {               // assert the interaction
+        t.Errorf("expected one email to a@x.com, got %d to %q", spy.calls, spy.lastTo)
+    }
+}
+```
+
+```python
+from unittest.mock import Mock
+
+# The unit depends on injected collaborators (sec 6).
+def greet(repo, notifier, user_id):
+    user = repo.find_by_id(user_id)          # collaborator 1
+    notifier.send(user.email, f"Hi {user.name}")  # collaborator 2 (the interaction)
+
+def test_greet_sends_email():
+    # STUB: a Mock configured to return a canned user
+    repo = Mock()
+    repo.find_by_id.return_value = User(email="a@x.com", name="Ada")
+    notifier = Mock()                        # will record calls (acts as spy/mock)
+
+    greet(repo, notifier, "u1")              # act
+
+    # assert the INTERACTION happened exactly as expected
+    notifier.send.assert_called_once_with("a@x.com", "Hi Ada")
+```
+
+Go tends to hand-write small doubles against an interface (explicit, no magic); Python's `unittest.mock` generates flexible doubles that both stub returns and record calls. Same concept, different ergonomics.
+
+Don't mock what you don't own
+
+Avoid mocking third-party libraries or external HTTP APIs directly, your mock encodes _your assumption_ of how they behave, which can be wrong, so the test passes while production breaks. Instead wrap the dependency behind your own interface and mock _that_, or use a fake/contract test (sec 11, sec 17). Mock your own seams, not someone else's internals.
+
+## Dependency Injection for Testability
+
+The single technique that makes unit testing possible is **dependency injection (DI)**: instead of a unit _creating_ or _reaching for_ its collaborators, it _receives_ them from the outside. That hand-off point is a **seam**: the place where a test can slip in a double (sec 5). No seam, no isolation. This is why the controllers-services-repositories architecture insists on passing dependencies down: it's not ceremony, it's what keeps the code testable.
+
+<Diagram caption="The seam">
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Top: a service that constructs a real database internally, untestable. Bottom: a service that receives a repository interface, allowing a fake in tests"><text x="20" y="22" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent-2)">hard-coded, untestable</text><rect x="20" y="32" width="200" height="56" rx="10" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)"></rect><text x="120" y="55" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">Service</text><text x="120" y="74" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">db := openRealPostgres()</text><defs><marker id="dia" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M222 60 H300" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#dia)"></path><rect x="302" y="38" width="160" height="44" rx="9" fill="var(--dg-inverse)"></rect><text x="382" y="64" font-size="10.5" fill="var(--dg-on-inverse)" text-anchor="middle">real Postgres only</text><text x="480" y="64" font-size="10.5" font-style="italic" fill="var(--dg-accent-2)">no way to substitute -> needs a real DB to test</text><text x="20" y="120" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)">injected, testable</text><rect x="20" y="130" width="200" height="56" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="120" y="153" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Service(repo Repo)</text><text x="120" y="172" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">uses the interface</text><defs><marker id="dia2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><path d="M222 150 C260 140 270 122 300 118" stroke="var(--dg-ok)" stroke-width="1.5" fill="none" marker-end="url(#dia2)"></path><path d="M222 166 C260 176 270 192 300 196" stroke="var(--dg-ok)" stroke-width="1.5" fill="none" marker-end="url(#dia2)"></path><rect x="302" y="104" width="160" height="28" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="382" y="123" font-size="9.5" fill="var(--dg-ok)" text-anchor="middle">real DB (production)</text><rect x="302" y="182" width="160" height="28" rx="7" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="382" y="201" font-size="9.5" fill="var(--dg-warn)" text-anchor="middle">fake/in-memory (tests)</text><text x="500" y="160" font-size="10.5" font-style="italic" fill="var(--dg-ok)">same interface -> swap a fake in tests, real in prod</text></svg>
+</Diagram>
+
+______
+
+● Go● Python
+
+```go
+// Depend on an INTERFACE, not a concrete type, that interface is the seam.
+type OrderRepo interface{ Save(o Order) error }
+
+type OrderService struct{ repo OrderRepo } // injected, not constructed inside
+
+func NewOrderService(r OrderRepo) *OrderService { return &OrderService{repo: r} }
+
+func (s *OrderService) Place(o Order) error {
+    if o.Total <= 0 { return errors.New("invalid total") } // pure logic, easily tested
+    return s.repo.Save(o)
+}
+
+// In tests: a FAKE in-memory repo (no real DB needed)
+type fakeRepo struct{ saved []Order }
+func (f *fakeRepo) Save(o Order) error { f.saved = append(f.saved, o); return nil }
+
+func TestPlace_RejectsInvalidTotal(t *testing.T) {
+    svc := NewOrderService(&fakeRepo{})
+    if err := svc.Place(Order{Total: 0}); err == nil {
+        t.Error("expected error for non-positive total")
+    }
+}
+// In production:  NewOrderService(postgresRepo), same code, real dependency.
+```
+
+```python
+# Accept the collaborator as a constructor argument, that parameter is the seam.
+class OrderService:
+    def __init__(self, repo):        # injected, not created inside
+        self.repo = repo
+
+    def place(self, order):
+        if order.total <= 0:
+            raise ValueError("invalid total")   # pure logic, easily tested
+        self.repo.save(order)
+
+# In tests: a FAKE in-memory repo (no real DB needed)
+class FakeRepo:
+    def __init__(self): self.saved = []
+    def save(self, order): self.saved.append(order)
+
+def test_place_rejects_invalid_total():
+    svc = OrderService(FakeRepo())
+    with pytest.raises(ValueError):
+        svc.place(Order(total=0))
+
+# In production:  OrderService(postgres_repo), same code, real dependency.
+```
+
+Design for testability = good design
+
+DI, small interfaces, and separating pure logic from I/O aren't "test tricks", they're the same principles that make code modular and maintainable. A codebase that's easy to test is, almost by definition, well-structured. The test suite is a continuous design-quality signal.
+
+## Table-Driven & Parametrized Tests
+
+Most logic needs checking against _many_ input/output pairs, happy path, edge cases, boundaries, error cases. Copy-pasting a test per case is noise. Both languages have an idiom for "same test body, many cases": Go's **table-driven tests** and pytest's **parametrize**. This is where you get cheap, dense coverage of branches and edges, the real workhorse of the unit layer.
+
+______
+
+● Go● Python
+
+```go
+func TestApplyDiscount(t *testing.T) {
+    // The TABLE: each row is one case with a name.
+    cases := []struct {
+        name     string
+        subtotal int
+        percent  int
+        want     int
+    }{
+        {"ten percent off 200", 200, 10, 180},
+        {"zero discount",       100, 0,  100},
+        {"full discount",       100, 100, 0},
+        {"rounds down",          99, 10,  90}, // boundary/edge case
+    }
+    for _, c := range cases {
+        // t.Run makes each row a named subtest, failures report the case name.
+        t.Run(c.name, func(t *testing.T) {
+            got := ApplyDiscount(Cart{Subtotal: c.subtotal}, Coupon{Percent: c.percent})
+            if got != c.want {
+                t.Errorf("got %d, want %d", got, c.want)
+            }
+        })
+    }
+}
+// `go test -run TestApplyDiscount/rounds_down` runs just one case.
+```
+
+```python
+import pytest
+
+# Each tuple is one case; ids give readable names in the output.
+@pytest.mark.parametrize(
+    "subtotal, percent, expected",
+    [
+        (200, 10, 180),
+        (100, 0,  100),
+        (100, 100, 0),
+        (99,  10, 90),     # boundary/edge case
+    ],
+    ids=["ten-off-200", "zero", "full", "rounds-down"],
+)
+def test_apply_discount(subtotal, percent, expected):
+    got = apply_discount(Cart(subtotal=subtotal), Coupon(percent=percent))
+    assert got == expected
+
+# `pytest -k rounds-down` runs just one case; each shows up as its own test.
+```
+
+<Callout type="info" title="Name every case">
+The payoff of these idioms isn't just less code, it's that each case becomes an _independently named, independently runnable_ test. When one breaks, the report names the exact case ("rounds-down failed"), and you can re-run only it. Always give cases descriptive names; an anonymous row that fails just says "case 3," which helps no one.
+</Callout>
+
+Part III / Integration Tests
+
+## Integration Tests
+
+Unit tests prove each piece works alone; **integration tests** prove the pieces work _together_, and crucially, that they integrate correctly with the _real_ external systems you mocked away at the unit layer: the database, the cache, the message broker, another service. They sit in the middle of the pyramid (sec 2): slower than unit tests because real I/O is involved, but they catch a whole category of bugs unit tests structurally cannot.
+
+What only integration tests catch
+
+A SQL query with a typo'd column, an ORM mapping that doesn't match the schema, a serialization mismatch between services, a migration that didn't run, a wrong connection string, a transaction that doesn't commit. Every one of these lives in the _seam_ between your code and a real system, exactly the seam a unit test stubs out. Mocking the DB can't reveal that your query is invalid SQL; only running it against a real database can.
+
+<Diagram caption="Wider scope">
+<svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An integration test spanning a handler, service and repository, talking to a real database in a container"><rect x="30" y="40" width="430" height="90" rx="14" fill="none" stroke="var(--dg-warn)" stroke-width="2" stroke-dasharray="6 4"></rect><text x="44" y="60" class="mono" font-size="10" font-weight="700" fill="var(--dg-warn)">under test (real, wired together)</text><rect x="50" y="72" width="120" height="44" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="110" y="98" font-size="10.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">handler</text><rect x="190" y="72" width="120" height="44" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="250" y="98" font-size="10.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">service</text><rect x="330" y="72" width="120" height="44" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="390" y="98" font-size="10.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">repository</text><defs><marker id="ia8" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M170 94 H188" stroke="var(--dg-accent-2)" stroke-width="1.5" marker-end="url(#ia8)"></path><path d="M310 94 H328" stroke="var(--dg-accent-2)" stroke-width="1.5" marker-end="url(#ia8)"></path><path d="M452 94 H520" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#ia8)"></path><rect x="522" y="68" width="160" height="52" rx="10" fill="var(--dg-inverse)"></rect><text x="602" y="90" font-size="11" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">REAL Postgres</text><text x="602" y="108" class="mono" font-size="8.5" fill="var(--dg-on-inverse-info)" text-anchor="middle">in a container (sec 9)</text><text x="370" y="152" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Send a request in, assert what comes back <tspan font-style="italic" fill="var(--dg-ink)">and</tspan> what landed in the database.</text></svg>
+</Diagram>
+
+Keep them isolated & repeatable
+
+Integration tests touch shared state, so they're prone to flakiness (sec 14) if they leak into each other. Each test must start from a known state and clean up after itself, a fresh schema, a transaction rolled back, or a truncated table (sec 9). Tests that depend on a manually-seeded shared database, or on running in a particular order, will eventually betray you.
+
+## Testing with a Real Database
+
+The recurring question: how do you get a "real" database in a test without depending on a hand-maintained shared server? The modern answer is **Testcontainers**: a library that spins up a real database in a throwaway Docker container (the containers of chapter 21) at test time, gives you its connection string, and tears it down after. You test against the _actual_ engine (same Postgres version as prod), fully isolated, with nothing to install. For keeping tests independent of each other, the two standard tactics are **transaction rollback** (wrap each test in a transaction, roll back at the end) or **truncating** tables between tests.
+
+______
+
+● Go● Python
+
+```go
+// Build tag keeps slow integration tests out of the fast unit run:
+//   //go:build integration      -> run with:  go test -tags=integration ./...
+func TestUserRepo_SaveAndFind(t *testing.T) {
+    ctx := context.Background()
+
+    // Arrange: start a REAL Postgres in a throwaway container (testcontainers-go)
+    pg, err := postgres.Run(ctx, "postgres:16",
+        postgres.WithDatabase("app"), postgres.WithUsername("u"), postgres.WithPassword("p"))
+    if err != nil { t.Fatal(err) }
+    t.Cleanup(func() { pg.Terminate(ctx) }) // torn down automatically after the test
+
+    dsn, _ := pg.ConnectionString(ctx, "sslmode=disable")
+    db, _ := sql.Open("postgres", dsn)
+    runMigrations(t, db)                    // apply the same schema as production
+
+    repo := NewUserRepo(db)
+
+    // Act: exercise the REAL query path
+    _ = repo.Save(User{ID: "u1", Email: "a@x.com"})
+    got, err := repo.FindByID("u1")
+
+    // Assert: round-trips correctly through actual SQL
+    if err != nil || got.Email != "a@x.com" {
+        t.Fatalf("round-trip failed: %v / %+v", err, got)
+    }
+}
+```
+
+```python
+import pytest
+from testcontainers.postgres import PostgresContainer
+
+# A fixture spins up a REAL Postgres once per module, then tears it down.
+@pytest.fixture(scope="module")
+def db_url():
+    with PostgresContainer("postgres:16") as pg:   # throwaway container
+        url = pg.get_connection_url()
+        run_migrations(url)                         # same schema as production
+        yield url
+        # container stopped automatically on exit
+
+@pytest.fixture
+def repo(db_url):
+    # function-scoped: clean state per test (truncate / rollback)
+    r = UserRepo(db_url)
+    yield r
+    r.truncate_all()                                # keep tests independent (sec 8)
+
+@pytest.mark.integration            # marker: pytest -m integration
+def test_save_and_find(repo):
+    repo.save(User(id="u1", email="a@x.com"))       # act through REAL SQL
+    got = repo.find_by_id("u1")
+    assert got.email == "a@x.com"                   # round-trips correctly
+```
+
+Both isolate slow tests behind a flag/marker (Go build tags, pytest markers) so the millisecond unit suite stays fast and the heavier DB tests run on demand or in CI (sec 19).
+
+Test against the real engine, not a substitute
+
+Swapping in SQLite "because it's fast" when production runs Postgres is a classic trap: dialects differ (types, constraints, JSON, upserts, locking), so a test can pass on SQLite and the same query fail on Postgres. Testcontainers exists precisely so you can use the _actual_ production engine cheaply, test what you ship.
+
+## Testing HTTP Handlers & APIs
+
+Your handlers (the HTTP and REST chapters) are a prime integration target: you want to fire a real request at your routing + handler + serialization stack and assert on the real response, status code, headers, body, _without_ binding a socket or running a server over the network. Both ecosystems provide an in-process test client that drives the handler directly: Go's `net/http/httptest` and the `TestClient` shipped with FastAPI/Starlette (and Flask's equivalent).
+
+______
+
+● Go● Python
+
+```go
+import (
+    "net/http"
+    "net/http/httptest"
+    "strings"
+    "testing"
+)
+
+func TestCreateUser_Returns201(t *testing.T) {
+    handler := NewRouter(deps)  // the REAL router + handlers (deps may use a fake repo sec 6)
+
+    // Arrange: build a request and an in-memory response recorder (no network)
+    body := strings.NewReader(`{"email":"a@x.com","name":"Ada"}`)
+    req := httptest.NewRequest(http.MethodPost, "/api/v1/users", body)
+    req.Header.Set("Content-Type", "application/json")
+    rec := httptest.NewRecorder()
+
+    // Act: drive the handler directly
+    handler.ServeHTTP(rec, req)
+
+    // Assert: on the real response, status, then body
+    if rec.Code != http.StatusCreated {
+        t.Fatalf("status = %d; want 201; body=%s", rec.Code, rec.Body.String())
+    }
+    if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+        t.Errorf("content-type = %q", ct)
+    }
+}
+```
+
+```python
+from fastapi.testclient import TestClient
+from app import app   # the REAL FastAPI app (dependencies may be overridden with fakes sec 6)
+
+client = TestClient(app)   # drives the app in-process, no network, no running server
+
+def test_create_user_returns_201():
+    # Act: fire a real request through routing + handler + serialization
+    resp = client.post("/api/v1/users", json={"email": "a@x.com", "name": "Ada"})
+
+    # Assert: on the real response, status, headers, body
+    assert resp.status_code == 201
+    assert resp.headers["content-type"].startswith("application/json")
+    assert resp.json()["email"] == "a@x.com"
+
+# FastAPI tip: override real dependencies with fakes via app.dependency_overrides
+# so the handler runs but the repo is in-memory, an integration test of the web layer.
+```
+
+<Callout type="info" title="Choose your blast radius">
+These tests are flexible: wire in a _fake_ repository and you're integration-testing just the web layer (routing, decoding, status codes, error envelopes) fast and deterministically; wire in a _real_ DB via testcontainers (sec 9) and you've got a broader integration test of the whole request path. Pick the scope deliberately per test, narrower is faster and more precise; wider is more realistic.
+</Callout>
+
+## Contract Testing
+
+In a microservice world (the gRPC and API-design chapters), a service rarely lives alone, it _consumes_ others and is _consumed_ by others. The danger: a provider changes its response shape, all its own tests pass, but it silently breaks every consumer. End-to-end testing every combination is prohibitively slow. **Contract testing** solves this by verifying both sides agree on the _interface_, without running them together.
+
+<Diagram caption="Consumer-driven contracts">
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A consumer defines expected requests and responses as a contract, which is then verified independently against the provider"><rect x="20" y="60" width="160" height="70" rx="11" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="100" y="88" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">Consumer</text><text x="100" y="108" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">"I send X, expect Y"</text><defs><marker id="cta" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M182 95 H268" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#cta)"></path><text x="225" y="87" class="mono" font-size="8.5" fill="var(--dg-accent-2)" text-anchor="middle">generates</text><rect x="270" y="58" width="180" height="74" rx="11" fill="var(--dg-inverse)"></rect><text x="360" y="86" font-size="12" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">the Contract</text><text x="360" y="106" class="mono" font-size="8.5" fill="var(--dg-on-inverse)" text-anchor="middle">expected req/resp pairs</text><path d="M452 95 H538" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#cta)"></path><text x="495" y="87" class="mono" font-size="8.5" fill="var(--dg-accent-2)" text-anchor="middle">verified vs</text><rect x="540" y="60" width="160" height="70" rx="11" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="620" y="88" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Provider</text><text x="620" y="108" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">"do I still return Y?"</text><text x="360" y="168" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Each side is tested independently against the shared contract, no need to run both together.</text><text x="360" y="188" class="serif" font-size="12" font-style="italic" fill="var(--dg-accent-2)" text-anchor="middle">If the provider breaks the contract, its build fails, before it can break the consumer in prod.</text></svg>
+</Diagram>
+
+Tools like **Pact** implement this: the consumer's tests record the requests it makes and the responses it expects into a contract file; the provider's CI replays that contract against the real provider and fails if it no longer holds. For gRPC/Protobuf services, the `.proto` plus schema-breaking-change detection (the buf tooling from the gRPC chapter) plays a similar role, the schema _is_ a machine- checked contract, and CI rejects incompatible changes.
+
+<Callout type="info" title="Where contract tests fit">
+They're the pragmatic middle ground between "mock the other service and hope your mock is accurate" (fast but can drift from reality, the sec 5 warning) and "spin up everything and test end-to-end" (realistic but slow and brittle). Contract tests give cross-service confidence at unit-test speed, which is why they scale to large service fleets where full E2E across all services is impractical.
+</Callout>
+
+Part IV / E2E, Coverage & Reliability
+
+## End-to-End Tests
+
+An **end-to-end (E2E) test** exercises the fully assembled system through its real external interface, exactly as a user or client would, no internals stubbed, everything running: the API, the database, the cache, dependent services. It answers the one question no lower layer can: _do all the pieces, wired together for real, actually deliver the user-facing outcome?_ It's the tip of the pyramid (sec 2): maximum realism, maximum cost.
+
+<Diagram caption="Full stack">
+<svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A test client making real requests through an ingress to an API, which uses a real database, cache and a downstream service"><rect x="20" y="55" width="110" height="44" rx="9" fill="var(--dg-accent)"></rect><text x="75" y="82" font-size="11" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">test client</text><defs><marker id="ea" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M132 77 H188" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#ea)"></path><rect x="190" y="40" width="430" height="74" rx="14" fill="none" stroke="var(--dg-ok)" stroke-width="2"></rect><text x="205" y="58" class="mono" font-size="9.5" font-weight="700" fill="var(--dg-ok)">the REAL deployed system</text><rect x="206" y="68" width="90" height="36" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="251" y="90" font-size="10" fill="var(--dg-ok)" text-anchor="middle">API</text><rect x="306" y="68" width="90" height="36" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="351" y="90" font-size="10" fill="var(--dg-ok)" text-anchor="middle">DB</text><rect x="406" y="68" width="90" height="36" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="451" y="90" font-size="10" fill="var(--dg-ok)" text-anchor="middle">cache</text><rect x="506" y="68" width="100" height="36" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="556" y="90" font-size="10" fill="var(--dg-ok)" text-anchor="middle">svc B</text><path d="M622 77 H660" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#ea)"></path><rect x="662" y="55" width="50" height="44" rx="9" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="687" y="82" font-size="10" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">Yes</text><text x="370" y="138" class="serif" font-size="12" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Nothing faked, assert the user-visible outcome of a complete journey.</text></svg>
+</Diagram>
+
+Use them sparingly, on purpose
+
+E2E tests are slow, expensive to maintain, and the most flake-prone (sec 14): a hiccup anywhere, network, timing, a dependency, fails them, and a failure doesn't tell you _where_ the problem is. So reserve E2E for a handful of **critical journeys** ("user signs up -> logs in -> places an order -> payment succeeds"). Don't test edge cases or every branch here, those belong in fast unit tests (sec 4). E2E confirms the system _connects_; lower layers confirm it's _correct_.
+
+<Callout type="info" title="Smoke tests &amp; testing in production">
+A close cousin is the **smoke test**: a tiny set of E2E checks run right after a deploy to confirm the system is alive ("is `/health` green? can I log in?"), pairing naturally with the health probes and rollouts of chapter 21. Mature teams extend this with _testing in production_: synthetic monitoring, canary analysis (sec 20 there), and feature flags, because some properties only reveal themselves under real traffic.
+</Callout>
+
+## Test Coverage
+
+**Coverage** measures how much of your code the tests execute, typically as a percentage of lines or branches run during the suite. It's useful as a _flashlight_ for finding code nothing tests at all, but it is dangerously easy to misread as a measure of test _quality_. It isn't. Coverage tells you what was _executed_, never what was meaningfully _asserted_.
+
+______
+
+● Go● Python
+
+```bash
+# Built into the toolchain, no extra dependency.
+go test -cover ./...                       # prints % per package
+
+go test -coverprofile=cover.out ./...      # write a detailed profile
+go tool cover -func=cover.out              # per-function breakdown
+go tool cover -html=cover.out              # open an annotated, line-by-line HTML view
+```
+
+```text
+# Via the coverage.py / pytest-cov plugin.
+pip install pytest-cov
+
+pytest --cov=app                           # coverage for the `app` package
+pytest --cov=app --cov-report=term-missing # show exactly which lines are UNcovered
+pytest --cov=app --cov-report=html         # browsable htmlcov/ report
+pytest --cov=app --cov-branch              # branch coverage, not just line
+```
+
+#### Line vs branch coverage
+
+**Line coverage** asks "was this line run?" **Branch coverage** asks the harder question "was each _direction_ of each decision taken?" A single test can hit 100% of the lines in an `if` while only ever taking the true branch, the `else` path is unexecuted and untested though line coverage looks complete. Branch coverage is the more honest number; prefer it.
+
+Coverage is a floor, not a goal, and Goodhart bites
+
+You can reach 100% coverage with tests that assert _nothing_, just call every function and check no exception. Fully covered, totally worthless. The moment a coverage _percentage_ becomes a target, people game it with assertion-free tests (Goodhart's law: a measure that becomes a target stops being a good measure). Use coverage to find untested areas worth attention; judge quality by whether tests assert meaningful behavior (sec 3, sec 20). High coverage with weak assertions is false confidence.
+
+## Flaky Tests
+
+A **flaky test** passes sometimes and fails other times _without any code change_. Flakiness is corrosive: it trains the team to ignore red builds ("just re-run it"), and once people stop trusting the suite, the suite is dead, a green run no longer means anything. Flaky tests are arguably worse than no test, because they cost time and erode the trust that gives tests their value (sec 1).
+
+| Cause of flakiness                                                | Fix                                                                                                      |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Time / clock**: "now", timeouts, sleeps, date boundaries        | Inject the clock; assert ranges not exact instants (sec 17). Never `sleep` to "wait"; poll a condition.  |
+| **Test-order dependence**: one test relies on another's leftovers | Make each test set up & tear down its own state (sec 9, sec 15). Run in random order to flush these out. |
+| **Shared mutable state**: a global, a shared DB row, a singleton  | Isolate per test; avoid global state; use fresh fixtures.                                                |
+| **Concurrency / races**: goroutines, threads, async timing        | Synchronize on signals not timing; run with the race detector (`go test -race`).                         |
+| **Real network / external API**: latency, rate limits, downtime   | Mock the boundary (sec 17); keep real calls to a tiny, tolerant E2E set.                                 |
+| **Unordered data**: map iteration, DB rows without `ORDER BY`     | Sort before comparing, or assert set membership not sequence.                                            |
+
+The cure is determinism
+
+Every flaky test is a hidden non-determinism, time, ordering, concurrency, or shared state leaking in. The fix is always to remove the source of randomness: control the clock, isolate state, synchronize on events instead of sleeps, and stub the network. **Quarantine** a flaky test (mark and skip from the gating run) only as a temporary measure while you find the real cause, never paper over it with a blanket "retry until green," which just hides the bug.
+
+## Fixtures & Factories
+
+Tests need data and a known starting state, and how you build them decides whether your suite stays readable or rots into setup soup. Two related tools: **fixtures** manage _setup and teardown_ (the world a test runs in, a DB connection, a temp dir, a logged-in client), and **factories** build _test objects_ with sensible defaults so each test states only the fields it actually cares about.
+
+______
+
+● Go● Python
+
+```go
+// Go favors explicit helpers over magic. t.Helper() keeps failure line numbers useful.
+// A "factory" with functional options: specify only the fields that matter to the test.
+func newUser(t *testing.T, opts ...func(*User)) User {
+    t.Helper()
+    u := User{ID: "u1", Email: "default@x.com", Active: true} // sensible defaults
+    for _, o := range opts { o(&u) }
+    return u
+}
+func withEmail(e string) func(*User) { return func(u *User) { u.Email = e } }
+
+// A "fixture" via t.Cleanup: setup returns the thing + auto-teardown.
+func newTempStore(t *testing.T) *Store {
+    t.Helper()
+    dir := t.TempDir()                 // auto-removed after the test
+    s := OpenStore(dir)
+    t.Cleanup(func() { s.Close() })    // teardown runs even if the test fails
+    return s
+}
+
+func TestSignup(t *testing.T) {
+    store := newTempStore(t)
+    u := newUser(t, withEmail("ada@x.com")) // only the relevant field is stated
+    _ = store.Save(u)
+    // ...assert...
+}
+```
+
+```python
+import pytest
+
+# pytest FIXTURES: setup before `yield`, teardown after. Injected by parameter name.
+@pytest.fixture
+def temp_store(tmp_path):           # tmp_path is a built-in fixture (auto-cleaned dir)
+    store = Store(tmp_path)
+    yield store                     # the test runs here
+    store.close()                   # teardown, runs even if the test fails
+
+# A FACTORY: defaults + overrides, so tests state only what they care about.
+def make_user(**overrides):
+    return User(**{"id": "u1", "email": "default@x.com", "active": True, **overrides})
+
+def test_signup(temp_store):
+    user = make_user(email="ada@x.com")   # only the relevant field is stated
+    temp_store.save(user)
+    # ...assert...
+
+# Libraries like factory_boy / model_bakery scale this up for complex object graphs.
+```
+
+Keep the relevant data visible
+
+The point of factories is to hide _irrelevant_ setup, not to hide the data a test depends on. If a test asserts something about a premium user, the word "premium" should appear _in that test_ (`make_user(tier="premium")`), not be buried in a shared fixture three files away. A reader should understand a test's premise without spelunking. Over-shared, opaque fixtures (the "mystery guest") make failures hard to diagnose and tests hard to trust.
+
+Part V / Practice & Pipeline
+
+## TDD: Red / Green / Refactor
+
+**Test-Driven Development** inverts the usual order: you write a _failing_ test first, then the minimum code to pass it, then clean up, repeating in tiny cycles. The discipline is the famous three-beat loop: **Red** (write a test, watch it fail), **Green** (make it pass as simply as possible), **Refactor** (improve the design while the test stays green). Writing the test first forces you to define the desired behavior and a clean interface _before_ you're entangled in implementation.
+
+<Diagram caption="The TDD cycle">
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A cycle of three steps: write a failing test (red), make it pass (green), refactor, then repeat"><circle cx="150" cy="100" r="56" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)" stroke-width="2"></circle><text x="150" y="96" font-size="13" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">RED</text><text x="150" y="114" class="mono" font-size="8.5" fill="var(--dg-accent-2)" text-anchor="middle">failing test first</text><circle cx="360" cy="100" r="56" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="2"></circle><text x="360" y="96" font-size="13" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">GREEN</text><text x="360" y="114" class="mono" font-size="8.5" fill="var(--dg-ok)" text-anchor="middle">simplest pass</text><circle cx="570" cy="100" r="56" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="2"></circle><text x="570" y="96" font-size="12.5" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">REFACTOR</text><text x="570" y="114" class="mono" font-size="8.5" fill="var(--dg-warn)" text-anchor="middle">clean, stay green</text><defs><marker id="tda" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M208 90 H300" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#tda)"></path><path d="M418 90 H510" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#tda)"></path><path d="M566 158 C420 196 300 196 154 158" stroke="var(--dg-accent-2)" stroke-width="1.6" fill="none" marker-end="url(#tda)"></path><text x="360" y="186" class="serif" font-size="12" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">repeat, each loop adds one small, fully-tested behavior</text></svg>
+</Diagram>
+
+TDD's real benefits are second-order: it produces code that is _testable by construction_ (you can't write an untestable unit if the test came first), it keeps you focused on one small behavior at a time, and the "refactor" step is safe precisely because the test you just wrote guards it. It is a _design_ technique as much as a testing one.
+
+<Callout type="info" title="A tool, not a religion">
+TDD shines when requirements are clear and logic is non-trivial (parsers, business rules, algorithms). It fits awkwardly when you're _exploring_, spiking a prototype, sketching a UI, probing an unfamiliar API, where the design isn't yet known. Plenty of excellent engineers write tests immediately _after_ the code rather than strictly before. What matters is that the behavior ends up well-tested; test-first is one effective path to that, not the only valid one.
+</Callout>
+
+## Mocking Time, Randomness & External APIs
+
+Three sources of non-determinism wreck tests if left real, the clock, the random generator, and the network, and they're the usual suspects behind flakiness (sec 14). The cure for all three is the same: turn the hidden dependency into an _injected_ one (sec 6) so the test controls it.
+
+#### Time & randomness: inject them
+
+Code that calls `time.Now()` or `random()` directly is untestable and flaky, its output changes every run. Make the clock and the RNG dependencies the unit receives, then pass a fixed clock (always returns the same instant) or a seeded RNG in tests. Now "token expires in 1 hour" or "pick a random shard" is fully deterministic and assertable.
+
+#### External HTTP: stub the boundary
+
+Never hit a real third-party API in a unit/integration test, it's slow, flaky, rate-limited, and may have side effects. Both ecosystems let you intercept HTTP locally: Go's `httptest.Server` stands up a fake server you point your client at; Python's `responses`/`respx` patch the HTTP layer to return canned responses. (And recall sec 5: prefer wrapping the API behind your own interface so most tests mock _that_, reserving HTTP-level stubs for testing the client adapter itself.)
+
+______
+
+● Go● Python
+
+```go
+// 1) Injected clock, deterministic time.
+type Clock interface{ Now() time.Time }
+type fixedClock struct{ t time.Time }
+func (f fixedClock) Now() time.Time { return f.t }
+
+func TestTokenExpiry(t *testing.T) {
+    clk := fixedClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)} // frozen
+    tok := NewToken(clk, time.Hour)
+    if tok.ExpiresAt != clk.Now().Add(time.Hour) {
+        t.Error("expiry not computed from the injected clock")
+    }
+}
+
+// 2) Stub an external HTTP API with httptest.Server, no real network.
+func TestFetchRate(t *testing.T) {
+    srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+        w.Write([]byte(`{"usd_inr": 83.2}`)) // canned response
+    }))
+    defer srv.Close()
+
+    client := NewRatesClient(srv.URL) // point the client at the fake server's URL
+    rate, _ := client.USDINR()
+    if rate != 83.2 { t.Errorf("got %v", rate) }
+}
+```
+
+```python
+import responses
+from datetime import datetime, timezone
+
+# 1) Injected clock, deterministic time (freezegun is a popular alternative).
+def test_token_expiry():
+    frozen = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    tok = make_token(now=lambda: frozen, ttl=3600)  # clock injected as a callable
+    assert tok.expires_at == frozen.timestamp() + 3600
+
+# 2) Stub external HTTP with `responses`, patches the HTTP layer, no real network.
+@responses.activate
+def test_fetch_rate():
+    responses.add(
+        responses.GET, "https://api.rates.com/usd-inr",
+        json={"usd_inr": 83.2}, status=200,           # canned response
+    )
+    client = RatesClient("https://api.rates.com")
+    assert client.usd_inr() == 83.2
+```
+
+Determinism is non-negotiable
+
+A test must produce the same result on every run, on every machine, in any order. The instant real time, real randomness, or a real network sneaks in, you've planted a future flaky failure. Inject and control all three, it's the same DI seam from sec 6 applied to the three things that change on their own.
+
+## Performance & Load Testing
+
+Functional tests prove the code is _correct_; performance tests prove it's _fast enough_, a different axis entirely, and one that matters acutely for the scaling concerns of chapter 18-19. Two distinct flavors: **benchmarks** (micro: how fast is this function/endpoint?) and **load tests** (macro: how does the whole system behave under N concurrent users?).
+
+| Kind            | Question                                                 | Tool                                      |
+| --------------- | -------------------------------------------------------- | ----------------------------------------- |
+| **Benchmark**   | How fast / how many allocations for this code path?      | Go `testing.B`; Python `pytest-benchmark` |
+| **Load test**   | Throughput & latency under sustained concurrent traffic? | k6, Locust, Gatling, vegeta               |
+| **Stress test** | Where does it break, and how does it fail?               | same tools, ramped past capacity          |
+| **Soak test**   | Does it degrade over hours (leaks, fragmentation)?       | same tools, long duration                 |
+
+______
+
+● Go● Python
+
+```go
+// Benchmarks live beside tests; the tool tunes b.N until timing is stable.
+func BenchmarkParseEvent(b *testing.B) {
+    payload := []byte(`{"type":"click","ts":1717000000}`)
+    b.ReportAllocs()                 // also report allocations/op
+    for i := 0; i < b.N; i++ {       // the loop the framework times
+        _, _ = ParseEvent(payload)
+    }
+}
+
+// Run:  go test -bench=. -benchmem
+//   BenchmarkParseEvent-8   3142051   382 ns/op   96 B/op   2 allocs/op
+// Compare runs with `benchstat` to catch performance REGRESSIONS over time.
+```
+
+```python
+# pip install pytest-benchmark, the `benchmark` fixture times the callable.
+def test_parse_event_perf(benchmark):
+    payload = b'{"type":"click","ts":1717000000}'
+    result = benchmark(parse_event, payload)   # runs it many times, reports stats
+    assert result.type == "click"              # still assert correctness
+
+# Output reports min/mean/median/stddev; --benchmark-compare flags regressions.
+```
+
+```python title="load_test.js / a k6 load test (language-agnostic, hits the running service)"
+import http from 'k6/http';
+import { check } from 'k6';
+
+export const options = {
+  stages: [
+    { duration: '30s', target: 100 },  // ramp up to 100 virtual users
+    { duration: '1m',  target: 100 },  // hold
+    { duration: '30s', target: 0 },    // ramp down
+  ],
+  thresholds: {
+    http_req_duration: ['p(95)<300'],  // 95th-percentile latency must stay < 300ms
+    http_req_failed:   ['rate<0.01'],  // error rate must stay under 1%
+  },
+};
+export default function () {
+  const res = http.get('https://staging.example.com/api/v1/health');
+  check(res, { 'status 200': (r) => r.status === 200 });
+}
+# Run:  k6 run load_test.js, fails the build if a threshold is breached.
+```
+
+Measure percentiles, against a target, not your laptop
+
+Averages lie, a 50ms mean can hide a 2-second p99 that's wrecking real users. Always track tail latency (p95/p99). And run load tests against a production-like environment, never your dev machine, and judge results against an explicit SLO (the threshold), not a vibe. A benchmark or load test without a target number is just trivia.
+
+## Tests in CI/CD
+
+A test suite is only valuable if it runs _automatically_, on every change, as a gate. This is where testing meets the pipeline from chapter 21 (sec 19 there): on every push, CI runs the tests, and a failure **blocks the merge or deploy**. The whole point of the pyramid's speed gradient (sec 2) is to give fast feedback here, run the millisecond unit tests on every commit, the heavier integration/E2E tests at the right stage.
+
+<Diagram caption="Tests as gates">
+<svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pipeline stages: lint and unit tests on every push, integration tests on merge, E2E and smoke tests before or after deploy"><defs><marker id="cia" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><rect x="14" y="50" width="150" height="54" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="89" y="72" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">every push</text><text x="89" y="90" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">lint + unit (fast)</text><path d="M166 77 H204" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#cia)"></path><rect x="206" y="50" width="150" height="54" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="281" y="72" font-size="11" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">on merge / PR</text><text x="281" y="90" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">integration + DB</text><path d="M358 77 H396" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#cia)"></path><rect x="398" y="50" width="150" height="54" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="473" y="72" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">pre-deploy</text><text x="473" y="90" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">E2E (critical paths)</text><path d="M550 77 H588" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#cia)"></path><rect x="590" y="50" width="116" height="54" rx="10" fill="var(--dg-ok)"></rect><text x="648" y="72" font-size="11" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">post-deploy</text><text x="648" y="90" class="mono" font-size="8.5" fill="var(--dg-on-accent)" text-anchor="middle">smoke (sec 12)</text><text x="360" y="134" class="serif" font-size="12" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Any red gate stops the line, the failure is caught before it reaches users.</text></svg>
+</Diagram>
+
+```yaml title=".github/workflows/test.yaml / the test gate"
+name: tests
+on: [push, pull_request]
+jobs:
+  unit:                          # fast, runs on every push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: go test -race -cover ./...          # Go: race detector + coverage
+      # - run: pytest -m "not integration" --cov  # Python: skip slow tests here
+
+  integration:                   # heavier, real DB via services / testcontainers
+    runs-on: ubuntu-latest
+    needs: unit                  # only if unit tests passed
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: p }
+        ports: ["5432:5432"]
+    steps:
+      - uses: actions/checkout@v4
+      - run: go test -tags=integration ./...     # or: pytest -m integration
+# A failed job fails the check -> branch protection blocks the merge.
+```
+
+<Callout type="info" title="Make the suite fast &amp; parallel">
+If tests are slow, people skip them, so speed is a feature. Run tests in parallel (Go does so across packages by default and within a test via `t.Parallel()`; pytest via `pytest-xdist`), split the fast unit gate from slow integration/E2E stages, and cache dependencies. A suite that returns in under a few minutes gets run; one that takes thirty gets bypassed, and an un-run test protects nothing.
+</Callout>
+
+## A Testing Strategy
+
+Tests have a cost, to write, to run, and to maintain as the code changes, so the goal is never "test everything" but **maximum confidence per unit of effort**. A coherent strategy is mostly a set of judgment calls about _what_ to test, at _which_ layer, and what to leave alone.
+
+#### What to test heavily
+
+- **Business logic & rules**: pricing, validation, state machines, anything with branches and edge cases. Cheap, fast unit tests; the highest payoff (sec 4, sec 7).
+- **Bugs you've fixed**: every fix gets a regression test so it can't return (sec 1).
+- **Critical paths & money**: auth, payments, data integrity get coverage at multiple layers, including a thin E2E (sec 12).
+- **Integration seams**: your queries, serialization, and the contracts between services (sec 8-11), where the subtle bugs hide.
+
+#### What to test lightly or not at all
+
+- **Trivial code**: plain getters, framework glue, generated code. Testing them is effort without insight.
+- **Third-party libraries**: assume they work; test _your_ use of them, not their internals (sec 5).
+- **Implementation details**: private helpers and exact call sequences. Test observable behavior so refactors don't trigger spurious failures.
+
+The golden rule: test behavior, not implementation
+
+The single principle that separates a suite that _helps_ from one that _hurts_: assert _what the code does_ (its observable inputs->outputs and side effects), never _how it does it_ internally. Behavior-focused tests survive refactoring, they go green as long as the contract holds, which is exactly the confidence-to-change that justified tests in the first place (sec 1). Implementation- coupled tests break on every restructure, punish improvement, and slowly get deleted. Write tests your future self will thank you for, not curse.
+
+## Cheat-Sheet
+
+The whole manual compressed to what you reach for under pressure.
+
+| Concept            | One-liner                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| Why test           | Confidence to change, executable spec, regression net, fast feedback.                 |
+| Pyramid            | Many unit (fast) / some integration / few E2E (slow). Don't invert it.                |
+| AAA                | Arrange, Act, Assert, one behavior per test, descriptive name.                        |
+| Unit test          | One unit in isolation, no I/O, milliseconds, precise.                                 |
+| Test doubles       | Dummy / Stub / Spy / Mock / Fake. Prefer state over interaction verification.         |
+| Don't mock         | What you don't own, wrap it behind your own interface and mock that.                  |
+| DI                 | Inject collaborators -> the seam where a double slips in. Untestable = design smell.  |
+| Table/parametrize  | One test body, many named cases, dense edge-case coverage.                            |
+| Integration        | Real DB/deps wired together, catches SQL, mapping, serialization bugs.                |
+| Real DB            | Testcontainers: real engine, throwaway, isolated. Not SQLite-for-Postgres.            |
+| HTTP tests         | `httptest` / `TestClient`, drive handlers in-process, no socket.                      |
+| Contract test      | Verify provider/consumer agree on the interface, without running both (Pact, buf).    |
+| E2E                | Whole system via real interface, critical journeys only; smoke-test after deploy.     |
+| Coverage           | Finds untested code; not a quality measure. Prefer branch; never a target (Goodhart). |
+| Flaky              | Non-determinism: time, order, shared state, concurrency, network. Cure = determinism. |
+| Fixtures/factories | Manage setup/teardown & build data with defaults; keep relevant data visible.         |
+| TDD                | Red -> Green -> Refactor. A design tool; use where it fits, not dogmatically.         |
+| Determinism        | Inject the clock, seed the RNG, stub the network, control all three.                  |
+| Perf               | Benchmarks (micro) + load tests (macro). Track p95/p99 vs an SLO, not averages.       |
+| CI gate            | Tests run on every push and block merge/deploy. Keep them fast & parallel.            |
+| Strategy           | Confidence per effort. Test logic, bugs, money, seams; skip trivia & internals.       |
+| Golden rule        | **Test behavior, not implementation**: survives refactoring.                          |
+
+**The whole topic in one breath:** automated tests exist to give you confidence to change code (sec 1), and the strategic shape is a pyramid, many fast unit tests, fewer integration, a thin E2E layer (sec 2). Every test is Arrange-Act-Assert on one behavior (sec 3). Unit tests isolate a unit (sec 4) using test doubles (sec 5) made possible by dependency injection (sec 6), with table-driven and parametrized cases for dense coverage (sec 7). Integration tests wire real dependencies together (sec 8), a real database via testcontainers (sec 9), handlers via in-process clients (sec 10), and cross-service agreement via contract tests (sec 11). E2E covers critical journeys only (sec 12); coverage is a flashlight not a goal (sec 13); flakiness is non-determinism to be eliminated (sec 14); and fixtures and factories keep setup clean (sec 15). TDD drives design in red/green/refactor loops (sec 16), determinism comes from injecting time, randomness, and the network (sec 17), performance is its own axis of benchmarks and load tests against an SLO (sec 18), and the suite earns its keep only by running as a fast gate in CI/CD (sec 19). Above all: test behavior, not implementation (sec 20).
+
+Grounded in the Go `testing` docs & pytest docs / Testcontainers / the testing- pyramid literature (Cohn, Fowler) / Go 1.22+ / Python 3.11+ examples.
+
+Backend from First Principles / Chapter 22 / Testing. Code targets Go 1.22+ and Python 3.11+.

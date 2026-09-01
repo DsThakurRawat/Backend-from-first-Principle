@@ -1,0 +1,1351 @@
+---
+order: 4
+title: "Authentication, the question of who you are."
+navTitle: "Authentication & Authorization"
+summary: "A first-principles walkthrough of the two ideas every backend touches every single day, who are you (authentication) and what can you do (authorization). From wax seals and shared secrets to sessions, JWTs, cookies, OAuth 2.0, OpenID Connect, and RBAC. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in both Go and Python."
+readingTime: "3-4 hours"
+keywords:
+  - "authentication"
+  - "authorization"
+  - "jwt"
+  - "oauth"
+  - "tokens"
+  - "session"
+  - "cookies"
+  - "rbac"
+---
+Part I / Foundations
+
+## 01 The Two-Sentence Summary
+
+The entire topic collapses into two questions. **Authentication** is the mechanism of assigning an identity to a subject inside a given context, it answers the question _"who are you?"_. The context can be a platform, an operating system, your phone, anything. The process of finding the answer to that question is authentication.
+
+**Authorization** answers a different question entirely: _"what can you do?"_ in that context. Your capabilities, your permissions. The process of finding the answer to _what can you do here_ is authorization. Authentication establishes the identity first; authorization decides what that identity is allowed to do second.
+
+<Diagram>
+<svg viewBox="0 0 760 230" role="img" aria-label="Authentication versus authorization"><rect x="20" y="30" width="340" height="170" rx="14" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.5"></rect><text x="40" y="62" class="svg-m" font-size="12" letter-spacing="3" fill="var(--dg-accent)">AUTHENTICATION</text><text x="40" y="108" class="svg-t" font-size="30" font-weight="700" fill="var(--dg-ink)">Who are you?</text><text x="40" y="140" class="svg-t" font-size="14" fill="var(--dg-ink-3)">Assign an identity to a subject</text><text x="40" y="160" class="svg-t" font-size="14" fill="var(--dg-ink-3)">within a given context.</text><text x="40" y="186" class="svg-m" font-size="12" fill="var(--dg-accent-2)">-> login, signup, identity proof</text><rect x="400" y="30" width="340" height="170" rx="14" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.5"></rect><text x="420" y="62" class="svg-m" font-size="12" letter-spacing="3" fill="var(--dg-ok)">AUTHORIZATION</text><text x="420" y="108" class="svg-t" font-size="30" font-weight="700" fill="var(--dg-ink)">What can you do?</text><text x="420" y="140" class="svg-t" font-size="14" fill="var(--dg-ink-3)">Your capabilities and permissions</text><text x="420" y="160" class="svg-t" font-size="14" fill="var(--dg-ink-3)">within that same context.</text><text x="420" y="186" class="svg-m" font-size="12" fill="var(--dg-info)">-> roles, scopes, access control</text><path d="M362 115 H398" stroke="var(--dg-ink-3)" stroke-width="2" marker-end="url(#ar)"></path><defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ink-3)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 1, Identity precedes permission. Authenticate first, authorize second.
+
+## 02 A History of Authentication
+
+Modern auth did not appear from nowhere, every mechanism we use today is the descendant of a much older idea. Tracing the lineage makes the design tradeoffs obvious.
+
+### Pre-industrial societies: intrinsic trust
+
+Authentication was _implicit_. A subject's identity was the same as the subject's recognition: someone already respected in the community, a village elder, could vouch for a person, and deals were sealed with a handshake, an act symbolising mutual recognition and agreement. Elementary, but it leveraged a form of authentication built on **human contextual trust**. As populations grew and interactions extended beyond familiar circles, implicit trust _failed to scale_, the elder of one village is not trusted across countries or continents. This marked the search for **explicit** authentication: proofs of identity that function independently of personal acquaintance.
+
+### Medieval period: seals & the cryptographic era
+
+Society needed a system that scaled beyond personal recognition. The answer was the **wax seal**: a unique pattern pressed onto documents and agreements, acting as an early signature. Seals were the first widely adopted **authentication tokens**: physical representations of identity that relied on **possession** ("something you have"). If you held the seal, you were authenticated. But seals were forgeable, marking the first recorded instances of **authentication bypass attacks**: skipping authentication with malicious intent. This drove more sophisticated mechanisms: watermarks and encrypted codes in trade documentation, laying the foundation for cryptographic thinking.
+
+### Industrial revolution: passphrases & shared secrets
+
+As machines transformed the world, communication systems evolved too. The **telegraph** became critical infrastructure, and with it came the need for secure message validation. Operators used pre-agreed **passphrases**: an early form of **shared secret**, effectively static passwords. The principle shifted from "something you possess" (the seal) to **"something you know"**, a meaningful step up in security and the direct ancestor of the modern password.
+
+### Mainframes: the first digital phase
+
+In **1961**, researchers at MIT's Project MAC worked on the **Compatible Time-Sharing System (CTSS)** and introduced passwords for multi-user systems, so multiple users could share one computer without sharing each other's data. Passwords were stored in **plain text**: a critical vulnerability, which became visible the day someone printed the password file. That incident marked the genesis of secure password storage and motivated the philosophy we still hold: _never store passwords in plain text_. It led to **hashing**.
+
+<Callout type="info" title="How hashing works">
+A hashing algorithm takes a plain-text string of _any_ length and runs a one-way computation that returns a **fixed-length** string. The length never changes whether you feed it 3 characters or 100, and the same input always yields the same output. It is _irreversible_, you cannot recover the original from the hash, which is exactly why we store the hash, not the password.
+</Callout>
+
+### The 1970s: asymmetric cryptography
+
+An explosion in cryptographic research, driven by Whitfield Diffie and Martin Hellman, produced the **Diffie-Hellman key exchange** and the concept of **asymmetric cryptography**: letting two parties establish a shared secret over an untrusted medium. Asymmetric crypto became the backbone of modern auth protocols (also called **PKI**: public key infrastructure). The era also gave us **Kerberos**, which introduced **ticket-based authentication** using trusted third parties to issue tickets verifying both user and service, a direct precursor to today's token-based systems.
+
+### The 1990s: MFA & biometrics
+
+As the internet grew, simple username/password systems were not strong enough against **brute-force** and **dictionary attacks**. This produced **Multi-Factor Authentication (MFA)**, combining three categories of proof:
+
+<Diagram>
+<svg viewBox="0 0 760 170" role="img" aria-label="Three authentication factors"><g><rect x="20" y="30" width="230" height="110" rx="12" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="40" y="62" class="svg-m" font-size="11" letter-spacing="2" fill="var(--dg-accent)">FACTOR 1</text><text x="40" y="92" class="svg-t" font-size="20" font-weight="700" fill="var(--dg-ink)">Something you know</text><text x="40" y="118" class="svg-t" font-size="13" fill="var(--dg-ink-3)">passwords / PINs</text></g><g><rect x="265" y="30" width="230" height="110" rx="12" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)" stroke-width="1.4"></rect><text x="285" y="62" class="svg-m" font-size="11" letter-spacing="2" fill="var(--dg-warn)">FACTOR 2</text><text x="285" y="92" class="svg-t" font-size="20" font-weight="700" fill="var(--dg-ink)">Something you have</text><text x="285" y="118" class="svg-t" font-size="13" fill="var(--dg-ink-3)">smart cards / OTP generators</text></g><g><rect x="510" y="30" width="230" height="110" rx="12" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.4"></rect><text x="530" y="62" class="svg-m" font-size="11" letter-spacing="2" fill="var(--dg-ok)">FACTOR 3</text><text x="530" y="92" class="svg-t" font-size="20" font-weight="700" fill="var(--dg-ink)">Something you are</text><text x="530" y="118" class="svg-t" font-size="13" fill="var(--dg-ink-3)">fingerprints / retina scans</text></g></svg>
+</Diagram>
+
+FIG 2, MFA layers independent factors so one compromise is not enough.
+
+**Biometric authentication** emerged here, using pattern recognition and statistical models to identify users by unique physical traits. But biometrics introduced their own challenges: **false positives/negatives** and **template security**: so it was never the one-step solution to every problem.
+
+### The 21st century: and the future
+
+Cloud computing, mobile devices and API-based architectures demanded more advanced frameworks. None of the earlier methods alone were enough, which produced the components we still use: **OAuth** and **OAuth 2.0**, **JWTs**, **zero-trust architecture**, and **passwordless** systems like **WebAuthn** (relying on public/private keys stored in hardware). Looking ahead, the candidates for the future are **decentralized identity** (built on blockchain), **behavioral biometrics**, and **post-quantum cryptography**.
+
+<Callout type="info" title="Post-quantum cryptography">
+Once quantum computers become common, they are fast enough to break the algorithms (RSA and other public/private-key schemes) that today make our data feel secure, these algorithms were never designed for that level of compute. Post-quantum cryptography is the family of techniques designed to stay secure even against quantum machines. Some such algorithms already exist.
+</Callout>
+
+## 03 The Three Core Components
+
+Before the technical part, three components recur throughout every auth and authz flow. Meeting them up front gives you the vocabulary for everything that follows: **sessions**, **JWTs**, and **cookies**.
+
+- **Session**: a temporary, server-side context that gives a stateless web some memory of a user between requests.
+- **JWT (JSON Web Token)**: a self-contained, signed token that carries the user's claims so the server needs no stored state to verify them.
+- **Cookie**: a browser-side storage mechanism the server controls, automatically attached to every subsequent request.
+
+The next three sections take each in turn, in detail.
+
+Part II / The Building Blocks
+
+## 04 Sessions
+
+When the web started, all client-server communication ran over **HTTP**, and by design HTTP is **stateless**: every request is treated as an isolated interaction. The server does not remember your previous request; each request must carry all the information the server needs to perform its business logic. HTTP has no memory of past exchanges.
+
+That was ideal for the early web, mostly static pages, static images, readable data. Nobody needed continuity between requests. But as the web transitioned to **dynamic content**, statelessness became a bottleneck. An e-commerce site must remember the items in your cart; a user must stay logged in while navigating between pages. These needs marked the beginning of **stateful interactions**, and the **session** was the answer, a way to establish a temporary _server-side_ context for each user.
+
+### How a session works
+
+1. **Session creation.** When a user logs in, the server creates a unique **session ID** and stores it alongside the relevant user data (role, name, cart items, whether the user is authenticated) in a **persistent store**: a database, or an in-memory store like Redis.
+2. **Delivery.** The session ID, just a key, is sent to the client (the browser) as a **cookie**. Every subsequent request includes that cookie, so the server can use the session ID to fetch all the user data back out of the store.
+3. **Expiry.** Sessions are short-lived. If the expiry is 15 minutes, after that the session is invalid; the server creates a fresh session and issues a new session ID. This loop repeats.
+
+<Diagram>
+<svg viewBox="0 0 760 300" role="img" aria-label="Session flow"><text x="90" y="30" class="svg-t" font-size="14" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">Client</text><text x="380" y="30" class="svg-t" font-size="14" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">Server</text><text x="670" y="30" class="svg-t" font-size="14" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">Store (Redis/DB)</text><line x1="90" y1="42" x2="90" y2="285" stroke="var(--dg-line-2)" stroke-width="1.5"></line><line x1="380" y1="42" x2="380" y2="285" stroke="var(--dg-line-2)" stroke-width="1.5"></line><line x1="670" y1="42" x2="670" y2="285" stroke="var(--dg-line-2)" stroke-width="1.5"></line><path d="M90 70 H375" stroke="var(--dg-accent)" stroke-width="1.8" marker-end="url(#a2)"></path><text x="95" y="63" class="svg-m" font-size="11.5" fill="var(--dg-accent-2)">1 / login (user + password)</text><path d="M380 110 H665" stroke="var(--dg-ok)" stroke-width="1.8" marker-end="url(#a3)"></path><text x="386" y="103" class="svg-m" font-size="11.5" fill="var(--dg-info)">2 / store &#123;sessionID -> userData&#125;</text><path d="M375 150 H95" stroke="var(--dg-accent)" stroke-width="1.8" marker-end="url(#a2b)"></path><text x="120" y="143" class="svg-m" font-size="11.5" fill="var(--dg-accent-2)">3 / Set-Cookie: sid=... (HttpOnly)</text><path d="M90 195 H375" stroke="var(--dg-ink-3)" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#a4)"></path><text x="95" y="188" class="svg-m" font-size="11.5" fill="var(--dg-ink-3)">4 / request + Cookie: sid</text><path d="M380 235 H665" stroke="var(--dg-ok)" stroke-width="1.8" marker-end="url(#a3b)"></path><text x="386" y="228" class="svg-m" font-size="11.5" fill="var(--dg-info)">5 / lookup sid -> userData</text><path d="M375 275 H95" stroke="var(--dg-ink-3)" stroke-width="1.8" marker-end="url(#a4b)"></path><text x="170" y="268" class="svg-m" font-size="11.5" fill="var(--dg-ink-3)">6 / authorized response</text><defs><marker id="a2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-accent)"></path></marker><marker id="a2b" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-accent)"></path></marker><marker id="a3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ok)"></path></marker><marker id="a3b" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ok)"></path></marker><marker id="a4" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ink-3)"></path></marker><marker id="a4b" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ink-3)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 3, The session loop. The cookie carries only a key; the data lives server-side.
+
+### The storage evolution
+
+Session storage matured in three stages, each solving the previous stage's scaling problem:
+
+- **File-based sessions**: the earliest approach, storing data in files on the server. Simple, but it suffered scalability issues as user counts grew.
+- **Database-backed sessions**: moved session data into databases for faster lookups and persistence across server restarts (the session survives a restart).
+- **Distributed stores**: eventually session data moved to distributed in-memory stores like **Redis** or **Memcached** (data in RAM rather than on disk), which are far faster than database lookups.
+
+We still use sessions today, for exactly the same purpose: giving our servers some memory of the user.
+
+#### Code: password hashing & a session login
+
+A session login first verifies credentials against a stored _hash_ (never plain text), then mints a random session ID and stores the user payload in Redis with a TTL.
+
+G&#x6F;_&#xNAN;_____
+
+```go
+package main
+
+import (
+    "context"
+    "crypto/rand"
+    "encoding/hex"
+    "encoding/json"
+    "net/http"
+    "time"
+
+    "github.com/redis/go-redis/v9"
+    "golang.org/x/crypto/bcrypt"
+)
+
+var rdb = redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+var ctx = context.Background()
+
+type User struct {
+    ID   string `json:"id"`
+    Role string `json:"role"`
+}
+
+// hash once at signup; store hash, never the password
+func HashPassword(pw string) (string, error) {
+    b, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+    return string(b), err
+}
+
+// bcrypt.CompareHashAndPassword is constant-time internally
+func CheckPassword(hash, pw string) bool {
+    return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw)) == nil
+}
+
+func newSessionID() string {
+    b := make([]byte, 32)
+    rand.Read(b) // cryptographically random
+    return hex.EncodeToString(b)
+}
+
+func Login(w http.ResponseWriter, u User) error {
+    sid := newSessionID()
+    data, _ := json.Marshal(u)
+    // store {sessionID -> userData} with a 15-minute TTL
+    if err := rdb.Set(ctx, "sess:"+sid, data, 15*time.Minute).Err(); err != nil {
+        return err
+    }
+    http.SetCookie(w, &http.Cookie{
+        Name:     "sid",
+        Value:    sid,
+        HttpOnly: true,            // JS cannot read it
+        Secure:   true,            // HTTPS only
+        SameSite: http.SameSiteLaxMode,
+        Path:     "/",
+        Expires:  time.Now().Add(15 * time.Minute),
+    })
+    return nil
+}
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+import json, secrets
+import bcrypt
+import redis
+from flask import Flask, request, make_response
+
+app = Flask(__name__)
+rdb = redis.Redis(host="localhost", port=6379)
+TTL = 15 * 60  # 15 minutes
+
+# hash once at signup; store hash, never the password
+def hash_password(pw: str) -> bytes:
+    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt())
+
+# bcrypt.checkpw is constant-time internally
+def check_password(hash_: bytes, pw: str) -> bool:
+    return bcrypt.checkpw(pw.encode(), hash_)
+
+def new_session_id() -> str:
+    return secrets.token_hex(32)  # cryptographically random
+
+@app.post("/login")
+def login():
+    body = request.get_json()
+    # ... look up user, check_password(stored_hash, body["password"]) ...
+    user = {"id": "u_42", "role": "admin"}
+
+    sid = new_session_id()
+    # store {sessionID -> userData} with a 15-minute TTL
+    rdb.setex(f"sess:{sid}", TTL, json.dumps(user))
+
+    resp = make_response({"ok": True})
+    resp.set_cookie(
+        "sid", sid,
+        httponly=True,   # JS cannot read it
+        secure=True,     # HTTPS only
+        samesite="Lax",
+        max_age=TTL,
+        path="/",
+    )
+    return resp
+```
+
+### Deep dive: how to actually store a password
+
+"Store the hash, not the password" is only half the rule. _Which_ hash, and what you mix into it, decides whether a leaked database is a minor incident or a catastrophe.
+
+#### Why a general-purpose hash is the wrong tool
+
+SHA-256 and MD5 are built to be **fast**: that is exactly what you do _not_ want for passwords. A modern GPU or ASIC computes **billions** of SHA-256 hashes per second, so a stolen table of fast hashes is brute-forced almost for free. Password storage needs a **password-hashing function** (a slow, tunable KDF) that is deliberately expensive and, ideally, **memory-hard** so attackers can't parallelise cheaply on GPUs. The accepted choices are **Argon2id** (preferred today), **scrypt**, and **bcrypt**.
+
+#### Salt: defeat precomputation
+
+A **salt** is a unique, random value generated _per password_ and stored in plain text right next to the hash. It does two things: identical passwords no longer produce identical hashes (so an attacker can't spot reused passwords or crack many at once), and precomputed **rainbow tables** become useless because the attacker would need a separate table per salt. A salt is **not a secret**: its only job is to be unique.
+
+#### Pepper: a secret the database never holds
+
+A **pepper** is a single, site-wide secret kept _outside_ the database, in an environment variable, secret manager, or HSM. You `HMAC` the password with the pepper _before_ feeding it to the KDF. The payoff: if only the database leaks (salts + hashes) but the application secret does not, the hashes are still uncrackable, because the attacker is missing the pepper. Salt protects against precomputation; pepper protects against a DB-only breach.
+
+#### Work factor / cost
+
+Every KDF exposes **cost parameters** you tune to your hardware: bcrypt's `cost` (logarithmic rounds), scrypt's `N/r/p`, and Argon2's **time**, **memory**, and **parallelism**. Pick values so a single hash takes roughly **250 ms** on your servers, slow enough to throttle attackers, fast enough for real logins, and raise them over time as hardware improves. The chosen parameters are stored _in_ the hash string so you can verify old hashes and transparently re-hash on the next login when you bump the cost.
+
+<Diagram>
+<svg viewBox="0 0 760 150" role="img" aria-label="Password hashing pipeline"><rect x="20" y="50" width="120" height="50" rx="9" fill="var(--dg-veil)" stroke="var(--dg-ink)" stroke-width="1.3"></rect><text x="80" y="80" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">password</text><rect x="190" y="50" width="150" height="50" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)" stroke-width="1.3"></rect><text x="265" y="74" text-anchor="middle" class="svg-t" font-size="12.5" font-weight="700" fill="var(--dg-ink)">HMAC(pw, pepper)</text><text x="265" y="90" text-anchor="middle" class="svg-t" font-size="10.5" fill="var(--dg-ink-3)">secret, not in DB</text><rect x="390" y="50" width="180" height="50" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.3"></rect><text x="480" y="72" text-anchor="middle" class="svg-t" font-size="12.5" font-weight="700" fill="var(--dg-ink)">Argon2id(/, salt, cost)</text><text x="480" y="89" text-anchor="middle" class="svg-t" font-size="10.5" fill="var(--dg-ink-3)">slow / memory-hard</text><rect x="620" y="50" width="120" height="50" rx="9" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.3"></rect><text x="680" y="74" text-anchor="middle" class="svg-t" font-size="12.5" font-weight="700" fill="var(--dg-ink)">store</text><text x="680" y="90" text-anchor="middle" class="svg-t" font-size="10" fill="var(--dg-ink-3)">salt+params+hash</text><path d="M140 75 H188" stroke="var(--dg-ink-3)" stroke-width="1.7" marker-end="url(#h1)"></path><path d="M340 75 H388" stroke="var(--dg-ink-3)" stroke-width="1.7" marker-end="url(#h2)"></path><path d="M570 75 H618" stroke="var(--dg-ink-3)" stroke-width="1.7" marker-end="url(#h3)"></path><defs><marker id="h1" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ink-3)"></path></marker><marker id="h2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ink-3)"></path></marker><marker id="h3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ink-3)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 4, Pepper (secret) -> KDF with per-password salt + cost -> store salt, params and hash together.
+
+| KDF               | Memory-hard? | Notes                                                                  |
+| ----------------- | ------------ | ---------------------------------------------------------------------- |
+| **Argon2id**      | Yes          | Preferred default; resists GPU/ASIC; tune memory + time + parallelism. |
+| **scrypt**        | Yes          | Good memory-hard option; tune N/r/p.                                   |
+| **bcrypt**        | No           | Still acceptable; caps input at 72 bytes, pre-hash long inputs.        |
+| **SHA-256 / MD5** | No           | Never for passwords, far too fast.                                     |
+
+#### Code: Argon2id with a pepper
+
+G&#x6F;_&#xNAN;_____
+
+```go
+import (
+    "crypto/hmac"
+    "crypto/rand"
+    "crypto/sha256"
+    "crypto/subtle"
+    "encoding/base64"
+    "fmt"
+    "golang.org/x/crypto/argon2"
+)
+
+var pepper = []byte(os.Getenv("PASSWORD_PEPPER")) // secret, NOT in DB
+
+// cost parameters, tune so one hash ~250ms
+const (
+    aTime    = 3         // iterations
+    aMemory  = 64 * 1024 // 64 MB, memory-hard
+    aThreads = 4
+    aKeyLen  = 32
+)
+
+func peppered(pw string) []byte {
+    m := hmac.New(sha256.New, pepper)
+    m.Write([]byte(pw))
+    return m.Sum(nil)
+}
+
+// returns an encoded string: salt + params + hash
+func HashArgon(pw string) string {
+    salt := make([]byte, 16)
+    rand.Read(salt) // unique per password
+    h := argon2.IDKey(peppered(pw), salt, aTime, aMemory, aThreads, aKeyLen)
+    return fmt.Sprintf("argon2id$%d$%d$%d$%s$%s", aTime, aMemory, aThreads,
+        base64.RawStdEncoding.EncodeToString(salt),
+        base64.RawStdEncoding.EncodeToString(h))
+}
+
+// re-derive with the SAME salt+params, then constant-time compare
+func VerifyArgon(encoded, pw string) bool {
+    var t, mem, th uint32
+    var b64salt, b64hash string
+    fmt.Sscanf(encoded, "argon2id$%d$%d$%d$%s$%s", &t, &mem, &th, &b64salt, &b64hash)
+    salt, _ := base64.RawStdEncoding.DecodeString(b64salt)
+    want, _ := base64.RawStdEncoding.DecodeString(b64hash)
+    got := argon2.IDKey(peppered(pw), salt, t, mem, uint8(th), uint32(len(want)))
+    return subtle.ConstantTimeCompare(got, want) == 1
+}
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+import os, hmac, hashlib
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+
+PEPPER = os.environ["PASSWORD_PEPPER"].encode()  # secret, NOT in DB
+
+# cost parameters, tune so one hash ~250ms
+ph = PasswordHasher(
+    time_cost=3,            # iterations
+    memory_cost=64 * 1024,  # 64 MB, memory-hard
+    parallelism=4,
+    hash_len=32,
+    salt_len=16,            # random salt baked into the output
+)
+
+def peppered(pw: str) -> bytes:
+    return hmac.new(PEPPER, pw.encode(), hashlib.sha256).digest()
+
+# argon2-cffi embeds salt + params inside the returned string
+def hash_argon(pw: str) -> str:
+    return ph.hash(peppered(pw))
+
+def verify_argon(encoded: str, pw: str) -> bool:
+    try:
+        ph.verify(encoded, peppered(pw))   # constant-time internally
+    except VerifyMismatchError:
+        return False
+    # transparently upgrade old hashes when cost is raised
+    if ph.check_needs_rehash(encoded):
+        rehash_and_store(hash_argon(pw))
+    return True
+```
+
+## 05 JSON Web Tokens (JWT)
+
+By the mid-2000s, web applications had grown into globally distributed systems, and stateful (session) systems, though effective, caused bottlenecks. Three problems pushed the industry toward a new approach:
+
+- **Memory.** Maintaining session data for millions of users became costly overhead.
+- **Replication.** In distributed architectures, synchronising session data across servers and regions (one server in one part of the world, another on the opposite side) introduced **latency** in the auth flow.
+- **Consistency.** Keeping that synchronised state correct everywhere is hard.
+
+Developers wanted a way to **offload state from the server** while keeping security and integrity. The answer, formalised in **2015**, was the **JWT**: a **stateless** mechanism for transferring _claims_ between two parties. Its key innovation: **self-contained tokens**. A JWT carries the user data (user ID, role) and a cryptographic signature inside the token itself, all Base64-encoded.
+
+### Anatomy: three parts
+
+A JWT is a single Base64URL-encoded string of three parts separated by dots: `header.payload.signature`.
+
+<Diagram>
+<svg viewBox="0 0 760 250" role="img" aria-label="JWT anatomy"><rect x="20" y="24" width="230" height="200" rx="12" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="36" y="50" class="svg-m" font-size="11" letter-spacing="2" fill="var(--dg-accent)">HEADER</text><text x="36" y="78" class="svg-t" font-size="13" fill="var(--dg-ink)">Metadata about</text><text x="36" y="96" class="svg-t" font-size="13" fill="var(--dg-ink)">the token itself</text><text x="36" y="128" class="svg-m" font-size="11" fill="var(--dg-ink-3)">&#123; "alg": "HS256",</text><text x="36" y="146" class="svg-m" font-size="11" fill="var(--dg-ink-3)">  "typ": "JWT" &#125;</text><text x="36" y="200" class="svg-t" font-size="12" fill="var(--dg-accent-2)">signing algorithm</text><rect x="265" y="24" width="230" height="200" rx="12" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.4"></rect><text x="281" y="50" class="svg-m" font-size="11" letter-spacing="2" fill="var(--dg-ok)">PAYLOAD</text><text x="281" y="78" class="svg-t" font-size="13" fill="var(--dg-ink)">The claims / data</text><text x="281" y="110" class="svg-m" font-size="11" fill="var(--dg-ink-3)">&#123; "sub": "u&#95;42",</text><text x="281" y="128" class="svg-m" font-size="11" fill="var(--dg-ink-3)">  "iat": 1716998400,</text><text x="281" y="146" class="svg-m" font-size="11" fill="var(--dg-ink-3)">  "name": "Asha",</text><text x="281" y="164" class="svg-m" font-size="11" fill="var(--dg-ink-3)">  "role": "admin" &#125;</text><text x="281" y="200" class="svg-t" font-size="12" fill="var(--dg-info)">sub = user id / iat = issued-at</text><rect x="510" y="24" width="230" height="200" rx="12" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)" stroke-width="1.4"></rect><text x="526" y="50" class="svg-m" font-size="11" letter-spacing="2" fill="var(--dg-warn)">SIGNATURE</text><text x="526" y="78" class="svg-t" font-size="13" fill="var(--dg-ink)">Proves integrity</text><text x="526" y="96" class="svg-t" font-size="13" fill="var(--dg-ink)">&#x26; authenticity</text><text x="526" y="128" class="svg-m" font-size="10.5" fill="var(--dg-ink-3)">HMACSHA256(</text><text x="526" y="144" class="svg-m" font-size="10.5" fill="var(--dg-ink-3)">  b64(header)+"."+</text><text x="526" y="160" class="svg-m" font-size="10.5" fill="var(--dg-ink-3)">  b64(payload), SECRET)</text><text x="526" y="200" class="svg-t" font-size="12" fill="var(--dg-accent)">tamper -> verify fails</text></svg>
+</Diagram>
+
+FIG 5, header / payload / signature. Change any byte of header or payload and the signature no longer matches.
+
+The **header** holds metadata such as the signing algorithm. The **payload** holds the claims: `sub` is the convention for the user ID (from your DB or an auth provider, any context), `iat` means "issued at", plus optional fields like name and role (admin / member / editor / viewer). The **signature** is computed with a **secret key** that only you hold. If anyone alters the JWT, verification with your secret fails, you immediately know it is no longer a valid token. That is how you verify a user's data in a _stateless_ manner: no session lookup, just a signature check on every request. It is lightweight and saves storage cost.
+
+### Advantages
+
+- **Statelessness**: no server-side storage cost.
+- **Scalability**: in microservice and distributed architectures, a cookie issued by one server can't be used by another domain, but a JWT can be sent to many servers; each holds the shared secret, decodes the token, and verifies identity. Servers scale to many instances and all authenticate concurrently using the shared secret.
+- **Portability**: being lightweight, URL-friendly and Base64-encoded, JWTs travel easily: in headers, in cookies, even in URL values (and in local storage, though you generally shouldn't).
+
+### The challenges
+
+<Callout type="info" title="Token theft">
+Because a JWT is stateless, the server has no stored record to validate against. If someone obtains your JWT, they can **impersonate you** and act on your behalf until it expires, and there is no built-in way to invalidate it early _unless_ the server changes its secret. But rotating the secret invalidates _every_ user's token, forcing everyone to log in again just to kill one token.
+</Callout>
+
+<Callout type="info" title="Revocation">
+For the same reason, you cannot **revoke** one user's access on demand. Because JWTs are stateless, there is no way to track a token's status until it expires.
+</Callout>
+
+### The hybrid approach (and its paradox)
+
+To beat both problems, teams combine statelessness with a touch of statefulness. The user logs in, gets a JWT, and sends it on every request (typically in the `Authorization` header). The server verifies the signature with its secret, no storage lookup. _Then_, after verification passes, the server checks a **blacklist** of revoked JWTs kept in a persistent store (Redis/DB). That lets you temporarily block or revoke a user (e.g. a hacked account) without rotating the global secret.
+
+<Callout type="info" title="The honest question">
+The whole point of JWT was statelessness. If you're now doing a persistent-store lookup to check validity anyway, why not just use the stateful approach in the first place, which is generally considered more secure and gives you this control for free? This is a frequent industry debate.
+</Callout>
+
+<Callout type="info" title="Practical advice">
+For a medium-to-large system, don't agonise over hashing, salting, algorithms and revocation strategies yourself, use an **auth provider** (Auth0, Clerk, and similar). Their job is to worry about which components are most secure. It is a great exercise to implement your own auth while _learning_ backend, to understand the parts and the tradeoffs, but in production, reach for a provider unless you are highly confident in your auth workflows.
+</Callout>
+
+#### Code: sign & verify a JWT
+
+G&#x6F;_&#xNAN;_____
+
+```go
+package auth
+
+import (
+    "time"
+    "github.com/golang-jwt/jwt/v5"
+)
+
+var secret = []byte("keep-this-very-secret")
+
+// mint a self-contained token carrying the claims
+func Sign(userID, role string) (string, error) {
+    claims := jwt.MapClaims{
+        "sub":  userID,                              // user id
+        "role": role,                                // for authorization
+        "iat":  time.Now().Unix(),                   // issued at
+        "exp":  time.Now().Add(time.Hour).Unix(),    // expiry
+    }
+    tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    return tok.SignedString(secret)
+}
+
+// verify signature + expiry; returns the claims if valid
+func Verify(tokenStr string) (jwt.MapClaims, error) {
+    tok, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+        // pin the algorithm to stop "alg: none" attacks
+        if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+            return nil, jwt.ErrSignatureInvalid
+        }
+        return secret, nil
+    })
+    if err != nil || !tok.Valid {
+        return nil, err
+    }
+    return tok.Claims.(jwt.MapClaims), nil
+}
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+import jwt   # PyJWT
+from datetime import datetime, timedelta, timezone
+
+SECRET = "keep-this-very-secret"
+
+# mint a self-contained token carrying the claims
+def sign(user_id: str, role: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub":  user_id,                 # user id
+        "role": role,                    # for authorization
+        "iat":  now,                     # issued at
+        "exp":  now + timedelta(hours=1) # expiry
+    }
+    return jwt.encode(payload, SECRET, algorithm="HS256")
+
+# verify signature + expiry; returns the claims if valid
+def verify(token: str) -> dict:
+    # algorithms is a whitelist -> stops "alg: none" attacks
+    return jwt.decode(token, SECRET, algorithms=["HS256"])
+
+# hybrid: after verify(), also check a revocation blacklist
+def is_revoked(rdb, jti_or_token: str) -> bool:
+    return rdb.sismember("jwt:blacklist", jti_or_token)
+```
+
+### Deep dive: signing, attacks, and refresh tokens
+
+#### HS256 vs RS256: symmetric vs asymmetric signing
+
+The header's `alg` decides who can _create_ valid tokens. With **HS256** (HMAC) there is one shared secret used to both sign and verify, so _every_ service that can verify can also **forge**. That's fine inside one trust boundary, dangerous across many. With **RS256** / **ES256** (asymmetric), the auth server signs with a **private key** and everyone else verifies with the **public key**. Verifiers cannot mint tokens, and you can publish the public keys (a JWKS endpoint) so unrelated microservices and third parties validate independently. This is the real reason JWTs scale across a distributed system: _verification doesn't require sharing the signing power._
+
+|               | HS256 (symmetric)           | RS256 / ES256 (asymmetric)                 |
+| ------------- | --------------------------- | ------------------------------------------ |
+| Keys          | One shared secret           | Private (sign) + public (verify)           |
+| Who can forge | Anyone who can verify       | Only the private-key holder                |
+| Best for      | A single service / monolith | Microservices, third-party verifiers, OIDC |
+
+#### The `alg:none` and key-confusion attacks
+
+Two classic JWT vulnerabilities both come from trusting the token's own header. In the **alg:none** attack, an attacker sets `"alg":"none"` and strips the signature; a naive verifier that "does what the header says" accepts an unsigned token. In the **RS256->HS256 key-confusion** attack, the attacker changes the algorithm to HS256 and signs with the _public_ key (which is, by definition, public) as if it were an HMAC secret; a verifier that picks the algorithm from the header will validate it. **Defense:** never let the token choose, pin the expected algorithm(s) on the verifier side, as the `SigningMethodHMAC` check and the `algorithms=[...]` whitelist in sec 05's code already do.
+
+#### Access tokens + refresh tokens
+
+This pattern resolves the revocation weakness without throwing away statelessness. Issue a **short-lived access token** (\~5-15 min) used on every API call, and a **long-lived refresh token** (days-weeks) stored safely (an `HttpOnly` cookie, or secure storage on mobile). When the access token expires, the client trades the refresh token for a new pair. Because access tokens are short-lived, a stolen one is useless within minutes; because only the refresh token touches the store, the per-request fast path stays stateless.
+
+<Callout type="info" title="Rotation + reuse detection">
+On every refresh, **rotate**: issue a new refresh token and invalidate the old one. If a previously-used (rotated-out) refresh token is ever presented again, that's a strong signal it was stolen, **revoke the entire token family** and force re-login. This gives you practical revocation while keeping the access-token path lookup-free.
+</Callout>
+
+<Diagram>
+<svg viewBox="0 0 760 150" role="img" aria-label="Access and refresh token lifecycle"><rect x="20" y="40" width="200" height="70" rx="10" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.3"></rect><text x="120" y="70" text-anchor="middle" class="svg-t" font-size="14" font-weight="700" fill="var(--dg-ink)">Access token</text><text x="120" y="90" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">~10 min / sent every call</text><rect x="540" y="40" width="200" height="70" rx="10" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.3"></rect><text x="640" y="70" text-anchor="middle" class="svg-t" font-size="14" font-weight="700" fill="var(--dg-ink)">Refresh token</text><text x="640" y="90" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">days / HttpOnly / stored</text><path d="M540 65 H222" stroke="var(--dg-ok)" stroke-width="1.7" marker-end="url(#r1)"></path><text x="380" y="57" text-anchor="middle" class="svg-m" font-size="11" fill="var(--dg-info)">mints new access token on expiry</text><path d="M222 92 H538" stroke="var(--dg-accent)" stroke-width="1.7" stroke-dasharray="5 4" marker-end="url(#r2)"></path><text x="380" y="112" text-anchor="middle" class="svg-m" font-size="11" fill="var(--dg-accent-2)">rotate: old refresh invalidated; reuse -> revoke family</text><defs><marker id="r1" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ok)"></path></marker><marker id="r2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-accent)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 6, Short access token for speed, rotating refresh token for control.
+
+#### Code: RS256 verify + refresh rotation
+
+G&#x6F;_&#xNAN;_____
+
+```go
+// Verify with a PUBLIC key, pinning RS256 (blocks alg:none & key confusion)
+func VerifyRS256(tokenStr string, pub *rsa.PublicKey) (jwt.MapClaims, error) {
+    tok, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+        if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok { // pin family
+            return nil, jwt.ErrSignatureInvalid
+        }
+        return pub, nil
+    }, jwt.WithValidMethods([]string{"RS256"}))
+    if err != nil || !tok.Valid {
+        return nil, err
+    }
+    return tok.Claims.(jwt.MapClaims), nil
+}
+
+// Rotate a refresh token; detect reuse of an already-spent one.
+func Refresh(rdb *redis.Client, presented string) (string, error) {
+    family, err := rdb.Get(ctx, "rt:"+presented).Result()
+    if err != nil {
+        // not a live token, was it a previously-spent one? -> theft
+        if fam, e := rdb.Get(ctx, "spent:"+presented).Result(); e == nil {
+            rdb.Del(ctx, "family:"+fam)            // revoke the whole family
+            return "", errors.New("refresh reuse detected")
+        }
+        return "", errors.New("invalid refresh token")
+    }
+    rdb.Del(ctx, "rt:"+presented)                  // consume the live token
+    rdb.Set(ctx, "spent:"+presented, family, 14*24*time.Hour) // remember it
+    newRefresh := newSessionID()
+    rdb.Set(ctx, "rt:"+newRefresh, family, 14*24*time.Hour)
+    return newRefresh, nil
+}
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+# Verify with a PUBLIC key, pinning RS256 (blocks alg:none & key confusion)
+def verify_rs256(token: str, public_key) -> dict:
+    return jwt.decode(token, public_key, algorithms=["RS256"])  # whitelist
+
+# Rotate a refresh token; detect reuse of an already-spent one.
+def refresh(rdb, presented: str) -> str:
+    family = rdb.get(f"rt:{presented}")
+    if family is None:
+        # not a live token, was it previously spent? -> theft
+        fam = rdb.get(f"spent:{presented}")
+        if fam is not None:
+            rdb.delete(f"family:{fam.decode()}")    # revoke the whole family
+            raise PermissionError("refresh reuse detected")
+        raise PermissionError("invalid refresh token")
+    rdb.delete(f"rt:{presented}")                   # consume the live token
+    rdb.setex(f"spent:{presented}", 14 * 24 * 3600, family)  # remember it
+    new_refresh = secrets.token_hex(32)
+    rdb.setex(f"rt:{new_refresh}", 14 * 24 * 3600, family)
+    return new_refresh
+```
+
+## 06 Cookies
+
+A **cookie** is a way to store a piece of information, any string value, in a user's browser, _from the server side_. That last part is the important bit: using cookies, a server can place data into a client's browser through the normal HTTP request/response flow, subject to two browser-enforced guarantees:
+
+- A cookie is only accessible to the server (domain) that set it, one server cannot see another server's cookies. This scoping is a built-in security feature of the browser.
+- A cookie set by a server is automatically attached to **every subsequent request** back to that same server.
+
+That automatic round-trip is what makes cookies so useful for auth. The server stores an authorization token (a JWT or a session ID, depends on the implementation) in the cookie; the browser (Chrome, Firefox, Safari) sends it back on every request; the server validates it, identifies and authorizes the user. The whole "server hands the client a token, client returns it each time" dance is automated by the cookie mechanism, driven entirely from the server side, because the server can write to the client's cookie jar.
+
+<Callout type="info" title="HttpOnly">
+Marking a cookie `HttpOnly` means JavaScript cannot read its value. For a session ID this is important: it blocks an entire class of token-stealing attacks that work by reading the cookie from the page's scripts. Pair it with `Secure` (HTTPS only) and a sensible `SameSite` policy.
+</Callout>
+
+### Deep dive: CSRF and session fixation
+
+Cookies' best feature, automatic attachment to every request, is also the root of their two signature attacks. Both matter specifically for _cookie-based_ auth.
+
+#### Cross-Site Request Forgery (CSRF)
+
+Because the browser sends your session cookie on _any_ request to a domain, including requests triggered by a _different_ site, an attacker's page can quietly fire a state-changing request to your bank or app, and the browser helpfully attaches your cookie. The server sees a fully authenticated request it never intended to honour. Note the asymmetry: **token-in-header auth (Bearer JWT) is naturally immune**, because the attacker's page can't read or set your `Authorization` header; only cookie-borne credentials are auto-sent. Defenses:
+
+- **`SameSite` cookies**: `Lax` or `Strict` stops the cookie from riding along on cross-site requests. The first line of defense.
+- **Synchronizer token**: the server embeds a random token in the page/form; state-changing requests must echo it back. The attacker can't read it (same-origin policy), so they can't forge a valid request.
+- **Double-submit cookie**: send the CSRF token both as a readable cookie and as a header/field; the server checks they match. Stateless and simple.
+
+<Diagram>
+<svg viewBox="0 0 760 160" role="img" aria-label="CSRF attack"><rect x="20" y="55" width="170" height="55" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.3"></rect><text x="105" y="80" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">evil.com</text><text x="105" y="98" text-anchor="middle" class="svg-t" font-size="10.5" fill="var(--dg-ink-3)">attacker page</text><rect x="300" y="55" width="170" height="55" rx="9" fill="var(--dg-veil)" stroke="var(--dg-ink)" stroke-width="1.3"></rect><text x="385" y="80" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">your browser</text><text x="385" y="98" text-anchor="middle" class="svg-t" font-size="10.5" fill="var(--dg-ink-3)">holds bank cookie</text><rect x="580" y="55" width="160" height="55" rx="9" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.3"></rect><text x="660" y="80" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">bank.com</text><text x="660" y="98" text-anchor="middle" class="svg-t" font-size="10.5" fill="var(--dg-ink-3)">trusts the cookie</text><path d="M190 82 H298" stroke="var(--dg-accent)" stroke-width="1.7" marker-end="url(#cs1)"></path><text x="244" y="74" text-anchor="middle" class="svg-m" font-size="10" fill="var(--dg-accent-2)">hidden POST</text><path d="M470 82 H578" stroke="var(--dg-accent)" stroke-width="1.7" marker-end="url(#cs2)"></path><text x="524" y="74" text-anchor="middle" class="svg-m" font-size="10" fill="var(--dg-accent-2)">+ cookie (auto!)</text><text x="385" y="135" text-anchor="middle" class="svg-m" font-size="10.5" fill="var(--dg-info)">SameSite / CSRF token blocks the forged request</text><defs><marker id="cs1" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-accent)"></path></marker><marker id="cs2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-accent)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 7, The cookie rides along on a cross-site request; SameSite + a CSRF token break the chain.
+
+#### Session fixation
+
+Here the attacker _plants_ a session ID they already know, e.g. by feeding the victim a link with a fixed `sid`, or setting one, and waits for the victim to log in _under that same ID_. If the server keeps the pre-login session ID after authentication, the attacker now shares an authenticated session. The fix is simple and absolute: **regenerate the session ID on every privilege change**, especially right after login, so the value the attacker knew becomes worthless.
+
+#### Code: double-submit CSRF + session regeneration
+
+G&#x6F;_&#xNAN;_____
+
+```go
+// Double-submit: compare the CSRF cookie against the header.
+func CheckCSRF(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        if r.Method == "GET" || r.Method == "HEAD" {
+            next(w, r); return
+        }
+        c, err := r.Cookie("csrf")
+        hdr := r.Header.Get("X-CSRF-Token")
+        if err != nil || subtle.ConstantTimeCompare(
+            []byte(c.Value), []byte(hdr)) != 1 {
+            http.Error(w, "forbidden", http.StatusForbidden)
+            return
+        }
+        next(w, r)
+    }
+}
+
+// Regenerate the session ID right after a successful login.
+func RegenerateSession(oldSID string, u User) (string, error) {
+    raw, _ := rdb.Get(ctx, "sess:"+oldSID).Result()
+    rdb.Del(ctx, "sess:"+oldSID)            // kill the pre-login ID
+    newSID := newSessionID()                // brand-new value
+    rdb.Set(ctx, "sess:"+newSID, raw, 15*time.Minute)
+    return newSID, nil
+}
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+import hmac
+
+# Double-submit: compare the CSRF cookie against the header.
+def check_csrf(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if request.method in ("GET", "HEAD"):
+            return view(*args, **kwargs)
+        cookie = request.cookies.get("csrf", "")
+        header = request.headers.get("X-CSRF-Token", "")
+        if not cookie or not hmac.compare_digest(cookie, header):
+            return jsonify(error="forbidden"), 403
+        return view(*args, **kwargs)
+    return wrapper
+
+# Regenerate the session ID right after a successful login.
+def regenerate_session(old_sid: str) -> str:
+    raw = rdb.get(f"sess:{old_sid}")
+    rdb.delete(f"sess:{old_sid}")            # kill the pre-login ID
+    new_sid = secrets.token_hex(32)          # brand-new value
+    rdb.setex(f"sess:{new_sid}", 15 * 60, raw)
+    return new_sid
+```
+
+Part III / Types of Authentication
+
+## 07 Stateful Authentication
+
+The first major type. The client (a browser) sends username/email and password to the server. The server checks validity and correctness; if the user is eligible, it generates a **session ID**, bundles it with the user's data, and stores the bundle in **Redis** (a DB works too, but most platforms pick Redis for its fast access time). The session ID is sent back to the client inside an **HttpOnly cookie**: so JavaScript cannot read the session ID. Thanks to the cookie's auto-attach behaviour, every later request carries that cookie. The server reads the session ID, checks its existence, expiry and user data in Redis, identifies and authorizes the user, and lets the request through. The session ID can be any cryptographically random string, even a JWT, depending on the implementation.
+
+<Diagram>
+<svg viewBox="0 0 760 230" role="img" aria-label="Stateful authentication flow"><rect x="20" y="80" width="150" height="70" rx="10" fill="var(--dg-veil)" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="95" y="110" text-anchor="middle" class="svg-t" font-size="15" font-weight="700" fill="var(--dg-ink)">Client</text><text x="95" y="130" text-anchor="middle" class="svg-t" font-size="11.5" fill="var(--dg-ink-3)">browser</text><rect x="300" y="80" width="160" height="70" rx="10" fill="var(--dg-veil)" stroke="var(--dg-ink)" stroke-width="1.4"></rect><text x="380" y="110" text-anchor="middle" class="svg-t" font-size="15" font-weight="700" fill="var(--dg-ink)">Server</text><text x="380" y="130" text-anchor="middle" class="svg-t" font-size="11.5" fill="var(--dg-ink-3)">business logic</text><rect x="590" y="80" width="150" height="70" rx="10" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.4"></rect><text x="665" y="108" text-anchor="middle" class="svg-t" font-size="15" font-weight="700" fill="var(--dg-ink)">Redis</text><text x="665" y="128" text-anchor="middle" class="svg-t" font-size="11.5" fill="var(--dg-ink-3)">sid -> userData</text><path d="M172 100 H298" stroke="var(--dg-accent)" stroke-width="1.8" marker-end="url(#b1)"></path><text x="235" y="92" text-anchor="middle" class="svg-m" font-size="10.5" fill="var(--dg-accent-2)">user+pass</text><path d="M462 100 H588" stroke="var(--dg-ok)" stroke-width="1.8" marker-end="url(#b2)"></path><text x="525" y="92" text-anchor="middle" class="svg-m" font-size="10.5" fill="var(--dg-info)">store bundle</text><path d="M298 135 H174" stroke="var(--dg-accent)" stroke-width="1.8" marker-end="url(#b3)"></path><text x="235" y="170" text-anchor="middle" class="svg-m" font-size="10.5" fill="var(--dg-accent-2)">Set-Cookie sid (HttpOnly)</text><path d="M588 135 H464" stroke="var(--dg-ok)" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#b4)"></path><text x="525" y="170" text-anchor="middle" class="svg-m" font-size="10.5" fill="var(--dg-info)">lookup on each req</text><defs><marker id="b1" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-accent)"></path></marker><marker id="b2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ok)"></path></marker><marker id="b3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-accent)"></path></marker><marker id="b4" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ok)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 8, Stateful: the proof lives in the store; the cookie only points to it.
+
+#### Code: middleware that validates a session
+
+G&#x6F;_&#xNAN;_____
+
+```go
+// RequireSession reads the sid cookie and looks it up in Redis.
+func RequireSession(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        c, err := r.Cookie("sid")
+        if err != nil {
+            http.Error(w, "authentication failed", http.StatusUnauthorized)
+            return
+        }
+        raw, err := rdb.Get(ctx, "sess:"+c.Value).Result()
+        if err != nil { // missing or expired
+            http.Error(w, "authentication failed", http.StatusUnauthorized)
+            return
+        }
+        var u User
+        json.Unmarshal([]byte(raw), &u)
+        // attach the user to the request context for later handlers
+        ctxWithUser := context.WithValue(r.Context(), "user", u)
+        next(w, r.WithContext(ctxWithUser))
+    }
+}
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+from functools import wraps
+from flask import request, g, jsonify
+
+def require_session(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        sid = request.cookies.get("sid")
+        if not sid:
+            return jsonify(error="authentication failed"), 401
+        raw = rdb.get(f"sess:{sid}")     # None if missing/expired
+        if raw is None:
+            return jsonify(error="authentication failed"), 401
+        g.user = json.loads(raw)          # attach for later handlers
+        return view(*args, **kwargs)
+    return wrapper
+
+@app.get("/notes")
+@require_session
+def notes():
+    return jsonify(owner=g.user["id"])
+```
+
+## 08 Stateless Authentication
+
+The client sends email/username and password on the login request. The server checks authenticity; if correct, it generates a **signed JWT** using its own **secret key** (stored securely so it can both sign and verify). The token embeds the user's info, user ID, role, etc., and is returned to the client. On all later requests, the client identifies itself by sending the JWT, by convention in the `Authorization` header. The server extracts the token, verifies it with the secret, recovers the user ID, and on success completes the request; otherwise it returns **401 Unauthorized** or **403 Forbidden**.
+
+It is called _stateless_ precisely because, unlike stateful auth, there is **no persistent-store lookup**. Everything the server needs about the user lives inside the signed, self-contained token; the secret key alone proves the token's authenticity.
+
+<Diagram>
+<svg viewBox="0 0 760 200" role="img" aria-label="Stateless authentication flow"><rect x="40" y="70" width="160" height="70" rx="10" fill="var(--dg-veil)" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="120" y="100" text-anchor="middle" class="svg-t" font-size="15" font-weight="700" fill="var(--dg-ink)">Client</text><text x="120" y="120" text-anchor="middle" class="svg-t" font-size="11.5" fill="var(--dg-ink-3)">browser / mobile</text><rect x="560" y="70" width="160" height="70" rx="10" fill="var(--dg-veil)" stroke="var(--dg-ink)" stroke-width="1.4"></rect><text x="640" y="100" text-anchor="middle" class="svg-t" font-size="15" font-weight="700" fill="var(--dg-ink)">Server</text><text x="640" y="120" text-anchor="middle" class="svg-t" font-size="11.5" fill="var(--dg-ink-3)">holds SECRET key</text><path d="M202 92 H558" stroke="var(--dg-accent)" stroke-width="1.8" marker-end="url(#c1)"></path><text x="380" y="84" text-anchor="middle" class="svg-m" font-size="11" fill="var(--dg-accent-2)">1 / login -> server signs JWT with secret</text><path d="M558 122 H204" stroke="var(--dg-ok)" stroke-width="1.8" marker-end="url(#c2)"></path><text x="380" y="116" text-anchor="middle" class="svg-m" font-size="11" fill="var(--dg-info)">2 / JWT returned</text><path d="M202 152 H558" stroke="var(--dg-ink-3)" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#c3)"></path><text x="380" y="172" text-anchor="middle" class="svg-m" font-size="11" fill="var(--dg-ink-3)">3 / every request: Authorization: Bearer &#x3C;JWT>, verified with secret, no DB</text><defs><marker id="c1" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-accent)"></path></marker><marker id="c2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ok)"></path></marker><marker id="c3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ink-3)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 9, Stateless: the proof travels inside the token; the server stores nothing.
+
+#### Code: Bearer-token middleware
+
+G&#x6F;_&#xNAN;_____
+
+```go
+import "strings"
+
+func RequireJWT(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        h := r.Header.Get("Authorization")
+        if !strings.HasPrefix(h, "Bearer ") {
+            http.Error(w, "authentication failed", http.StatusUnauthorized)
+            return
+        }
+        claims, err := Verify(strings.TrimPrefix(h, "Bearer "))
+        if err != nil {
+            http.Error(w, "authentication failed", http.StatusUnauthorized)
+            return
+        }
+        // no store lookup, identity comes from the verified token
+        u := User{ID: claims["sub"].(string), Role: claims["role"].(string)}
+        next(w, r.WithContext(context.WithValue(r.Context(), "user", u)))
+    }
+}
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+def require_jwt(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        h = request.headers.get("Authorization", "")
+        if not h.startswith("Bearer "):
+            return jsonify(error="authentication failed"), 401
+        try:
+            claims = verify(h.removeprefix("Bearer "))
+        except jwt.PyJWTError:
+            return jsonify(error="authentication failed"), 401
+        # no store lookup, identity comes from the verified token
+        g.user = {"id": claims["sub"], "role": claims["role"]}
+        return view(*args, **kwargs)
+    return wrapper
+```
+
+## 09 Stateful vs Stateless: Choosing
+
+The cons of one are largely the pros of the other. Pick based on where the request comes from.
+
+| Dimension                  | Stateful (session)                             | Stateless (JWT)               |
+| -------------------------- | ---------------------------------------------- | ----------------------------- |
+| Control over sessions      | Centralized, real-time view of active sessions | No global view                |
+| Revoke / log out a user    | Easy, just drop the session                    | Complex, valid until expiry   |
+| Storage dependency         | Needs a session store                          | None                          |
+| Scalability across regions | Sync latency, higher ops complexity            | Ideal for distributed systems |
+| Mobile / API friendliness  | Cookies aren't a great fit                     | Excellent                     |
+| Security posture           | Generally considered more secure               | Token theft = impersonation   |
+
+In practice, most applications should lean **stateful**: the secure nature, the convenience of revoking tokens and logging users out, and real-time visibility into active sessions are worth a lot. Its costs are scalability limits and higher operational complexity in large, multi-region distributed systems. Stateless wins where you need scalability and have no session-store dependency: APIs, distributed architectures, mobile clients. Its one major weakness is hard revocation.
+
+<Callout type="info" title="The hybrid split">
+You can split by client. Use **stateful** auth for the main browser web app (where you want control and revocation), and **stateless** JWTs for mobile apps and third-party server-to-server integrations (where you want scalability and simplicity). This beats the cons of both.
+</Callout>
+
+## 10 API Key Authentication
+
+API keys cater to a completely different set of use cases than stateful/stateless auth. The flow is simple: in a platform's UI you click _"generate an API key"_, receive a cryptographically random, cryptographically safe string, and from then on use that string to gain **programmatic** access to the server behind the UI, without ever touching the UI.
+
+The canonical example is OpenAI. Most people use ChatGPT through its UI: type into the box, get a response rendered nicely. But behind that UI sit many servers. OpenAI also offers **API keys** for people who don't want the UI, who want the model's capability inside _their own_ product or server, programmatically. To grant access to your _server_ (not your UI, not your platform) to a different set of users in a **confined, permission-based, expiry-based** way, you hand them an API key. They attach it (in headers, or however the server expects), send it back, and can perform the operations the native platform allows, but through code.
+
+<Diagram>
+<svg viewBox="0 0 760 200" role="img" aria-label="Machine to machine with API key"><rect x="30" y="60" width="180" height="90" rx="10" fill="var(--dg-veil)" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="120" y="92" text-anchor="middle" class="svg-t" font-size="14" font-weight="700" fill="var(--dg-ink)">Your Server</text><text x="120" y="112" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">no UI / no human</text><text x="120" y="130" text-anchor="middle" class="svg-m" font-size="10.5" fill="var(--dg-accent-2)">holds API&#95;KEY in env</text><rect x="540" y="60" width="190" height="90" rx="10" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.4"></rect><text x="635" y="92" text-anchor="middle" class="svg-t" font-size="14" font-weight="700" fill="var(--dg-ink)">Provider Server</text><text x="635" y="112" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">e.g. OpenAI</text><text x="635" y="130" text-anchor="middle" class="svg-m" font-size="10.5" fill="var(--dg-info)">maps key -> plan/quota</text><path d="M212 95 H538" stroke="var(--dg-accent)" stroke-width="1.8" marker-end="url(#d1)"></path><text x="375" y="86" text-anchor="middle" class="svg-m" font-size="11" fill="var(--dg-accent-2)">request + Authorization: Bearer API&#95;KEY</text><path d="M538 125 H214" stroke="var(--dg-ok)" stroke-width="1.8" marker-end="url(#d2)"></path><text x="375" y="145" text-anchor="middle" class="svg-m" font-size="11" fill="var(--dg-info)">response (identified, authorized, metered)</text><defs><marker id="d1" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-accent)"></path></marker><marker id="d2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ok)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 10, Machine-to-machine: no login form, no human trigger, just a key on every call.
+
+Why teams built API keys:
+
+- **Easy to generate**: click a button in the UI, get a key, use it.
+- **Ideal for machine-to-machine (M2M) communication.** Our usual flow is client-to-server: a human uses a UI (mouse, keyboard), the UI sends programmatic requests, the server runs business logic and responds, the UI renders it for the human. M2M removes the human: my server wants to use ChatGPT's capability, say a user asks my app to "summarize this paragraph," and my server calls the provider behind the scenes. There's no UI and no human interaction; everything is done in code.
+
+Stateful/stateless auth assume a human trigger: a login form to type into, a token to save. M2M needs none of that, you give the machine a secret key, it stores it in an environment variable or secure store, and sends it on every request to identify itself. That's exactly what API keys are for: programmatic, machine-to-machine interactions.
+
+#### Code: verifying an API key
+
+G&#x6F;_&#xNAN;_____
+
+```go
+import (
+    "crypto/sha256"
+    "crypto/subtle"
+    "encoding/hex"
+)
+
+// Store only the HASH of issued keys (like passwords).
+// On each call, hash the presented key and constant-time compare.
+func hashKey(k string) string {
+    sum := sha256.Sum256([]byte(k))
+    return hex.EncodeToString(sum[:])
+}
+
+func RequireAPIKey(lookup func(hash string) (*Client, bool)) func(http.HandlerFunc) http.HandlerFunc {
+    return func(next http.HandlerFunc) http.HandlerFunc {
+        return func(w http.ResponseWriter, r *http.Request) {
+            key := r.Header.Get("X-API-Key")
+            client, ok := lookup(hashKey(key))
+            // subtle.ConstantTimeCompare avoids timing leaks
+            if !ok || subtle.ConstantTimeCompare([]byte(key), []byte(key)) != 1 {
+                http.Error(w, "authentication failed", http.StatusUnauthorized)
+                return
+            }
+            _ = client // check scopes, quota, expiry here
+            next(w, r)
+        }
+    }
+}
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+import hashlib, hmac
+
+# Store only the HASH of issued keys (like passwords).
+def hash_key(k: str) -> str:
+    return hashlib.sha256(k.encode()).hexdigest()
+
+def require_api_key(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        key = request.headers.get("X-API-Key", "")
+        client = lookup_client(hash_key(key))   # your DB lookup
+        if client is None:
+            return jsonify(error="authentication failed"), 401
+        # check scopes, quota, expiry on `client` here
+        # hmac.compare_digest is constant-time
+        if not hmac.compare_digest(hash_key(key), client["key_hash"]):
+            return jsonify(error="authentication failed"), 401
+        g.client = client
+        return view(*args, **kwargs)
+    return wrapper
+```
+
+Part IV / OAuth & OpenID Connect
+
+## 11 The Delegation Problem
+
+Up to now the setup is simple: create an account with username/password per platform, authenticate, receive a token. But the more platforms you use, the more credentials you create and must remember. Two problems emerged:
+
+- **Security risk.** Reusing passwords was very common in the early era (think `12345` or `password`), so a single breach compromised many accounts.
+- **Fatigue.** Managing a huge number of accounts overwhelmed users.
+
+Then a new class of problem appeared: **one website needing access to another website's resources**. A travel/booking app needs to scan your Gmail for flight tickets. A social app wants to import your contacts from Google or another network. One platform wants another platform's resource, programmatically. This is the **delegation problem**.
+
+<Callout type="info" title="The disastrous first solution">
+Users simply **shared their passwords**. This was catastrophic: a password grants _full_ access to everything in the account, with no way to limit permissions, and it was impossible to revoke access without changing the password _everywhere_ (since the same password was reused across sites, and you'd just handed it to a third party who could now do anything).
+</Callout>
+
+In **2007**, engineers from companies like Google and Twitter set out to standardise delegated access _without sharing passwords_. The result was **OAuth**: _Open Authorization_, not just a protocol but a revolutionary idea. Their technique: **share tokens, not passwords**. A password grants total access; a token grants **specific, scoped** access to a specific part of your account.
+
+<Callout type="info" title="Tokens vs passwords">
+If you share your Google password with me, I can view your Photos, your Maps history, your Contacts, add/remove calendar events, everything. But if you share a _token_ scoped only to "read contacts," I can read your contacts and nothing else. That scoping is the whole point.
+</Callout>
+
+## 12 OAuth 1.0: Four Roles
+
+OAuth introduces four components. Take the example: Facebook (the app) wants your Google contacts.
+
+| Role                     | Who it is                                                      | In the example        |
+| ------------------------ | -------------------------------------------------------------- | --------------------- |
+| **Resource owner**       | The user who owns the data                                     | You                   |
+| **Client**               | The app requesting access                                      | Facebook              |
+| **Resource server**      | The server holding the data                                    | Google (your account) |
+| **Authorization server** | The server that issues the token after authenticating the user | Google's auth server  |
+
+### The OAuth 1.0 flow
+
+1. The **client** (Facebook) redirects the user to the **authorization server**.
+2. The user **authenticates and grants permission**: "yes, I allow these scopes."
+3. The authorization server sends a **token** to the client.
+4. The client uses the token to access the **resource** (your contacts) on the resource server.
+
+That's how a client gets scoped access to another platform's resource, programmatically, without you ever sharing your password, eradicating the password-sharing problem beautifully.
+
+<Diagram>
+<svg viewBox="0 0 760 250" role="img" aria-label="OAuth 1.0 flow"><rect x="30" y="30" width="150" height="60" rx="10" fill="var(--dg-veil)" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="105" y="58" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">Client</text><text x="105" y="76" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">Facebook</text><rect x="300" y="30" width="160" height="60" rx="10" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)" stroke-width="1.4"></rect><text x="380" y="55" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">Authorization</text><text x="380" y="73" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">server (Google)</text><rect x="580" y="30" width="150" height="60" rx="10" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.4"></rect><text x="655" y="55" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">Resource</text><text x="655" y="73" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">server (Google)</text><rect x="300" y="180" width="160" height="50" rx="10" fill="var(--dg-veil)" stroke="var(--dg-ink)" stroke-width="1.4"></rect><text x="380" y="210" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">You (owner)</text><path d="M180 60 H298" stroke="var(--dg-accent)" stroke-width="1.7" marker-end="url(#e1)"></path><text x="239" y="52" text-anchor="middle" class="svg-m" font-size="10" fill="var(--dg-accent-2)">1 redirect</text><path d="M380 92 V178" stroke="var(--dg-warn)" stroke-width="1.7" marker-end="url(#e2)"></path><text x="430" y="140" text-anchor="middle" class="svg-m" font-size="10" fill="var(--dg-accent)">2 authenticate + grant</text><path d="M300 75 H182" stroke="var(--dg-warn)" stroke-width="1.7" marker-end="url(#e3)"></path><text x="240" y="92" text-anchor="middle" class="svg-m" font-size="10" fill="var(--dg-accent)">3 token -> client</text><path d="M180 90 C 250 150, 520 150, 578 90" stroke="var(--dg-ok)" stroke-width="1.7" fill="none" marker-end="url(#e4)"></path><text x="380" y="160" text-anchor="middle" class="svg-m" font-size="10" fill="var(--dg-info)">4 use token -> fetch scoped resource</text><defs><marker id="e1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-accent)"></path></marker><marker id="e2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-warn)"></path></marker><marker id="e3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-warn)"></path></marker><marker id="e4" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-ok)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 11, OAuth 1.0: redirect -> grant -> token -> scoped resource access.
+
+## 13 OAuth 2.0
+
+OAuth 1.0 was revolutionary but had limitations: it was **complex for developers** to implement, and it relied on **cryptographic signatures** that were error-prone. **OAuth 2.0** (around **2010**) addressed both:
+
+- **Bearer tokens.** Far simpler than signing every request. More vulnerable in theory, but dramatically easier to implement, "bearer" means whoever holds the token can use it.
+- **Flows by app type.** Developers choose a flow based on the kind of app.
+
+| Flow               | For                   | Note                                      |
+| ------------------ | --------------------- | ----------------------------------------- |
+| Authorization Code | Server-side apps      | The standard, most secure flow            |
+| Implicit           | Browser-based apps    | Now discouraged, security risks           |
+| Client Credentials | Machine-to-machine    | Server&lt;->server, no user/browser involved |
+| Device Code        | Limited-input devices | e.g. Smart TV (no keyboard/mouse)         |
+
+### Deep dive: the Authorization Code flow with PKCE
+
+The Authorization Code flow is the one to actually understand, because it's what "Sign in with ..." uses. It runs in two legs over real HTTP.
+
+#### Leg 1: the authorize request (front channel, in the browser)
+
+The client sends the user to the authorization server with query parameters:
+
+HTTP / redirec&#x74;_&#xNAN;_____
+
+```text
+GET /authorize?
+    response_type=code
+    &client_id=note_app
+    &redirect_uri=https://notes.app/callback
+    &scope=openid%20email%20keep.read
+    &state=xyz123                       # anti-CSRF / anti-mixup nonce
+    &code_challenge=E9Melh...           # = BASE64URL(SHA256(verifier))
+    &code_challenge_method=S256
+```
+
+After the user logs in and consents, the server redirects back: `https://notes.app/callback?code=AUTH_CODE&state=xyz123`. The client **must verify `state` matches** what it sent, that's what stops a CSRF/mix-up on the redirect.
+
+#### Leg 2: the token exchange (back channel, server-to-server)
+
+HTTP / POST /toke&#x6E;_&#xNAN;_____
+
+```text
+POST /token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code
+&code=AUTH_CODE
+&redirect_uri=https://notes.app/callback
+&client_id=note_app
+&code_verifier=dBjftJeZ4CVP...         # the original random secret
+
+-> 200 OK
+{ "access_token": "...",               # call the resource server
+  "refresh_token": "...",
+  "id_token": "eyJ...",                # the OIDC identity JWT (sec 14)
+  "token_type": "Bearer",
+  "expires_in": 600 }
+```
+
+#### Why PKCE?
+
+**PKCE** (Proof Key for Code Exchange) protects **public clients**: single-page apps and mobile apps that _can't keep a secret_. The client generates a random `code_verifier`, sends only its hash (`code_challenge`) in leg 1, and reveals the raw verifier in leg 2. If an attacker intercepts the authorization `code` (e.g. a malicious app grabbing a mobile redirect), it's useless without the verifier, which never left the legitimate client. PKCE is why the **Implicit flow is now discouraged**: Authorization Code + PKCE gives browser/mobile apps the same safety as a confidential server-side client.
+
+<Diagram>
+<svg viewBox="0 0 760 170" role="img" aria-label="PKCE flow"><rect x="20" y="60" width="180" height="55" rx="9" fill="var(--dg-veil)" stroke="var(--dg-accent)" stroke-width="1.3"></rect><text x="110" y="84" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">Public client</text><text x="110" y="101" text-anchor="middle" class="svg-t" font-size="10.5" fill="var(--dg-ink-3)">SPA / mobile</text><rect x="560" y="60" width="180" height="55" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)" stroke-width="1.3"></rect><text x="650" y="84" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">Auth server</text><path d="M200 78 H558" stroke="var(--dg-accent)" stroke-width="1.6" marker-end="url(#p1)"></path><text x="380" y="70" text-anchor="middle" class="svg-m" font-size="10" fill="var(--dg-accent-2)">1 /authorize + code&#95;challenge = SHA256(verifier)</text><path d="M558 96 H202" stroke="var(--dg-warn)" stroke-width="1.6" marker-end="url(#p2)"></path><text x="380" y="110" text-anchor="middle" class="svg-m" font-size="10" fill="var(--dg-accent)">2 redirect ?code (useless alone)</text><path d="M200 130 H558" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#p3)"></path><text x="380" y="150" text-anchor="middle" class="svg-m" font-size="10" fill="var(--dg-info)">3 /token: code + code&#95;verifier -> tokens</text><defs><marker id="p1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-accent)"></path></marker><marker id="p2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-warn)"></path></marker><marker id="p3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-ok)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 12, PKCE: the intercepted code can't be redeemed without the verifier, which never left the client.
+
+#### Code: PKCE values + token exchange
+
+G&#x6F;_&#xNAN;_____
+
+```go
+// Build the PKCE pair before redirecting the user.
+func newPKCE() (verifier, challenge string) {
+    b := make([]byte, 32)
+    rand.Read(b)
+    verifier = base64.RawURLEncoding.EncodeToString(b)
+    sum := sha256.Sum256([]byte(verifier))
+    challenge = base64.RawURLEncoding.EncodeToString(sum[:])
+    return
+}
+
+// Leg 2: exchange the code (send code_verifier, not the secret).
+func exchange(code, verifier string) (*TokenResp, error) {
+    form := url.Values{
+        "grant_type":    {"authorization_code"},
+        "code":          {code},
+        "redirect_uri":  {"https://notes.app/callback"},
+        "client_id":     {"note_app"},
+        "code_verifier": {verifier},
+    }
+    resp, err := http.PostForm("https://auth.example/token", form)
+    if err != nil { return nil, err }
+    defer resp.Body.Close()
+    var t TokenResp
+    json.NewDecoder(resp.Body).Decode(&t)
+    return &t, nil
+}
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+import base64, hashlib, secrets, requests
+
+# Build the PKCE pair before redirecting the user.
+def new_pkce():
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+    digest = hashlib.sha256(verifier.encode()).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    return verifier, challenge
+
+# Leg 2: exchange the code (send code_verifier, not the secret).
+def exchange(code: str, verifier: str) -> dict:
+    resp = requests.post("https://auth.example/token", data={
+        "grant_type":    "authorization_code",
+        "code":          code,
+        "redirect_uri":  "https://notes.app/callback",
+        "client_id":     "note_app",
+        "code_verifier": verifier,
+    })
+    resp.raise_for_status()
+    return resp.json()   # access_token, refresh_token, id_token, ...
+```
+
+<Callout type="info" title="The gap OAuth left open">
+OAuth is excellent for **authorization** (delegating _what_ a client may do) but it did **not** solve **authentication** (proving _who_ the user is). Recall: authentication = identity (who are you, your name, your ID); authorization = permissions (what can you do). OAuth solved the latter via delegation, but not the former. That gap is what OpenID Connect fills.
+</Callout>
+
+## 14 OpenID Connect (OIDC)
+
+Around **2014**, **OpenID Connect (OIDC)** was built _on top of_ OAuth 2.0's security mechanisms to fill the authentication gap. Its core addition is the **ID token**: typically a **JWT** (this is exactly why JWTs were worth understanding early; they reappear everywhere).
+
+The ID token carries identity info: the user ID, when they logged in (the `iat` field), the **issuing authority** (which platform issued the token), and often the user's name and email, whatever the relying party needs. Because of OIDC, virtually every platform now offers **"Sign in with Google / Facebook / Discord."** When you do, OIDC works behind the scenes to take your identity (email, profile picture, name) from Google, and the client either stores it or simply uses it to authenticate you, without building its own auth system. OIDC added a layer of **identification** on top of OAuth 2.0.
+
+### The OIDC flow
+
+Say you visit a note-taking app and click "Sign in with Google."
+
+1. The **client** (note app) redirects you to the **authorization server**.
+2. You log in _at Google's_ authorization server (not the client's) and grant the requested permissions (read email / name / profile picture, etc.).
+3. The authorization server returns an **authorization code** and an **ID token** to the client.
+4. The client **exchanges the authorization code** with the resource server for an **access token** (and an ID token if it didn't already get one).
+5. The **ID token** (a JWT) carries the user's identity (ID, name, values); the **access token** lets the note app perform operations on the resource server _on your behalf_, e.g. read all your notes from Google Keep, but only the scopes you granted.
+
+<Diagram>
+<svg viewBox="0 0 760 270" role="img" aria-label="OpenID Connect flow"><rect x="30" y="30" width="160" height="56" rx="10" fill="var(--dg-veil)" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="110" y="54" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">Client</text><text x="110" y="72" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">note app</text><rect x="300" y="30" width="170" height="56" rx="10" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)" stroke-width="1.4"></rect><text x="385" y="54" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">Auth server</text><text x="385" y="72" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">Google</text><rect x="580" y="30" width="150" height="56" rx="10" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.4"></rect><text x="655" y="54" text-anchor="middle" class="svg-t" font-size="13" font-weight="700" fill="var(--dg-ink)">Resource</text><text x="655" y="72" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">Google Keep</text><path d="M190 50 H298" stroke="var(--dg-accent)" stroke-width="1.7" marker-end="url(#f1)"></path><text x="244" y="42" text-anchor="middle" class="svg-m" font-size="9.5" fill="var(--dg-accent-2)">1 redirect</text><path d="M300 70 H192" stroke="var(--dg-warn)" stroke-width="1.7" marker-end="url(#f2)"></path><text x="246" y="100" text-anchor="middle" class="svg-m" font-size="9.5" fill="var(--dg-accent)">2 login+grant -> code + ID token</text><path d="M110 140 V90" stroke="var(--dg-accent)" stroke-width="0"></path><path d="M190 160 H298 M298 160 H300" stroke="var(--dg-accent)" stroke-width="1.7" marker-end="url(#f3)"></path><text x="244" y="152" text-anchor="middle" class="svg-m" font-size="9.5" fill="var(--dg-accent-2)">3 exchange code</text><path d="M470 160 H470"></path><path d="M300 180 H192" stroke="var(--dg-warn)" stroke-width="1.7" marker-end="url(#f4)"></path><text x="246" y="200" text-anchor="middle" class="svg-m" font-size="9.5" fill="var(--dg-accent)">4 access token + ID token (JWT)</text><path d="M190 235 C 350 235, 470 235, 578 180 L 600 168" stroke="var(--dg-ok)" stroke-width="1.7" fill="none" marker-end="url(#f5)"></path><text x="380" y="252" text-anchor="middle" class="svg-m" font-size="9.5" fill="var(--dg-info)">5 use access token -> read notes on your behalf (scoped)</text><defs><marker id="f1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-accent)"></path></marker><marker id="f2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-warn)"></path></marker><marker id="f3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-accent)"></path></marker><marker id="f4" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-warn)"></path></marker><marker id="f5" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--dg-ok)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 13, OIDC: an ID token answers "who" on top of OAuth's access token answering "what".
+
+Together, OAuth 2.0 and OpenID Connect act like the **security guards / key-makers of the digital age**: they ensure no one, neither a user nor a platform, gets more access than they need or asked for. They transformed the internet from **password-sharing chaos** into a secure, interconnected system, which is why we can now wire one platform into another, share resources and permissions safely, and offer one-click logins.
+
+## 15 Choosing an Auth Type
+
+Rules of thumb for the four major types every backend engineer should know:
+
+| Type             | Mechanism                           | Use it for                                                                                             |
+| ---------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Stateful**     | Session ID / JWT + persistent store | Web-app auth flows, a large share of SaaS models, where user-specific session data lives on the server |
+| **Stateless**    | Self-contained signed token         | APIs and scalable, distributed systems where tokens carry the user info                                |
+| **OAuth / OIDC** | Delegated tokens + ID token         | Third-party integrations and "login via Google / Facebook / Discord"                                   |
+| **API key**      | Pre-shared secret string            | Server-to-server / machine-to-machine, or single-purpose client access to APIs                         |
+
+In day-to-day backend work building APIs, you'll most often reach for **stateful** and **stateless** auth.
+
+Part V / Authorization & Hardening
+
+## 16 Authorization & RBAC
+
+Authorization is less vast than authentication, but the high-level idea matters. Once a user has authenticated (e.g. into a note-taking platform), they can create, delete and update notes. Now suppose your delete feature doesn't erase permanently, it moves notes to a recycle bin, and after 30 days they move to a _dead zone_ (gone for the user, but not deleted from the DB). As the creator, you want a separate **admin UI** with special capabilities that ordinary users don't have, like managing the dead-zone notes.
+
+<Callout type="info" title="Why a &quot;god-mode string&quot; fails">
+A naive fix is to send a secret random string with each admin API call so the server grants elevated access. Two problems: (1) if anyone **intercepts** that string they can wipe the DB or mess with other users' data, a huge security risk; (2) to give the same access to trusted friends/maintainers you'd have to share the string or invent more strings and special-case them server-side. The system quickly becomes complex, hard to manage, and more prone to flaws.
+</Callout>
+
+The general need, **giving specific permissions to specific users**: is exactly what authorization solves. Not all users have the same access; some have more, some less, some entirely different capabilities. In a multi-tenant app, an org admin might assign read or read/write to different members. The most famous model is **RBAC, Role-Based Access Control**.
+
+### How RBAC works
+
+Define **roles** (user, admin, moderator, or your own custom roles), and assign each role a set of **permissions** over **resources**. You can go as granular as you like.
+
+<Diagram>
+<svg viewBox="0 0 760 200" role="img" aria-label="RBAC matrix"><text x="150" y="40" class="svg-m" font-size="11" fill="var(--dg-ink-3)" text-anchor="middle">ROLE</text><text x="370" y="40" class="svg-m" font-size="11" fill="var(--dg-ink-3)" text-anchor="middle">notes (read/write/delete)</text><text x="620" y="40" class="svg-m" font-size="11" fill="var(--dg-ink-3)" text-anchor="middle">dead-zone notes</text><line x1="30" y1="50" x2="730" y2="50" stroke="var(--dg-line-2)"></line><text x="150" y="85" text-anchor="middle" class="svg-t" font-size="15" font-weight="700" fill="var(--dg-ink)">user</text><text x="370" y="85" text-anchor="middle" class="svg-t" font-size="13" fill="var(--dg-ok)">read / write / delete</text><text x="620" y="85" text-anchor="middle" class="svg-t" font-size="13" fill="var(--dg-accent)">forbidden</text><line x1="30" y1="100" x2="730" y2="100" stroke="var(--dg-accent-soft)"></line><text x="150" y="135" text-anchor="middle" class="svg-t" font-size="15" font-weight="700" fill="var(--dg-ink)">moderator</text><text x="370" y="135" text-anchor="middle" class="svg-t" font-size="13" fill="var(--dg-ok)">read / write</text><text x="620" y="135" text-anchor="middle" class="svg-t" font-size="13" fill="var(--dg-accent)">forbidden</text><line x1="30" y1="150" x2="730" y2="150" stroke="var(--dg-accent-soft)"></line><text x="150" y="185" text-anchor="middle" class="svg-t" font-size="15" font-weight="700" fill="var(--dg-ink)">admin</text><text x="370" y="185" text-anchor="middle" class="svg-t" font-size="13" fill="var(--dg-ok)">read / write / delete</text><text x="620" y="185" text-anchor="middle" class="svg-t" font-size="13" fill="var(--dg-ok)">full access</text></svg>
+</Diagram>
+
+FIG 14, RBAC: roles map to permissions per resource. Granularity is up to you.
+
+The runtime flow: a user signs up and the server assigns a role (user, admin, ...). On each subsequent request the user sends its identification (a session ID for stateful, or a JWT for stateless). Early in the request cycle the server deduces the role, either from the token's claims or via a DB lookup, and attaches it so that later middleware/logic can decide access. If the role is `admin`, the dead-zone endpoint is allowed; if the role is `user`, the server returns **403 Forbidden**: meaning you don't have enough permission for this resource.
+
+#### Code: RBAC middleware
+
+G&#x6F;_&#xNAN;_____
+
+```go
+// RequireRole runs AFTER an auth middleware that set "user".
+func RequireRole(roles ...string) func(http.HandlerFunc) http.HandlerFunc {
+    allowed := map[string]bool{}
+    for _, r := range roles {
+        allowed[r] = true
+    }
+    return func(next http.HandlerFunc) http.HandlerFunc {
+        return func(w http.ResponseWriter, r *http.Request) {
+            u, _ := r.Context().Value("user").(User)
+            if !allowed[u.Role] {
+                http.Error(w, "forbidden", http.StatusForbidden) // 403
+                return
+            }
+            next(w, r)
+        }
+    }
+}
+
+// usage: only admins reach the dead-zone handler
+// mux.Handle("/admin/deadzone",
+//     RequireJWT(RequireRole("admin")(deadZoneHandler)))
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+# require_role runs AFTER an auth decorator that set g.user
+def require_role(*roles):
+    allowed = set(roles)
+    def deco(view):
+        @wraps(view)
+        def wrapper(*args, **kwargs):
+            if g.user["role"] not in allowed:
+                return jsonify(error="forbidden"), 403   # 403
+            return view(*args, **kwargs)
+        return wrapper
+    return deco
+
+# usage: only admins reach the dead-zone handler
+@app.get("/admin/deadzone")
+@require_jwt
+@require_role("admin")
+def dead_zone():
+    return jsonify(notes=[...])
+```
+
+### Deep dive: role hierarchy, ABAC, and beyond
+
+#### Where plain RBAC strains: role explosion
+
+RBAC is clean until requirements get conditional. The moment you need "editors, but only for documents in their own department, and only during business hours," you can't express that with a role name alone, so teams invent `editor_dept_finance`, `editor_dept_legal`, and on and on. This is **role explosion**: the number of roles balloons because roles can only encode _who_, not _which resource_ or _under what conditions_.
+
+#### Role hierarchy / inheritance
+
+A first relief valve is making roles **inherit**: `admin` includes everything `moderator` can do, which includes everything `user` can do. You define permissions once at the lowest role and let higher roles accumulate them, instead of re-listing. It tames duplication but doesn't add conditions.
+
+#### ABAC: Attribute-Based Access Control
+
+ABAC decides access by evaluating **attributes** against a **policy**, across four dimensions: the **subject** (role, department, clearance), the **resource** (owner, classification, department), the **action** (read/write/delete), and the **environment** (time, IP, device). A single policy, "a user may _edit_ a document if they own it _or_ share its department, and it isn't archived", replaces dozens of bespoke roles. ABAC is far more expressive; the tradeoff is that policies are harder to audit ("who can touch this?" isn't answerable by scanning a role list).
+
+| Model     | Decides by                                        | Strength / weakness                                                                              |
+| --------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **RBAC**  | The role you hold                                 | Simple, auditable / role explosion under conditions                                              |
+| **ABAC**  | Attributes + policy (subject/resource/action/env) | Very expressive / harder to audit & reason about                                                 |
+| **ReBAC** | Relationships (owner-of, member-of, parent-of)    | Great for sharing graphs (Google Drive-style) / needs a relationship store, e.g. Google Zanzibar |
+
+Many real systems are hybrids: RBAC for coarse roles, ABAC policies for the conditional edges, and ReBAC where access follows a sharing graph.
+
+#### Code: a tiny ABAC policy evaluator
+
+G&#x6F;_&#xNAN;_____
+
+```go
+type Subject struct{ ID, Dept, Role string }
+type Resource struct{ OwnerID, Dept string; Archived bool }
+
+// Policy: can `s` perform `action` on `r`, given the environment?
+func CanEdit(s Subject, r Resource, hour int) bool {
+    if r.Archived {
+        return false
+    }
+    sameDept := s.Dept == r.Dept
+    owns := s.ID == r.OwnerID
+    businessHours := hour >= 9 && hour < 18
+    // owner OR same-department editor, only in business hours
+    return (owns || (sameDept && s.Role == "editor")) && businessHours
+}
+
+// usage inside a handler, after auth has populated the subject:
+// if !CanEdit(subj, doc, time.Now().Hour()) {
+//     http.Error(w, "forbidden", http.StatusForbidden)
+// }
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+from dataclasses import dataclass
+from datetime import datetime
+
+@dataclass
+class Subject: id: str; dept: str; role: str
+@dataclass
+class Resource: owner_id: str; dept: str; archived: bool
+
+# Policy: can `s` perform the action on `r`, given the environment?
+def can_edit(s: Subject, r: Resource, hour: int) -> bool:
+    if r.archived:
+        return False
+    owns = s.id == r.owner_id
+    same_dept = s.dept == r.dept
+    business_hours = 9 <= hour < 18
+    # owner OR same-department editor, only in business hours
+    return (owns or (same_dept and s.role == "editor")) and business_hours
+
+# usage inside a view, after auth populated the subject:
+# if not can_edit(subj, doc, datetime.now().hour):
+#     return jsonify(error="forbidden"), 403
+```
+
+## 17 Error Messages & Timing Attacks
+
+### Generic error messages
+
+During auth you'll be tempted to send helpful messages: _"user not found," "incorrect password," "account locked due to too many failed attempts."_ These help legitimate users, but they hand attackers clues. _"User not found"_ tells an attacker that username doesn't exist, so they move to the next one. _"Incorrect password"_ confirms the username _is_ valid, so they focus brute-force/dictionary attacks on the password alone, expanding their attack surface.
+
+<Callout type="info" title="Rule">
+In the authentication workflow, **always send a single generic message**: e.g. `authentication failed`, for every failure case, so an attacker can't tell which step failed or plan next moves. User-friendly messages are fine elsewhere (validation, other APIs), but not here.
+</Callout>
+
+### Timing attacks
+
+Even with generic messages, the _time_ a response takes can leak information. A typical login does three steps in order:
+
+<Diagram>
+<svg viewBox="0 0 760 210" role="img" aria-label="Timing attack steps"><rect x="30" y="80" width="190" height="60" rx="10" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.4"></rect><text x="125" y="106" text-anchor="middle" class="svg-t" font-size="14" font-weight="700" fill="var(--dg-ink)">1 / find user</text><text x="125" y="126" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">does email exist?</text><rect x="285" y="80" width="190" height="60" rx="10" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)" stroke-width="1.4"></rect><text x="380" y="106" text-anchor="middle" class="svg-t" font-size="14" font-weight="700" fill="var(--dg-ink)">2 / check locked</text><text x="380" y="126" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">too many attempts?</text><rect x="540" y="80" width="190" height="60" rx="10" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.4"></rect><text x="635" y="106" text-anchor="middle" class="svg-t" font-size="14" font-weight="700" fill="var(--dg-ink)">3 / compare hash</text><text x="635" y="126" text-anchor="middle" class="svg-t" font-size="11" fill="var(--dg-ink-3)">slow on purpose</text><path d="M220 110 H283" stroke="var(--dg-ink-3)" stroke-width="1.8" marker-end="url(#g1)"></path><path d="M475 110 H538" stroke="var(--dg-ink-3)" stroke-width="1.8" marker-end="url(#g2)"></path><text x="125" y="170" text-anchor="middle" class="svg-m" font-size="10.5" fill="var(--dg-accent)">fail here -> fast reply</text><text x="635" y="170" text-anchor="middle" class="svg-m" font-size="10.5" fill="var(--dg-info)">fail here -> slower (hashing)</text><defs><marker id="g1" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ink-3)"></path></marker><marker id="g2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="var(--dg-ink-3)"></path></marker></defs></svg>
+</Diagram>
+
+FIG 15, If an invalid username short-circuits at step 1, the faster reply reveals it.
+
+Passwords are stored as a **hash** (never plain text): at signup the password is hashed into a cryptographically safe string; on login the server hashes the provided password the same way and compares it to the stored hash. The catch: if the username is invalid, the system terminates at **step 1** and replies _fast_. If the username is valid but the password is wrong, it reaches **step 3** and is _slower_, because hashing takes longer than the earlier checks. From that delay, say 200 ms, an attacker can infer whether a username exists and at which step auth failed, and strategise accordingly.
+
+<Callout type="info" title="Two defenses">
+**1. Constant-time comparison.** Use cryptographically secure constant-time comparison functions for hashes, whose execution time does not vary with input similarity. **2. Equalize/simulate the delay.** Even when the username doesn't exist, don't reply instantly, simulate a delay (Node: `setTimeout`; Go: `time.Sleep`) so an attacker can't distinguish a username failure from a password failure.
+</Callout>
+
+#### Code: generic message + equalized timing
+
+G&#x6F;_&#xNAN;_____
+
+```go
+// dummyHash: a fixed, precomputed bcrypt hash, used to equalize timing.
+var dummyHash = "$2a$12$abcdefghijklmnopqrstuv0000000000000000000000000000000000"
+
+func Authenticate(w http.ResponseWriter, email, pw string) {
+    start := time.Now()
+    const floor = 250 * time.Millisecond // equalize every path
+
+    defer func() { // pad so all outcomes take ~the same time
+        if d := time.Since(start); d < floor {
+            time.Sleep(floor - d)
+        }
+    }()
+
+    user, found := lookupByEmail(email)
+    if !found {
+        // still run a dummy hash so step-3 cost is paid anyway
+        bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(pw))
+        http.Error(w, "authentication failed", http.StatusUnauthorized)
+        return
+    }
+    // CompareHashAndPassword is constant-time internally
+    if bcrypt.CompareHashAndPassword([]byte(user.Hash), []byte(pw)) != nil {
+        http.Error(w, "authentication failed", http.StatusUnauthorized)
+        return
+    }
+    // success: issue session / JWT ...
+}
+```
+
+Pytho&#x6E;_&#xNAN;_____
+
+```python
+import time
+
+DUMMY_HASH = bcrypt.hashpw(b"x", bcrypt.gensalt())
+FLOOR = 0.25  # seconds, equalize every path
+
+def authenticate(email: str, pw: str):
+    start = time.perf_counter()
+    try:
+        user = lookup_by_email(email)
+        if user is None:
+            # run a dummy hash so timing matches the valid path
+            bcrypt.checkpw(pw.encode(), DUMMY_HASH)
+            return None, "authentication failed"
+        if not bcrypt.checkpw(pw.encode(), user["hash"]):  # constant-time
+            return None, "authentication failed"
+        return user, None  # success: issue session / JWT
+    finally:
+        # pad so all outcomes take ~the same wall-clock time
+        elapsed = time.perf_counter() - start
+        if elapsed < FLOOR:
+            time.sleep(FLOOR - elapsed)
+```
+
+## 18 Debug Cheat-Sheet
+
+The whole manual, compressed to what you reach for under pressure.
+
+| Concept        | One-liner                                                                            |
+| -------------- | ------------------------------------------------------------------------------------ |
+| Authentication | Who are you?, assign identity in a context.                                          |
+| Authorization  | What can you do?, permissions in that context.                                       |
+| Factors        | Something you know / have / are (combine for MFA).                                   |
+| Hashing        | One-way, fixed-length, deterministic. Store the hash, never the password.            |
+| Session        | Server-side memory; cookie holds only the session ID.                                |
+| JWT            | header.payload.signature; self-contained, stateless, signed with a secret.           |
+| Cookie         | Server-set browser storage; auto-sent per request; use HttpOnly + Secure + SameSite. |
+| Stateful       | Store lookup each request; easy revoke; harder to scale.                             |
+| Stateless      | No store; scales great; revocation is the weak point.                                |
+| API key        | Pre-shared secret for machine-to-machine; store its hash.                            |
+| OAuth 2.0      | Delegated, scoped authorization via bearer tokens.                                   |
+| OIDC           | Adds an ID token (JWT) on top of OAuth for authentication.                           |
+| RBAC           | Roles -> permissions -> resources. 403 Forbidden when short.                         |
+| Error hygiene  | One generic "authentication failed" message for all failures.                        |
+| Timing         | Constant-time compare + equalize response time.                                      |
+| Production tip | Roll your own to learn; use an auth provider to ship.                                |
+
+Backend from First Principles / Chapter 04 / Auth. Code targets Go 1.22+ and Python 3.11+.

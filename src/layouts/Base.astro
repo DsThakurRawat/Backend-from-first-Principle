@@ -1,0 +1,61 @@
+---
+import '@fontsource-variable/geist';
+import '@fontsource-variable/geist-mono';
+import '@fontsource-variable/source-serif-4';
+// Diagram labels only: the inherited artwork was typeset against JetBrains
+// Mono's metrics, and every label was positioned by hand to fit its box.
+// Substituting a different mono shifts those labels into their neighbours.
+import '@fontsource-variable/jetbrains-mono';
+import '../styles/tokens.css';
+import '../styles/base.css';
+import Search from '../components/Search.astro';
+
+interface Props {
+  title: string;
+  description: string;
+  /** Absolute path, used for the canonical URL. */
+  path: string;
+}
+
+const { title, description, path } = Astro.props;
+const canonical = new URL(path, Astro.site);
+---
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{title}</title>
+  <meta name="description" content={description} />
+  <link rel="canonical" href={canonical} />
+  <meta name="referrer" content="no-referrer" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:url" content={canonical} />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="sitemap" href="/sitemap-index.xml" />
+
+  <!-- Theme must resolve before first paint or the page flashes the wrong
+       ground. Inline and blocking on purpose: it is ~15 lines. -->
+  <script is:inline>
+    (function () {
+      var KEY = 'bfp-theme';
+      var saved = null;
+      try { saved = localStorage.getItem(KEY); } catch (e) { /* storage blocked */ }
+      var theme = saved === 'light' || saved === 'dark'
+        ? saved
+        : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <slot />
+  <Search />
+</body>
+</html>

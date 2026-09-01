@@ -1,0 +1,745 @@
+---
+order: 21
+title: "Docker, K8s & CI/CD"
+navTitle: "Docker, K8s & CI/CD"
+summary: "A first-principles walkthrough of how backend code gets packaged and run in production, from the kernel features that make a container (namespaces and cgroups), through Docker images, layers and multi-stage builds, into Kubernetes orchestration (pods, deployments, services, probes, autoscaling), and out to CI/CD pipelines and zero-downtime rollouts. Written to explain not just what each piece does but why it exists and how it works underneath. Application examples in both Go and Python."
+readingTime: "2-3 hours"
+keywords:
+  - "docker"
+  - "kubernetes"
+  - "k8s"
+  - "cicd"
+  - "containers"
+  - "deployment"
+  - "dockerfile"
+  - "pods"
+---
+Part I / Why Containers Exist
+
+## The Problem Containers Solve
+
+Every container concept later in this manual is an answer to one recurring pain: **code that runs on one machine fails on another because the two machines aren't identical.** Your laptop has Python 3.11, the server has 3.9; your build assumes a system library that prod lacks; an environment variable is set here and unset there. The result is the oldest joke in software, "but it works on my machine", and it is not a joke, it's a class of outages.
+
+The root cause is that a running program is never just its source code. It's the code _plus_ a whole invisible environment: the language runtime and its exact version, third-party libraries, system packages, configuration, file paths, and OS-level dependencies. Traditionally you reproduced that environment by hand on every machine, install steps, setup scripts, a wiki page nobody kept current, and any drift between environments became a bug that only appears in one place.
+
+Before containers, deploying software was like mailing a recipe and hoping the recipient's kitchen has the same oven, the same pans, and the same brand of flour. Containers mail the _entire kitchen_, oven, pans, ingredients, pre-measured, sealed in a box that runs the same way wherever you open it.
+
+<Diagram caption="The deployment gap">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The same application code running against different environments on a laptop versus a server, leading to failure, versus a container bundling code and environment so it runs identically"><text x="20" y="22" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent)">WITHOUT containers, same code, different worlds</text><rect x="20" y="34" width="200" height="86" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="120" y="54" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">your laptop</text><text x="120" y="74" class="mono" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">app + Python 3.11</text><text x="120" y="90" class="mono" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">libs A, B (v2)</text><text x="120" y="108" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">✓ works</text><rect x="500" y="34" width="200" height="86" rx="10" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)"></rect><text x="600" y="54" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">the server</text><text x="600" y="74" class="mono" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">app + Python 3.9</text><text x="600" y="90" class="mono" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">libs A (v1), no B</text><text x="600" y="108" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">✗ breaks</text><defs><marker id="da" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M222 77 H498" stroke="var(--dg-accent-2)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#da)"></path><text x="360" y="70" font-size="11" font-style="italic" fill="var(--dg-accent-2)" text-anchor="middle">"works on my machine"</text><text x="20" y="158" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)">WITH a container, the environment travels with the code</text><rect x="20" y="170" width="200" height="60" rx="10" fill="var(--dg-inverse)"></rect><text x="120" y="192" font-size="12" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">container image</text><text x="120" y="210" class="mono" font-size="9.5" fill="var(--dg-on-inverse-info)" text-anchor="middle">app + runtime + libs + config</text><rect x="290" y="170" width="120" height="60" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="350" y="205" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">laptop ✓</text><rect x="430" y="170" width="120" height="60" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="490" y="205" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">staging ✓</text><rect x="570" y="170" width="130" height="60" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="635" y="205" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">prod ✓</text><defs><marker id="da2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><path d="M222 200 H288" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#da2)"></path></svg>
+</Diagram>
+
+#### Three problems, one solution
+
+- **Dependency hell & drift**: the exact runtime and libraries are baked in, so there's no "install steps" to get wrong and no version skew between environments.
+- **Isolation**: two apps that need conflicting versions of the same library can run side by side on one host, each in its own sealed box, without interfering.
+- **Density & portability**: containers are light enough to pack many onto a single machine and to move freely between laptop, CI, and any cloud, the foundation that orchestration (Part IV) and modern CI/CD (Part V) build on.
+
+The one idea
+
+A container makes **"the thing that runs in production" identical to "the thing you built and tested."** Everything else, images, Docker, Kubernetes, pipelines, is machinery for building, shipping, and running that identical artifact at scale.
+
+## Containers vs Virtual Machines
+
+The instinctive question is "isn't this just a virtual machine?" The answer reveals what containers actually are. A **VM virtualizes hardware**: a hypervisor emulates a whole machine, and each VM runs its _own complete operating system_, its own kernel, on top of which sit its libraries and your app. A **container virtualizes the operating system**: all containers on a host _share the host's single kernel_, and isolation is enforced by kernel features rather than by emulating separate hardware.
+
+<Diagram caption="The decisive difference">
+<svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Side by side: virtual machines each with a guest OS on a hypervisor, versus containers sharing one host kernel via a container runtime"><text x="180" y="20" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">Virtual Machines</text><text x="540" y="20" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Containers</text><g><rect x="30" y="30" width="140" height="70" rx="8" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)"></rect><text x="100" y="48" font-size="10.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">App A</text><text x="100" y="64" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">bins / libs</text><rect x="40" y="70" width="120" height="22" rx="5" fill="var(--dg-accent-surface)"></rect><text x="100" y="85" class="mono" font-size="9" fill="var(--dg-accent)" text-anchor="middle">Guest OS + kernel</text><rect x="190" y="30" width="140" height="70" rx="8" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)"></rect><text x="260" y="48" font-size="10.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">App B</text><text x="260" y="64" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">bins / libs</text><rect x="200" y="70" width="120" height="22" rx="5" fill="var(--dg-accent-surface)"></rect><text x="260" y="85" class="mono" font-size="9" fill="var(--dg-accent)" text-anchor="middle">Guest OS + kernel</text><rect x="30" y="108" width="300" height="30" rx="6" fill="var(--dg-inverse)"></rect><text x="180" y="128" font-size="11" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">Hypervisor</text><rect x="30" y="144" width="300" height="28" rx="6" fill="var(--dg-line)"></rect><text x="180" y="163" font-size="10.5" font-weight="600" fill="var(--dg-ink-2)" text-anchor="middle">Host OS + kernel</text><rect x="30" y="178" width="300" height="26" rx="6" fill="var(--dg-accent-border)"></rect><text x="180" y="196" font-size="10.5" font-weight="600" fill="var(--dg-accent)" text-anchor="middle">Physical hardware</text></g><g><rect x="390" y="30" width="95" height="62" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="437" y="50" font-size="10.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">App A</text><text x="437" y="66" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">bins/libs</text><text x="437" y="80" class="mono" font-size="8" fill="var(--dg-ok)" text-anchor="middle">no kernel</text><rect x="495" y="30" width="95" height="62" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="542" y="50" font-size="10.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">App B</text><text x="542" y="66" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">bins/libs</text><text x="542" y="80" class="mono" font-size="8" fill="var(--dg-ok)" text-anchor="middle">no kernel</text><rect x="600" y="30" width="95" height="62" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="647" y="50" font-size="10.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">App C</text><text x="647" y="66" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">bins/libs</text><text x="647" y="80" class="mono" font-size="8" fill="var(--dg-ok)" text-anchor="middle">no kernel</text><rect x="390" y="100" width="305" height="30" rx="6" fill="var(--dg-ok)"></rect><text x="542" y="120" font-size="11" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Container runtime (e.g. containerd)</text><rect x="390" y="136" width="305" height="36" rx="6" fill="var(--dg-ok)"></rect><text x="542" y="159" font-size="11" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">ONE shared Host OS kernel</text><rect x="390" y="178" width="305" height="26" rx="6" fill="var(--dg-accent-border)"></rect><text x="542" y="196" font-size="10.5" font-weight="600" fill="var(--dg-accent)" text-anchor="middle">Physical hardware</text></g><text x="360" y="232" class="serif" font-size="13" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">No per-app guest OS means containers start in milliseconds, weigh megabytes not gigabytes,</text><text x="360" y="252" class="serif" font-size="13" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">and you can pack far more of them onto the same hardware.</text></svg>
+</Diagram>
+
+| Dimension          | Virtual Machine                 | Container                               |
+| ------------------ | ------------------------------- | --------------------------------------- |
+| Isolates by        | Emulating hardware (hypervisor) | Kernel features (namespaces + cgroups)  |
+| OS per instance    | Full guest OS + own kernel      | Shares the host kernel; no guest OS     |
+| Size               | Gigabytes                       | Megabytes                               |
+| Start time         | Seconds to minutes (boot an OS) | Milliseconds (start a process)          |
+| Density per host   | Tens                            | Hundreds to thousands                   |
+| Isolation strength | Stronger (separate kernels)     | Weaker (shared kernel), a real tradeoff |
+
+The shared-kernel tradeoff
+
+Sharing one kernel is what makes containers light _and_ is their main security caveat: a kernel-level escape affects every container on the host, whereas VMs have a thicker boundary. This is why multi-tenant platforms often run containers _inside_ VMs, and why container security (sec 17, and the security chapter) focuses on least privilege, non-root users, and dropping capabilities. Containers are isolation, not a hard security sandbox by default.
+
+## What a Container Actually Is
+
+Demystified: **a container is just a normal Linux process (or a few) that the kernel has been told to isolate.** There is no "container" object in the kernel, the magic is three older Linux features combined so a process _believes_ it has a machine to itself. Understanding these three removes all the mystery and explains every limit and behavior you'll hit.
+
+<Diagram caption="The three ingredients">
+<svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three pillars of a container: namespaces for what it can see, cgroups for what it can use, and a union filesystem for what it runs on"><rect x="20" y="30" width="210" height="150" rx="12" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="125" y="56" font-size="14" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">Namespaces</text><text x="125" y="74" class="mono" font-size="10" fill="var(--dg-accent)" text-anchor="middle">WHAT IT CAN SEE</text><g font-size="10.5" fill="var(--dg-ink-2)"><text x="40" y="98" fill="var(--dg-ink)">/ pid, its own process tree</text><text x="40" y="118" fill="var(--dg-ink)">/ net, its own interfaces</text><text x="40" y="138" fill="var(--dg-ink)">/ mnt, its own mounts</text><text x="40" y="158" fill="var(--dg-ink)">/ uts/ipc/user, hostname, ...</text></g><rect x="255" y="30" width="210" height="150" rx="12" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="360" y="56" font-size="14" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">cgroups</text><text x="360" y="74" class="mono" font-size="10" fill="var(--dg-ok)" text-anchor="middle">WHAT IT CAN USE</text><g font-size="10.5" fill="var(--dg-ink-2)"><text x="275" y="98" fill="var(--dg-ink)">/ CPU shares / quota</text><text x="275" y="118" fill="var(--dg-ink)">/ memory limit</text><text x="275" y="138" fill="var(--dg-ink)">/ I/O bandwidth</text><text x="275" y="158" fill="var(--dg-ink)">/ pids count</text></g><rect x="490" y="30" width="210" height="150" rx="12" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="595" y="56" font-size="14" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">Union FS</text><text x="595" y="74" class="mono" font-size="10" fill="var(--dg-warn)" text-anchor="middle">WHAT IT RUNS ON</text><g font-size="10.5" fill="var(--dg-ink-2)"><text x="510" y="98" fill="var(--dg-ink)">/ the image's layers</text><text x="510" y="118" fill="var(--dg-ink)">/ read-only base + libs</text><text x="510" y="138" fill="var(--dg-ink)">/ thin writable top layer</text><text x="510" y="158" fill="var(--dg-ink)">/ its private root "/"</text></g><text x="360" y="212" class="serif" font-size="13" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Combine the three and an ordinary process is convinced it owns the machine, that illusion is a container.</text></svg>
+</Diagram>
+
+### 1. Namespaces: the illusion of being alone
+
+A **namespace** partitions a global kernel resource so the process only sees its own slice. The PID namespace makes the container's main process believe it's PID 1 with no siblings; the network namespace gives it its own interfaces and ports; the mount namespace gives it its own view of the filesystem. From inside, it looks like a private machine. From the host, it's just processes with extra labels, `ps` on the host sees them all.
+
+### 2. cgroups: enforcing limits
+
+Namespaces hide the rest of the system; **control groups (cgroups)** cap how much the process may consume, CPU, memory, I/O, process count. This is what stops one container from starving its neighbors, and it's exactly the mechanism Kubernetes drives when you set resource _requests_ and _limits_ (sec 17). Exceed a memory limit and the kernel's OOM killer terminates the container, the famous `OOMKilled` status.
+
+### 3. A filesystem image: its own root
+
+Finally the process needs files: its own `/` with a runtime, libraries, and your binary. That comes from the **image**, layered onto the mount namespace as the container's root filesystem (sec 04). The process can't see the host's files, only the image's, plus whatever you explicitly mount in (sec 09).
+
+<Callout type="info" title="Why &quot;Linux containers&quot; specifically">
+Namespaces and cgroups are _Linux kernel_ features, so containers are natively a Linux technology. Docker on macOS or Windows quietly runs a lightweight Linux VM and your containers live inside it, which is why a "container" on your Mac is really Linux-in-a-VM under the hood. The artifact is portable; the kernel features it needs are Linux's.
+</Callout>
+
+Part II / Docker / Images & Containers
+
+## Images, Layers & the Union Filesystem
+
+Two words get confused constantly, so nail them first. An **image** is the immutable, on-disk _template_, a packaged filesystem plus metadata (what to run, which ports, env). A **container** is a _running instance_ of an image, the image brought to life as an isolated process (sec 03). The relationship is exactly class-to-object: one image, many containers.
+
+An image is to a container what a class is to an object, or what a baked, frozen meal is to the same meal reheated on your plate. You build the image once; you run many identical containers from it.
+
+### Images are stacks of read-only layers
+
+The clever part is _how_ an image stores its filesystem: as a stack of **layers**, each one a set of file changes, stacked by a **union filesystem** that merges them into a single coherent `/`. Each instruction in your build adds one layer (sec 05). Layers are immutable and **content-addressed**, so identical layers are stored once and _shared_ across images, if ten images use the same base, that base lives on disk and travels over the network only once.
+
+<Diagram caption="Union filesystem">
+<svg viewBox="0 0 720 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A stack of read-only image layers shared by two containers, each adding its own writable layer on top via copy-on-write"><text x="20" y="22" class="mono" font-size="11" font-weight="700" fill="var(--dg-warn)">IMAGE = read-only layers (shared)</text><rect x="20" y="32" width="300" height="26" rx="5" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="34" y="50" class="mono" font-size="10" fill="var(--dg-warn-2)">L4  COPY app binary           +2 MB</text><rect x="20" y="62" width="300" height="26" rx="5" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="34" y="80" class="mono" font-size="10" fill="var(--dg-warn-2)">L3  pip/go install deps      +40 MB</text><rect x="20" y="92" width="300" height="26" rx="5" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="34" y="110" class="mono" font-size="10" fill="var(--dg-warn-2)">L2  apt-get runtime libs     +25 MB</text><rect x="20" y="122" width="300" height="26" rx="5" fill="var(--dg-accent-surface)" stroke="var(--dg-warn)"></rect><text x="34" y="140" class="mono" font-size="10" fill="var(--dg-warn-2)">L1  base image (e.g. debian) 50 MB</text><text x="170" y="166" class="serif" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">these four layers are stored once &#x26; shared</text><text x="500" y="22" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)">CONTAINERS add a writable top</text><rect x="400" y="40" width="140" height="24" rx="5" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="470" y="57" class="mono" font-size="10" fill="var(--dg-ok)" text-anchor="middle">writable (C1)</text><rect x="560" y="40" width="140" height="24" rx="5" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="630" y="57" class="mono" font-size="10" fill="var(--dg-ok)" text-anchor="middle">writable (C2)</text><defs><marker id="ua" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--dg-warn)"></path></marker></defs><path d="M470 64 V96 C470 110 360 110 322 96" stroke="var(--dg-warn)" stroke-width="1.3" fill="none" stroke-dasharray="3 3" marker-end="url(#ua)"></path><path d="M630 64 V100 C630 116 360 116 322 100" stroke="var(--dg-warn)" stroke-width="1.3" fill="none" stroke-dasharray="3 3" marker-end="url(#ua)"></path><text x="550" y="92" font-size="10" fill="var(--dg-ink-2)">both share the same</text><text x="550" y="108" font-size="10" fill="var(--dg-ink-2)">read-only layers below</text><text x="20" y="200" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent)">copy-on-write</text><text x="20" y="220" font-size="11.5" fill="var(--dg-ink-2)">A container reads straight from the shared layers. The instant it <tspan font-weight="700" fill="var(--dg-ink)">modifies</tspan> a file,</text><text x="20" y="238" font-size="11.5" fill="var(--dg-ink-2)">that file is copied up into its own writable layer, the image underneath is never touched.</text><text x="20" y="258" font-size="11" font-style="italic" fill="var(--dg-accent-2)">That writable layer is ephemeral: delete the container and those changes vanish (sec 09 for persistence).</text></svg>
+</Diagram>
+
+The writable layer is not storage
+
+Anything a container writes to its own filesystem dies with the container. Logs, uploads, database files written "inside" are gone on restart. Persistent data must live in a **volume** (sec 09) or an external service. This ephemerality is a feature, it's what makes containers disposable and replaceable, but it's the most common beginner trap.
+
+## The Dockerfile
+
+A **Dockerfile** is the recipe that builds an image: a sequence of instructions, executed top to bottom, _each producing one layer_ (sec 04). `docker build` reads it, runs each step, and caches the result. Because the file is plain text in your repo, your build is reproducible and reviewable, the environment becomes code. Here is the same web service containerized in Go and in Python:
+
+______
+
+● Go● Python
+
+```dockerfile
+# FROM picks the base image, the first (bottom) layer. Pin a version, never :latest
+FROM golang:1.22
+
+# WORKDIR sets the working dir for the instructions that follow (and at runtime)
+WORKDIR /app
+
+# Copy dependency manifests FIRST and download, this layer caches across code edits (sec 7)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Now copy the source and build the binary
+COPY . .
+RUN go build -o /server ./cmd/server
+
+# Document the port the app listens on (metadata; publishing happens at run time sec 8)
+EXPOSE 8080
+
+# CMD is the default command run when a container starts from this image
+CMD ["/server"]
+```
+
+```dockerfile
+# Pin a slim base, smaller and fewer CVEs than the full image
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy the manifest FIRST so the dependency layer caches across code edits (sec 7)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Then copy the application code
+COPY . .
+
+EXPOSE 8080
+
+# Exec form (JSON array), runs the process directly as PID 1, so signals work (sec  graceful shutdown)
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+| Instruction          | What it does                                                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| `FROM`               | The base image, the starting layer. Everything builds on it.                                             |
+| `WORKDIR`            | Sets (and creates) the current directory for later steps and at runtime.                                 |
+| `COPY` / `ADD`       | Copy files from your build context into the image. Prefer `COPY`; `ADD` has surprising URL/tar behavior. |
+| `RUN`                | Execute a command at _build_ time (install deps, compile), bakes the result into a layer.                |
+| `ENV`                | Set environment variables baked into the image (config defaults, sec 16).                                |
+| `EXPOSE`             | Documents the listening port. Informational; doesn't publish it (sec 08).                                |
+| `ENTRYPOINT` / `CMD` | What runs when the container starts. `ENTRYPOINT` = the executable, `CMD` = default args.                |
+
+<Callout type="info" title="Build context &amp; `RUN` vs `CMD`">
+Two frequent confusions. The **build context** is the directory you point `docker build` at, everything in it is sent to the builder, so a bloated context (e.g. `node_modules`, a `.git` folder) slows builds; trim it with `.dockerignore` (sec 07). And **`RUN` executes at build time** (baked into the image) while **`CMD`/`ENTRYPOINT` execute at run time** (when a container starts). Mixing them up is a classic early mistake.
+</Callout>
+
+## Multi-Stage Builds
+
+The single most impactful technique for production images. The problem: _building_ needs heavy tools (compilers, the full SDK, build-time dev dependencies) that the _running_ app doesn't. Ship them and your image is huge and full of attack surface. A **multi-stage build** uses one stage to build and a second, clean stage that _copies only the finished artifact_, the toolchain is discarded.
+
+<Diagram caption="Multi-stage">
+<svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A large builder stage with full SDK producing a binary, with only that binary copied into a small final runtime stage, the builder discarded"><text x="180" y="22" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">STAGE 1 / builder (discarded)</text><rect x="30" y="32" width="300" height="150" rx="12" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)"></rect><text x="180" y="56" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">golang:1.22 / python full</text><g class="mono" font-size="10" fill="var(--dg-ink-2)"><text x="50" y="80" fill="var(--dg-ink)">+ compiler / full SDK</text><text x="50" y="100" fill="var(--dg-ink)">+ build dependencies</text><text x="50" y="120" fill="var(--dg-ink)">+ your source tree</text><text x="50" y="140" fill="var(--dg-ink)">+ intermediate objects</text></g><rect x="70" y="150" width="220" height="22" rx="5" fill="var(--dg-inverse)"></rect><text x="180" y="166" class="mono" font-size="10" fill="var(--dg-on-inverse-info)" text-anchor="middle">/server (the only keeper)</text><text x="180" y="200" font-size="11" font-style="italic" fill="var(--dg-accent-2)" text-anchor="middle">~900 MB, thrown away after build</text><defs><marker id="ma" markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 Z" fill="var(--dg-ok)"></path></marker></defs><path d="M332 161 H388" stroke="var(--dg-ok)" stroke-width="2.4" marker-end="url(#ma)"></path><text x="360" y="150" class="mono" font-size="9" fill="var(--dg-ok)" text-anchor="middle">COPY --from</text><text x="540" y="22" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">STAGE 2 / final (shipped)</text><rect x="400" y="92" width="300" height="90" rx="12" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="550" y="116" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">distroless / alpine</text><rect x="440" y="128" width="220" height="22" rx="5" fill="var(--dg-inverse)"></rect><text x="550" y="144" class="mono" font-size="10" fill="var(--dg-on-inverse-info)" text-anchor="middle">/server</text><text x="550" y="172" font-size="11" font-style="italic" fill="var(--dg-ok)" text-anchor="middle">~15 MB, binary + minimal runtime only</text></svg>
+</Diagram>
+
+______
+
+● Go● Python
+
+```dockerfile
+# ---- Stage 1: build with the full Go toolchain ----
+FROM golang:1.22 AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# static binary, no libc dependency, perfect for a scratch/distroless final image
+RUN CGO_ENABLED=0 go build -o /server ./cmd/server
+
+# ---- Stage 2: tiny runtime, no compiler, non-root ----
+FROM gcr.io/distroless/static:nonroot
+COPY --from=builder /server /server   # copy ONLY the artifact across stages
+EXPOSE 8080
+USER nonroot:nonroot                  # never run as root (sec 17, security)
+ENTRYPOINT ["/server"]
+# Result: a ~10-15 MB image with no shell, no package manager, minimal CVEs
+```
+
+```dockerfile
+# ---- Stage 1: install deps into a venv with build tools available ----
+FROM python:3.11 AS builder
+WORKDIR /app
+RUN python -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt   # may compile native wheels here
+
+# ---- Stage 2: slim runtime, copy the ready venv, run non-root ----
+FROM python:3.11-slim
+COPY --from=builder /venv /venv          # copy ONLY the built virtualenv
+ENV PATH="/venv/bin:$PATH"
+WORKDIR /app
+COPY . .
+RUN useradd -m app && chown -R app /app
+USER app                                 # non-root (sec 17)
+EXPOSE 8080
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+Go compiles to a single static binary, so the final stage can be near-empty (distroless/scratch). Python needs the interpreter, so the win comes from copying a pre-built virtualenv into a `-slim` base instead of carrying the compilers.
+
+Why this matters in production
+
+Smaller images pull faster (quicker autoscaling and rollouts, sec 18), cost less to store and transfer, and shrink the attack surface dramatically, a distroless image has no shell for an attacker to use. Multi-stage builds are the default for any serious service image.
+
+## Image Optimization & Layer Caching
+
+Two levers make builds fast and images lean, and both follow directly from the layer model (sec 04). The first is **cache ordering**; the second is **base-image choice** plus pruning what you copy in.
+
+### Order instructions from least- to most-frequently-changed
+
+Docker caches each layer and reuses it on the next build _as long as that instruction and everything before it are unchanged_. The moment one layer's inputs change, that layer and _every layer after it_ are rebuilt. So the golden rule is: put the things that rarely change (installing dependencies) _before_ the things that change every commit (copying your source). That's why every Dockerfile above copies the dependency manifest and installs _before_ copying the full source, you edit code constantly but dependencies rarely, so the expensive install layer stays cached.
+
+<Diagram caption="Cache invalidation">
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two build orderings: deps-before-code keeps the dependency layer cached on a code change, code-before-deps busts it"><text x="180" y="20" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">deps BEFORE code, good</text><rect x="40" y="30" width="280" height="24" rx="5" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)"></rect><text x="54" y="47" class="mono" font-size="10" fill="var(--dg-accent-2)">COPY . .  + build      ↻ rebuilt</text><rect x="40" y="58" width="280" height="24" rx="5" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="54" y="75" class="mono" font-size="10" fill="var(--dg-ok)">RUN install deps       ✓ CACHED</text><rect x="40" y="86" width="280" height="24" rx="5" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="54" y="103" class="mono" font-size="10" fill="var(--dg-ok)">COPY manifest          ✓ CACHED</text><rect x="40" y="114" width="280" height="24" rx="5" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="54" y="131" class="mono" font-size="10" fill="var(--dg-ok)">FROM base              ✓ CACHED</text><text x="180" y="160" font-size="11" font-style="italic" fill="var(--dg-ok)" text-anchor="middle">edit code -> only the top layer rebuilds (seconds)</text><text x="540" y="20" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">code BEFORE deps, bad</text><rect x="400" y="30" width="280" height="24" rx="5" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)"></rect><text x="414" y="47" class="mono" font-size="10" fill="var(--dg-accent-2)">RUN install deps       ↻ rebuilt</text><rect x="400" y="58" width="280" height="24" rx="5" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)"></rect><text x="414" y="75" class="mono" font-size="10" fill="var(--dg-accent-2)">COPY . .               ↻ busts cache</text><rect x="400" y="86" width="280" height="24" rx="5" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="414" y="103" class="mono" font-size="10" fill="var(--dg-ok)">FROM base              ✓ CACHED</text><text x="540" y="135" font-size="11" font-style="italic" fill="var(--dg-accent-2)" text-anchor="middle">edit code -> deps reinstall every time (minutes)</text></svg>
+</Diagram>
+
+### Pick a small base & copy less
+
+- **Base image**: `-slim` variants drop hundreds of MB; **alpine** is tiny (musl libc, watch for compatibility); **distroless** ships only your app and its runtime with no shell or package manager (most secure). Choose the smallest that runs your app.
+- **`.dockerignore`**: keeps junk out of the build context and the image (faster builds, smaller images, no secrets leaking in).
+- **Combine related `RUN`s & clean up in the same layer**: deleting a cache in a _later_ layer doesn't shrink the image (the bytes still live in the earlier layer); clean within the same `RUN`.
+
+```text title=".dockerignore / trim the build context"
+.git
+node_modules
+*.md
+.env            # never bake secrets into an image (sec 16)
+**/__pycache__
+*.log
+dist/
+.vscode/
+```
+
+Cleanup must be in the same layer
+
+`RUN apt-get install ...` on one line and `RUN rm -rf /var/lib/apt/lists/*` on the next does _not_ reduce size, the files still exist in the install layer. Chain them: `RUN apt-get update && apt-get install -y X && rm -rf /var/lib/apt/lists/*` so the cleanup happens before the layer is sealed.
+
+## Runtime, Registries & Tags
+
+You've built an image, now run it, share it, and version it. Three commands cover 90% of daily use, and three concepts (registry, tag, runtime) frame the lifecycle.
+
+```bash title="the everyday Docker lifecycle"
+# BUILD an image from the Dockerfile in . and name:tag it
+docker build -t myapp:1.4.0 .
+
+# RUN a container from it:
+#   -d detached  -p host:container publishes a port  -e sets an env var (sec 16)
+docker run -d -p 8080:8080 -e DATABASE_URL=$DB myapp:1.4.0
+
+# Inspect & debug
+docker ps                      # running containers
+docker logs -f <id>            # stream stdout/stderr (your app should log there sec logging)
+docker exec -it <id> sh        # shell INTO a running container to poke around
+docker stop <id>               # sends SIGTERM, then SIGKILL after a grace period (sec graceful shutdown)
+
+# SHARE via a registry
+docker tag  myapp:1.4.0 registry.example.com/team/myapp:1.4.0
+docker push registry.example.com/team/myapp:1.4.0     # upload
+docker pull registry.example.com/team/myapp:1.4.0     # download (what prod/K8s does)
+```
+
+### Registry, repository, tag
+
+A **registry** is the server that stores images (Docker Hub, GitHub Container Registry, AWS ECR, Google Artifact Registry). A **repository** is a named image within it; a **tag** is a label for a specific version (`myapp:1.4.0`). Pushing uploads your layers; pulling downloads them, and thanks to content-addressed layers (sec 04), only layers the registry doesn't already have move over the wire. This push/pull cycle is the hand-off between your build (sec 19) and where the image runs (Part IV).
+
+<Diagram caption="The image lifecycle">
+<svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dockerfile builds an image, which is pushed to a registry, then pulled and run by CI, staging, and production"><defs><marker id="ba" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><rect x="20" y="50" width="120" height="50" rx="9" fill="var(--dg-accent)"></rect><text x="80" y="72" font-size="11.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">docker build</text><text x="80" y="89" class="mono" font-size="9" fill="var(--dg-on-accent)" text-anchor="middle">Dockerfile</text><path d="M142 75 H210" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#ba)"></path><text x="176" y="67" class="mono" font-size="9" fill="var(--dg-accent-2)" text-anchor="middle">push</text><rect x="212" y="44" width="150" height="62" rx="9" fill="var(--dg-inverse)"></rect><text x="287" y="70" font-size="12" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">Registry</text><text x="287" y="88" class="mono" font-size="9" fill="var(--dg-on-inverse)" text-anchor="middle">stores tagged layers</text><g stroke="var(--dg-ok)" stroke-width="1.8" fill="none"><path d="M362 60 C420 40 460 36 520 34" marker-end="url(#ba2)"></path><path d="M362 75 H520" marker-end="url(#ba2)"></path><path d="M362 90 C420 110 460 114 520 116" marker-end="url(#ba2)"></path></g><defs><marker id="ba2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><text x="445" y="58" class="mono" font-size="9" fill="var(--dg-ok)" text-anchor="middle">pull</text><rect x="522" y="22" width="150" height="26" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="597" y="39" font-size="10.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">CI runs tests</text><rect x="522" y="62" width="150" height="26" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="597" y="79" font-size="10.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">staging</text><rect x="522" y="102" width="150" height="26" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="597" y="119" font-size="10.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">production (K8s)</text></svg>
+</Diagram>
+
+Never deploy `:latest`
+
+`latest` is just a tag that moves; it doesn't mean "newest" and gives you no idea _what_ is running. Two machines pulling `:latest` a day apart can get different images, the exact non-reproducibility containers exist to kill. Tag with an immutable version or the git commit SHA (`myapp:1.4.0`, `myapp:git-9f2c1a`) so a running container maps to exact source.
+
+<Callout type="info" title="OCI: the standard underneath">
+"Docker image" is shorthand, the format is standardized by the **Open Container Initiative (OCI)**, which is why images built with Docker run under other runtimes (containerd, CRI-O, Podman) and on Kubernetes without Docker installed. You build to a spec, not to one vendor.
+</Callout>
+
+Part III / Multi-Container & Local Dev
+
+## Networking & Volumes
+
+Two needs appear the moment you run more than a toy: containers must **talk to each other**, and some data must **outlive the container**. Docker answers these with networks and volumes, and both directly address gaps left by the isolation model (sec 03) and the ephemeral writable layer (sec 04).
+
+### Networking: from isolated to connected
+
+By default each container has its own network namespace, so it can't see others. Put containers on the same **user-defined bridge network** and Docker gives them a private virtual LAN _plus_ built-in DNS: a container reaches another simply by its name (`http://db:5432`). This is the foundation of service discovery, and it's why Compose (sec 10) and Kubernetes (sec 15) let services address each other by name instead of brittle IPs. Separately, **port publishing** (`-p 8080:8080`) pokes a hole from the host into a container so the outside world can reach it.
+
+<Diagram caption="Container networking">
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An API container and a database container on one bridge network reaching each other by name, with only the API port published to the host"><rect x="60" y="40" width="520" height="130" rx="14" fill="var(--dg-accent-surface)" stroke="var(--dg-line)"></rect><text x="78" y="62" class="mono" font-size="10.5" font-weight="700" fill="var(--dg-accent-2)">bridge network: appnet</text><rect x="110" y="80" width="150" height="64" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="185" y="104" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">api</text><text x="185" y="124" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">:8080</text><rect x="380" y="80" width="150" height="64" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="455" y="104" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">db</text><text x="455" y="124" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">:5432</text><defs><marker id="na" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><path d="M260 112 H378" stroke="var(--dg-ok)" stroke-width="1.8" marker-end="url(#na)"></path><text x="319" y="104" class="mono" font-size="9.5" fill="var(--dg-ok)" text-anchor="middle">connect to "db"</text><rect x="60" y="20" width="180" height="0"></rect><defs><marker id="na2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker></defs><text x="185" y="190" class="mono" font-size="10" fill="var(--dg-accent)" text-anchor="middle">host :8080 -> api :8080 (published)</text><path d="M185 80 V40 C185 28 360 28 360 28" stroke="var(--dg-accent)" stroke-width="1.6" fill="none" stroke-dasharray="4 3" marker-end="url(#na2)"></path><text x="470" y="32" font-size="10.5" fill="var(--dg-accent-2)">db is NOT published, private to the network</text></svg>
+</Diagram>
+
+### Volumes: data that survives
+
+Because a container's writable layer is destroyed with the container (sec 04), anything that must persist, a database's files, user uploads, lives in a **volume**: storage managed by Docker (or the host) and mounted into the container, decoupled from its lifecycle. Delete and recreate the container; the volume and its data remain. There are two flavors: **named volumes** (Docker-managed, the default for real data) and **bind mounts** (a host directory mapped in, handy in development to live-edit code without rebuilding).
+
+| Mechanism                                             | Use it for                                                                      |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **Named volume** `-v dbdata:/var/lib/postgresql/data` | Persistent app data managed by Docker, databases, caches you want to keep.      |
+| **Bind mount** `-v ./src:/app/src`                    | Dev-time live reload, edit on the host, see changes in the container instantly. |
+| **tmpfs**                                             | Sensitive scratch data kept in RAM only, never written to disk.                 |
+
+Stateless containers, stateful volumes
+
+Treat containers as disposable and keep all durable state in volumes or external managed services. In Kubernetes especially, the prevailing pattern is _stateless_ app containers (trivially scaled and replaced, sec 18) with state pushed to managed databases or persistent volumes. If killing a container loses data, the design has leaked state into the wrong place.
+
+## Docker Compose
+
+Running a real app means several containers, API, database, cache, maybe a worker (the task-queue chapter's setup), with the right networks, volumes, env, and start order. Wiring that by hand with many `docker run` commands is tedious and error-prone. **Docker Compose** declares the whole local stack in one YAML file and brings it up with a single command. It's the standard for local development and simple single-host deployments.
+
+```go title="compose.yaml / an API (your Go or Python service), Postgres, and Redis"
+services:
+  api:
+    build: .                      # build the image from the local Dockerfile (sec 5/6)
+    ports:
+      - "8080:8080"               # publish to the host (sec 9)
+    environment:                  # config via env, not baked in (sec 16)
+      DATABASE_URL: postgres://app:secret@db:5432/app   # reach "db" by name (sec 9 DNS)
+      REDIS_URL: redis://cache:6379
+    depends_on:
+      db:
+        condition: service_healthy   # wait until the DB passes its healthcheck
+      cache:
+        condition: service_started
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: app
+    volumes:
+      - dbdata:/var/lib/postgresql/data   # named volume = data survives restarts (sec 9)
+    healthcheck:                          # so depends_on can wait for readiness
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+      retries: 5
+
+  cache:
+    image: redis:7
+
+volumes:
+  dbdata:                          # declared once, referenced above
+```
+
+```bash title="running the stack"
+docker compose up -d        # build (if needed) + start everything in the background
+docker compose ps           # status of all services
+docker compose logs -f api  # tail one service's logs
+docker compose down         # stop & remove containers + network (volumes kept)
+docker compose down -v      # ...and delete the volumes too (fresh DB)
+```
+
+<Callout type="info" title="Compose vs Kubernetes">
+Compose is for **one host**: superb for local dev and small deployments, but it doesn't schedule across machines, self-heal, or autoscale. The instant you need many nodes, automatic restarts, rolling updates, and horizontal scaling, you've outgrown Compose and want an orchestrator (Part IV). The mental model carries over: a Compose `service` maps closely to a Kubernetes Deployment + Service.
+</Callout>
+
+<Diagram caption="Where we are">
+<svg viewBox="0 0 720 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Progression from a single container, to Compose on one host, to Kubernetes across many nodes"><defs><marker id="pa" markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 Z" fill="var(--dg-accent-2)"></path></marker></defs><rect x="20" y="40" width="180" height="50" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="110" y="62" font-size="11.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">1 container</text><text x="110" y="80" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">docker run</text><path d="M202 65 H258" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#pa)"></path><rect x="260" y="40" width="180" height="50" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="350" y="62" font-size="11.5" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">many, one host</text><text x="350" y="80" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">docker compose</text><path d="M442 65 H498" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#pa)"></path><rect x="500" y="40" width="200" height="50" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="600" y="62" font-size="11.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">fleet, many nodes</text><text x="600" y="80" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">Kubernetes -> Part IV</text></svg>
+</Diagram>
+
+Part IV / Kubernetes / Orchestration
+
+## Why Orchestration
+
+Docker gives you containers; it does not, by itself, run them reliably across many machines. The moment you have dozens of containers on a fleet of servers, a new set of problems appears that no `docker run` can solve, and **orchestration** is the layer that solves them. Kubernetes (often "K8s") is the de-facto standard.
+
+| The problem at fleet scale                        | What an orchestrator does                                                                            |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Which machine should each container run on?       | **Scheduling**: places containers on nodes by available CPU/memory.                                  |
+| A container (or a whole node) dies at 3am.        | **Self-healing**: restarts crashed containers, reschedules off dead nodes, automatically.            |
+| Traffic spikes; you need more copies, then fewer. | **Scaling**: runs N replicas and adds/removes them on demand (sec 18).                               |
+| Containers come and go; their IPs change.         | **Service discovery + load balancing**: a stable address that fans out to healthy replicas (sec 15). |
+| Ship a new version without downtime.              | **Rolling updates & rollback**: replace replicas gradually, revert on failure (sec 18).              |
+| Config & secrets differ per environment.          | **Config management**: inject settings/secrets without rebuilding the image (sec 16).                |
+
+### The core idea: declarative, desired state
+
+The mindset shift that makes Kubernetes click: you don't issue imperative commands ("start a container here"). You **declare the desired state** ("I want 5 replicas of this image, reachable on this address") and Kubernetes continuously works to make reality match. If a container dies, actual drops to 4, and a control loop notices the gap and starts another, without you doing anything. You describe the _what_; Kubernetes handles the _how_ and keeps it true.
+
+Imperative is telling a driver every turn. Declarative is giving a destination to a self-correcting autopilot: drift off course, a crash, a dead node, and it steers back on its own, continuously, without new instructions.
+
+Reconciliation in one line
+
+Everything in Kubernetes is a control loop comparing **desired state** (what you declared) to **actual state** (what's running) and taking action to close the gap. Internalize that loop and the entire system, Deployments, scaling, healing, rollouts, becomes one idea applied over and over.
+
+## Kubernetes Architecture
+
+A Kubernetes cluster is two kinds of machines: a **control plane** (the brain that decides what should run) and a set of **worker nodes** (the muscle where containers actually run). You talk only to the control plane, you submit desired state, and the cluster makes it happen.
+
+<Diagram caption="Cluster anatomy">
+<svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Control plane with api-server, scheduler, controller-manager and etcd, talking to worker nodes each running a kubelet, kube-proxy and pods"><rect x="20" y="40" width="320" height="170" rx="14" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="180" y="62" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">CONTROL PLANE, the brain</text><rect x="40" y="74" width="135" height="44" rx="8" fill="var(--dg-accent)"></rect><text x="107" y="92" font-size="11" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">api-server</text><text x="107" y="108" class="mono" font-size="8" fill="var(--dg-on-accent)" text-anchor="middle">the one front door</text><rect x="185" y="74" width="135" height="44" rx="8" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="252" y="92" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">scheduler</text><text x="252" y="108" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">picks a node</text><rect x="40" y="126" width="135" height="44" rx="8" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="107" y="144" font-size="10.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">controller-mgr</text><text x="107" y="160" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">runs the loops</text><rect x="185" y="126" width="135" height="44" rx="8" fill="var(--dg-inverse)"></rect><text x="252" y="144" font-size="11" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">etcd</text><text x="252" y="160" class="mono" font-size="8" fill="var(--dg-on-inverse)" text-anchor="middle">the source of truth</text><text x="180" y="194" font-size="10" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">all state lives in etcd; everything talks via the api-server</text><rect x="380" y="30" width="320" height="120" rx="12" fill="var(--dg-accent-surface)" stroke="var(--dg-ok)"></rect><text x="540" y="50" class="mono" font-size="10.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">WORKER NODE 1, the muscle</text><rect x="396" y="58" width="120" height="30" rx="6" fill="var(--dg-ok)"></rect><text x="456" y="78" font-size="10" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">kubelet</text><rect x="524" y="58" width="160" height="30" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="604" y="78" font-size="9.5" fill="var(--dg-ok)" text-anchor="middle">kube-proxy (networking)</text><rect x="396" y="96" width="84" height="44" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="438" y="122" font-size="10" fill="var(--dg-ok)" text-anchor="middle">pod</text><rect x="488" y="96" width="84" height="44" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="530" y="122" font-size="10" fill="var(--dg-ok)" text-anchor="middle">pod</text><rect x="580" y="96" width="104" height="44" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="632" y="122" font-size="10" fill="var(--dg-ok)" text-anchor="middle">pod</text><rect x="380" y="160" width="320" height="58" rx="12" fill="var(--dg-accent-surface)" stroke="var(--dg-ok)"></rect><text x="540" y="180" class="mono" font-size="10.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">WORKER NODE 2</text><rect x="396" y="188" width="84" height="22" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="438" y="203" font-size="9" fill="var(--dg-ok)" text-anchor="middle">pod</text><rect x="488" y="188" width="84" height="22" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="530" y="203" font-size="9" fill="var(--dg-ok)" text-anchor="middle">pod</text><rect x="580" y="188" width="104" height="22" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="632" y="203" font-size="9" fill="var(--dg-ok)" text-anchor="middle">pod</text><defs><marker id="ka" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M340 110 H378" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#ka)"></path><rect x="20" y="244" width="150" height="40" rx="9" fill="var(--dg-inverse)"></rect><text x="95" y="263" font-size="11" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">you: kubectl apply</text><text x="95" y="278" class="mono" font-size="8.5" fill="var(--dg-on-inverse)" text-anchor="middle">desired state (YAML)</text><path d="M95 244 V214 C95 200 107 188 107 162" stroke="var(--dg-accent-2)" stroke-width="1.6" fill="none" marker-end="url(#ka)"></path><text x="360" y="266" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)">api-server writes your desired state to etcd; controllers + scheduler reconcile it onto nodes; kubelets run the pods.</text><text x="360" y="300" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)">kubelets continuously report actual state back, closing the loop.</text></svg>
+</Diagram>
+
+| Component          | Role                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| api-server         | The single entry point. Every read/write of cluster state goes through it (your `kubectl`, every component). |
+| etcd               | Distributed key-value store holding the entire cluster state, the source of truth.                           |
+| scheduler          | Decides which node a new pod runs on, based on resource requests and constraints.                            |
+| controller-manager | Runs the reconciliation loops (the Deployment controller, etc.) that drive actual toward desired.            |
+| kubelet            | The agent on each node; starts/stops containers and reports their health up to the api-server.               |
+| kube-proxy         | Programs node networking so Service virtual IPs route to the right pods (sec 15).                            |
+
+<Callout type="info" title="You rarely run this yourself">
+Managed Kubernetes (GKE, EKS, AKS) operates the control plane for you, so in practice you interact with the cluster purely through the api-server via `kubectl` and YAML. Knowing the parts still matters for debugging, "pod stuck in Pending" is usually the scheduler finding no node with room (sec 17).
+</Callout>
+
+## Pods
+
+The **pod** is Kubernetes' atomic unit, the smallest thing it schedules. Crucially, you do _not_ deploy containers directly; you deploy pods, and a pod wraps _one or more_ containers that are always co-located on the same node and **share a network namespace and storage**. Containers in a pod reach each other on `localhost` and can share mounted volumes, they're a single cooperating unit.
+
+Usually a pod holds exactly one container (your app). The multi-container case is the **sidecar** pattern: a helper alongside the main app, a log shipper, a metrics exporter, or a service-mesh proxy (the Envoy from the gRPC chapter's sec 19). The sidecar shares the pod's network so it can observe or proxy the app's traffic transparently.
+
+<Diagram caption="Pod internals">
+<svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A pod containing an app container and a sidecar sharing a single IP via localhost and a shared volume"><rect x="120" y="30" width="480" height="130" rx="16" fill="var(--dg-accent-surface)" stroke="var(--dg-ok)" stroke-dasharray="6 4"></rect><text x="360" y="52" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">POD, shares one IP &#x26; lifecycle</text><rect x="150" y="66" width="180" height="56" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="240" y="90" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">app container</text><text x="240" y="108" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">:8080</text><rect x="390" y="66" width="180" height="56" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="480" y="90" font-size="12" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">sidecar</text><text x="480" y="108" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">log shipper / proxy</text><defs><marker id="poa" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><path d="M330 94 H388" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#poa)"></path><text x="359" y="86" class="mono" font-size="8.5" fill="var(--dg-ok)" text-anchor="middle">localhost</text><text x="360" y="146" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">one pod IP / same node / live and die together</text></svg>
+</Diagram>
+
+Pods are mortal and disposable
+
+A pod is _ephemeral_: it can be killed and replaced at any time (node failure, scaling down, a rollout), and the replacement gets a **new IP**. So you never hard-code a pod's IP and never rely on a specific pod surviving. This is exactly why Services exist (sec 15), to provide a stable address in front of a constantly-churning set of pods, and why you let a Deployment manage pods rather than creating them directly (sec 14).
+
+## Deployments & ReplicaSets
+
+You almost never create pods by hand, a bare pod isn't replaced if it dies. Instead you declare a **Deployment**: "keep N replicas of this pod template running, always." The Deployment manages a **ReplicaSet**, whose one job is to maintain the replica count, and the ReplicaSet manages the pods. This is the reconciliation loop (sec 11) made concrete: declare 5, a pod dies, actual becomes 4, the controller starts a new one, self-healing, for free.
+
+<Diagram caption="The ownership chain">
+<svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A Deployment owning a ReplicaSet which maintains three pods; when one dies a replacement is created"><rect x="40" y="80" width="150" height="56" rx="10" fill="var(--dg-accent)"></rect><text x="115" y="104" font-size="12" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Deployment</text><text x="115" y="122" class="mono" font-size="9" fill="var(--dg-on-accent)" text-anchor="middle">replicas: 3</text><defs><marker id="oa" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M192 108 H248" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#oa)"></path><text x="220" y="100" class="mono" font-size="8" fill="var(--dg-accent-2)" text-anchor="middle">manages</text><rect x="250" y="80" width="150" height="56" rx="10" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="325" y="104" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">ReplicaSet</text><text x="325" y="122" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">keeps count = 3</text><path d="M402 95 C450 70 470 64 510 60" stroke="var(--dg-accent-2)" stroke-width="1.6" fill="none" marker-end="url(#oa)"></path><path d="M402 108 H510" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#oa)"></path><path d="M402 121 C450 146 470 152 510 156" stroke="var(--dg-accent-2)" stroke-width="1.6" fill="none" marker-end="url(#oa)"></path><rect x="512" y="40" width="170" height="40" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="597" y="64" font-size="10.5" fill="var(--dg-ok)" text-anchor="middle">pod ✓ running</text><rect x="512" y="88" width="170" height="40" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="597" y="112" font-size="10.5" fill="var(--dg-ok)" text-anchor="middle">pod ✓ running</text><rect x="512" y="136" width="170" height="40" rx="8" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)" stroke-dasharray="4 3"></rect><text x="597" y="155" font-size="10.5" fill="var(--dg-accent-2)" text-anchor="middle">pod ✗ died -></text><text x="597" y="170" font-size="9" font-style="italic" fill="var(--dg-ok)" text-anchor="middle">controller recreates it</text><text x="360" y="200" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Actual fell to 2, desired is 3 -> the gap is detected and a fresh pod is started, automatically.</text></svg>
+</Diagram>
+
+```yaml title="deployment.yaml / declare 3 replicas of your image"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 3                 # desired state: always keep 3 pods
+  selector:
+    matchLabels: { app: api } # which pods this Deployment owns
+  template:                   # the POD TEMPLATE stamped out for each replica
+    metadata:
+      labels: { app: api }
+    spec:
+      containers:
+        - name: api
+          image: registry.example.com/team/myapp:1.4.0   # pinned tag, never :latest (sec 8)
+          ports:
+            - containerPort: 8080
+          # resources, env, and probes go here too, see sec 16 and sec 17
+```
+
+```bash title="driving it with kubectl"
+kubectl apply -f deployment.yaml     # submit desired state (declarative)
+kubectl get pods -l app=api          # see the 3 pods it created
+kubectl scale deployment/api --replicas=10   # change desired count -> controller adds 7
+kubectl rollout status deployment/api        # watch a new version roll out (sec 18)
+kubectl rollout undo  deployment/api          # roll back to the previous version (sec 18)
+```
+
+<Callout type="info" title="Other workload kinds">
+Deployment is for _stateless_ apps (the common case). Siblings exist for other shapes: **StatefulSet** for stateful apps needing stable identity/storage (databases), **DaemonSet** to run one pod per node (log/metrics agents), and **Job**/**CronJob** for run-to-completion and scheduled tasks (the batch side of the task-queue chapter). Same reconciliation idea, different guarantees.
+</Callout>
+
+## Services & Ingress
+
+Pods are mortal and their IPs churn (sec 13), so you can't point traffic at a pod. A **Service** is the fix: a _stable_ virtual IP and DNS name in front of a dynamic set of pods, with built-in load balancing. It uses a **label selector** to track "all pods with `app: api`", as pods come and go, the Service's set of healthy endpoints updates automatically, and callers never notice. This is Kubernetes' service discovery, and it's why one service addresses another by name (`http://api`), exactly as Compose did on one host (sec 9).
+
+<Diagram caption="Service abstraction">
+<svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A caller hitting one stable Service IP which load-balances across three matching pods, automatically dropping a dead one"><rect x="20" y="80" width="120" height="50" rx="9" fill="var(--dg-accent)"></rect><text x="80" y="102" font-size="11" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">caller</text><text x="80" y="119" class="mono" font-size="8.5" fill="var(--dg-on-accent)" text-anchor="middle">http://api</text><defs><marker id="sa" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><path d="M142 105 H218" stroke="var(--dg-ok)" stroke-width="1.8" marker-end="url(#sa)"></path><rect x="220" y="74" width="150" height="62" rx="10" fill="var(--dg-ok)"></rect><text x="295" y="100" font-size="12" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Service: api</text><text x="295" y="118" class="mono" font-size="8.5" fill="var(--dg-on-accent)" text-anchor="middle">stable IP + DNS / selector app=api</text><g stroke="var(--dg-ok)" stroke-width="1.5" fill="none"><path d="M372 90 C430 64 460 58 510 54" marker-end="url(#sa)"></path><path d="M372 105 H510" marker-end="url(#sa)"></path><path d="M372 120 C430 146 460 152 510 156" marker-end="url(#sa)"></path></g><rect x="512" y="36" width="170" height="36" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="597" y="59" font-size="10" fill="var(--dg-ok)" text-anchor="middle">pod (app=api) ✓</text><rect x="512" y="86" width="170" height="36" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="597" y="109" font-size="10" fill="var(--dg-ok)" text-anchor="middle">pod (app=api) ✓</text><rect x="512" y="136" width="170" height="36" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-line)" stroke-dasharray="4 3"></rect><text x="597" y="159" font-size="10" fill="var(--dg-ink-3)" text-anchor="middle">pod removed, dropped</text><text x="360" y="198" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Only <tspan font-style="normal" class="mono" font-size="11" fill="var(--dg-ink)">Ready</tspan> pods (per readiness probe sec 17) receive traffic; the rest are pulled from rotation.</text></svg>
+</Diagram>
+
+### Service types & Ingress
+
+A `ClusterIP` Service (the default) is reachable only inside the cluster, perfect for service-to-service calls. To accept traffic from _outside_, you either use a `LoadBalancer` Service (the cloud provisions an external load balancer, one per service, expensive at scale) or, far more commonly for HTTP, an **Ingress**: a single L7 entry point that routes by host and path to many backing Services. Ingress is where TLS termination and host/path routing live, the cluster's public front door, and the natural home for the REST edge described in the gRPC chapter (sec 18-19 there).
+
+| Exposure       | Reachable from             | Use for                                                                |
+| -------------- | -------------------------- | ---------------------------------------------------------------------- |
+| `ClusterIP`    | Inside the cluster only    | Service-to-service (most internal services)                            |
+| `NodePort`     | A port on every node       | Basic/dev external access                                              |
+| `LoadBalancer` | The internet (cloud LB)    | One TCP/UDP service exposed directly                                   |
+| **Ingress**    | The internet, via L7 rules | HTTP host/path routing + TLS for many services through one entry point |
+
+```yaml title="service.yaml + ingress.yaml"
+apiVersion: v1
+kind: Service
+metadata:
+  name: api               # other pods reach this as http://api (cluster DNS)
+spec:
+  selector: { app: api }  # front the pods labelled app=api (from the Deployment sec 14)
+  ports:
+    - port: 80            # the Service port callers use
+      targetPort: 8080    # the containerPort it forwards to
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: edge
+spec:
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api          # route external HTTP to the api Service
+                port: { number: 80 }
+```
+
+<Callout type="info" title="The full path of a request">
+External client -> **Ingress** (TLS, host/path routing) -> **Service** (stable IP, load-balance) -> a healthy **Pod** -> your container. Each hop adds one concern, routing, discovery, the actual work, and together they're how a packet from the internet reaches one replica of your app.
+</Callout>
+
+## Config, Secrets & Environment
+
+An image must be **environment-agnostic**: the _same_ tested image runs in dev, staging, and prod, only the configuration differs (database URLs, feature flags, credentials). So configuration is _injected at run time_, never baked into the image. This is the containerized form of the config-management chapter's core rule, and the classic expression of twelve-factor "config in the environment." Kubernetes provides two objects: **ConfigMaps** for non-secret settings and **Secrets** for sensitive values.
+
+<Diagram caption="Config injection">
+<svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One image combined with different ConfigMaps and Secrets to run in dev, staging and production"><rect x="280" y="20" width="160" height="40" rx="9" fill="var(--dg-inverse)"></rect><text x="360" y="38" font-size="11" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">one tested image</text><text x="360" y="53" class="mono" font-size="8.5" fill="var(--dg-on-inverse-info)" text-anchor="middle">myapp:1.4.0</text><defs><marker id="ca" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><g stroke="var(--dg-ok)" stroke-width="1.5" fill="none"><path d="M300 60 C220 80 180 92 140 100" marker-end="url(#ca)"></path><path d="M360 62 V100" marker-end="url(#ca)"></path><path d="M420 60 C500 80 540 92 580 100" marker-end="url(#ca)"></path></g><rect x="40" y="104" width="200" height="58" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="140" y="126" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">dev</text><text x="140" y="144" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">+ ConfigMap-dev + Secret-dev</text><rect x="260" y="104" width="200" height="58" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="360" y="126" font-size="11" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">staging</text><text x="360" y="144" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">+ ConfigMap-stg + Secret-stg</text><rect x="480" y="104" width="200" height="58" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="580" y="126" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">production</text><text x="580" y="144" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">+ ConfigMap-prod + Secret-prod</text></svg>
+</Diagram>
+
+```text title="configmap + secret, injected as env vars"
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: api-config }
+data:
+  LOG_LEVEL: "info"
+  FEATURE_NEW_CHECKOUT: "true"
+---
+apiVersion: v1
+kind: Secret
+metadata: { name: api-secrets }
+type: Opaque
+stringData:                       # plaintext here; stored base64-encoded in etcd
+  DATABASE_URL: "postgres://app:secret@db:5432/app"
+---
+# ...inside the Deployment's container spec (sec 14):
+#   envFrom:
+#     - configMapRef: { name: api-config }    # all keys -> env vars
+#     - secretRef:    { name: api-secrets }   # secret keys -> env vars
+# Your app then reads os.Getenv("LOG_LEVEL") / os.environ["DATABASE_URL"] (sec config chapter)
+```
+
+Secrets are not encrypted by default
+
+A Kubernetes Secret is only **base64-encoded** in etcd, not encrypted, base64 is encoding, not protection. For real safety enable _encryption at rest_ for etcd, lock down RBAC so few identities can read Secrets, and for sensitive systems use an external manager (Vault, cloud secret stores, or the Secrets Store CSI driver). And never commit real secret values to Git, the same never-leak-credentials discipline as the security and auth chapters.
+
+## Health Probes & Resource Management
+
+For self-healing and zero-downtime to work, Kubernetes needs to know two things about every pod: _is it alive?_ and _is it ready for traffic?_ It can't guess, your app must tell it, via **probes**. And to schedule and isolate fairly, it needs to know how much CPU and memory each container wants, via **requests and limits** (the cgroups of sec 03, surfaced as config).
+
+### Three probes, three questions
+
+- **Liveness**: "is the process healthy, or wedged?" If it fails, Kubernetes _restarts_ the container. Catches deadlocks and hung states a crash wouldn't.
+- **Readiness**: "can it serve requests right now?" If it fails, the pod is pulled from its Service's rotation (sec 15) but _not_ restarted. This is what enables zero-downtime rollouts and backpressure: a pod warming up or briefly overloaded stops receiving traffic until it recovers.
+- **Startup**: "has a slow-starting app finished booting?" Guards the other probes so a long cold start isn't mistaken for failure.
+
+<Diagram caption="Liveness vs readiness">
+<svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Liveness probe failure leads to a container restart; readiness probe failure leads to removal from the load balancer rotation"><rect x="270" y="20" width="180" height="40" rx="9" fill="var(--dg-ok)"></rect><text x="360" y="38" font-size="11" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">kubelet probes the pod</text><text x="360" y="53" class="mono" font-size="8.5" fill="var(--dg-on-accent)" text-anchor="middle">GET /healthz / /ready</text><defs><marker id="ha" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M320 60 C260 90 220 100 180 108" stroke="var(--dg-accent-2)" stroke-width="1.6" fill="none" marker-end="url(#ha)"></path><path d="M400 60 C460 90 500 100 540 108" stroke="var(--dg-warn)" stroke-width="1.6" fill="none" marker-end="url(#ha)"></path><rect x="30" y="112" width="280" height="52" rx="10" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)"></rect><text x="170" y="134" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">liveness fails</text><text x="170" y="152" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">-> RESTART the container</text><rect x="410" y="112" width="280" height="52" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="550" y="134" font-size="11" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">readiness fails</text><text x="550" y="152" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">-> remove from Service rotation</text></svg>
+</Diagram>
+
+### Requests & limits
+
+A **request** is the amount the scheduler reserves for a container (and uses to pick a node); a **limit** is the hard ceiling the runtime enforces via cgroups. Exceed a CPU limit and the container is _throttled_; exceed a memory limit and it's _killed_ (`OOMKilled`). Setting these well is the difference between a stable cluster and noisy-neighbor chaos, and they feed autoscaling (sec 18).
+
+```text title="probes + resources in the container spec"
+# ...inside the Deployment's containers: entry (sec 14)
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }   # wedged? -> restart
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }      # ready for traffic? -> in/out of rotation
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" } # scheduler reserves this
+            limits:   { cpu: "500m", memory: "256Mi" } # cgroup ceiling; over memory -> OOMKilled
+```
+
+<Callout type="info" title="Probes pair with graceful shutdown">
+Probes are only half of clean lifecycle handling. The other half is the graceful-shutdown chapter: on a rollout or scale-down, Kubernetes sends `SIGTERM` and waits a grace period before `SIGKILL`. Your app should fail its readiness probe immediately (stop new traffic), finish in-flight requests, then exit, so no request is dropped mid-flight. Probes decide what gets traffic; graceful shutdown decides how a pod leaves.
+</Callout>
+
+## Scaling & Rollouts
+
+Two everyday operations close out orchestration: handling more load (**scaling**) and shipping new versions without downtime (**rollouts**). Both lean on everything built so far, replicas, Services, readiness probes, and both are the Kubernetes expression of topics from the scaling chapter.
+
+### Horizontal scaling & autoscaling
+
+Horizontal scaling means running more _pod replicas_ (preferred over making one pod bigger, the horizontal-vs-vertical theme from the scaling chapter). You can set the count manually, or hand it to the **Horizontal Pod Autoscaler (HPA)**, which watches a metric (typically CPU) and adjusts replicas to hold a target, scaling out under load and back in when it subsides. Because app pods are stateless (sec 9), any replica can serve any request, so adding pods just works.
+
+```yaml title="hpa.yaml / autoscale on CPU"
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: api }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }  # keep avg CPU ~70%
+# Requires resource requests (sec 17), utilization is measured against the request.
+```
+
+### Rolling updates & rollback
+
+When you change the image tag and re-apply, a Deployment performs a **rolling update** by default: it brings up new-version pods a few at a time, waits for each to pass its _readiness_ probe (sec 17) before sending it traffic, and only then retires old pods. At every moment enough healthy pods are serving, so users see no downtime. If new pods fail readiness, the rollout stalls instead of taking the app down, and one command rolls back to the last good version.
+
+<Diagram caption="Rolling update">
+<svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A rolling update across three steps, old version pods being replaced one at a time by new version pods while capacity stays up"><g font-family="var(--font-diagram-mono)" font-size="9"><text x="60" y="24" fill="var(--dg-ink-2)" text-anchor="middle">start</text><rect x="20" y="32" width="26" height="40" rx="4" fill="var(--dg-accent)"></rect><rect x="50" y="32" width="26" height="40" rx="4" fill="var(--dg-accent)"></rect><rect x="80" y="32" width="26" height="40" rx="4" fill="var(--dg-accent)"></rect><text x="63" y="92" fill="var(--dg-accent-2)" text-anchor="middle">v1 v1 v1</text><text x="280" y="24" fill="var(--dg-ink-2)" text-anchor="middle">mid-rollout</text><rect x="220" y="32" width="26" height="40" rx="4" fill="var(--dg-ok)"></rect><rect x="250" y="32" width="26" height="40" rx="4" fill="var(--dg-accent)"></rect><rect x="280" y="32" width="26" height="40" rx="4" fill="var(--dg-accent)"></rect><rect x="310" y="32" width="26" height="40" rx="4" fill="var(--dg-ok-surface)"></rect><text x="278" y="92" fill="var(--dg-ink-2)" text-anchor="middle">v2 v1 v1 (+v2 warming)</text><text x="560" y="24" fill="var(--dg-ink-2)" text-anchor="middle">done</text><rect x="520" y="32" width="26" height="40" rx="4" fill="var(--dg-ok)"></rect><rect x="550" y="32" width="26" height="40" rx="4" fill="var(--dg-ok)"></rect><rect x="580" y="32" width="26" height="40" rx="4" fill="var(--dg-ok)"></rect><text x="563" y="92" fill="var(--dg-ok)" text-anchor="middle">v2 v2 v2</text></g><defs><marker id="ru" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M120 52 H214" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#ru)"></path><path d="M350 52 H514" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#ru)"></path><text x="360" y="128" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">A new pod only takes traffic after passing readiness; old pods drain gracefully (sec 17).</text><text x="360" y="150" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">If v2 never becomes Ready, the rollout halts, capacity is never sacrificed.</text></svg>
+</Diagram>
+
+It all comes together here
+
+Zero-downtime deploys aren't one feature, they're the _composition_ of replicas (sec 14), readiness probes (sec 17), graceful shutdown, and the Service abstraction (sec 15) keeping a stable address over a shifting pod set. Each piece earned its place; the rollout is where they pay off.
+
+Part V / CI/CD & Production
+
+## CI/CD Pipelines
+
+Containers make the artifact reproducible; **CI/CD** makes the path from a code commit to that artifact running in production _automatic_. **CI (Continuous Integration)** is the build-and-verify half, on every push, build the image, run tests, scan it. **CD (Continuous Delivery/Deployment)** is the ship half, push the image to a registry and roll it out. The whole point is to remove manual, error-prone steps so deploys are frequent, small, and boring.
+
+<Diagram caption="The pipeline">
+<svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A CI/CD pipeline: commit, build image, test, scan, push to registry, deploy to Kubernetes"><defs><marker id="pp" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><g font-family="var(--font-ui)"><rect x="14" y="50" width="92" height="48" rx="9" fill="var(--dg-accent)"></rect><text x="60" y="70" font-size="10.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">commit</text><text x="60" y="86" class="mono" font-size="8" fill="var(--dg-on-accent)" text-anchor="middle">git push</text><rect x="126" y="50" width="92" height="48" rx="9" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="172" y="70" font-size="10.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">build</text><text x="172" y="86" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">image sec 6</text><rect x="238" y="50" width="92" height="48" rx="9" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="284" y="70" font-size="10.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">test</text><text x="284" y="86" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">unit/integ</text><rect x="350" y="50" width="92" height="48" rx="9" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="396" y="70" font-size="10.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">scan</text><text x="396" y="86" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">CVEs</text><rect x="462" y="50" width="100" height="48" rx="9" fill="var(--dg-inverse)"></rect><text x="512" y="70" font-size="10.5" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">push</text><text x="512" y="86" class="mono" font-size="8" fill="var(--dg-on-inverse)" text-anchor="middle">registry sec 8</text><rect x="582" y="50" width="120" height="48" rx="9" fill="var(--dg-ok)"></rect><text x="642" y="70" font-size="10.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">deploy</text><text x="642" y="86" class="mono" font-size="8" fill="var(--dg-on-accent)" text-anchor="middle">rollout sec 18</text></g><path d="M106 74 H124" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#pp)"></path><path d="M218 74 H236" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#pp)"></path><path d="M330 74 H348" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#pp)"></path><path d="M442 74 H460" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#pp)"></path><path d="M562 74 H580" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#pp)"></path><text x="360" y="128" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Each stage is a gate: a failed test or a critical CVE stops the pipeline before anything reaches production.</text></svg>
+</Diagram>
+
+```yaml title=".github/workflows/deploy.yaml / a representative pipeline"
+name: ci-cd
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests              # CI gate, must pass before we ship (sec testing chapter)
+        run: make test               # go test ./...  |  pytest
+
+      - name: Build image
+        run: docker build -t $REGISTRY/myapp:${{ github.sha }} .   # tag = commit SHA (sec 8)
+
+      - name: Scan image for vulnerabilities
+        run: trivy image --severity HIGH,CRITICAL --exit-code 1 $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Push to registry
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u ci --password-stdin
+          docker push $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Deploy to Kubernetes   # update the Deployment's image -> triggers a rolling update (sec 18)
+        run: kubectl set image deployment/api api=$REGISTRY/myapp:${{ github.sha }}
+```
+
+<Callout type="info" title="Why tag by commit SHA">
+Tagging the image with the git SHA (and deploying that exact tag) gives a precise, immutable link from a running pod back to the source that built it, the reproducibility goal from sec 8, end to end. When something breaks in prod you know _exactly_ which commit is running, and rollback (sec 18) is unambiguous.
+</Callout>
+
+## Deployment Strategies & GitOps
+
+The rolling update (sec 18) is the default, but riskier releases call for strategies that limit blast radius, and mature teams change _how_ deploys are triggered altogether with GitOps.
+
+| Strategy       | How it works                                                                           | Trade-off                                                                       |
+| -------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **Rolling**    | Replace pods gradually (the default)                                                   | Simple, zero-downtime; old + new run briefly together                           |
+| **Blue-green** | Stand up the full new version (green) beside old (blue), then flip all traffic at once | Instant switch & instant rollback; needs double the capacity during the cutover |
+| **Canary**     | Send a small % of traffic to the new version, watch metrics, then ramp up              | Safest for risky changes; more orchestration/observability needed               |
+
+<Diagram caption="Blue-green vs canary">
+<svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Blue-green flipping all traffic from blue to green at once, versus canary sending a small percentage to the new version first"><text x="180" y="22" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">blue-green, flip 100%</text><rect x="40" y="40" width="90" height="40" rx="8" fill="var(--dg-info)"></rect><text x="85" y="64" font-size="11" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">blue v1</text><rect x="230" y="40" width="90" height="40" rx="8" fill="var(--dg-ok)"></rect><text x="275" y="64" font-size="11" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">green v2</text><defs><marker id="ga2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><path d="M180 95 V120" stroke="var(--dg-accent-2)" stroke-width="2" marker-end="url(#ga2)"></path><text x="180" y="138" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">switch router blue->green instantly</text><text x="180" y="156" font-size="10" font-style="italic" fill="var(--dg-accent-2)" text-anchor="middle">problem? flip back to blue at once</text><text x="540" y="22" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">canary, trickle then ramp</text><rect x="430" y="40" width="120" height="36" rx="8" fill="var(--dg-info)"></rect><text x="490" y="63" font-size="10.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">v1-95%</text><rect x="580" y="40" width="120" height="36" rx="8" fill="var(--dg-accent)"></rect><text x="640" y="63" font-size="10.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">v2-5%</text><text x="565" y="100" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">watch v2's error rate &#x26; latency</text><text x="565" y="120" font-size="10.5" font-style="italic" fill="var(--dg-ok)" text-anchor="middle">healthy -> 5% -> 25% -> 100%</text><text x="565" y="140" font-size="10.5" font-style="italic" fill="var(--dg-accent-2)" text-anchor="middle">bad -> route 0% back, blast radius tiny</text></svg>
+</Diagram>
+
+### GitOps: Git as the source of truth
+
+The pipeline in sec 19 _pushes_ changes to the cluster. **GitOps** inverts that: the desired state of the cluster lives entirely in a Git repository (all those YAML manifests), and an in-cluster agent (Argo CD, Flux) continuously _pulls_ from Git and reconciles the cluster to match. This is the reconciliation loop of sec 11 extended to deployments themselves: Git is desired state, the cluster is actual state, the agent closes the gap. You deploy by merging a pull request; you roll back with `git revert`; and the repo is a complete, audited history of every change to production.
+
+The throughline
+
+Notice the same idea at three scales: a container keeps the _artifact_ identical, a Deployment keeps the _running pods_ matching a spec, and GitOps keeps the _whole cluster_ matching Git. Declare desired state, let a loop reconcile reality, it's containers and Kubernetes all the way down.
+
+## Production Cheat-Sheet
+
+The whole manual compressed to what you reach for under pressure.
+
+| Concept            | One-liner                                                                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| Container          | An isolated process, namespaces (what it sees) + cgroups (what it uses) + an image filesystem.     |
+| vs VM              | Containers share one host kernel; VMs each ship a full OS. Lighter, faster, weaker isolation.      |
+| Image vs container | Image = immutable template (class); container = running instance (object).                         |
+| Layers             | Images are stacked read-only layers, shared & cached; the container's writable top is ephemeral.   |
+| Dockerfile         | Recipe; each instruction = a layer. `RUN` at build time, `CMD` at run time.                        |
+| Multi-stage        | Build in a heavy stage, copy only the artifact into a tiny final image.                            |
+| Cache order        | Deps before code, a changed layer rebuilds everything below it.                                    |
+| Registry & tags    | Push/pull images by name:tag; pin a version or SHA, never `:latest`.                               |
+| Volumes            | Data that must survive lives in a volume, not the container's writable layer.                      |
+| Compose            | Declarative multi-container stack on _one_ host, local dev.                                        |
+| Orchestration      | Scheduling, self-healing, scaling, discovery, rollouts across many nodes.                          |
+| Declarative        | Declare desired state; a control loop reconciles actual toward it. The whole model.                |
+| Pod                | Smallest unit; one+ containers sharing network & storage. Mortal, gets a new IP when replaced.     |
+| Deployment         | Keeps N replicas of a pod running; self-heals; does rolling updates.                               |
+| Service            | Stable IP/DNS load-balancing across matching pods, service discovery.                              |
+| Ingress            | One L7 entry point: host/path routing + TLS to many Services.                                      |
+| Config/Secrets     | Inject at run time (ConfigMap/Secret); same image everywhere. Secrets aren't encrypted by default. |
+| Probes             | Liveness -> restart; readiness -> in/out of rotation; startup -> guard slow boots.                 |
+| Requests/limits    | Request = reserved (scheduling); limit = cgroup ceiling. Over memory -> OOMKilled.                 |
+| Scaling            | Run more replicas; HPA autoscales on a metric (needs requests set).                                |
+| Rollout/rollback   | Gradual replace gated by readiness; `kubectl rollout undo` reverts.                                |
+| CI/CD              | Commit -> build -> test -> scan -> push -> deploy, automatically; tag by SHA.                      |
+| Strategies         | Rolling (default), blue-green (instant flip), canary (trickle & watch).                            |
+| GitOps             | Git is desired state; an agent pulls & reconciles. Deploy by PR, roll back by revert.              |
+
+**The whole topic in one breath:** a container packages your app with its entire environment so "what runs in prod" equals "what you tested" (sec 1), achieved with Linux namespaces and cgroups, not a heavy VM (sec 2-3). You build an image as cached, shareable layers (sec 4) from a Dockerfile (sec 5), shrink and harden it with multi-stage builds and good cache ordering (sec 6-7), then push a SHA-tagged image to a registry (sec 8). Locally you wire several containers with networks, volumes, and Compose (sec 9-10). At fleet scale, Kubernetes reconciles declared desired state onto nodes (sec 11-12): Deployments keep replicas of pods alive and self-healing (sec 13-14), Services and Ingress give stable addressing and routing (sec 15), ConfigMaps/Secrets inject per-environment config (sec 16), probes and resource requests/limits drive health and scheduling (sec 17), and HPA plus rolling updates deliver scaling and zero-downtime releases (sec 18). CI/CD automates commit->build->test-> scan->push->deploy (sec 19), and blue-green/canary/GitOps make releases safe and auditable (sec 20). One idea recurs at every layer: declare the desired state and let a loop keep reality matching it.
+
+Grounded in the Docker & Kubernetes docs / OCI image-spec / the Twelve-Factor App / Go 1.22+ / Python 3.11+ application examples.
+
+Backend from First Principles / Chapter 21 / Containers. Code targets Go 1.22+ and Python 3.11+.

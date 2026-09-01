@@ -1,0 +1,76 @@
+---
+import type { MarkdownHeading } from 'astro';
+
+interface Props { headings: MarkdownHeading[]; }
+
+// Only h2/h3 make the outline. Deeper headings are structural detail inside
+// a section and would make a 21-section chapter unusable as a rail.
+const items = Astro.props.headings.filter((h) => h.depth === 2 || h.depth === 3);
+
+let n = 0;
+const entries = items.map((h) => ({
+  ...h,
+  num: h.depth === 2 ? String(++n).padStart(2, '0') : '',
+}));
+---
+<nav class="toc" aria-labelledby="toc-heading">
+  <p class="toc-heading" id="toc-heading">On this page</p>
+  <ol class="toc-list">
+    {entries.map((h) => (
+      <li class:list={['toc-item', h.depth === 3 && 'is-sub']}>
+        <a class="toc-link" href={`#${h.slug}`} data-toc-link={h.slug}>
+          <span class="toc-num">{h.num}</span>
+          <span class="toc-text">{h.text}</span>
+        </a>
+      </li>
+    ))}
+  </ol>
+</nav>
+
+<style>
+  .toc { font-family: var(--font-ui); }
+
+  .toc-heading {
+    font-size: var(--text-2xs);
+    font-weight: 620;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-caps);
+    color: var(--ink-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .toc-list { list-style: none; padding: 0; margin: 0; }
+
+  .toc-link {
+    display: grid;
+    grid-template-columns: 2ch 1fr;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    margin-left: calc(-1 * var(--space-3));
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    font-size: var(--text-sm);
+    line-height: 1.45;
+    color: var(--ink-2);
+    transition: color 120ms ease, background-color 120ms ease;
+  }
+  .toc-link:hover { color: var(--ink); background: var(--surface); }
+
+  .toc-num {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--ink-3);
+    padding-top: 0.15em;
+  }
+  .toc-text { text-wrap: pretty; }
+
+  .is-sub .toc-link { padding-left: calc(var(--space-3) + 2ch + var(--space-3)); }
+  .is-sub .toc-num { display: none; }
+  .is-sub .toc-link { grid-template-columns: 1fr; }
+  .is-sub .toc-text { color: var(--ink-3); font-size: var(--text-xs); }
+
+  /* Active state is driven by the scroll spy in ChapterShell. */
+  .toc-link[aria-current='true'] { color: var(--accent); background: var(--accent-bg); }
+  .toc-link[aria-current='true'] .toc-num { color: var(--accent); }
+  .is-sub .toc-link[aria-current='true'] .toc-text { color: var(--accent); }
+</style>

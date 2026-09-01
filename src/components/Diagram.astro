@@ -1,0 +1,205 @@
+---
+interface Props { caption?: string; }
+const { caption } = Astro.props;
+---
+<figure class="diagram full-bleed">
+  <div class="diagram-frame"><slot /></div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<script>
+  /*
+   * Some inherited diagrams draw outside their own viewBox -- an arrow head,
+   * a caption sitting past the right edge -- and the SVG viewport clips it.
+   * The measured overflow ranged up to ~290 units, which is a whole label
+   * lost, and it clipped identically on the old site.
+   *
+   * Fixing this needs layout, so it cannot be done in the build: only the
+   * browser knows where the glyphs actually land, and that depends on the
+   * fonts. So measure once the fonts have settled and grow the viewBox to
+   * contain the content. Diagrams that already fit are left untouched.
+   */
+  async function fitDiagrams() {
+    try { await document.fonts.ready; } catch { /* no font API: measure anyway */ }
+
+    for (const svg of document.querySelectorAll<SVGSVGElement>('.diagram-frame svg')) {
+      const raw = svg.getAttribute('viewBox');
+      if (!raw) continue;
+      const [x, y, w, h] = raw.trim().split(/[\s,]+/).map(Number);
+      if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) continue;
+
+      let box;
+      try { box = svg.getBBox(); } catch { continue; }
+      if (!box || !box.width || !box.height) continue;
+
+      const nx = Math.min(x, Math.floor(box.x));
+      const ny = Math.min(y, Math.floor(box.y));
+      const nw = Math.max(x + w, Math.ceil(box.x + box.width)) - nx;
+      const nh = Math.max(y + h, Math.ceil(box.y + box.height)) - ny;
+
+      // Ignore sub-pixel noise; only act on real clipping.
+      if (nw - w < 4 && nh - h < 4 && x - nx < 4 && y - ny < 4) continue;
+      svg.setAttribute('viewBox', `${nx} ${ny} ${nw} ${nh}`);
+    }
+  }
+
+  fitDiagrams();
+</script>
+
+<style>
+  .diagram {
+    /* ====================================================================
+       Diagram palette.
+
+       The migrated SVGs no longer carry literal colours: every fill and
+       stroke is one of the roles below (see scripts/tokenise-diagrams.mjs).
+       Defining both themes here is what lets 275 inherited diagrams follow
+       the theme instead of sitting on a pinned light plate.
+
+       Every foreground/background pair that actually occurs in the artwork
+       is contrast-checked by tests/diagram-contrast.test.js, so a change to
+       a value here fails the build rather than quietly hiding a label.
+       ==================================================================== */
+    --dg-paper: #ffffff;
+    --dg-surface: #f1efe9;
+    --dg-surface-2: #e4e1d8;
+    --dg-line: #8b8578;
+    --dg-line-2: #6f6a5e;
+
+    --dg-ink: #16150f;
+    --dg-ink-2: #45413a;
+    --dg-ink-3: #635e54;
+
+    --dg-accent: #a8321b;
+    --dg-accent-2: #7d2413;
+    --dg-accent-soft: #b94a2e;
+    --dg-accent-surface: #fbe6df;
+    --dg-accent-border: #b06a52;
+
+    --dg-ok: #2a6440;
+    --dg-ok-soft: #3f7c52;
+    --dg-ok-surface: #dfeddf;
+    --dg-ok-border: #5c8a68;
+
+    --dg-warn: #7f5a13;
+    --dg-warn-2: #6a4a0e;
+    --dg-warn-soft: #8a681a;
+    --dg-warn-surface: #f6ecd0;
+    --dg-warn-border: #9c8244;
+
+    --dg-info: #2a5674;
+    --dg-info-soft: #46718f;
+    --dg-info-surface: #e0ebf3;
+    --dg-info-border: #5c86a4;
+
+    --dg-plum: #7d3f61;
+    --dg-plum-soft: #9c5a7e;
+    --dg-plum-surface: #f3e2ec;
+
+    /* The inverse plate is a panel that contrasts with the page, with its
+       own ink ramp: labels on it are read against the plate, not the paper,
+       so they cannot follow the page's ink tokens. */
+    --dg-inverse: #1e1c18;
+    --dg-on-inverse: #f2efe6;
+    --dg-on-inverse-2: #c6c1b4;
+    --dg-on-inverse-3: #a09a8c;
+    --dg-on-inverse-accent: #ff9070;
+    --dg-on-inverse-ok: #86d197;
+    --dg-on-inverse-warn: #e8bd67;
+    --dg-on-inverse-info: #8cc0e0;
+
+    /* Faint hue washes. The originals were low-alpha colour over paper; as a
+       token they can stay faint against whichever paper is current. */
+    --dg-accent-tint: #fbf0ec;
+    --dg-ok-tint: #eef5ef;
+    --dg-warn-tint: #f8f3e6;
+    --dg-info-tint: #edf3f7;
+    --dg-plum-tint: #f7eff4;
+
+    /* A translucent veil used to lighten a shape. In dark mode the same
+       gesture has to darken instead, or it leaves a bright patch. */
+    --dg-veil: rgba(255, 255, 255, 0.5);
+    --dg-on-accent: #ffffff;
+  }
+
+  :global(:root[data-theme='dark']) .diagram {
+    --dg-paper: #161613;
+    --dg-surface: #201f1b;
+    --dg-surface-2: #2b2a25;
+    --dg-line: #787268;
+    --dg-line-2: #989286;
+
+    --dg-ink: #f0eee8;
+    --dg-ink-2: #c2bdb2;
+    --dg-ink-3: #9c9689;
+
+    --dg-accent: #ff8a63;
+    --dg-accent-2: #ffab8c;
+    --dg-accent-soft: #e27652;
+    --dg-accent-surface: #3a1f16;
+    --dg-accent-border: #a8563a;
+
+    --dg-ok: #83cd94;
+    --dg-ok-soft: #6ab27c;
+    --dg-ok-surface: #172b1d;
+    --dg-ok-border: #5a8c68;
+
+    --dg-warn: #e5ba63;
+    --dg-warn-2: #f0cd85;
+    --dg-warn-soft: #c79d4b;
+    --dg-warn-surface: #2d2413;
+    --dg-warn-border: #96793c;
+
+    --dg-info: #85bcdd;
+    --dg-info-soft: #6ba2c4;
+    --dg-info-surface: #14242e;
+    --dg-info-border: #5a86a4;
+
+    --dg-plum: #dba2c4;
+    --dg-plum-soft: #c188aa;
+    --dg-plum-surface: #2d1e27;
+
+    --dg-inverse: #e9e6de;
+    --dg-on-inverse: #1b1a16;
+    --dg-on-inverse-2: #46433c;
+    --dg-on-inverse-3: #635f56;
+    --dg-on-inverse-accent: #9c3018;
+    --dg-on-inverse-ok: #235e3a;
+    --dg-on-inverse-warn: #70540d;
+    --dg-on-inverse-info: #21506c;
+
+    --dg-accent-tint: #241a16;
+    --dg-ok-tint: #16211a;
+    --dg-warn-tint: #221e14;
+    --dg-info-tint: #151f25;
+    --dg-plum-tint: #201a1e;
+
+    --dg-veil: rgba(0, 0, 0, 0.35);
+    --dg-on-accent: #1a0d06;
+  }
+
+  .diagram-frame {
+    padding: var(--space-5);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--dg-paper);
+    overflow-x: auto;
+  }
+  .diagram-frame :global(svg) {
+    width: 100%;
+    height: auto;
+    display: block;
+    color: var(--dg-ink);
+  }
+  /*
+   * The default for labels that name no family of their own. It is set on the
+   * <svg>, not on `text`, so it is inherited rather than applied -- a rule on
+   * `text` would beat the font-family presentation attribute the artwork uses
+   * and force every monospace label into the UI face.
+   */
+  .diagram-frame :global(svg) { font-family: var(--font-ui); }
+
+  /* 500 labels carry class="mono" and relied on the old per-chapter
+     stylesheet, which this migration deletes, to make them monospace. */
+  .diagram-frame :global(svg .mono) { font-family: var(--font-diagram-mono); }
+</style>

@@ -1,0 +1,1500 @@
+---
+order: 1
+title: "HTTP & CORS"
+navTitle: "HTTP & CORS"
+summary: "A first-principles walkthrough of the application-layer protocol every backend touches, from statelessness and method semantics to caching, conditional requests, proxies, and TLS. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in both Go and Python, grounded in MDN and RFC 9110."
+readingTime: "3-4 hours"
+keywords:
+  - "http"
+  - "cors"
+  - "headers"
+  - "methods"
+  - "status"
+  - "tls"
+  - "https"
+  - "cookies"
+  - "preflight"
+  - "request"
+  - "response"
+---
+Part I / Foundations
+
+## Core Principles of HTTP
+
+HTTP (HyperText Transfer Protocol) is an **application-layer protocol**: Layer 7 of the OSI model, for transmitting hypermedia and, just as importantly for us, for programmatic access to APIs and machine-to-machine communication. "Application layer" means it's the topmost layer, the one that defines the _meaning_ of a message (this is a GET for `/users/5`) rather than how bytes physically move across wires. As backend engineers we live almost entirely here; the layers below (TCP segments, IP packets, Ethernet frames) are abstracted away as "a reliable pipe." Two ideas sit at HTTP's heart.
+
+<Diagram caption="Where HTTP lives">
+<svg viewBox="0 0 720 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Network layer stack showing HTTP at the application layer on top of TLS, TCP, IP and the physical link"><defs><linearGradient id="l7" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="var(--dg-accent)"></stop><stop offset="1" stop-color="var(--dg-accent-2)"></stop></linearGradient></defs><text x="14" y="40" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent)" transform="rotate(-90 14 40)" text-anchor="middle">YOU WORK HERE</text><path d="M30 14 H38 V64 H30" fill="none" stroke="var(--dg-accent)" stroke-width="2"></path><g><rect x="52" y="14" width="640" height="50" rx="9" fill="url(#l7)"></rect><text x="74" y="38" font-size="15" font-weight="700" fill="var(--dg-ink)">Application, HTTP</text><text x="74" y="55" class="mono" font-size="11" fill="var(--dg-ink)">methods / headers / status codes / the meaning of a message</text><text x="668" y="44" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink)" text-anchor="end">L7</text></g><g><rect x="92" y="78" width="600" height="42" rx="9" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="114" y="98" font-size="14" font-weight="700" fill="var(--dg-ok)">TLS (optional), encryption + authentication</text><text x="114" y="113" class="mono" font-size="10.5" fill="var(--dg-ink-2)">turns HTTP into HTTPS / sec 20</text></g><g><rect x="92" y="132" width="600" height="46" rx="9" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="114" y="153" font-size="14" font-weight="700" fill="var(--dg-ink)">Transport, TCP (or QUIC/UDP for HTTP/3)</text><text x="114" y="169" class="mono" font-size="10.5" fill="var(--dg-ink-2)">the one requirement HTTP makes: reliable, ordered delivery</text><text x="668" y="160" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink-2)" text-anchor="end">L4</text></g><g><rect x="92" y="190" width="600" height="40" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-line)"></rect><text x="114" y="215" font-size="13.5" font-weight="600" fill="var(--dg-ink-2)">Network, IP / packets &#x26; routing</text><text x="668" y="215" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink-2)" text-anchor="end">L3</text></g><g><rect x="92" y="242" width="600" height="36" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-line)"></rect><text x="114" y="265" font-size="13" font-weight="600" fill="var(--dg-ink-2)">Link, Ethernet / Wi-Fi / the actual wire</text><text x="668" y="265" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink-3)" text-anchor="end">L2/1</text></g><text x="392" y="290" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Everything below the top is abstracted away as "a reliable, possibly encrypted pipe."</text></svg>
+</Diagram>
+
+### 1. Statelessness
+
+The server keeps **no session memory between two requests**. Every request is fully self-contained: it must carry everything the server needs to process it, auth tokens, cookies, the target resource, the method, any preferences. The moment the server finishes responding, it discards all knowledge of that request. A second request from the same client a millisecond later is treated as a brand-new, completely unrelated event. The protocol has amnesia by design.
+
+Each request is like a letter that has to re-introduce who you are, every single time, the postal service never remembers your last envelope, so every letter must restate the sender, recipient, and return address.
+
+#### Why statelessness is a deliberate feature, not a limitation
+
+It would seem simpler for a server to "remember" you. Statelessness is chosen precisely because forgetting buys three properties that matter enormously at scale:
+
+- **Simplicity**: the server doesn't allocate, track, expire, or garbage-collect per-user session state in memory. Each request is handled in isolation, so the handler logic is a pure function of its inputs. Fewer moving parts means fewer bugs.
+- **Horizontal scalability**: because no server "owns" a conversation, any request can be routed to _any_ server in a fleet. A load balancer can spray ten requests from one user across ten different machines and each handles its request correctly, because each request carries its own context. Without statelessness you'd need "sticky sessions" pinning each user to one box, which wastes capacity and breaks when that box dies.
+- **Crash resilience**: if a node dies mid-flight, there is no in-memory session to reconstruct. The client simply retries, the load balancer sends it elsewhere, and nothing is lost. Stateful servers, by contrast, lose every active session when they crash.
+
+<Diagram caption="Statelessness, visualized">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One client sending requests through a load balancer that distributes them across three identical stateless servers"><rect x="20" y="95" width="120" height="60" rx="10" fill="var(--dg-accent)"></rect><text x="80" y="122" font-size="14" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Client</text><text x="80" y="140" class="mono" font-size="10" fill="var(--dg-on-accent)" text-anchor="middle">3 requests</text><g class="mono" font-size="9.5" fill="var(--dg-accent-2)"><path d="M140 110 C190 90 210 70 250 64" fill="none" stroke="var(--dg-accent)" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#ah)"></path><path d="M140 125 H250" fill="none" stroke="var(--dg-accent)" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#ah)"></path><path d="M140 140 C190 160 210 180 250 188" fill="none" stroke="var(--dg-accent)" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#ah)"></path></g><defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker></defs><rect x="252" y="100" width="96" height="50" rx="9" fill="var(--dg-inverse)"></rect><text x="300" y="120" font-size="11.5" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">Load</text><text x="300" y="136" font-size="11.5" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">Balancer</text><g stroke="var(--dg-ok)" stroke-width="1.6" fill="none"><path d="M348 115 C400 70 420 55 470 50" marker-end="url(#ah2)"></path><path d="M348 125 H470" marker-end="url(#ah2)"></path><path d="M348 135 C400 180 420 195 470 200" marker-end="url(#ah2)"></path></g><defs><marker id="ah2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><g><rect x="472" y="28" width="170" height="46" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="488" y="50" font-size="12.5" font-weight="700" fill="var(--dg-ok)">Server A</text><text x="488" y="65" class="mono" font-size="9.5" fill="var(--dg-ok)">no memory of you</text><rect x="472" y="102" width="170" height="46" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="488" y="124" font-size="12.5" font-weight="700" fill="var(--dg-ok)">Server B</text><text x="488" y="139" class="mono" font-size="9.5" fill="var(--dg-ok)">no memory of you</text><rect x="472" y="176" width="170" height="46" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="488" y="198" font-size="12.5" font-weight="700" fill="var(--dg-ok)">Server C</text><text x="488" y="213" class="mono" font-size="9.5" fill="var(--dg-ok)">no memory of you</text></g><text x="657" y="128" class="serif" font-size="12" font-style="italic" fill="var(--dg-ink-2)" transform="rotate(90 657 128)" text-anchor="middle">identical &#x26; interchangeable</text></svg>
+</Diagram>
+
+The tradeoff is that **continuity must be rebuilt on every request**. Since the protocol itself forgets, we re-establish identity each time using cookies, server-side sessions, or tokens, re-sending a small credential with every request so the server can re-look-up who you are. Those state-management techniques are detailed in sec 8; the key point here is that they sit _on top of_ a stateless protocol rather than changing its nature.
+
+### 2. The Client: Server Model
+
+Communication is **always initiated by the client**: a browser, a mobile app, or another backend service. The client decides what it wants, assembles a complete request (URL, method, headers, body), and sends it. The server is fundamentally passive: it hosts resources, listens, and only ever speaks in _response_ to a request. It cannot, in classic HTTP, spontaneously push data to a client that hasn't asked. This asymmetry is why "the server can't notify the browser of a new message" was historically solved with polling, and why WebSockets and Server-Sent Events (sec 19, sec 17) exist to break out of the strict request/response shape when you genuinely need server push.
+
+### The transport beneath: why TCP
+
+HTTP doesn't move bytes itself; it delegates that to a transport protocol. It has exactly one hard requirement of that transport: **reliability**. Messages must arrive intact and in order, or the transport must signal an error, HTTP cannot tolerate silently dropped or reordered bytes, because a half-delivered header or body is meaningless. The internet's two dominant transports are TCP and UDP:
+
+- **TCP** is connection-based and reliable: it performs a 3-way handshake (SYN -> SYN-ACK -> ACK) to establish a connection, numbers every byte, acknowledges receipt, retransmits losses, and delivers data in order. This is what HTTP/1 and HTTP/2 ride on.
+- **UDP** is connectionless and "fire-and-forget", fast but with no delivery guarantees. Raw HTTP can't use it directly, but HTTP/3's QUIC layer rebuilds reliability on top of UDP (sec 2).
+
+<Diagram caption="Before a single byte of HTTP">
+<svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sequence diagram of the TCP three-way handshake: SYN, SYN-ACK, ACK, then the HTTP request flows"><text x="120" y="28" font-size="14" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">Client</text><text x="600" y="28" font-size="14" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Server</text><line x1="120" y1="40" x2="120" y2="262" stroke="var(--dg-line)" stroke-width="2"></line><line x1="600" y1="40" x2="600" y2="262" stroke="var(--dg-line)" stroke-width="2"></line><rect x="138" y="52" width="444" height="118" rx="8" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-dasharray="4 3"></rect><text x="360" y="68" class="mono" font-size="10" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">&#x3C;-- one full round trip of latency, before any data --></text><line x1="120" y1="90" x2="598" y2="108" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#hh)"></line><text x="350" y="84" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">SYN</text><text x="350" y="99" font-size="10.5" fill="var(--dg-ink-2)" text-anchor="middle">"let's talk, here's my sequence number"</text><line x1="600" y1="125" x2="122" y2="143" stroke="var(--dg-ok)" stroke-width="2" marker-end="url(#ht)"></line><text x="362" y="135" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">SYN-ACK</text><text x="362" y="150" font-size="10.5" fill="var(--dg-ink-2)" text-anchor="middle">"got it, and here's mine"</text><line x1="120" y1="160" x2="598" y2="160" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#hh)"></line><text x="350" y="155" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">ACK</text><text x="360" y="190" class="serif" font-size="13" font-style="italic" font-weight="500" fill="var(--dg-ok)" text-anchor="middle">connection established</text><line x1="120" y1="215" x2="598" y2="215" stroke="var(--dg-ink)" stroke-width="2.4" marker-end="url(#hk)"></line><text x="350" y="210" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">GET /index.html &#x3C;- finally, HTTP</text><line x1="600" y1="240" x2="122" y2="240" stroke="var(--dg-ink)" stroke-width="2.4" marker-end="url(#hk2)"></line><text x="350" y="235" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">200 OK</text><defs><marker id="hh" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker><marker id="ht" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker><marker id="hk" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-inverse)"></path></marker><marker id="hk2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-inverse)"></path></marker></defs></svg>
+</Diagram>
+
+The TCP handshake and any TLS negotiation happen below Layer 7, they're transport/network-engineering concerns. We treat them as: "a reliable, possibly encrypted pipe was established, and now request and response messages flow over it." That abstraction is enough to reason about and debug the overwhelming majority of backend behavior.
+
+### Three properties that classify every method
+
+Three precise terms from the spec recur throughout this manual and govern how methods behave, how caches treat them, and whether clients may retry them. They're previewed here and dissected in sec 6:
+
+- **Safe**: the request is read-only; issuing it does not change server state (e.g. GET, HEAD). Crawlers and link prefetchers rely on this.
+- **Idempotent**: issuing the request once or N times leaves the server in the same final state (e.g. GET, PUT, DELETE). This is the property that makes a request safe to retry after a timeout.
+- **Cacheable**: the response may be stored and reused to satisfy a later equivalent request (e.g. GET, HEAD), saving a round trip.
+
+## The Evolution of HTTP
+
+Every HTTP version kept the same request/response semantics but reworked **how the underlying connection is used**, each chasing lower latency. Understanding the progression explains why certain performance problems exist and how modern HTTP solves them.
+
+<Diagram caption="Three decades">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline of HTTP versions from 0.9 in 1991 to HTTP/3 in 2022"><line x1="40" y1="60" x2="690" y2="60" stroke="var(--dg-line)" stroke-width="3"></line><g text-anchor="middle"><circle cx="70" cy="60" r="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="2"></circle><text x="70" y="40" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink)">0.9</text><text x="70" y="86" class="mono" font-size="10" fill="var(--dg-ink-2)">1991</text><text x="70" y="120" font-size="10.5" fill="var(--dg-ink-2)">one line:</text><text x="70" y="134" class="mono" font-size="9.5" fill="var(--dg-accent-2)">GET /page</text><circle cx="200" cy="60" r="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="2"></circle><text x="200" y="40" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink)">1.0</text><text x="200" y="86" class="mono" font-size="10" fill="var(--dg-ink-2)">1996</text><text x="200" y="120" font-size="10.5" fill="var(--dg-ink-2)">headers, status</text><text x="200" y="134" font-size="10.5" fill="var(--dg-ink-2)">codes, POST</text><text x="200" y="150" font-size="9.5" font-style="italic" fill="var(--dg-accent)">1 conn / request</text><circle cx="350" cy="60" r="11" fill="var(--dg-accent)"></circle><text x="350" y="38" class="mono" font-size="13" font-weight="700" fill="var(--dg-accent-2)">1.1</text><text x="350" y="88" class="mono" font-size="10" fill="var(--dg-ink-2)">1997</text><text x="350" y="120" font-size="10.5" font-weight="700" fill="var(--dg-ink)">keep-alive, Host,</text><text x="350" y="134" font-size="10.5" font-weight="700" fill="var(--dg-ink)">chunked encoding</text><text x="350" y="150" font-size="9.5" font-style="italic" fill="var(--dg-ok)">dominant ~20 yrs</text><circle cx="500" cy="60" r="9" fill="var(--dg-ok)"></circle><text x="500" y="40" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)">2</text><text x="500" y="86" class="mono" font-size="10" fill="var(--dg-ink-2)">2015</text><text x="500" y="120" font-size="10.5" fill="var(--dg-ink-2)">multiplexing,</text><text x="500" y="134" font-size="10.5" fill="var(--dg-ink-2)">binary, HPACK</text><circle cx="650" cy="60" r="9" fill="var(--dg-warn)"></circle><text x="650" y="40" class="mono" font-size="12" font-weight="700" fill="var(--dg-warn)">3</text><text x="650" y="86" class="mono" font-size="10" fill="var(--dg-ink-2)">2022</text><text x="650" y="120" font-size="10.5" fill="var(--dg-ink-2)">QUIC over UDP</text><text x="650" y="134" font-size="10.5" fill="var(--dg-ink-2)">drops TCP</text></g><text x="365" y="210" class="serif" font-size="13" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Each version only optimizes connection reuse, parallelism, compression, and transport, never the meaning of a message.</text></svg>
+</Diagram>
+
+| Version  | Year | Key change & connection behavior                                                                                                                                                                                         |
+| -------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| HTTP/0.9 | 1991 | A one-line protocol: `GET /page` and the response was raw HTML. No headers, no status codes, no other methods, no metadata of any kind.                                                                                  |
+| HTTP/1.0 | 1996 | Added headers, status codes, `POST`, and content types, the structure we still use. But it opened a fresh TCP connection for _every_ request and closed it after the response, paying the full handshake cost each time. |
+| HTTP/1.1 | 1997 | Persistent connections (`keep-alive`) by default, pipelining, chunked transfer encoding, the mandatory `Host` header, and richer caching. The dominant version for two decades.                                          |
+| HTTP/2   | 2015 | Multiplexing, binary framing, header compression (HPACK), and server push.                                                                                                                                               |
+| HTTP/3   | 2022 | Abandons TCP for **QUIC over UDP**.                                                                                                                                                                                      |
+
+### The problems each version solved
+
+**1.0's wastefulness.** Establishing a TCP connection costs a round trip (the handshake) before a single byte of HTTP flows. Doing that for every image, script, and stylesheet on a page, dozens of connections, added enormous latency. **1.1's persistent connections** fixed this by reusing one TCP connection for many request/response pairs (sec 16), amortizing the handshake.
+
+**The Host header.** 1.1 made `Host` mandatory, which enabled _virtual hosting_: one IP address and one server can host many domains, routing each request by its `Host` header. Essentially the entire shared-hosting and reverse-proxy world depends on this.
+
+**Head-of-line blocking.** Even with persistent connections, HTTP/1.1 processes requests on a connection _serially_, response 2 can't start until response 1 finishes. A single slow response stalls everything queued behind it. **HTTP/2's multiplexing** solves this at the application layer: many independent _streams_ share one connection, and frames from different streams interleave, so a slow response no longer blocks others. HTTP/2 also switched from verbose text to a compact **binary framing** layer and added **HPACK** header compression (repeated headers like cookies and user-agents are sent once and referenced), plus _server push_ (proactively sending resources the client will need, now largely deprecated in favor of preload hints).
+
+<Diagram caption="Head-of-line blocking">
+<svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Comparison: HTTP/1.1 processes requests one after another so a slow one blocks the queue, while HTTP/2 interleaves independent streams"><text x="20" y="28" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent)">HTTP/1.1, one connection, serial</text><line x1="20" y1="42" x2="700" y2="42" stroke="var(--dg-line)"></line><rect x="20" y="56" width="80" height="26" rx="5" fill="var(--dg-ok)"></rect><text x="60" y="73" class="mono" font-size="10" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">req A</text><rect x="104" y="56" width="240" height="26" rx="5" fill="var(--dg-accent)"></rect><text x="224" y="73" class="mono" font-size="10" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">req B, slow! everyone waits</text><rect x="348" y="56" width="80" height="26" rx="5" fill="var(--dg-ok)"></rect><text x="388" y="73" class="mono" font-size="10" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">req C</text><rect x="432" y="56" width="80" height="26" rx="5" fill="var(--dg-ok)"></rect><text x="472" y="73" class="mono" font-size="10" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">req D</text><text x="512" y="73" font-size="11" font-style="italic" fill="var(--dg-on-accent)">&#x3C;-- C &#x26; D blocked behind B</text><text x="20" y="104" class="mono" font-size="10" fill="var(--dg-ink-2)">time ------------------------------------------------></text><text x="20" y="150" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)">HTTP/2, one connection, interleaved streams</text><line x1="20" y1="164" x2="700" y2="164" stroke="var(--dg-line)"></line><g class="mono" font-size="9.5" fill="var(--dg-ink-2)"><text x="22" y="190" fill="var(--dg-ink)">A</text><text x="22" y="216" fill="var(--dg-ink)">B</text><text x="22" y="242" fill="var(--dg-ink)">C</text><text x="22" y="268" fill="var(--dg-ink)">D</text></g><rect x="44" y="178" width="40" height="18" rx="3" fill="var(--dg-ok)"></rect><rect x="120" y="178" width="40" height="18" rx="3" fill="var(--dg-ok)"></rect><rect x="44" y="204" width="34" height="18" rx="3" fill="var(--dg-accent)"></rect><rect x="200" y="204" width="34" height="18" rx="3" fill="var(--dg-accent)"></rect><rect x="360" y="204" width="34" height="18" rx="3" fill="var(--dg-accent)"></rect><rect x="520" y="204" width="34" height="18" rx="3" fill="var(--dg-accent)"></rect><rect x="90" y="230" width="40" height="18" rx="3" fill="var(--dg-ok)"></rect><rect x="168" y="230" width="40" height="18" rx="3" fill="var(--dg-ok)"></rect><rect x="240" y="256" width="40" height="18" rx="3" fill="var(--dg-warn)"></rect><rect x="300" y="256" width="40" height="18" rx="3" fill="var(--dg-warn)"></rect><text x="430" y="284" font-size="11" font-style="italic" fill="var(--dg-ok)">A, C, D finish early, B's slowness blocks nobody</text></svg>
+</Diagram>
+
+**TCP's own head-of-line blocking.** HTTP/2 removed it at the HTTP layer, but a deeper problem remained: because all streams share one TCP connection, a single lost TCP packet stalls _every_ stream until it's retransmitted, since TCP guarantees in-order delivery of the whole byte stream. **HTTP/3's QUIC** fixes this by running over UDP and implementing per-stream reliability itself: a lost packet only blocks the stream it belonged to. QUIC also folds the TLS handshake into the connection setup, so a secure connection establishes in fewer round trips (often zero on resumption).
+
+The one takeaway
+
+Across every version the mental model is identical: **a client and server establish a connection, then messages flow back and forth.** The versions only optimize the plumbing, connection reuse, parallelism, compression, and which transport carries it all.
+
+## Anatomy of Messages & MIME Types
+
+All HTTP communication is two structured text messages, a request and a response, that share one skeleton: a **start line**, a block of **headers**, a single **blank line**, then an optional **body**. That blank line is not decoration: it's the unambiguous signal that headers have ended and the body (if any) begins. Parsers rely on it absolutely.
+
+<Diagram caption="One skeleton, two messages">
+<svg viewBox="0 0 720 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Annotated structure of an HTTP request and response showing start line, headers, blank line and body"><text x="20" y="24" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent)">REQUEST</text><g><rect x="20" y="34" width="330" height="34" rx="6" fill="var(--dg-accent)"></rect><text x="34" y="56" class="mono" font-size="12.5" font-weight="700" fill="var(--dg-on-accent)">POST /api/v1/notes HTTP/1.1</text><rect x="20" y="72" width="330" height="92" rx="6" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="34" y="91" class="mono" font-size="11" fill="var(--dg-ink)">Host: api.example.com</text><text x="34" y="108" class="mono" font-size="11" fill="var(--dg-ink)">Authorization: Bearer eyJ...</text><text x="34" y="125" class="mono" font-size="11" fill="var(--dg-ink)">Content-Type: application/json</text><text x="34" y="142" class="mono" font-size="11" fill="var(--dg-ink)">Content-Length: 33</text><text x="34" y="158" class="mono" font-size="11" fill="var(--dg-ink-3)">   (blank line)</text><rect x="20" y="168" width="330" height="34" rx="6" fill="var(--dg-inverse)"></rect><text x="34" y="190" class="mono" font-size="11.5" fill="var(--dg-on-inverse-info)">&#123;"title":"buy milk","done":false&#125;</text></g><text x="392" y="24" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)">RESPONSE</text><g><rect x="392" y="34" width="308" height="34" rx="6" fill="var(--dg-ok)"></rect><text x="406" y="56" class="mono" font-size="12.5" font-weight="700" fill="var(--dg-on-accent)">HTTP/1.1 201 Created</text><rect x="392" y="72" width="308" height="92" rx="6" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="406" y="91" class="mono" font-size="11" fill="var(--dg-ink)">Content-Type: application/json</text><text x="406" y="108" class="mono" font-size="11" fill="var(--dg-ink)">Content-Length: 41</text><text x="406" y="125" class="mono" font-size="11" fill="var(--dg-ink)">Date: Sat, 30 May 2026 ...</text><text x="406" y="158" class="mono" font-size="11" fill="var(--dg-ink-3)">   (blank line)</text><rect x="392" y="168" width="308" height="34" rx="6" fill="var(--dg-inverse)"></rect><text x="406" y="190" class="mono" font-size="11.5" fill="var(--dg-on-inverse-info)">&#123;"id":42,"title":"buy milk",...&#125;</text></g><g font-size="11" fill="var(--dg-ink-2)"><path d="M360 51 H384" stroke="var(--dg-warn)" stroke-width="1.4" stroke-dasharray="3 2"></path><text x="360" y="232" font-size="11.5" font-weight="700" fill="var(--dg-warn)">1 / start line</text><text x="360" y="248" font-size="10.5" fill="var(--dg-ink)">method/target/version / version/code/phrase</text><text x="360" y="270" font-size="11.5" font-weight="700" fill="var(--dg-accent)">2 / headers</text><text x="360" y="286" font-size="10.5" fill="var(--dg-ink)">case-insensitive key: value metadata</text><text x="360" y="308" font-size="11.5" font-weight="700" fill="var(--dg-ink-3)">3 / blank line</text><text x="360" y="324" font-size="10.5" fill="var(--dg-ink)">the hard boundary, "headers end, body begins"</text></g><text x="50" y="232" font-size="11.5" font-weight="700" fill="var(--dg-ok)">4 / body (optional)</text><text x="50" y="248" font-size="10.5" fill="var(--dg-ink-2)">the payload, typed by Content-Type</text></svg>
+</Diagram>
+
+### The request message, line by line
+
+```text title="raw HTTP request"
+POST /api/v1/notes HTTP/1.1          # request line: method / target / version
+Host: api.example.com                # mandatory in HTTP/1.1 (virtual hosting)
+User-Agent: curl/8.4.0
+Authorization: Bearer eyJhbGc...     # headers: case-insensitive key: value
+Content-Type: application/json       # what the body IS
+Content-Length: 33                   # body size in bytes, tells server where it ends
+                                     # blank line: headers end, body begins
+{"title":"buy milk","done":false}    # request body
+```
+
+The **request line** has three parts: the _method_ (the intent, sec 6), the _request target_ (usually a path plus optional query string, like `/notes?done=false`), and the _protocol version_. The **Host** header is separate from the target because one server may host many domains. **Content-Length** matters more than it looks: on a persistent connection where many messages stream back-to-back, it tells the receiver exactly how many body bytes to read before the next message begins, get it wrong and you desynchronize the whole connection.
+
+### The response message
+
+```text title="raw HTTP response"
+HTTP/1.1 201 Created                 # status line: version / code / reason phrase
+Content-Type: application/json
+Content-Length: 41
+Date: Sat, 30 May 2026 12:00:00 GMT
+                                     # blank line
+{"id":42,"title":"buy milk","done":false}
+```
+
+The **status line** carries the version, the numeric _status code_ the client branches on (sec 10), and a human-readable _reason phrase_ ("Created", "Not Found"). The reason phrase is purely informational, clients must act on the number, never the text, since the text varies and is dropped entirely in HTTP/2.
+
+### MIME types: the `Content-Type` vocabulary
+
+Since HTTP/1.0, the same protocol carries any kind of content, JSON, HTML, images, video, binary blobs. The receiver needs to know which, and that's the job of the **MIME type** (media type) in the `Content-Type` header. Its grammar is `type/subtype` with optional parameters: `application/json; charset=utf-8` or `multipart/form-data; boundary=----X7`. The `charset` parameter tells the parser the text encoding; omitting it on text can cause mojibake. Getting `Content-Type` wrong is a common bug: send JSON labeled `text/plain` and many clients won't parse it; a server may reject a body whose declared type it doesn't accept with 415 Unsupported Media Type.
+
+| MIME type                         | Used for                                                  |
+| --------------------------------- | --------------------------------------------------------- |
+| application/json                  | The default for modern APIs.                              |
+| application/x-www-form-urlencoded | Classic HTML form posts, encoded as `key=val&k2=v2`.      |
+| multipart/form-data               | File uploads and mixed binary fields (sec 17).            |
+| text/html, text/plain             | Web pages and plain text.                                 |
+| application/octet-stream          | Arbitrary "just bytes"; usually triggers a file download. |
+| text/event-stream                 | Server-Sent Events streaming (sec 17).                    |
+
+Universal ordering rule
+
+Headers go on the wire **before** the status line and body, the receiver reads them first to know how to interpret what follows. So once you've written the status code (Go's `w.WriteHeader()`) or started streaming the body, any further header you set is silently dropped: the bytes are already gone. The invariant in every framework is **set headers -> write status -> write body**. Forgetting it is the cause of the classic "my header isn't being sent" bug.
+
+______
+
+Go Python
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "io"
+    "net/http"
+)
+
+type Note struct {
+    ID    int    `json:"id"`
+    Title string `json:"title"`
+    Done  bool   `json:"done"`
+}
+
+func createNote(w http.ResponseWriter, r *http.Request) {
+    body, _ := io.ReadAll(r.Body)      // 1. read request body
+    defer r.Body.Close()
+
+    var in Note
+    if err := json.Unmarshal(body, &in); err != nil {
+        http.Error(w, "invalid JSON", http.StatusBadRequest)
+        return
+    }
+    w.Header().Set("Content-Type", "application/json") // 2. headers FIRST
+    w.WriteHeader(http.StatusCreated)                  // 3. status
+    in.ID = 42
+    json.NewEncoder(w).Encode(in)                      // 4. body LAST
+}
+
+func main() {
+    http.HandleFunc("POST /api/v1/notes", createNote)  // Go 1.22 method routing
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+```python
+from fastapi import FastAPI, Response, status
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Note(BaseModel):
+    title: str
+    done: bool = False
+
+@app.post("/api/v1/notes", status_code=status.HTTP_201_CREATED)
+def create_note(note: Note, response: Response):
+    # FastAPI parses + validates the JSON body; a malformed body -> 422 automatically.
+    response.headers["Content-Type"] = "application/json"
+    return {"id": 42, **note.model_dump()}
+
+# run: uvicorn main:app --port 8080
+```
+
+## Why Headers Exist
+
+Headers are **key-value pairs of metadata** attached to a request or response, sitting between the start line and the body. The natural question is: why a separate section at all? Why not put this information in the URL, or inside the body?
+
+A shipping parcel writes the recipient, address, and PIN code _on the outside label_, not sealed inside the box. Every courier who handles it along the route reads the routing info at a glance, without tearing the box open. If that data were inside, each handler would have to unpack and repack the parcel just to know where it's going next. HTTP headers are that outer label: metadata any intermediary (proxy, cache, gateway) can read and act on without touching the payload.
+
+<Diagram caption="Label vs contents">
+<svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A parcel diagram: routing metadata on the outside label that proxies can read, sealed payload inside"><rect x="40" y="40" width="280" height="140" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="2"></rect><rect x="58" y="56" width="244" height="64" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-line)"></rect><text x="68" y="74" class="mono" font-size="10.5" font-weight="700" fill="var(--dg-accent-2)">> HEADERS, the label</text><text x="68" y="90" class="mono" font-size="10" fill="var(--dg-ink)">Host: api.example.com</text><text x="68" y="104" class="mono" font-size="10" fill="var(--dg-ink)">Cache-Control: max-age=3600</text><text x="68" y="116" class="mono" font-size="10" fill="var(--dg-ink)">Authorization: Bearer ...</text><rect x="58" y="128" width="244" height="38" rx="6" fill="var(--dg-inverse)"></rect><text x="68" y="146" class="mono" font-size="10.5" font-weight="700" fill="var(--dg-on-inverse-info)">> BODY, sealed contents</text><text x="68" y="160" class="mono" font-size="10" fill="var(--dg-on-inverse-3)">&#123; ... the actual payload ... &#125;</text><g text-anchor="middle"><rect x="400" y="34" width="120" height="40" rx="8" fill="var(--dg-surface)" stroke="var(--dg-ok)"></rect><text x="460" y="59" font-size="12" font-weight="700" fill="var(--dg-ok)">Proxy</text><rect x="400" y="86" width="120" height="40" rx="8" fill="var(--dg-surface)" stroke="var(--dg-ok)"></rect><text x="460" y="111" font-size="12" font-weight="700" fill="var(--dg-ok)">Cache</text><rect x="400" y="138" width="120" height="40" rx="8" fill="var(--dg-surface)" stroke="var(--dg-ok)"></rect><text x="460" y="163" font-size="12" font-weight="700" fill="var(--dg-ok)">Gateway</text></g><g stroke="var(--dg-ok)" stroke-width="1.5" fill="none" stroke-dasharray="4 3"><path d="M302 80 C350 70 360 60 398 56"></path><path d="M302 88 H398"></path><path d="M302 96 C350 120 360 145 398 158"></path></g><text x="610" y="100" class="serif" font-size="13" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">each reads the label</text><text x="610" y="118" class="serif" font-size="13" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">without opening the box</text></svg>
+</Diagram>
+
+Separating metadata from payload buys two foundational properties:
+
+- **Extensibility**: new capabilities are added simply by defining new headers, with zero change to the protocol's structure. Security policies, client hints, compression negotiation, custom `X-` headers for your own app, tracing IDs, all of these bolted onto HTTP over the years without breaking older clients, because anything that doesn't recognize a header just ignores it. The protocol grows without versioning churn.
+- **Remote control**: headers let the client send _instructions and preferences_ that steer the server's behavior, and let the server send directives back. The client says "I'd prefer JSON" (`Accept`), "cache this for an hour" is what the server replies (`Cache-Control`), "here's who I am" (`Authorization`), "I'm talking to this domain" (`Host`). The same request body can produce different responses depending purely on its headers, they are the dials and switches of the exchange.
+
+Headers are also **case-insensitive** in their names and ordering-independent, which is why frameworks normalize them. And because intermediaries read them, headers are where caching, content negotiation, authentication, and security policy are all expressed, the chapters that follow are, in large part, a tour of specific headers and the machinery behind them.
+
+## Types of HTTP Headers
+
+The hundreds of defined headers fall into a few functional buckets. Knowing the bucket tells you who sets a header and what it governs.
+
+| Category       | Purpose                                                                          | Examples                                                                                |
+| -------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Request        | Sent by the client; describe the client, its capabilities, and what it wants     | `User-Agent`, `Authorization`, `Accept`, `Host`, `Cookie`                               |
+| General        | Apply to both requests and responses; metadata about the message itself          | `Date`, `Connection`, `Cache-Control`                                                   |
+| Representation | Describe the body so the other side can interpret and process it                 | `Content-Type`, `Content-Length`, `Content-Encoding`, `ETag`                            |
+| Security       | Sent by the server to control client (browser) behavior and block attack classes | `Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`, `Set-Cookie` |
+
+### Security headers: the attack each one stops
+
+<Diagram caption="One header, one threat">
+<svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mapping of security headers to the attacks they block"><text x="20" y="26" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)">HEADER (server sets)</text><text x="520" y="26" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent)">ATTACK BLOCKED</text><g><rect x="20" y="38" width="300" height="40" rx="7" fill="var(--dg-info-surface)" stroke="var(--dg-ok)"></rect><text x="34" y="55" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)">Strict-Transport-Security</text><text x="34" y="70" font-size="10" fill="var(--dg-ink-2)">"only ever reach me over HTTPS"</text><rect x="520" y="38" width="180" height="40" rx="7" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="610" y="63" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">protocol downgrade</text><line x1="320" y1="58" x2="518" y2="58" stroke="var(--dg-ink-3)" stroke-width="1.4" marker-end="url(#sx)"></line></g><g><rect x="20" y="86" width="300" height="40" rx="7" fill="var(--dg-info-surface)" stroke="var(--dg-ok)"></rect><text x="34" y="103" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)">Content-Security-Policy</text><text x="34" y="118" font-size="10" fill="var(--dg-ink-2)">allow-list of script/style sources</text><rect x="520" y="86" width="180" height="40" rx="7" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="610" y="111" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">XSS (script injection)</text><line x1="320" y1="106" x2="518" y2="106" stroke="var(--dg-ink-3)" stroke-width="1.4" marker-end="url(#sx)"></line></g><g><rect x="20" y="134" width="300" height="40" rx="7" fill="var(--dg-info-surface)" stroke="var(--dg-ok)"></rect><text x="34" y="151" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)">X-Frame-Options: DENY</text><text x="34" y="166" font-size="10" fill="var(--dg-ink-2)">forbid embedding in an iframe</text><rect x="520" y="134" width="180" height="40" rx="7" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="610" y="159" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">clickjacking</text><line x1="320" y1="154" x2="518" y2="154" stroke="var(--dg-ink-3)" stroke-width="1.4" marker-end="url(#sx)"></line></g><g><rect x="20" y="182" width="300" height="40" rx="7" fill="var(--dg-info-surface)" stroke="var(--dg-ok)"></rect><text x="34" y="199" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)">X-Content-Type-Options</text><text x="34" y="214" font-size="10" fill="var(--dg-ink-2)">nosniff, don't guess the type</text><rect x="520" y="182" width="180" height="40" rx="7" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="610" y="207" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">MIME sniffing</text><line x1="320" y1="202" x2="518" y2="202" stroke="var(--dg-ink-3)" stroke-width="1.4" marker-end="url(#sx)"></line></g><g><rect x="20" y="230" width="300" height="40" rx="7" fill="var(--dg-info-surface)" stroke="var(--dg-ok)"></rect><text x="34" y="247" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)">Set-Cookie: HttpOnly; Secure</text><text x="34" y="262" font-size="10" fill="var(--dg-ink-2)">hide cookie from JS, HTTPS-only</text><rect x="520" y="230" width="180" height="40" rx="7" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="610" y="255" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">session theft</text><line x1="320" y1="250" x2="518" y2="250" stroke="var(--dg-ink-3)" stroke-width="1.4" marker-end="url(#sx)"></line></g><defs><marker id="sx" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0 L8 3 L0 6 Z" fill="var(--dg-ink-3)"></path></marker></defs></svg>
+</Diagram>
+
+Security headers are worth understanding individually, because each is a direct countermeasure to a specific, named attack. They work by instructing the browser to refuse dangerous behavior:
+
+- `Strict-Transport-Security` (HSTS), tells the browser "for the next N seconds, only ever contact me over HTTPS, even if a link says http\://". This defeats **protocol-downgrade attacks**, where an attacker on the network strips the connection back to plaintext HTTP to read or alter it.
+- `Content-Security-Policy` (CSP), an allow-list of where scripts, styles, images, and other resources may load from (e.g. `default-src 'self'`). Its main job is to neutralize **cross-site scripting (XSS)**: even if an attacker injects a `<script>` tag, the browser refuses to execute it unless its source is on the allow-list.
+- `X-Frame-Options: DENY`, forbids your page from being embedded in an `<iframe>` on another site. This blocks **clickjacking**, where an attacker overlays your real (invisible) page on top of bait, tricking users into clicking buttons they can't see.
+- `X-Content-Type-Options: nosniff`, stops the browser from guessing ("sniffing") a resource's type when the declared `Content-Type` looks wrong. Sniffing can be tricked into executing an uploaded image as a script, the classic **MIME-sniffing attack**: and this header shuts it off.
+- `Set-Cookie` with `HttpOnly` and `Secure`-`HttpOnly` hides the cookie from JavaScript (so a successful XSS can't steal the session), and `Secure` ensures it's only ever sent over HTTPS (so it can't leak over plaintext).
+
+Because these should apply to _every_ response, you set them once in middleware rather than per-handler, a single chokepoint that wraps the whole application:
+
+______
+
+Go Python
+
+```go
+func securityHeaders(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        h := w.Header()
+        h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        h.Set("Content-Security-Policy", "default-src 'self'")
+        h.Set("X-Frame-Options", "DENY")
+        h.Set("X-Content-Type-Options", "nosniff")
+        next.ServeHTTP(w, r) // headers MUST be set before this call (see sec 3)
+    })
+}
+// http.ListenAndServe(":8080", securityHeaders(mux))
+```
+
+```python
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SecurityHeaders(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        resp = await call_next(request)
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        resp.headers["Content-Security-Policy"] = "default-src 'self'"
+        resp.headers["X-Frame-Options"] = "DENY"
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        return resp
+
+app.add_middleware(SecurityHeaders)
+```
+
+Part II / Methods & Semantics
+
+## HTTP Methods: The Deep Dive
+
+Methods (a.k.a. _verbs_) express the **semantic intent** of a request, they tell the server what kind of action you want, independent of the URL. RFC 9110 defines nine. Each carries three independent properties, and getting them right is what separates a correct, retry-safe, cache-friendly API from a buggy one.
+
+### The three properties, precisely
+
+- **Safe**: the request is read-only; issuing it must not change observable server state. The point is that automated agents, search crawlers, link prefetchers, antivirus URL scanners, feel free to fire safe requests at will. If a GET deleted something, a crawler would wreck your data. (Logging the request or incrementing a view counter is tolerated; the _resource the client is acting on_ must not change.)
+- **Idempotent**: the _effect_ of N identical requests equals the effect of one. This is the property that makes a request **safe to retry** after a network failure: if your client times out unsure whether the request landed, it can re-send without fear of doubling the effect. Crucially, idempotency is about _server state_, not the response body, two DELETEs may return 200 then 404, but the resulting state ("the resource is gone") is identical, so DELETE is idempotent.
+- **Cacheable**: the response may be stored by a cache (browser, CDN, proxy) and reused to answer a later equivalent request without contacting the origin server, saving a round trip and load.
+
+<Diagram caption="How the properties nest">
+<svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Nested set diagram: safe methods are a subset of idempotent methods; cacheable overlaps; POST and PATCH sit outside"><ellipse cx="290" cy="150" rx="250" ry="120" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)" stroke-width="2"></ellipse><text x="290" y="50" class="mono" font-size="12" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">IDEMPOTENT, safe to retry</text><ellipse cx="215" cy="160" rx="150" ry="88" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="2"></ellipse><text x="170" y="108" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">SAFE, read-only</text><ellipse cx="200" cy="195" rx="118" ry="60" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="2" stroke-dasharray="5 3"></ellipse><text x="150" y="240" class="mono" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">CACHEABLE</text><g font-family="var(--font-diagram-mono)" font-weight="700" text-anchor="middle"><text x="172" y="178" font-size="14" fill="var(--dg-ink)">GET</text><text x="225" y="200" font-size="14" fill="var(--dg-ink)">HEAD</text><text x="300" y="135" font-size="13" fill="var(--dg-warn-2)">PUT</text><text x="370" y="170" font-size="13" fill="var(--dg-accent-2)">DELETE</text><text x="300" y="245" font-size="12.5" fill="var(--dg-ok)">OPTIONS</text><text x="395" y="225" font-size="12.5" fill="var(--dg-ink-3)">TRACE</text></g><rect x="566" y="96" width="138" height="50" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="635" y="118" class="mono" font-size="14" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">POST</text><text x="635" y="136" font-size="10" fill="var(--dg-accent-2)" text-anchor="middle">neither, needs a key sec 7</text><rect x="566" y="156" width="138" height="50" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="635" y="178" class="mono" font-size="14" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">PATCH</text><text x="635" y="194" font-size="10" fill="var(--dg-accent-2)" text-anchor="middle">usually neither</text><text x="635" y="240" class="serif" font-size="12" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">outside every circle</text><text x="635" y="256" class="serif" font-size="12" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">not safe to blindly retry</text></svg>
+</Diagram>
+
+<Callout type="info" title="How the properties relate">
+Every **safe** method is automatically **idempotent**: if a request changes nothing, doing it twice still changes nothing. The converse is false: PUT and DELETE are idempotent but _not_ safe, because they do change state, just deterministically, to the same end result no matter how many times you repeat them.
+</Callout>
+
+### The authoritative property table (RFC 9110)
+
+| Method  | Safe | Idempotent | Cacheable     | Request body | Response body |
+| ------- | ---- | ---------- | ------------- | ------------ | ------------- |
+| GET     | Yes  | Yes        | Yes           | No           | Yes           |
+| HEAD    | Yes  | Yes        | Yes           | No           | No            |
+| OPTIONS | Yes  | Yes        | No            | No           | Yes           |
+| TRACE   | Yes  | Yes        | No            | No           | Yes           |
+| PUT     | No   | Yes        | No            | Yes          | Optional      |
+| DELETE  | No   | Yes        | No            | Optional     | Optional      |
+| POST    | No   | No         | Conditional\* | Yes          | Yes           |
+| PATCH   | No   | No         | Conditional\* | Yes          | Optional      |
+| CONNECT | No   | No         | No            | No           | Yes           |
+
+\*POST and PATCH are cacheable only when the response explicitly includes freshness info and a matching `Content-Location`, rare in practice, so treat them as effectively non-cacheable.
+
+GET**Retrieve a representation of a resource** safeidempotentcacheable
+
+"Give me this resource." The workhorse of the read path.
+
+GET should **only retrieve** data and carries no semantic meaning in a body, most servers, proxies, and caches ignore or reject a GET body, so any input must go in the URL. Filtering, sorting, and pagination therefore live in the **query string** (`/notes?done=false&sort=created&limit=20`), never in a body. Because GET is safe and cacheable, its responses can be stored at every layer, the browser cache, a CDN, a corporate proxy, which is the engine of web performance. It is also exactly why a state change must _never_ hide behind a GET: a prefetcher, crawler, or cache warm-up will fire it and trigger the change without a user ever clicking.
+
+#### Backend behavior
+
+- Found -> 200 OK with the resource in the body.
+- Missing -> 404 Not Found.
+- Client's cached copy is still valid -> 304 Not Modified, empty body (sec 12).
+
+HEAD**Like GET, but headers only, no body** safeidempotentcacheable
+
+"Give me the metadata you'd send for a GET, but skip the payload."
+
+The server returns the exact same status and headers it would for a GET, including `Content-Length`, `Content-Type`, `ETag`, and `Last-Modified`, but omits the body entirely. This is useful when you want the metadata without paying for the download: **checking whether a resource exists** (200 vs 404), reading a file's size before deciding to fetch it, validating a cached copy's freshness, or running a cheap health check against a URL. Most frameworks implement HEAD automatically by routing it through the GET handler and discarding the generated body, which is why you rarely write a separate HEAD handler.
+
+POST**Submit data; create a resource or trigger processing** not safenot idempotentcond. cacheable
+
+"Here's some data, do something with it that changes state."
+
+POST is the general-purpose state-changing verb: creating records, submitting forms, kicking off background jobs, processing payments, anything that doesn't fit the more specific verbs. Its defining (and dangerous) trait is that it is **not idempotent**: two identical POSTs create two resources. This is the mechanism behind duplicate orders when a user double-clicks "buy," and behind double-charges when a flaky network makes a client retry a payment it isn't sure went through. The fix is an **idempotency key** (sec 7), which is essentially how you bolt idempotency onto a method that lacks it.
+
+#### Backend behavior
+
+- Created a resource -> 201 Created, ideally with a `Location` header pointing to the new URL so the client knows where it now lives.
+- Accepted for asynchronous processing (not finished yet) -> 202 Accepted.
+- Validation failed -> 400 (the request was malformed) or 422 (well-formed but semantically invalid).
+- Business-rule clash, e.g. a duplicate username -> 409 Conflict.
+
+PUT**Replace the target resource entirely with the body** not safeidempotentnot cacheable
+
+"Make the resource at this URL look exactly like this body."
+
+PUT performs a **complete replacement**: the client supplies the full new representation of the resource and addresses a _specific_, known URL (usually one the client itself chose, like `/users/alice/avatar`). This is what makes it idempotent, sending the same full body ten times leaves the resource in the identical final state every time, because each request overwrites rather than accumulates. PUT can also create the resource if it doesn't yet exist (then return 201 Created) or replace an existing one (then 200 OK or 204 No Content).
+
+PUT vs POST for creation
+
+Use **POST** when the _server_ decides the new resource's identity: `POST /notes` and the server replies `Location: /notes/42`. Use **PUT** when the _client_ already knows the full target URL: `PUT /users/alice/settings`. The practical consequence: PUT-to-create is idempotent (retry-safe), POST-to-create is not (retry may duplicate). Choosing the right one is choosing whether retries are safe.
+
+PATCH**Apply a partial modification to a resource** not safenot idempotent\*cond. cacheable
+
+"Change just these fields; leave everything else alone."
+
+Where PUT replaces the whole resource, PATCH sends only a **set of changes**: e.g. `{"done": true}` to flip a single field without re-sending the entire object. This is more efficient and avoids accidentally wiping fields you didn't mean to touch. PATCH is _not guaranteed_ idempotent by the spec (the \* in the table): a patch like "append this item to the list" or "increment the counter by 1" produces a different result each time it runs. A patch that _sets_ fields to fixed values usually is idempotent in practice, but you can't rely on it universally. Servers advertise which patch document formats they accept, such as JSON Merge Patch or the more surgical JSON Patch, via the `Accept-Patch` response header.
+
+<Callout type="info" title="Rule of thumb">
+**PATCH** for partial updates, **PUT** for full replacement. Many developers reach for PUT when they actually mean PATCH (and then have to send every field to avoid nulling them out). Default to PATCH unless you genuinely intend to overwrite the entire resource.
+</Callout>
+
+DELETE**Remove the target resource** not safeidempotentnot cacheable
+
+"Delete this resource."
+
+DELETE is idempotent for a subtle but important reason: deleting once removes the resource, and deleting again changes nothing because it's already gone. The _responses_ may differ across attempts (the first returns 200/204, a repeat returns 404), but the _state of the server_, "this resource does not exist", is identical after one call or ten. That state-equivalence is exactly what idempotency means, which is why a client can safely retry a DELETE that timed out. Return 204 No Content when there's nothing to send back, or 200 with a body describing what was removed.
+
+OPTIONS**Describe the communication options for the target** safeidempotentnot cacheable
+
+"What can I do with this resource?"
+
+OPTIONS asks the server which methods and headers a resource supports without acting on it; the server answers with an `Allow` header (e.g. `Allow: GET, POST, OPTIONS`). Its starring real-world role is the **CORS preflight** (sec 9): before a browser sends a "non-simple" cross-origin request, it automatically fires an OPTIONS to ask permission, and only proceeds if the server's response approves the method, headers, and origin. You almost never call OPTIONS by hand, but you'll see it constantly in the browser's Network tab paired with your real requests.
+
+CONNECT**Establish a tunnel through a proxy** not safenot idempotentnot cacheable
+
+"Open a raw two-way tunnel to this host through you, proxy."
+
+CONNECT is used almost exclusively by **forward proxies handling HTTPS**. When a browser configured to use a proxy wants to reach an HTTPS site, it sends `CONNECT example.com:443` to the proxy, which opens a TCP tunnel to the destination and then blindly relays the encrypted bytes in both directions. Because the traffic inside is TLS-encrypted end-to-end, the proxy can't read or modify it, it just shovels bytes. You will essentially never implement CONNECT in an application server; it lives in proxy and infrastructure software (sec 18).
+
+TRACE**Loop-back diagnostic along the request path** safeidempotentnot cacheable
+
+"Echo my request back so I can see what intermediaries changed."
+
+TRACE asks the server to echo the request it received, so the client can see exactly how proxies and gateways along the path modified the message, a debugging tool for the request chain. In practice it is **disabled almost everywhere**, because it enabled a class of attack called Cross-Site Tracing (XST) that could expose otherwise-hidden headers (like cookies) to malicious scripts. Most servers and frameworks reject TRACE outright. Know it exists for completeness; you won't use it.
+
+### Wiring methods to handlers
+
+______
+
+Go Python
+
+```go
+mux := http.NewServeMux()
+
+// Go 1.22+ binds method + path. An unmatched method auto-returns 405 Method Not Allowed.
+mux.HandleFunc("GET    /notes",      listNotes)   // safe, cacheable read
+mux.HandleFunc("GET    /notes/{id}", getNote)
+mux.HandleFunc("HEAD   /notes/{id}", getNote)     // reuse GET; framework drops the body
+mux.HandleFunc("POST   /notes",      createNote)  // create (server assigns id)
+mux.HandleFunc("PUT    /notes/{id}", putNote)     // full replace (idempotent)
+mux.HandleFunc("PATCH  /notes/{id}", patchNote)   // partial update
+mux.HandleFunc("DELETE /notes/{id}", deleteNote)  // remove (idempotent)
+
+func getNote(w http.ResponseWriter, r *http.Request) {
+    id := r.PathValue("id")                       // built-in path params
+    note, err := db.Find(id)
+    if err == ErrNotFound { http.NotFound(w, r); return } // 404
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(note)               // 200
+}
+```
+
+```python
+from fastapi import FastAPI, HTTPException
+app = FastAPI()  # auto-returns 405 for unregistered methods, 422 on bad bodies
+
+@app.get("/notes")               # safe, cacheable read (list)
+def list_notes(done: bool | None = None, limit: int = 20): ...
+
+@app.get("/notes/{id}")          # GET also serves HEAD automatically
+def get_note(id: int):
+    note = db.find(id)
+    if note is None:
+        raise HTTPException(404, "not found")   # 404
+    return note                                  # 200
+
+@app.post("/notes", status_code=201)            # create (server assigns id)
+def create_note(note: Note): ...
+
+@app.put("/notes/{id}")          # full replace (idempotent)
+def put_note(id: int, note: Note): ...
+
+@app.patch("/notes/{id}")        # partial update
+def patch_note(id: int, patch: dict): ...
+
+@app.delete("/notes/{id}", status_code=204)     # remove (idempotent)
+def delete_note(id: int): ...
+```
+
+## Idempotency in Practice
+
+Idempotency is the property that makes a request **safe to retry**: and retries are not optional in a distributed system, they're inevitable. Networks drop packets, a client times out without knowing whether the request reached the server, a user impatiently double-clicks, a mobile app re-sends when the radio reconnects. GET, PUT, and DELETE are idempotent by design, so retrying them is harmless. POST is not, which is the root cause of duplicate-record and double-charge bugs.
+
+The deeper issue is the **"unknown outcome" problem**: when a client sends a POST and the connection drops before the response arrives, the client genuinely cannot tell whether the server processed it. Retrying risks a duplicate; not retrying risks losing the operation. Idempotency keys resolve this dilemma cleanly.
+
+<Diagram caption="The bug a key prevents">
+<svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Without an idempotency key, a dropped response leads the client to retry a POST, charging the customer twice"><text x="120" y="24" font-size="13" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">Client</text><text x="600" y="24" font-size="13" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Server</text><line x1="120" y1="36" x2="120" y2="220" stroke="var(--dg-line)" stroke-width="2"></line><line x1="600" y1="36" x2="600" y2="220" stroke="var(--dg-line)" stroke-width="2"></line><line x1="120" y1="60" x2="598" y2="60" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#i1)"></line><text x="350" y="54" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">POST /charge ($50)</text><text x="615" y="78" font-size="11" fill="var(--dg-accent-2)" font-weight="700">charged once</text><line x1="600" y1="92" x2="360" y2="92" stroke="var(--dg-ink-3)" stroke-width="2" stroke-dasharray="4 3"></line><text x="455" y="86" class="mono" font-size="10.5" fill="var(--dg-ink-3)" text-anchor="middle">201 ...</text><text x="350" y="110" font-size="11" font-style="italic" fill="var(--dg-accent)" text-anchor="middle">response lost, client never learns it worked</text><line x1="120" y1="140" x2="598" y2="140" stroke="var(--dg-accent)" stroke-width="2.4" marker-end="url(#i1)"></line><text x="350" y="134" class="mono" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">POST /charge ($50) &#x3C;- retried!</text><text x="615" y="158" font-size="11" fill="var(--dg-accent-2)" font-weight="700">charged AGAIN</text><rect x="150" y="178" width="440" height="40" rx="9" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)"></rect><text x="370" y="203" font-size="13" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">$100 charged for one $50 purchase</text><defs><marker id="i1" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker></defs></svg>
+</Diagram>
+
+The fix: idempotency keys
+
+The client generates a unique key (typically a UUID) for the _logical operation_ and sends it as an `Idempotency-Key` header. The server stores the key alongside the result of the first successful execution. If the same key ever arrives again, because the client retried, the server recognizes it and returns the **stored result** without re-running the work. The operation thus executes _at most once_ regardless of how many times it's submitted. (MDN now documents `Idempotency-Key` as a standardizing header, and payment APIs like Stripe popularized the pattern.)
+
+1
+
+Client sends `POST /payments` with `Idempotency-Key: 9f8c-...`.
+
+v
+
+2
+
+Server checks its key store. Key unseen -> run the charge, persist `key -> result`, return 201.
+
+v
+
+3
+
+The network drops the response. The client, unsure, retries with the _same_ key.
+
+v
+
+4
+
+Server sees the key already exists -> returns the stored result. **No second charge.**
+
+#### Implementation considerations
+
+- **Store the key durably**: the in-memory maps below are for illustration; production uses Redis or a database table so the key survives restarts and is shared across all server instances (remember, any node may receive the retry, sec 1).
+- **Give keys a TTL**: expire stored keys after, say, 24 hours so the store doesn't grow without bound.
+- **Persist before responding**: record the result before sending it, so a crash between "did the work" and "saved the key" doesn't lose the dedup guarantee.
+
+______
+
+Go Python
+
+```go
+var seen sync.Map // key -> []byte result. Use Redis with a TTL in production.
+
+func createPayment(w http.ResponseWriter, r *http.Request) {
+    key := r.Header.Get("Idempotency-Key")
+    if key == "" {
+        http.Error(w, "missing Idempotency-Key", http.StatusBadRequest)
+        return
+    }
+    if cached, ok := seen.Load(key); ok {     // replay: return the stored result
+        w.WriteHeader(http.StatusOK)
+        w.Write(cached.([]byte))
+        return
+    }
+    result := charge(r)                       // the real, non-idempotent work
+    seen.Store(key, result)                   // remember it BEFORE responding
+    w.WriteHeader(http.StatusCreated)
+    w.Write(result)
+}
+```
+
+```python
+from fastapi import Header, HTTPException
+
+seen: dict[str, dict] = {}  # use Redis with a TTL in production
+
+@app.post("/payments", status_code=201)
+def create_payment(payload: dict, idempotency_key: str = Header(...)):
+    if idempotency_key in seen:          # replay: return the stored result
+        return seen[idempotency_key]
+    result = charge(payload)             # the real, non-idempotent work
+    seen[idempotency_key] = result       # remember it BEFORE responding
+    return result
+```
+
+Idempotency keys protect against _duplicate execution_. A different but related hazard, two clients overwriting each other's edits (the "lost update"), needs a complementary tool: optimistic concurrency with `If-Match` and ETags, covered in sec 13.
+
+Part III / State, Identity & Cross-Origin
+
+## Cookies, Sessions & Authentication
+
+HTTP is stateless (sec 1), yet every real application needs to know "this request is from the same logged-in user as the last one." The protocol provides no memory, so we rebuild identity on every request by having the client re-send a small credential. There are two dominant architectures for this, but both start from the same primitive: the cookie.
+
+### How cookies work mechanically
+
+The entire cookie mechanism is two headers. The server attaches a `Set-Cookie` header to a response; the browser stores the value and then **automatically** includes it in a `Cookie` header on every subsequent request to that domain, without any code on the page asking it to. That automaticity is both the convenience (sessions "just work") and the danger (it's what makes CSRF possible, see `SameSite` below).
+
+```text title="cookie round-trip"
+# response from the server, sets the cookie once
+Set-Cookie: session=abc123; HttpOnly; Secure; SameSite=Strict; Max-Age=3600; Path=/
+
+# every later request from the browser, sent automatically
+Cookie: session=abc123
+```
+
+#### The attributes, and why each matters for security
+
+- `HttpOnly`, the cookie is invisible to JavaScript (`document.cookie` can't read it). This means even a successful XSS injection can't exfiltrate the session token.
+- `Secure`, the cookie is only ever transmitted over HTTPS, so it can't leak across a plaintext connection an attacker is sniffing.
+- `SameSite`, controls whether the cookie rides along on cross-site requests, the core defense against **CSRF (cross-site request forgery)**. `Strict` never sends it cross-site; `Lax` (the modern default) sends it on top-level navigations but not on cross-site sub-requests; `None` always sends it but then requires `Secure`.
+- `Max-Age` / `Expires`, lifetime; without them the cookie is a "session cookie" that dies when the browser closes. `Domain` / `Path`, scope which hosts and URL paths receive it.
+
+### Two authentication architectures
+
+The choice between them is essentially "where does the session state live?", and that choice ripples into scalability and revocation.
+
+|                     | Session cookies (stateful)                                         | Token / JWT (stateless)                                                                          |
+| ------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Where state lives   | Server stores the full session; the cookie holds only an opaque ID | The client holds a signed token containing the claims; the server stores nothing                 |
+| Sent via            | `Cookie` header (automatic)                                        | `Authorization: Bearer <token>` (set explicitly by the client)                                   |
+| Verifying a request | Look the session ID up in the store on every request               | Verify the cryptographic signature locally, no lookup                                            |
+| Horizontal scaling  | Needs a shared session store (e.g. Redis) all nodes can reach      | Trivial, any node can verify a signature with no shared state                                    |
+| Revocation          | Easy, just delete the session server-side                          | Hard, a token is valid until it expires; you need a denylist or short lifetimes + refresh tokens |
+
+<Diagram caption="Anatomy of a token">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A JWT split into header, payload and signature segments with explanations of each"><text x="20" y="40" class="mono" font-size="15" font-weight="700" fill="var(--dg-ink)"><tspan fill="var(--dg-accent)">eyJhbGciOiJIUzI1...</tspan><tspan fill="var(--dg-ink-3)"> . </tspan><tspan fill="var(--dg-warn)">eyJzdWIiOiI0Mi...</tspan><tspan fill="var(--dg-ink-3)"> . </tspan><tspan fill="var(--dg-ok)">SflKxwRJSMeKKF...</tspan></text><line x1="20" y1="52" x2="700" y2="52" stroke="var(--dg-line)"></line><g><rect x="20" y="70" width="216" height="150" rx="10" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)"></rect><text x="36" y="92" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent)">1 / HEADER</text><text x="36" y="116" class="mono" font-size="10.5" fill="var(--dg-ink)">&#123; "alg": "HS256",</text><text x="36" y="131" class="mono" font-size="10.5" fill="var(--dg-ink)">  "typ": "JWT" &#125;</text><text x="36" y="166" font-size="11" fill="var(--dg-ink-2)">names the signing</text><text x="36" y="181" font-size="11" fill="var(--dg-ink-2)">algorithm</text><text x="36" y="208" class="serif" font-size="11" font-style="italic" fill="var(--dg-accent-2)">readable by anyone</text></g><g><rect x="252" y="70" width="216" height="150" rx="10" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)"></rect><text x="268" y="92" class="mono" font-size="12" font-weight="700" fill="var(--dg-warn)">2 / PAYLOAD</text><text x="268" y="116" class="mono" font-size="10.5" fill="var(--dg-ink)">&#123; "sub": 42,</text><text x="268" y="131" class="mono" font-size="10.5" fill="var(--dg-ink)">  "exp": 1717...,</text><text x="268" y="146" class="mono" font-size="10.5" fill="var(--dg-ink)">  "role": "user" &#125;</text><text x="268" y="178" font-size="11" fill="var(--dg-ink-2)">the claims, user id,</text><text x="268" y="193" font-size="11" fill="var(--dg-ink-2)">expiry, roles</text><text x="268" y="214" class="serif" font-size="11" font-style="italic" fill="var(--dg-warn)">encoded, NOT encrypted</text></g><g><rect x="484" y="70" width="216" height="150" rx="10" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)"></rect><text x="500" y="92" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)">3 / SIGNATURE</text><text x="500" y="116" class="mono" font-size="9.5" fill="var(--dg-ink)">HMAC(header+payload,</text><text x="500" y="130" class="mono" font-size="9.5" fill="var(--dg-ink)">     secret)</text><text x="500" y="162" font-size="11" fill="var(--dg-ink-2)">proves the token wasn't</text><text x="500" y="177" font-size="11" fill="var(--dg-ink-2)">forged or tampered with</text><text x="500" y="208" class="serif" font-size="11" font-style="italic" fill="var(--dg-ok)">only the key-holder can forge</text></g></svg>
+</Diagram>
+
+A **JWT** is three base64url parts joined by dots: `header.payload.signature`. The header names the algorithm, the payload holds the claims (user ID, expiry), and the signature is computed over the first two with a secret or private key. Anyone can _read_ a JWT (it's not encrypted, just encoded), but only the holder of the key can _forge_ a valid signature, which is what lets a server trust it without a database lookup. The common refinement is a short-lived access token plus a long-lived refresh token, mitigating the revocation weakness.
+
+### How JWTs prevent tampering (encoded vs. encrypted)
+
+A common point of confusion: a JWT's header and payload are only **base64url-encoded**, not encrypted. Anyone who intercepts the token can decode it and read the claims in plain text, including a field like `"role": "user"`. So why can't an attacker just decode it, change the role to `"admin"`, and send the edited token back?
+
+The answer is the third segment: the **signature**. It's computed as `HMAC(header + payload, secret)` (or a private-key equivalent) using a secret key that never leaves the server. When a tampered token comes back, the server recomputes the signature over the (now different) payload with that same secret; because the payload changed, the resulting hash is completely different from the one attached to the token. The comparison fails and the server rejects the request with 401, before the modified claim is ever trusted.
+
+Encoded is not encrypted
+
+Never put secrets in a JWT payload, anyone can read it. The signature only guarantees the payload wasn't _altered_ after issuance, not that it's confidential. Without the server's secret key, forging a valid signature for a modified payload is computationally infeasible.
+
+On the protocol side, the `WWW-Authenticate` response header (paired with a 401) tells the client which authentication scheme to use, and `Authorization` is the request header that carries the credentials back.
+
+______
+
+Go Python
+
+```go
+// Set a secure session cookie after login (stateful)
+func login(w http.ResponseWriter, r *http.Request) {
+    sid := newSessionID()
+    sessions.Store(sid, userID)              // server-side session store (use Redis)
+    http.SetCookie(w, &http.Cookie{
+        Name:     "session",
+        Value:    sid,
+        HttpOnly: true,                      // JS can't read it
+        Secure:   true,                      // HTTPS only
+        SameSite: http.SameSiteStrictMode,   // CSRF defense
+        MaxAge:   3600,
+        Path:     "/",
+    })
+}
+
+// Bearer-token auth middleware (stateless)
+func requireToken(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        auth := r.Header.Get("Authorization")
+        if !strings.HasPrefix(auth, "Bearer ") || !validJWT(auth[7:]) {
+            w.Header().Set("WWW-Authenticate", `Bearer`)
+            http.Error(w, "unauthorized", http.StatusUnauthorized) // 401
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+```python
+from fastapi import Response, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+# Set a secure session cookie after login (stateful)
+@app.post("/login")
+def login(response: Response):
+    sid = new_session_id()
+    sessions[sid] = user_id                  # server-side session store (use Redis)
+    response.set_cookie(
+        key="session", value=sid,
+        httponly=True,                       # JS can't read it
+        secure=True,                         # HTTPS only
+        samesite="strict",                   # CSRF defense
+        max_age=3600, path="/",
+    )
+
+# Bearer-token auth dependency (stateless)
+bearer = HTTPBearer()
+
+def require_token(cred: HTTPAuthorizationCredentials = Depends(bearer)):
+    if not valid_jwt(cred.credentials):
+        raise HTTPException(401, "unauthorized",
+                            headers={"WWW-Authenticate": "Bearer"})
+
+@app.get("/me")
+def me(_=Depends(require_token)):
+    return {"ok": True}
+```
+
+## CORS & the Preflight Workflow
+
+To understand CORS you first have to understand the rule it relaxes. Browsers enforce the **Same-Origin Policy**: JavaScript on a page from one origin may not read responses from a _different_ origin. An "origin" is the triple of **scheme + host + port**: `https://example.com` and `https://example.com:8443` and `http://example.com` are all different origins. This policy exists because browsers automatically attach your cookies to requests (sec 8); without it, a malicious site you visit could silently fire authenticated requests at your bank's API and read the responses. **CORS** (Cross-Origin Resource Sharing) is the controlled mechanism by which a server _opts in_ to letting specific other origins read its responses.
+
+<Diagram caption="What counts as &quot;same origin&quot;">
+<svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Comparison of URLs against the base origin https://example.com showing which are same-origin and which differ by scheme, host or port"><rect x="20" y="20" width="680" height="40" rx="8" fill="var(--dg-inverse)"></rect><text x="36" y="45" class="mono" font-size="14" font-weight="700" fill="var(--dg-on-inverse)">BASE https://example.com</text><text x="540" y="45" class="mono" font-size="11" fill="var(--dg-on-inverse-3)">scheme / host / :443</text><g class="mono" font-size="12.5"><rect x="20" y="72" width="680" height="34" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="36" y="94" fill="var(--dg-ink)">https://example.com/api/users</text><text x="684" y="94" font-weight="700" fill="var(--dg-ok)" text-anchor="end">SAME, only path differs</text><rect x="20" y="112" width="680" height="34" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="36" y="134" fill="var(--dg-ink)"><tspan fill="var(--dg-accent)" font-weight="700">http</tspan>://example.com </text><text x="684" y="134" font-weight="700" fill="var(--dg-accent)" text-anchor="end">different SCHEME</text><rect x="20" y="152" width="680" height="34" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="36" y="174" fill="var(--dg-ink)">https://<tspan fill="var(--dg-accent)" font-weight="700">api.</tspan> example.com</text><text x="684" y="174" font-weight="700" fill="var(--dg-accent)" text-anchor="end">different HOST (subdomain)</text><rect x="20" y="192" width="680" height="34" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="36" y="214" fill="var(--dg-ink)">https://example.com<tspan fill="var(--dg-accent)" font-weight="700">:8443 </tspan></text><text x="684" y="214" font-weight="700" fill="var(--dg-accent)" text-anchor="end">different PORT</text></g></svg>
+</Diagram>
+
+<Callout type="info" title="The crucial framing">
+CORS is enforced entirely by the **browser**, not the server. The server only _advertises_ who it permits, via response headers; the browser is what inspects those headers and decides whether to hand the response back to the page's JavaScript or block it. This is why CORS errors appear in the browser console but the server log shows a perfectly normal 200, the request _succeeded_, the browser just refused to share the result. It's also why `curl`, mobile apps, and server-to-server calls ignore CORS completely: there's no browser to enforce it.
+</Callout>
+
+### Flow 1: the simple request
+
+For requests the spec deems "simple", GET, POST, or HEAD using only standard headers and a common content type, the browser doesn't bother asking permission in advance. It just sends the request (with an `Origin` header) and checks the response afterward.
+
+1
+
+Browser automatically adds `Origin: https://example.com` and sends the request.
+
+v
+
+2
+
+Server checks the origin against its policy; if allowed, it includes `Access-Control-Allow-Origin` echoing that origin (or `*`) in the response.
+
+v
+
+3
+
+Browser sees a matching header -> hands the response to the page. Header missing -> browser **blocks the response** and logs a CORS error, even though the server processed the request.
+
+### Flow 2: the preflighted request
+
+For anything riskier, the browser sends a preliminary "may I?" request first. It triggers a **preflight** if _any_ of these conditions holds:
+
+- The method isn't GET / POST / HEAD (so PUT, PATCH, DELETE always preflight).
+- The request carries a non-simple header, most commonly `Authorization` or any custom `X-` header.
+- The `Content-Type` is outside the simple set, and `application/json` is outside it.
+
+Why you see OPTIONS everywhere
+
+Since a typical authenticated JSON API request hits _all three_ triggers (JSON body, Authorization header, often a non-GET method), **nearly every real API call is preflighted**. That's why your Network tab shows a paired `OPTIONS` request immediately before each actual call, it's not a bug, it's the browser asking permission.
+
+1
+
+Browser sends `OPTIONS /resource` with `Access-Control-Request-Method` and `-Request-Headers`, asking "may I send this method with these headers from my origin?", no body.
+
+v
+
+2
+
+Server replies 204 No Content with `Access-Control-Allow-Origin / -Methods / -Headers`, plus `-Max-Age` telling the browser how long it may cache this approval (e.g. 24h) so it can skip the preflight on future identical calls.
+
+v
+
+3
+
+Approval granted -> the browser sends the actual request and returns the real response to the page.
+
+One extra wrinkle for **credentialed** requests (those carrying cookies): the server must also send `Access-Control-Allow-Credentials: true`, and in that mode it may _not_ use the `*` wildcard for the origin, it has to name the exact origin. This prevents a server from accidentally exposing authenticated data to any site.
+
+______
+
+Go Python
+
+```go
+func cors(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        h := w.Header()
+        h.Set("Access-Control-Allow-Origin", "https://example.com") // exact, not * (credentials)
+        h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
+        h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        h.Set("Access-Control-Allow-Credentials", "true")
+        h.Set("Access-Control-Max-Age", "86400") // cache the approval for 24h
+        if r.Method == http.MethodOptions {
+            w.WriteHeader(http.StatusNoContent)  // 204: answer the preflight and stop
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+# Handles the OPTIONS preflight and all the headers for you.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://example.com"],   # exact origin when credentials are on
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
+    allow_credentials=True,
+    max_age=86400,                           # cache the approval for 24h
+)
+```
+
+### Common misconception: does CORS protect the server?
+
+A frequent question is: "if a script can just ignore CORS with `curl` or a custom HTTP client, isn't CORS useless for security?" The premise is right, CORS is trivial to bypass outside a browser, but the conclusion is wrong, because **CORS was never designed to protect the server; it protects the user**.
+
+When a tool like `curl` or a custom script ignores CORS, it can read whatever the server returns, but it doesn't have the user's cookies or session tokens, so the server simply rejects it as unauthenticated (sec 8). CORS instead enforces the Same-Origin Policy inside _legitimate browsers_: if a user is logged into their bank and visits a malicious site, that site's JavaScript runs inside the user's own browser, which automatically attaches the bank's session cookie to any request it fires. CORS is the mechanism by which the browser asks the bank "does this malicious origin have permission to read this response?", and blocks the response when the answer is no.
+
+Who protects what
+
+The server protects itself through authentication, authorization, and CSRF tokens. CORS protects the user's already-trusted, cookie-carrying session from being read by an origin it never agreed to share it with.
+
+#### The threat of malicious extensions
+
+A malicious browser extension breaks this chain of trust entirely: it runs _inside_ the trusted browser, alongside the page, so it can bypass CORS, read cookies directly, log keystrokes, and rewrite outgoing requests before they ever hit the network. Securing the client environment is just as critical as securing the backend, no server-side header stops code that already runs where your cookies live.
+
+Part IV / Responses, Caching & Concurrency
+
+## Status Codes
+
+A three-digit status code is a **standardized, machine-readable verdict** on a request. Its value is that the client can decide what to do, retry, redirect, re-authenticate, show an error, by reading one number, without parsing the body or guessing from its shape. Before status codes existed, clients had to inspect response content to infer success or failure, which was fragile and inconsistent. The leading digit defines the class, which alone tells you whose fault a problem is.
+
+<Diagram caption="Read the first digit">
+<svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The five status code classes 1xx through 5xx with their meanings and who is responsible"><g text-anchor="middle"><rect x="20" y="20" width="128" height="100" rx="10" fill="var(--dg-info-surface)" stroke="var(--dg-ok)" stroke-width="1.5"></rect><text x="84" y="58" class="mono" font-size="22" font-weight="700" fill="var(--dg-ok)">1xx</text><text x="84" y="82" font-size="11.5" font-weight="700" fill="var(--dg-ink)">Informational</text><text x="84" y="100" font-size="10" fill="var(--dg-ink-2)">"received, continue"</text><rect x="156" y="20" width="128" height="100" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="1.5"></rect><text x="220" y="58" class="mono" font-size="22" font-weight="700" fill="var(--dg-ok)">2xx</text><text x="220" y="82" font-size="11.5" font-weight="700" fill="var(--dg-ink)">Success</text><text x="220" y="100" font-size="10" fill="var(--dg-ink-2)">"it worked"</text><rect x="292" y="20" width="128" height="100" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="1.5"></rect><text x="356" y="58" class="mono" font-size="22" font-weight="700" fill="var(--dg-warn)">3xx</text><text x="356" y="82" font-size="11.5" font-weight="700" fill="var(--dg-ink)">Redirection</text><text x="356" y="100" font-size="10" fill="var(--dg-ink-2)">"look elsewhere"</text><rect x="428" y="20" width="128" height="100" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="2"></rect><text x="492" y="58" class="mono" font-size="22" font-weight="700" fill="var(--dg-accent)">4xx</text><text x="492" y="82" font-size="11.5" font-weight="700" fill="var(--dg-ink)">Client error</text><text x="492" y="100" font-size="10" fill="var(--dg-accent)" font-weight="700">YOUR fault (caller)</text><rect x="564" y="20" width="136" height="100" rx="10" fill="var(--dg-accent-border)" stroke="var(--dg-accent-2)" stroke-width="2"></rect><text x="632" y="58" class="mono" font-size="22" font-weight="700" fill="var(--dg-accent-2)">5xx</text><text x="632" y="82" font-size="11.5" font-weight="700" fill="var(--dg-ink)">Server error</text><text x="632" y="100" font-size="10" fill="var(--dg-accent-2)" font-weight="700">SERVER's fault</text></g><line x1="20" y1="150" x2="700" y2="150" stroke="var(--dg-line)" stroke-width="2"></line><text x="84" y="172" font-size="11" fill="var(--dg-ink-2)" text-anchor="middle">no blame</text><text x="356" y="172" font-size="11" fill="var(--dg-ink-2)" text-anchor="middle">no blame</text><text x="492" y="172" font-size="11" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">caller broke it</text><text x="632" y="172" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">server broke it</text><text x="360" y="198" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">A 4xx in your logs is the client's mistake; a 5xx is yours.</text></svg>
+</Diagram>
+
+| Class | Meaning                                                    | Who's responsible |
+| ----- | ---------------------------------------------------------- | ----------------- |
+| 1xx   | Informational, received, continue                          | -                 |
+| 2xx   | Success                                                    | -                 |
+| 3xx   | Redirection, more action needed (sec 11)                   | -                 |
+| 4xx   | Client error, the request was wrong                        | The caller        |
+| 5xx   | Server error, the server failed to fulfill a valid request | The server        |
+
+#### The codes you'll actually use, and exactly when
+
+| Code | Name                   | When to send it                                                                                                                |
+| ---- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 100  | Continue               | Client may send the body; used with `Expect: 100-continue` so a large upload isn't sent until the server signals it's willing. |
+| 101  | Switching Protocols    | Upgrade accepted, e.g. to WebSocket (sec 19).                                                                                  |
+| 200  | OK                     | Generic success; resource returned.                                                                                            |
+| 201  | Created                | POST/PUT created a resource; include a `Location` header pointing to it.                                                       |
+| 202  | Accepted               | Accepted for asynchronous processing; the work isn't done yet.                                                                 |
+| 204  | No Content             | Success with nothing to return (DELETE, preflight OPTIONS).                                                                    |
+| 206  | Partial Content        | A range request was satisfied (sec 15).                                                                                        |
+| 301  | Moved Permanently      | Resource has a new URL forever (sec 11).                                                                                       |
+| 302  | Found                  | Temporary redirect (sec 11).                                                                                                   |
+| 304  | Not Modified           | Cache validation, the client's copy is still good (sec 12).                                                                    |
+| 307  | Temporary Redirect     | Like 302 but method & body are preserved (sec 11).                                                                             |
+| 308  | Permanent Redirect     | Like 301 but method & body are preserved (sec 11).                                                                             |
+| 400  | Bad Request            | Malformed syntax the server can't parse (broken JSON, bad encoding).                                                           |
+| 401  | Unauthorized           | Missing or invalid credentials -> the client must authenticate.                                                                |
+| 403  | Forbidden              | Authenticated, but not permitted to do this.                                                                                   |
+| 404  | Not Found              | No such resource, or the URL is wrong.                                                                                         |
+| 405  | Method Not Allowed     | Valid resource, wrong method; reply with an `Allow` header listing valid ones.                                                 |
+| 409  | Conflict               | Request conflicts with current state (duplicate name, version mismatch).                                                       |
+| 412  | Precondition Failed    | An `If-Match`/`If-Unmodified-Since` precondition didn't hold (sec 13).                                                         |
+| 413  | Content Too Large      | Request body exceeds the server's limit.                                                                                       |
+| 415  | Unsupported Media Type | Server doesn't accept the body's `Content-Type`.                                                                               |
+| 422  | Unprocessable Content  | Syntax is fine but the data fails business validation.                                                                         |
+| 429  | Too Many Requests      | Rate limit exceeded; include a `Retry-After` header.                                                                           |
+| 500  | Internal Server Error  | An unhandled exception crashed the handler, the generic "we broke".                                                            |
+| 501  | Not Implemented        | The method/feature isn't supported yet.                                                                                        |
+| 502  | Bad Gateway            | A proxy received an invalid response from the upstream server.                                                                 |
+| 503  | Service Unavailable    | Temporarily down/overloaded/maintenance; include `Retry-After`.                                                                |
+| 504  | Gateway Timeout        | A proxy waited for the upstream and gave up.                                                                                   |
+
+401 vs 403, the most common mix-up
+
+**401 Unauthorized** actually means _unauthenticated_, "I don't know who you are; send credentials." **403 Forbidden** means _authenticated but unauthorized_, "I know exactly who you are, and you're still not allowed." A logged-in user hitting an admin-only endpoint gets 403, not 401. Naming the right one lets the client react correctly: 401 -> show the login screen; 403 -> show "access denied."
+
+<Callout type="info" title="400 vs 422">
+**400** is for requests the server can't even parse, broken JSON, malformed encoding. **422** is for requests that parse perfectly but are semantically invalid, a well-formed JSON object whose `email` field contains a phone number. FastAPI returns 422 for its automatic validation failures; many APIs use 400 for both, but the distinction helps clients tell "fix your syntax" from "fix your data."
+</Callout>
+
+<Callout type="info" title="5xx and the proxy trio">
+5xx means the server failed to honor a valid request, so a 500 in your logs is _your_ bug, not the client's. But **502 / 503 / 504** are special: you rarely emit them from application code. They're generated by the **proxy or load balancer in front of you** (nginx, Envoy, a cloud LB) when it can't reach your app, finds it down, or waits too long. Seeing them points at infrastructure and upstream health, not your handler logic, a vital triage shortcut.
+</Callout>
+
+______
+
+Go Python
+
+```go
+func getUser(w http.ResponseWriter, r *http.Request) {
+    if r.Header.Get("Authorization") == "" {
+        http.Error(w, "login required", http.StatusUnauthorized) // 401: who are you?
+        return
+    }
+    user, err := db.Find(r.PathValue("id"))
+    if err == ErrNotFound {
+        http.Error(w, "no such user", http.StatusNotFound)       // 404
+        return
+    }
+    if !user.VisibleTo(r) {
+        http.Error(w, "forbidden", http.StatusForbidden)         // 403: not allowed
+        return
+    }
+    json.NewEncoder(w).Encode(user)                              // 200
+}
+```
+
+```python
+from fastapi import HTTPException, Header
+
+@app.get("/users/{id}")
+def get_user(id: int, authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(401, "login required")     # 401: who are you?
+    user = db.find(id)
+    if user is None:
+        raise HTTPException(404, "no such user")        # 404
+    if not user.visible_to(authorization):
+        raise HTTPException(403, "forbidden")           # 403: not allowed
+    return user                                         # 200
+```
+
+## Redirections
+
+A redirect lets one resource live at more than one URL: the server responds with a `3xx` status and a `Location` header naming where to go, and the client (a browser following automatically, or your HTTP library) re-issues the request to that new URL. Redirects power URL migrations, canonical-URL enforcement, HTTP->HTTPS upgrades, and the Post/Redirect/Get pattern. The detail that trips up backends is **whether the original method and body survive the redirect**: because historically they often didn't.
+
+<Diagram caption="Method preservation">
+<svg viewBox="0 0 700 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Redirect codes and whether they preserve method and body"><defs><marker id="rdx-ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="var(--dg-accent-2)"></path></marker></defs><text x="58" y="22" text-anchor="middle" class="mono" font-size="10.5" letter-spacing="1" fill="var(--dg-accent)" font-weight="700">CODE</text><text x="225" y="22" text-anchor="middle" class="mono" font-size="10.5" letter-spacing="1" fill="var(--dg-ink-2)" font-weight="700">SENT</text><text x="470" y="22" text-anchor="middle" class="mono" font-size="10.5" letter-spacing="1" fill="var(--dg-ink-2)" font-weight="700">RE-ISSUED AS</text><text x="648" y="22" text-anchor="middle" class="mono" font-size="10.5" letter-spacing="1" fill="var(--dg-ink-2)" font-weight="700">LIFE</text><g transform="translate(0,38)"><rect x="28" y="0" width="60" height="32" rx="7" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="58" y="21" text-anchor="middle" class="mono" font-size="14" font-weight="700" fill="var(--dg-warn)">301</text><rect x="150" y="2" width="150" height="28" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="225" y="20" text-anchor="middle" class="mono" font-size="11.5" fill="var(--dg-accent-2)" font-weight="700">POST + body</text><line x1="312" y1="16" x2="392" y2="16" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#rdx-ar)"></line><rect x="398" y="2" width="200" height="28" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)" stroke-dasharray="4 3"></rect><text x="498" y="20" text-anchor="middle" class="mono" font-size="11" fill="var(--dg-accent)" font-weight="700">GET / body dropped&#42;</text><text x="648" y="20" text-anchor="middle" font-size="11.5" fill="var(--dg-ink-2)" font-weight="600">permanent</text></g><g transform="translate(0,82)"><rect x="28" y="0" width="60" height="32" rx="7" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="58" y="21" text-anchor="middle" class="mono" font-size="14" font-weight="700" fill="var(--dg-warn)">302</text><rect x="150" y="2" width="150" height="28" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="225" y="20" text-anchor="middle" class="mono" font-size="11.5" fill="var(--dg-accent-2)" font-weight="700">POST + body</text><line x1="312" y1="16" x2="392" y2="16" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#rdx-ar)"></line><rect x="398" y="2" width="200" height="28" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)" stroke-dasharray="4 3"></rect><text x="498" y="20" text-anchor="middle" class="mono" font-size="11" fill="var(--dg-accent)" font-weight="700">GET / body dropped&#42;</text><text x="648" y="20" text-anchor="middle" font-size="11.5" fill="var(--dg-ink-2)" font-weight="600">temporary</text></g><g transform="translate(0,126)"><rect x="28" y="0" width="60" height="32" rx="7" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="58" y="21" text-anchor="middle" class="mono" font-size="14" font-weight="700" fill="var(--dg-warn)">303</text><rect x="150" y="2" width="150" height="28" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="225" y="20" text-anchor="middle" class="mono" font-size="11.5" fill="var(--dg-accent-2)" font-weight="700">POST + body</text><line x1="312" y1="16" x2="392" y2="16" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#rdx-ar)"></line><rect x="398" y="2" width="200" height="28" rx="6" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)"></rect><text x="498" y="20" text-anchor="middle" class="mono" font-size="11" fill="var(--dg-ok)" font-weight="700">GET (always, by design)</text><text x="648" y="20" text-anchor="middle" font-size="11.5" fill="var(--dg-ink-2)" font-weight="600">temporary</text></g><g transform="translate(0,170)"><rect x="28" y="0" width="60" height="32" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="58" y="21" text-anchor="middle" class="mono" font-size="14" font-weight="700" fill="var(--dg-ok)">307</text><rect x="150" y="2" width="150" height="28" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="225" y="20" text-anchor="middle" class="mono" font-size="11.5" fill="var(--dg-accent-2)" font-weight="700">POST + body</text><line x1="312" y1="16" x2="392" y2="16" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#rdx-ar)"></line><rect x="398" y="2" width="200" height="28" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="498" y="20" text-anchor="middle" class="mono" font-size="11" fill="var(--dg-ok)" font-weight="700">POST + body preserved</text><text x="648" y="20" text-anchor="middle" font-size="11.5" fill="var(--dg-ink-2)" font-weight="600">temporary</text></g><g transform="translate(0,214)"><rect x="28" y="0" width="60" height="32" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="58" y="21" text-anchor="middle" class="mono" font-size="14" font-weight="700" fill="var(--dg-ok)">308</text><rect x="150" y="2" width="150" height="28" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="225" y="20" text-anchor="middle" class="mono" font-size="11.5" fill="var(--dg-accent-2)" font-weight="700">POST + body</text><line x1="312" y1="16" x2="392" y2="16" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#rdx-ar)"></line><rect x="398" y="2" width="200" height="28" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="498" y="20" text-anchor="middle" class="mono" font-size="11" fill="var(--dg-ok)" font-weight="700">POST + body preserved</text><text x="648" y="20" text-anchor="middle" font-size="11.5" fill="var(--dg-ink-2)" font-weight="600">permanent</text></g><line x1="28" y1="262" x2="672" y2="262" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="3 3"></line><text x="28" y="284" font-size="12" fill="var(--dg-ink-2)"><tspan font-weight="700" fill="var(--dg-ink)">The split that matters:</tspan> 307 / 308 are the only codes that <tspan fill="var(--dg-ok)" font-weight="700">guarantee</tspan> your POST + body survive. </text><text x="28" y="306" font-size="11.5" fill="var(--dg-ink-2)" font-style="italic">301 / 302 <tspan font-weight="700" fill="var(--dg-ink)"> may</tspan> silently downgrade POST -> GET and drop the body, the historical quirk that forced 307/308 into existence.</text><text x="28" y="328" font-size="11.5" fill="var(--dg-ink-2)" font-style="italic">303 downgrades to GET <tspan font-weight="700" fill="var(--dg-ink)">on purpose</tspan>, exactly what Post/Redirect/Get wants.</text><text x="28" y="350" class="mono" font-size="10" fill="var(--dg-accent-2)">&#42; "may", clients historically did this on POST even though the spec didn't sanction it.</text></svg>
+</Diagram>
+
+| Code                   | Permanent? | Method preserved?                           | Use case                                                                                                  |
+| ---------------------- | ---------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 301 Moved Permanently  | Yes        | Not guaranteed (clients may turn POST->GET) | Resource moved forever, update bookmarks, transfer SEO ranking.                                           |
+| 302 Found              | No         | Not guaranteed (clients may turn POST->GET) | Temporary relocation; keep using the original URL.                                                        |
+| 303 See Other          | No         | Forces a GET                                | Post/Redirect/Get, after a POST, redirect to a result page so a browser refresh won't re-submit the form. |
+| 307 Temporary Redirect | No         | **Yes**: method & body kept                 | Temporary redirect that must re-issue the same POST/PUT with its body intact.                             |
+| 308 Permanent Redirect | Yes        | **Yes**: method & body kept                 | Permanent move that must preserve a POST/PUT.                                                             |
+
+The historical trap that explains 307/308
+
+Early clients, faced with a 301 or 302 on a POST, would silently re-issue it as a **GET and drop the body**: technically a spec violation, but so widespread it became expected behavior. That ambiguity ("will my POST survive this redirect?") is precisely why **307** and **308** were created: they _guarantee_ the method and body are preserved. So if a redirected form submission mysteriously arrives with no data, you used 301/302 where you needed 308/307. Conversely, 303 deliberately forces a GET, which is exactly what you want for Post/Redirect/Get, so the user can safely refresh the result page.
+
+______
+
+Go Python
+
+```go
+// Permanent move that must keep the method/body -> 308
+func oldRoute(w http.ResponseWriter, r *http.Request) {
+    http.Redirect(w, r, "/person/"+r.PathValue("id"), http.StatusPermanentRedirect) // 308
+}
+
+// Post/Redirect/Get -> 303 so a browser refresh won't re-POST the form
+func submitForm(w http.ResponseWriter, r *http.Request) {
+    id := save(r)
+    http.Redirect(w, r, "/results/"+id, http.StatusSeeOther) // 303 (forces GET)
+}
+```
+
+```python
+from fastapi.responses import RedirectResponse
+
+# Permanent move that must keep the method/body -> 308
+@app.api_route("/user/{id}", methods=["GET", "POST"])
+def old_route(id: int):
+    return RedirectResponse(f"/person/{id}", status_code=308)
+
+# Post/Redirect/Get -> 303 so a browser refresh won't re-POST the form
+@app.post("/submit")
+def submit_form():
+    rid = save()
+    return RedirectResponse(f"/results/{rid}", status_code=303)  # forces GET
+```
+
+## HTTP Caching
+
+Caching is storing a copy of a response so a later request can be satisfied without re-fetching from the origin, cutting bandwidth, latency, and server load all at once. It's arguably the single biggest lever for web performance. HTTP caching operates on **two distinct layers**, and conflating them is a common source of confusion:
+
+- **Freshness**: "Can I reuse my copy _without even asking_?" If a response is still fresh, the client serves it from cache with zero network calls.
+- **Validation**: "My copy might be stale; _has it actually changed_?" This is a cheap round trip that returns either "no, reuse yours" or the new content.
+
+<Diagram caption="The two layers as one decision">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Caching decision flow from freshness to validation"><defs><marker id="frx-ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="var(--dg-ink-2)"></path></marker></defs><rect x="20" y="120" width="110" height="44" rx="9" fill="var(--dg-inverse)"></rect><text x="75" y="139" text-anchor="middle" font-size="12" fill="var(--dg-on-inverse)" font-weight="700">New request</text><text x="75" y="155" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-inverse)">for a resource</text><line x1="130" y1="142" x2="172" y2="142" stroke="var(--dg-ink-2)" stroke-width="1.6" marker-end="url(#frx-ar)"></line><rect x="176" y="112" width="120" height="60" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="1.5"></rect><text x="236" y="132" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-warn)" font-weight="700" letter-spacing="1">LAYER 1</text><text x="236" y="149" text-anchor="middle" font-size="12.5" fill="var(--dg-ink)" font-weight="700">Still fresh?</text><text x="236" y="164" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-warn)">max-age not expired</text><path d="M236,112 L236,60 L470,60" fill="none" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#frx-ar)"></path><text x="300" y="52" font-size="10.5" fill="var(--dg-ok)" font-weight="700">YES</text><rect x="476" y="38" width="200" height="46" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="576" y="58" text-anchor="middle" font-size="12" fill="var(--dg-ok)" font-weight="700">Serve from cache</text><text x="576" y="74" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-ok)">zero network / 0 bytes</text><line x1="296" y1="142" x2="344" y2="142" stroke="var(--dg-ink-2)" stroke-width="1.6" marker-end="url(#frx-ar)"></line><text x="320" y="134" text-anchor="middle" font-size="10.5" fill="var(--dg-accent)" font-weight="700">NO</text><rect x="348" y="112" width="130" height="60" rx="10" fill="var(--dg-info-surface)" stroke="var(--dg-ok)" stroke-width="1.5"></rect><text x="413" y="132" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-ok)" font-weight="700" letter-spacing="1">LAYER 2</text><text x="413" y="149" text-anchor="middle" font-size="12.5" fill="var(--dg-ink)" font-weight="700">Revalidate</text><text x="413" y="164" text-anchor="middle" class="mono" font-size="8.5" fill="var(--dg-ok)">If-None-Match: ETag</text><path d="M478,142 L520,142" fill="none" stroke="var(--dg-ink-2)" stroke-width="1.6" marker-end="url(#frx-ar)"></path><rect x="524" y="118" width="152" height="46" rx="9" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="600" y="132" text-anchor="middle" font-size="10" fill="var(--dg-warn)" font-weight="700">304 Not Modified</text><text x="600" y="146" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-warn)">reuse copy / empty body</text><text x="600" y="158" text-anchor="middle" class="mono" font-size="8.5" fill="var(--dg-ink-2)">round trip, payload saved</text><path d="M413,172 L413,236 L520,236" fill="none" stroke="var(--dg-ink-2)" stroke-width="1.6" marker-end="url(#frx-ar)"></path><text x="425" y="208" font-size="10" fill="var(--dg-accent)" font-weight="700">changed</text><rect x="524" y="214" width="152" height="46" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="600" y="234" text-anchor="middle" font-size="11" fill="var(--dg-accent)" font-weight="700">200 OK + new body</text><text x="600" y="249" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-accent)">full payload + fresh ETag</text><text x="20" y="285" class="mono" font-size="9.5" fill="var(--dg-ink-2)" letter-spacing="0.5">COST climbs left -> right: <tspan fill="var(--dg-ok)" font-weight="700">0 bytes</tspan> -><tspan fill="var(--dg-warn)" font-weight="700"> tiny round trip</tspan> -><tspan fill="var(--dg-accent)" font-weight="700">full download</tspan></text></svg>
+</Diagram>
+
+Caches also live at multiple **tiers**: the private browser cache (just for one user), and shared caches like CDNs and reverse proxies (serving many users). The `Cache-Control` directives below decide which tiers may store a response.
+
+### Layer 1: Freshness via `Cache-Control`
+
+The server stamps a response with how long it stays usable, so the client can reuse it freely until then:
+
+- `max-age=3600`, fresh for one hour; reuse with no network until it expires.
+- `public` vs `private`, may a _shared_ cache (CDN/proxy) store it, or only the user's own browser? Use `private` for personalized or authenticated responses so a CDN doesn't serve one user's data to another.
+- `no-cache`, counterintuitively, this means "you may store it, but you must _revalidate_ with the origin before each use." It's "always check," not "never cache."
+- `no-store`, the true "never cache anywhere" directive, for sensitive data.
+- `immutable`, "this will never change during its freshness, so don't even revalidate." Perfect for content-hashed static assets (`app.4f9a2c.js`), where a change produces a new filename anyway.
+
+### Layer 2: Validation via `ETag` & `Last-Modified`
+
+When freshness lapses, the client doesn't blindly re-download, it revalidates. The original response carried an `ETag` (a fingerprint/hash of the content) and/or a `Last-Modified` timestamp. The client sends these back as _conditional_ headers, and if nothing changed the server returns a tiny 304 with no body, saving the entire payload.
+
+1
+
+First GET -> 200 + body + `ETag: "abc"` + `Cache-Control: max-age=10`.
+
+v
+
+2
+
+After freshness expires, the next GET sends `If-None-Match: "abc"` (and/or `If-Modified-Since`).
+
+v
+
+3a
+
+Unchanged -> 304 Not Modified with an empty body. The client reuses its copy; the payload bytes are saved.
+
+3b
+
+Changed -> 200 with the new body and a fresh ETag.
+
+ETags come in two flavors: a **strong** ETag (`"abc"`) guarantees byte-for-byte identity, while a **weak** one (`W/"abc"`) only promises semantic equivalence, useful when, say, a timestamp in the response differs but the meaningful content doesn't.
+
+______
+
+Go Python
+
+```go
+func getResource(w http.ResponseWriter, r *http.Request) {
+    body := loadResource()
+    sum := sha256.Sum256(body)
+    etag := `"` + hex.EncodeToString(sum[:8]) + `"`  // fingerprint of the content
+
+    if r.Header.Get("If-None-Match") == etag {  // client already has this exact version
+        w.WriteHeader(http.StatusNotModified)   // 304, no body, payload saved
+        return
+    }
+    w.Header().Set("ETag", etag)
+    w.Header().Set("Cache-Control", "max-age=10")
+    w.Write(body)                               // 200 + body
+}
+```
+
+```python
+import hashlib
+from fastapi import Request, Response
+
+@app.get("/resource")
+def get_resource(request: Request):
+    body = load_resource()
+    etag = '"' + hashlib.sha256(body).hexdigest()[:16] + '"'  # fingerprint
+
+    if request.headers.get("if-none-match") == etag:   # already cached
+        return Response(status_code=304)               # 304, no body, payload saved
+
+    return Response(content=body, status_code=200,
+                    headers={"ETag": etag, "Cache-Control": "max-age=10"})
+```
+
+<Callout type="info" title="In practice + the Vary trap">
+Hand-managing ETags is error-prone, forget to bump one on a change and clients serve stale data indefinitely. For static assets prefer `immutable` + content-hashed filenames; for API data, client-side caches like React Query give finer control. And don't forget `Vary`: it tells caches which _request_ headers make the response differ (e.g. `Vary: Accept-Encoding`). Omit it and a shared cache may serve a gzip-compressed body to a client that asked for none, or hand a French response to an English speaker.
+</Callout>
+
+## Conditional Requests & Optimistic Locking
+
+The same validators that power caching (sec 12) solve a second, deeper backend problem: the **lost update**. Picture two editors who both open document v1. Alice saves her changes; Bob, still working from v1, saves a moment later, and Bob's save silently overwrites Alice's, with no error and no warning. Her work simply vanishes. Conditional requests prevent this through **optimistic concurrency control**: instead of locking the resource while someone edits (pessimistic), you let everyone edit freely and only detect a clash _at save time_.
+
+<Diagram caption="The problem it solves">
+<svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Lost update without If-Match versus protected with If-Match"><defs><marker id="lkx-ar" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--dg-ink-2)"></path></marker></defs><text x="22" y="18" class="mono" font-size="10.5" fill="var(--dg-accent)" font-weight="700" letter-spacing="1">WITHOUT, SILENT LOSS</text><line x1="32" y1="30" x2="32" y2="280" stroke="var(--dg-line)" stroke-width="2"></line><text x="48" y="44" font-size="11" fill="var(--dg-accent-2)" font-weight="700">Alice</text><text x="48" y="150" font-size="11" fill="var(--dg-ok)" font-weight="700">Bob</text><circle cx="32" cy="60" r="5" fill="var(--dg-accent)"></circle><text x="48" y="64" font-size="10.5" fill="var(--dg-ink-2)">reads <tspan class="mono" font-weight="700" fill="var(--dg-ink)">v1</tspan></text><circle cx="32" cy="166" r="5" fill="var(--dg-ok)"></circle><text x="48" y="170" font-size="10.5" fill="var(--dg-ink-2)">reads <tspan class="mono" font-weight="700" fill="var(--dg-ink)">v1</tspan> too</text><circle cx="32" cy="96" r="5" fill="var(--dg-accent)"></circle><text x="48" y="100" font-size="10.5" fill="var(--dg-ink-2)">saves -> server now <tspan class="mono" font-weight="700" fill="var(--dg-ok)">v2</tspan></text><circle cx="32" cy="210" r="5" fill="var(--dg-ok)"></circle><text x="48" y="214" font-size="10.5" fill="var(--dg-ink-2)">saves (from v1)...</text><rect x="40" y="230" width="280" height="40" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="180" y="247" text-anchor="middle" font-size="11" fill="var(--dg-accent)" font-weight="700">Bob overwrites v2 -> Alice's work gone</text><text x="180" y="262" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-accent)">no error / no warning / 200 OK</text><line x1="350" y1="20" x2="350" y2="290" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="3 3"></line><text x="372" y="18" class="mono" font-size="10.5" fill="var(--dg-ok)" font-weight="700" letter-spacing="1">WITH If-Match, CONFLICT CAUGHT</text><line x1="382" y1="30" x2="382" y2="280" stroke="var(--dg-line)" stroke-width="2"></line><text x="398" y="44" font-size="11" fill="var(--dg-accent-2)" font-weight="700">Alice</text><text x="398" y="150" font-size="11" fill="var(--dg-ok)" font-weight="700">Bob</text><circle cx="382" cy="60" r="5" fill="var(--dg-accent)"></circle><text x="398" y="64" font-size="10.5" fill="var(--dg-ink-2)">reads <tspan class="mono" font-weight="700" fill="var(--dg-ink)">v1</tspan></text><circle cx="382" cy="166" r="5" fill="var(--dg-ok)"></circle><text x="398" y="170" font-size="10.5" fill="var(--dg-ink-2)">reads <tspan class="mono" font-weight="700" fill="var(--dg-ink)">v1</tspan> too</text><circle cx="382" cy="96" r="5" fill="var(--dg-accent)"></circle><text x="398" y="100" font-size="10.5" fill="var(--dg-ink-2)"><tspan class="mono" fill="var(--dg-ink)">If-Match:v1</tspan> -><tspan class="mono" font-weight="700" fill="var(--dg-ok)">v2 </tspan></text><circle cx="382" cy="210" r="5" fill="var(--dg-ok)"></circle><text x="398" y="214" font-size="10.5" fill="var(--dg-ink-2)"><tspan class="mono" fill="var(--dg-ink)">If-Match:v1</tspan>, but it's v2 now </text><rect x="390" y="230" width="288" height="40" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="534" y="247" text-anchor="middle" font-size="11" fill="var(--dg-ok)" font-weight="700">412 Precondition Failed -> Bob refetches</text><text x="534" y="262" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-ok)">reapply on v2 / retry / nothing lost</text></svg>
+</Diagram>
+
+### The conditional headers
+
+Each says "proceed only if a condition about the resource's current version holds." The naming is symmetric: `If-None-Match` for reads (proceed if it changed -> I need the new copy), `If-Match` for writes (proceed if it's unchanged -> safe to overwrite).
+
+| Header              | Proceed only if...                                       | Typical use                                        |
+| ------------------- | -------------------------------------------------------- | -------------------------------------------------- |
+| If-None-Match       | ...the ETag does _not_ match (the resource changed)      | Caching on GET -> returns 304 when unchanged       |
+| If-Match            | ...the ETag _does_ match (unchanged since I read it)     | Safe writes on PUT/PATCH/DELETE -> 412 on conflict |
+| If-Modified-Since   | ...it changed after this timestamp                       | Caching fallback when there's no ETag              |
+| If-Unmodified-Since | ...it has _not_ changed since this timestamp             | Safe writes, timestamp-based                       |
+| If-Range            | ...the resource is unchanged (else send the whole thing) | Resumable downloads (sec 15)                       |
+
+### The optimistic-locking flow
+
+1
+
+Client GETs `/doc/7` -> receives the body plus `ETag: "v1"`.
+
+v
+
+2
+
+After editing, client sends `PUT /doc/7` with `If-Match: "v1"`, "only save if it's _still_ v1, i.e. nobody changed it under me."
+
+v
+
+3a
+
+Still v1 -> apply the update, return 200 + the new `ETag: "v2"`.
+
+3b
+
+Someone already bumped it to v2 -> reject with 412 Precondition Failed. No lost update, the client refetches v2, reapplies its change, and retries.
+
+Why this beats a database lock
+
+A pessimistic lock would hold a row locked the entire time a user stares at an edit form, potentially minutes, blocking everyone else and risking deadlocks if the user wanders off. Optimistic concurrency holds _nothing_: it lets all readers proceed and detects conflict only at the instant of writing, cheaply, by comparing a version tag. The cost is that an occasional save fails and must be retried, which is almost always a better trade. This is how collaborative editors, wikis, and well-designed REST APIs prevent silent overwrites.
+
+______
+
+Go Python
+
+```go
+func updateDoc(w http.ResponseWriter, r *http.Request) {
+    doc := db.Get(r.PathValue("id"))
+    want := r.Header.Get("If-Match")          // the ETag the client last saw
+    if want == "" {
+        http.Error(w, "If-Match required", http.StatusBadRequest)
+        return
+    }
+    if want != doc.ETag {                     // someone changed it first -> conflict
+        http.Error(w, "version conflict", http.StatusPreconditionFailed) // 412
+        return
+    }
+    doc.Apply(r.Body)
+    doc.ETag = newETag()                      // bump the version
+    db.Save(doc)
+    w.Header().Set("ETag", doc.ETag)
+    w.WriteHeader(http.StatusOK)
+}
+```
+
+```python
+from fastapi import Request, Response, HTTPException, Header
+
+@app.put("/doc/{id}")
+def update_doc(id: int, request: Request, if_match: str = Header(default="")):
+    doc = db.get(id)
+    if not if_match:
+        raise HTTPException(400, "If-Match required")
+    if if_match != doc.etag:                  # someone changed it first -> conflict
+        raise HTTPException(412, "version conflict")   # 412
+    doc.apply(request)
+    doc.etag = new_etag()                     # bump the version
+    db.save(doc)
+    return Response(status_code=200, headers={"ETag": doc.etag})
+```
+
+Part V / Data Transfer & Connections
+
+## Content Negotiation & Compression
+
+One URL can have multiple **representations**: the same article as HTML or JSON, in English or Spanish, compressed or not. Content negotiation is the mechanism by which client and server agree on the best one. The dominant form is **server-driven (proactive)** negotiation: the client lists its preferences in `Accept*` request headers, and the server picks the best match it can produce, signalling its choice in the matching `Content-*` response header. (There's also _agent-driven_ negotiation, where the server returns a list of choices for the client to pick from, but it's rarely used.)
+
+<Diagram caption="Server-driven negotiation">
+<svg viewBox="0 0 700 268" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Client Accept preferences matched to server capabilities"><defs><marker id="cnx-ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="var(--dg-accent-2)"></path></marker></defs><text x="20" y="18" class="mono" font-size="10.5" fill="var(--dg-accent)" font-weight="700" letter-spacing="1">CLIENT SAYS</text><rect x="20" y="28" width="250" height="150" rx="11" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="34" y="50" class="mono" font-size="10.5" fill="var(--dg-accent-2)" font-weight="700">Accept:</text><text x="44" y="74" class="mono" font-size="10" fill="var(--dg-ink)">application/json</text><rect x="44" y="80" width="180" height="9" rx="4" fill="var(--dg-accent-border)"></rect><rect x="44" y="80" width="180" height="9" rx="4" fill="var(--dg-ok)"></rect><text x="232" y="88" class="mono" font-size="9" fill="var(--dg-ok)" font-weight="700">q=1.0</text><text x="44" y="108" class="mono" font-size="10" fill="var(--dg-ink)">text/html</text><rect x="44" y="114" width="180" height="9" rx="4" fill="var(--dg-accent-border)"></rect><rect x="44" y="114" width="144" height="9" rx="4" fill="var(--dg-warn)"></rect><text x="232" y="122" class="mono" font-size="9" fill="var(--dg-warn)" font-weight="700">q=0.8</text><text x="44" y="142" class="mono" font-size="10" fill="var(--dg-ink)">&#42;/&#42;</text><rect x="44" y="148" width="180" height="9" rx="4" fill="var(--dg-accent-border)"></rect><rect x="44" y="148" width="18" height="9" rx="4" fill="var(--dg-warn)"></rect><text x="232" y="156" class="mono" font-size="9" fill="var(--dg-warn)" font-weight="700">q=0.1</text><line x1="276" y1="103" x2="338" y2="103" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#cnx-ar)"></line><text x="346" y="18" class="mono" font-size="10.5" fill="var(--dg-ok)" font-weight="700" letter-spacing="1">SERVER CAN PRODUCE</text><rect x="346" y="28" width="190" height="150" rx="11" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)"></rect><rect x="360" y="44" width="162" height="30" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="2"></rect><text x="372" y="63" class="mono" font-size="10.5" fill="var(--dg-ok)" font-weight="700">application/json </text><rect x="360" y="82" width="162" height="28" rx="7" fill="var(--dg-paper)" stroke="var(--dg-info-border)"></rect><text x="372" y="100" class="mono" font-size="10.5" fill="var(--dg-ink-2)">text/html</text><rect x="360" y="118" width="162" height="28" rx="7" fill="var(--dg-paper)" stroke="var(--dg-info-border)"></rect><text x="372" y="136" class="mono" font-size="10.5" fill="var(--dg-ink-2)">application/xml</text><text x="441" y="166" text-anchor="middle" font-size="9.5" fill="var(--dg-ok)" font-style="italic">highest q it can serve wins</text><line x1="540" y1="103" x2="588" y2="103" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#cnx-ar)"></line><rect x="556" y="56" width="138" height="94" rx="10" fill="var(--dg-inverse)"></rect><text x="625" y="78" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-on-inverse)" letter-spacing="1">RESPONSE</text><text x="625" y="100" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-inverse)">Content-Type:</text><text x="625" y="118" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-inverse-info)" font-weight="700">application/json</text><text x="625" y="140" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-on-inverse-ok)" font-weight="700">200 OK</text><line x1="20" y1="206" x2="694" y2="206" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="3 3"></line><text x="20" y="228" font-size="11.5" fill="var(--dg-ink-2)"><tspan font-weight="700" fill="var(--dg-ink)">If the server can satisfy none of the acceptable types</tspan> -> the correct answer is </text><text x="20" y="248" class="mono" font-size="11" fill="var(--dg-accent)" font-weight="700">406 Not Acceptable<tspan class="serif" font-size="11.5" fill="var(--dg-ink-2)" font-weight="400" font-style="italic">never silently return the wrong format.</tspan></text></svg>
+</Diagram>
+
+| Client says (request)       | Negotiates          | Server answers (response) |
+| --------------------------- | ------------------- | ------------------------- |
+| `Accept: application/json`  | Media type / format | `Content-Type`            |
+| `Accept-Language: es`       | Natural language    | `Content-Language`        |
+| `Accept-Encoding: gzip, br` | Compression         | `Content-Encoding`        |
+
+Preferences can be **weighted** with quality values from 0 to 1: `Accept: application/json;q=1.0, text/html;q=0.8, */*;q=0.1` reads as "strongly prefer JSON, accept HTML, and as a last resort anything." The server honors the highest-weighted type it can produce. If it can satisfy _none_ of the acceptable types, the correct response is 406 Not Acceptable rather than silently returning the wrong format.
+
+### Compression: the same negotiation, applied to size
+
+Compression is just encoding negotiation. When the client advertises `Accept-Encoding: gzip`, the server may compress a text response before sending, and the savings on JSON, HTML, and JS are dramatic, since they're highly repetitive: a \~26 MB JSON payload can shrink to \~3.8 MB. The server sets `Content-Encoding: gzip`, the browser transparently decompresses, and the application code on both ends is none the wiser. Two rules matter: only compress when the client said it can decode (else you send garbage), and **always pair with `Vary: Accept-Encoding`** so a shared cache doesn't serve the compressed body to a client that can't handle it (sec 12).
+
+______
+
+Go Python
+
+```go
+func handler(w http.ResponseWriter, r *http.Request) {
+    body, _ := json.Marshal(bigPayload)
+    w.Header().Set("Content-Type", "application/json")
+    w.Header().Set("Vary", "Accept-Encoding")   // tell caches the body varies by encoding
+    if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+        w.Header().Set("Content-Encoding", "gzip")
+        gz := gzip.NewWriter(w)
+        defer gz.Close()
+        gz.Write(body)
+        return
+    }
+    w.Write(body) // uncompressed fallback for clients that can't decode gzip
+}
+```
+
+```python
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi import Header
+
+# gzip responses for capable clients, but only above a size threshold
+# (compressing tiny payloads costs more CPU than it saves bytes).
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+@app.get("/greeting")
+def greeting(accept_language: str = Header(default="en")):
+    lang = "es" if accept_language.startswith("es") else "en"
+    return {"en": "Hello", "es": "Hola"}[lang]
+```
+
+## Range Requests
+
+A **range request** asks for only a slice of a resource rather than the whole thing. This solves three real problems: **resuming a download** that failed at 80% without restarting from zero, **seeking** in audio/video (jumping to the 3-minute mark fetches only the bytes around it), and **parallelizing** a large download into chunks fetched simultaneously. Without ranges, every interruption means starting over and every seek means downloading everything before the target.
+
+<Diagram caption="Resume, don't restart">
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Range request resuming a download from byte 1024"><defs><marker id="rgx-ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="var(--dg-accent-2)"></path></marker></defs><text x="20" y="20" font-size="11.5" fill="var(--dg-ink-2)" font-weight="700">big.zip <tspan class="mono" font-weight="400" font-size="10" fill="var(--dg-accent-soft)">50,001 bytes total</tspan></text><rect x="20" y="32" width="660" height="34" rx="6" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><rect x="20" y="32" width="135" height="34" rx="6" fill="var(--dg-ok)"></rect><rect x="146" y="32" width="9" height="34" fill="var(--dg-ok)"></rect><text x="86" y="54" text-anchor="middle" font-size="10.5" fill="var(--dg-on-accent)" font-weight="700">got: 0-1023</text><rect x="155" y="32" width="525" height="34" fill="var(--dg-accent-surface)"></rect><text x="417" y="54" text-anchor="middle" font-size="10.5" fill="var(--dg-accent)" font-weight="700">missing: 1024-50000connection dropped</text><line x1="155" y1="26" x2="155" y2="74" stroke="var(--dg-ink)" stroke-width="1.5"></line><text x="155" y="88" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-ink)" font-weight="700">byte 1024</text><rect x="20" y="110" width="300" height="52" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="34" y="130" class="mono" font-size="10.5" fill="var(--dg-accent-2)" font-weight="700">GET /big.zip</text><text x="34" y="150" class="mono" font-size="11" fill="var(--dg-accent-2)" font-weight="700">Range: bytes=1024-</text><text x="170" y="174" text-anchor="middle" font-size="9.5" fill="var(--dg-ink-2)" font-style="italic">"send me from 1024 to the end"</text><line x1="326" y1="136" x2="374" y2="136" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#rgx-ar)"></line><rect x="380" y="104" width="300" height="66" rx="9" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)"></rect><text x="394" y="124" class="mono" font-size="10.5" fill="var(--dg-ok)" font-weight="700">206 Partial Content</text><text x="394" y="142" class="mono" font-size="10" fill="var(--dg-ok)">Content-Range: bytes 1024-50000/50001</text><text x="394" y="158" class="mono" font-size="10" fill="var(--dg-ok)">Content-Length: 48977</text><line x1="20" y1="196" x2="680" y2="196" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="3 3"></line><text x="20" y="216" font-size="11" fill="var(--dg-ink-2)"><tspan class="mono" font-weight="700" fill="var(--dg-ok)">Accept-Ranges: bytes</tspan> on a normal reply advertises support / invalid range -><tspan class="mono" font-weight="700" fill="var(--dg-accent)">416</tspan></text><text x="20" y="236" font-size="11" fill="var(--dg-ink-2)"><tspan class="mono" font-weight="700" fill="var(--dg-ink)">If-Range: "etag"</tspan> guards a resume, if the file changed, server sends the full <tspan class="mono" font-weight="700" fill="var(--dg-ok)">200</tspan> instead of a mismatched slice. </text></svg>
+</Diagram>
+
+### The exchange, step by step
+
+- The server signals it supports ranges by including `Accept-Ranges: bytes` on a normal response.
+- The client requests a slice with the `Range` header: `Range: bytes=0-1023` (the first kilobyte), or `bytes=1024-` (from byte 1024 to the end, exactly what a resumed download sends).
+- The server replies 206 Partial Content with a `Content-Range: bytes 1024-50000/50001` header (which slice, of what total) and only those bytes in the body.
+- If the requested range is invalid (e.g. starts past the end of the file), the server returns 416 Range Not Satisfiable.
+- For a _resume_, the file might have changed since the partial download began, so the client adds `If-Range: "<etag>"`: the server sends the partial only if the resource is unchanged, otherwise it returns the full 200 so the client restarts cleanly rather than stitching together incompatible halves.
+
+```text title="range exchange / resuming from byte 1024"
+# client resumes a download
+GET /big.zip HTTP/1.1
+Range: bytes=1024-
+
+# server returns only the remaining slice
+HTTP/1.1 206 Partial Content
+Accept-Ranges: bytes
+Content-Range: bytes 1024-50000/50001
+Content-Length: 48977
+```
+
+The good news for implementers: the standard file-serving helpers in both ecosystems handle all of this, range parsing, 206, 416, and `If-Range`, automatically. You rarely hand-roll it.
+
+______
+
+Go Python
+
+```go
+// http.ServeContent handles Range, 206, 416 and If-Range for you,
+// driven by the file's modtime and an optional ETag.
+func download(w http.ResponseWriter, r *http.Request) {
+    f, _ := os.Open("big.zip")
+    defer f.Close()
+    info, _ := f.Stat()
+    http.ServeContent(w, r, "big.zip", info.ModTime(), f)
+}
+```
+
+```python
+# Starlette's FileResponse honors Range requests and emits 206 automatically.
+from fastapi.responses import FileResponse
+
+@app.get("/big.zip")
+def download():
+    return FileResponse("big.zip", media_type="application/zip")
+```
+
+## Persistent Connections & Keep-Alive
+
+Establishing a TCP connection isn't free, it costs a full round trip for the handshake (and more if TLS is involved). HTTP/1.0 paid that toll on every single request, opening and tearing down a connection per resource, which made loading a page of dozens of assets painfully slow. HTTP/1.1 fixed this with **persistent connections**: one TCP connection is held open and reused for many request/response cycles, so the handshake cost is paid once and amortized across everything that follows.
+
+<Diagram caption="Paying the handshake once">
+<svg viewBox="0 0 700 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="HTTP 1.0 connection per request versus HTTP 1.1 keep-alive reuse"><text x="20" y="18" class="mono" font-size="10.5" fill="var(--dg-accent)" font-weight="700" letter-spacing="1">HTTP/1.0, NEW CONNECTION EACH TIME</text><g transform="translate(0,28)"><g transform="translate(20,0)"><rect x="0" y="0" width="200" height="70" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><rect x="10" y="10" width="180" height="22" rx="5" fill="var(--dg-accent)"></rect><text x="100" y="25" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-accent)" font-weight="700">(cycle) TCP handshake (1 RTT)</text><rect x="10" y="38" width="180" height="22" rx="5" fill="var(--dg-accent)"></rect><text x="100" y="53" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-accent)">GET /a -> close</text></g><g transform="translate(240,0)"><rect x="0" y="0" width="200" height="70" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><rect x="10" y="10" width="180" height="22" rx="5" fill="var(--dg-accent)"></rect><text x="100" y="25" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-accent)" font-weight="700">(cycle) TCP handshake (1 RTT)</text><rect x="10" y="38" width="180" height="22" rx="5" fill="var(--dg-accent)"></rect><text x="100" y="53" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-accent)">GET /b -> close</text></g><g transform="translate(460,0)"><rect x="0" y="0" width="200" height="70" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><rect x="10" y="10" width="180" height="22" rx="5" fill="var(--dg-accent)"></rect><text x="100" y="25" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-accent)" font-weight="700">(cycle) TCP handshake (1 RTT)</text><rect x="10" y="38" width="180" height="22" rx="5" fill="var(--dg-accent)"></rect><text x="100" y="53" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-accent)">GET /c -> close</text></g><text x="20" y="92" font-size="11" fill="var(--dg-accent)" font-weight="700">= 3 handshakes / 3 round trips wasted</text></g><line x1="20" y1="140" x2="680" y2="140" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="3 3"></line><text x="20" y="166" class="mono" font-size="10.5" fill="var(--dg-ok)" font-weight="700" letter-spacing="1">HTTP/1.1, ONE PERSISTENT CONNECTION</text><g transform="translate(20,176)"><rect x="0" y="0" width="640" height="70" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><rect x="10" y="10" width="150" height="22" rx="5" fill="var(--dg-ok)"></rect><text x="85" y="25" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-accent)" font-weight="700">(cycle) handshake (once)</text><rect x="170" y="10" width="150" height="22" rx="5" fill="var(--dg-ok)"></rect><text x="245" y="25" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-accent)">GET /a</text><rect x="330" y="10" width="150" height="22" rx="5" fill="var(--dg-ok)"></rect><text x="405" y="25" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-accent)">GET /b</text><rect x="490" y="10" width="140" height="22" rx="5" fill="var(--dg-ok)"></rect><text x="560" y="25" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-on-accent)">GET /c</text><text x="320" y="52" text-anchor="middle" font-size="10" fill="var(--dg-ok)" font-style="italic">connection held open (idle timeout), reused for all three</text></g><text x="20" y="270" font-size="11" fill="var(--dg-ok)" font-weight="700">= 1 handshake / the cost is amortized across every request that follows</text></svg>
+</Diagram>
+
+#### The mechanics and the knobs
+
+- In HTTP/1.1, connections are **persistent by default**: you get the benefit with zero configuration.
+- `Connection: keep-alive` explicitly requests the connection stay open, and the `Keep-Alive` header can attach parameters: a _timeout_ (how long to hold the connection idle before closing) and a _max_ (how many requests to serve before closing it).
+- `Connection: close` asks to close the connection after this response, the HTTP/1.0 default, still settable in 1.1 when you want a one-shot exchange.
+- **Pipelining**: sending several requests back-to-back without waiting for each response, was specified in 1.1, but it suffered head-of-line blocking (a slow first response stalls the rest on that connection) and was so buggy across implementations that it's effectively dead. HTTP/2 multiplexing (sec 2) is its proper replacement.
+
+<Callout type="info" title="Where this matters for you">
+You rarely set these headers by hand, the defaults are right for almost everything. Persistent connections become a real concern when you're **tuning server timeouts**: hold connections too long and you leak idle ones and exhaust the connection pool under load; close them too eagerly and you lose the latency benefit. The timeouts below also double as a defense, a too-generous read timeout lets a Slowloris attacker tie up connections by sending headers one byte at a time.
+</Callout>
+
+______
+
+Go Python
+
+```go
+srv := &http.Server{
+    Addr:              ":8080",
+    Handler:           mux,
+    ReadTimeout:       5 * time.Second,
+    WriteTimeout:      10 * time.Second,
+    IdleTimeout:       60 * time.Second, // how long to hold an idle keep-alive conn
+    ReadHeaderTimeout: 2 * time.Second,  // mitigates Slowloris (slow-header attacks)
+}
+srv.ListenAndServe()
+// srv.SetKeepAlivesEnabled(false) // force Connection: close if ever needed
+```
+
+```text
+# Keep-alive is owned by the ASGI server (uvicorn), not your app code:
+#   uvicorn main:app --timeout-keep-alive 60 --workers 4
+import uvicorn
+uvicorn.run("main:app", host="0.0.0.0", port=8080,
+            timeout_keep_alive=60, workers=4)
+```
+
+## Multipart Uploads & Streamed Responses
+
+JSON is a poor fit for binary data, you'd have to base64-encode it, inflating size by \~33% and forcing the whole thing into memory. Large transfers therefore use purpose-built mechanisms, and which one you reach for depends on the **direction** of the large data.
+
+<Diagram caption="Direction decides the mechanism">
+<svg viewBox="0 0 700 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Multipart upload structure versus streamed chunked download"><defs><marker id="msx-au" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="var(--dg-accent-2)"></path></marker><marker id="msx-ad" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="var(--dg-ok)"></path></marker></defs><text x="20" y="18" class="mono" font-size="10.5" fill="var(--dg-accent)" font-weight="700" letter-spacing="1">CLIENT -> SERVER / multipart/form-data</text><rect x="20" y="28" width="310" height="222" rx="11" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="34" y="50" class="mono" font-size="9.5" fill="var(--dg-accent-2)" font-weight="700">Content-Type: ...; boundary=----X7</text><text x="34" y="74" class="mono" font-size="10" fill="var(--dg-accent)" font-weight="700">------X7</text><rect x="34" y="80" width="282" height="44" rx="7" fill="var(--dg-paper)" stroke="var(--dg-accent-border)"></rect><text x="44" y="98" class="mono" font-size="9" fill="var(--dg-ink-2)">Content-Disposition: name="title"</text><text x="44" y="115" class="mono" font-size="9.5" fill="var(--dg-ink)" font-weight="700">buy milk</text><text x="34" y="142" class="mono" font-size="10" fill="var(--dg-accent)" font-weight="700">------X7</text><rect x="34" y="148" width="282" height="58" rx="7" fill="var(--dg-paper)" stroke="var(--dg-accent-border)"></rect><text x="44" y="166" class="mono" font-size="9" fill="var(--dg-ink-2)">...name="file"; filename="cat.png"</text><text x="44" y="181" class="mono" font-size="9" fill="var(--dg-ink-2)">Content-Type: image/png</text><text x="44" y="198" class="mono" font-size="9.5" fill="var(--dg-ink)" font-weight="700">&#x3C;binary image bytes></text><text x="34" y="226" class="mono" font-size="10" fill="var(--dg-accent)" font-weight="700">------X7-- <tspan class="serif" font-style="italic" font-weight="400" fill="var(--dg-ink-2)" font-size="9.5">end marker</tspan></text><text x="175" y="244" text-anchor="middle" font-size="9.5" fill="var(--dg-accent-2)" font-style="italic">parser scans for the boundary, binary-safe</text><text x="360" y="18" class="mono" font-size="10.5" fill="var(--dg-ok)" font-weight="700" letter-spacing="1">SERVER -> CLIENT / streamed chunks</text><rect x="360" y="28" width="320" height="222" rx="11" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)"></rect><text x="374" y="50" class="mono" font-size="9.5" fill="var(--dg-ok)" font-weight="700">Content-Type: text/event-stream</text><text x="374" y="65" class="mono" font-size="9" fill="var(--dg-ok)">Connection: keep-alive (held open)</text><line x1="392" y1="84" x2="392" y2="232" stroke="var(--dg-info-border)" stroke-width="2"></line><text x="382" y="92" class="mono" font-size="8" fill="var(--dg-ok)" transform="rotate(-90 382 160)">time -></text><g><rect x="404" y="86" width="250" height="24" rx="6" fill="var(--dg-paper)" stroke="var(--dg-info-border)"></rect><text x="414" y="102" class="mono" font-size="9.5" fill="var(--dg-ink)">data: chunk 0</text><line x1="660" y1="98" x2="676" y2="98" stroke="var(--dg-ok)" stroke-width="1.4" marker-end="url(#msx-ad)"></line></g><g><rect x="404" y="120" width="250" height="24" rx="6" fill="var(--dg-paper)" stroke="var(--dg-info-border)"></rect><text x="414" y="136" class="mono" font-size="9.5" fill="var(--dg-ink)">data: chunk 1</text><line x1="660" y1="132" x2="676" y2="132" stroke="var(--dg-ok)" stroke-width="1.4" marker-end="url(#msx-ad)"></line></g><g><rect x="404" y="154" width="250" height="24" rx="6" fill="var(--dg-paper)" stroke="var(--dg-info-border)"></rect><text x="414" y="170" class="mono" font-size="9.5" fill="var(--dg-ink)">data: chunk 2</text><line x1="660" y1="166" x2="676" y2="166" stroke="var(--dg-ok)" stroke-width="1.4" marker-end="url(#msx-ad)"></line></g><text x="404" y="196" class="mono" font-size="14" fill="var(--dg-ok)">...</text><text x="520" y="222" text-anchor="middle" font-size="9.5" fill="var(--dg-ok)" font-style="italic">no Content-Length, pushed as produced</text></svg>
+</Diagram>
+
+### Large uploads (client -> server) -> `multipart/form-data`
+
+The client splits the request body into discrete **parts**: each can be a form field or a file, separated by a unique delimiter string declared in the `boundary` parameter of the `Content-Type`. The boundary appears before each part and once more, with a trailing `--`, to mark the very end. This lets the server stream-parse the body, peeling off each part (with its own `Content-Disposition` naming it and optional per-part `Content-Type`) without loading everything into memory at once. The unique boundary is what makes it safe to embed arbitrary binary bytes, the parser scans for the delimiter rather than relying on length alone.
+
+```text title="multipart request shape"
+POST /upload HTTP/1.1
+Content-Type: multipart/form-data; boundary=----X7gQ2
+
+------X7gQ2
+Content-Disposition: form-data; name="file"; filename="cat.png"
+Content-Type: image/png
+
+(binary image bytes)
+------X7gQ2--          # closing boundary marks the end
+```
+
+### Large downloads (server -> client) -> streaming
+
+To send a large or open-ended response without buffering it all in memory (or timing out while you build it), the server **streams** it in pieces. Two related techniques: `Transfer-Encoding: chunked` sends the body as a series of self-describing chunks when the total size isn't known up front (so there's no `Content-Length`); and `Content-Type: text/event-stream` implements **Server-Sent Events**, a long-lived response over which the server pushes labelled `data:` events as they occur. The connection is held open with keep-alive, and the client appends each chunk as it arrives, ideal for progress updates, log tails, or token-by-token LLM output.
+
+______
+
+Go Python
+
+```go
+// 1. Receive a multipart upload
+func upload(w http.ResponseWriter, r *http.Request) {
+    r.ParseMultipartForm(32 << 20) // up to 32 MB in memory, overflow spills to disk
+    file, header, err := r.FormFile("file")
+    if err != nil {
+        http.Error(w, "no file", http.StatusBadRequest)
+        return
+    }
+    defer file.Close()
+    fmt.Fprintf(w, "received %s", header.Filename)
+}
+
+// 2. Stream a response in chunks (Server-Sent Events)
+func stream(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "text/event-stream")
+    w.Header().Set("Connection", "keep-alive")
+    flusher := w.(http.Flusher) // Flush() pushes each chunk to the client immediately
+    for i := 0; i < 5; i++ {
+        fmt.Fprintf(w, "data: chunk %d\n\n", i)
+        flusher.Flush()
+        time.Sleep(time.Second)
+    }
+}
+```
+
+```python
+import asyncio
+from fastapi import UploadFile
+from fastapi.responses import StreamingResponse
+
+# 1. Receive a multipart upload
+@app.post("/upload")
+async def upload(file: UploadFile):
+    data = await file.read()        # UploadFile streams to a temp file under the hood
+    return {"received": file.filename, "size": len(data)}
+
+# 2. Stream a response in chunks (Server-Sent Events)
+@app.get("/stream")
+async def stream():
+    async def gen():
+        for i in range(5):
+            yield f"data: chunk {i}\n\n"
+            await asyncio.sleep(1)
+    return StreamingResponse(gen(), media_type="text/event-stream")
+```
+
+Direction -> tool
+
+**Sending big data up** -> `multipart/form-data`.  **Receiving big data down** -> chunked transfer or `text/event-stream` with keep-alive.  **Partial / resumable** transfers -> range requests (sec 15).  **Two-way realtime** -> WebSockets (sec 19).
+
+Part VI / Security & Operations
+
+## Proxies, Tunneling & Forwarded Headers
+
+In production your application almost never faces the internet directly. It sits behind a **reverse proxy** or load balancer, nginx, Envoy, HAProxy, a cloud load balancer, that terminates TLS, distributes traffic across instances, caches, and routes. This is excellent for operations but it quietly changes what your handler perceives about the request, and not accounting for that causes a recurring family of bugs.
+
+<Diagram caption="Opposite ends of the wire">
+<svg viewBox="0 0 700 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Forward proxy in front of clients versus reverse proxy in front of servers"><defs><marker id="pxx-ar" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--dg-ink-2)"></path></marker></defs><text x="20" y="18" class="mono" font-size="10.5" fill="var(--dg-accent)" font-weight="700" letter-spacing="1">FORWARD PROXY, in front of clients</text><g transform="translate(0,30)"><rect x="20" y="14" width="92" height="26" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="66" y="31" text-anchor="middle" font-size="10.5" fill="var(--dg-accent-2)" font-weight="700">client A</text><rect x="20" y="46" width="92" height="26" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="66" y="63" text-anchor="middle" font-size="10.5" fill="var(--dg-accent-2)" font-weight="700">client B</text><line x1="112" y1="27" x2="186" y2="40" stroke="var(--dg-ink-2)" stroke-width="1.4" marker-end="url(#pxx-ar)"></line><line x1="112" y1="59" x2="186" y2="46" stroke="var(--dg-ink-2)" stroke-width="1.4" marker-end="url(#pxx-ar)"></line><rect x="192" y="22" width="120" height="42" rx="9" fill="var(--dg-inverse)"></rect><text x="252" y="40" text-anchor="middle" font-size="11" fill="var(--dg-on-inverse)" font-weight="700">forward proxy</text><text x="252" y="55" text-anchor="middle" class="mono" font-size="8.5" fill="var(--dg-on-inverse)">egress / filter / CONNECT</text><line x1="312" y1="43" x2="402" y2="43" stroke="var(--dg-ink-2)" stroke-width="1.4" marker-end="url(#pxx-ar)"></line><rect x="408" y="22" width="160" height="42" rx="9" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)"></rect><text x="488" y="40" text-anchor="middle" font-size="10.5" fill="var(--dg-ok)" font-weight="700">the open internet</text><text x="488" y="55" text-anchor="middle" font-size="9" fill="var(--dg-ok)" font-style="italic">sees the proxy, not the user</text><text x="588" y="38" font-size="9.5" fill="var(--dg-ink-2)" font-style="italic">hides</text><text x="588" y="51" font-size="9.5" fill="var(--dg-ink-2)" font-style="italic">the client</text></g><line x1="20" y1="118" x2="680" y2="118" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="3 3"></line><text x="20" y="144" class="mono" font-size="10.5" fill="var(--dg-ok)" font-weight="700" letter-spacing="1">REVERSE PROXY, in front of servers (this is where your code lives)</text><g transform="translate(0,156)"><rect x="20" y="30" width="120" height="42" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="80" y="48" text-anchor="middle" font-size="10.5" fill="var(--dg-accent-2)" font-weight="700">clients (HTTPS)</text><text x="80" y="63" text-anchor="middle" font-size="9" fill="var(--dg-accent-2)" font-style="italic">think they talk to it</text><line x1="140" y1="51" x2="208" y2="51" stroke="var(--dg-ink-2)" stroke-width="1.4" marker-end="url(#pxx-ar)"></line><rect x="214" y="26" width="150" height="50" rx="9" fill="var(--dg-inverse)"></rect><text x="289" y="44" text-anchor="middle" font-size="11" fill="var(--dg-on-inverse)" font-weight="700">reverse proxy / LB</text><text x="289" y="58" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-on-inverse)">TLS term / route / cache</text><text x="289" y="69" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-on-inverse-info)">+ X-Forwarded-&#42;</text><line x1="364" y1="40" x2="430" y2="30" stroke="var(--dg-ink-2)" stroke-width="1.4" marker-end="url(#pxx-ar)"></line><line x1="364" y1="51" x2="430" y2="51" stroke="var(--dg-ink-2)" stroke-width="1.4" marker-end="url(#pxx-ar)"></line><line x1="364" y1="62" x2="430" y2="72" stroke="var(--dg-ink-2)" stroke-width="1.4" marker-end="url(#pxx-ar)"></line><rect x="436" y="18" width="120" height="22" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="496" y="34" text-anchor="middle" font-size="10" fill="var(--dg-ok)" font-weight="700">app instance 1</text><rect x="436" y="44" width="120" height="22" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="496" y="60" text-anchor="middle" font-size="10" fill="var(--dg-ok)" font-weight="700">app instance 2</text><rect x="436" y="70" width="120" height="22" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="496" y="86" text-anchor="middle" font-size="10" fill="var(--dg-ok)" font-weight="700">app instance 3</text><text x="566" y="48" font-size="9" fill="var(--dg-ink-2)" font-style="italic">plain HTTP</text><text x="566" y="60" font-size="9" fill="var(--dg-ink-2)" font-style="italic">behind here</text></g></svg>
+</Diagram>
+
+### Forward vs reverse proxy: opposite ends
+
+- A **forward proxy** sits in front of _clients_ and makes requests on their behalf, think corporate egress gateways, content filters, or anonymizers. The destination server sees the proxy, not the user. HTTPS through a forward proxy uses the `CONNECT` method (sec 6) to open an opaque encrypted tunnel.
+- A **reverse proxy** sits in front of _servers_; clients believe they're talking directly to it. It fronts your backend, handling TLS termination, load balancing, caching, compression, and path-based routing. This is the one your code lives behind, and a CDN is essentially a globally distributed reverse-proxy cache.
+
+### The consequence: you lose the real client
+
+Once a reverse proxy forwards a request to your app, the TCP connection your handler sees originates from the _proxy's_ IP and (typically) over plain HTTP, because TLS was terminated at the edge. So `r.RemoteAddr` is the proxy, and the scheme looks like http even though the user is on https. To preserve the originals, proxies inject forwarding headers:
+
+| Header            | Carries                                                                     |
+| ----------------- | --------------------------------------------------------------------------- |
+| X-Forwarded-For   | The original client IP, plus the chain of proxies it passed through.        |
+| X-Forwarded-Proto | The original scheme, `https`, even though the proxy->app hop is plain http. |
+| X-Forwarded-Host  | The `Host` the client originally requested.                                 |
+| Forwarded         | The standardized single header (RFC 7239) combining the above.              |
+| Via               | The proxies/gateways a message traversed, for loop detection and tracing.   |
+
+Two traps that bite everyone
+
+**Spoofing:** `X-Forwarded-For` is just a header a client can set, so if you use it for rate-limiting, geolocation, or audit logs, you must only trust it when the request arrived from a _known, trusted proxy IP_, otherwise an attacker forges any IP they like. **Wrong-scheme URLs:** if you build absolute or redirect URLs from the local connection's scheme (which is http behind the proxy) instead of honoring `X-Forwarded-Proto`, you'll generate `http://` links on an HTTPS site, causing mixed-content warnings and redirect loops. Most frameworks ship "trusted proxy" middleware that rewrites `RemoteAddr` and scheme correctly from these headers; enable it rather than reading the headers raw.
+
+## Protocol Upgrade & WebSockets
+
+HTTP's request/response, client-initiated shape is a poor fit for workloads that need the _server_ to push data the moment something happens, live notifications, chat, multiplayer game state, collaborative cursors, trading tickers. Historically these were faked with polling (ask repeatedly) or long-polling (hold a request open). HTTP/1.1's **Upgrade mechanism** offers a clean exit: an established HTTP connection can _switch protocols_ mid-stream, most famously into a WebSocket.
+
+<Diagram caption="One connection, two lives">
+<svg viewBox="0 0 700 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="HTTP upgrade handshake switching to a full-duplex WebSocket"><defs><marker id="wsx-ar" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--dg-ink-2)"></path></marker><marker id="wsx-t" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--dg-ok)"></path></marker></defs><text x="80" y="20" text-anchor="middle" font-size="11" fill="var(--dg-accent-2)" font-weight="700">Client</text><text x="620" y="20" text-anchor="middle" font-size="11" fill="var(--dg-ok)" font-weight="700">Server</text><line x1="80" y1="28" x2="80" y2="250" stroke="var(--dg-line)" stroke-width="2"></line><line x1="620" y1="28" x2="620" y2="250" stroke="var(--dg-line)" stroke-width="2"></line><rect x="14" y="36" width="40" height="74" rx="5" fill="var(--dg-accent-surface)"></rect><text x="34" y="76" text-anchor="middle" class="mono" font-size="8.5" fill="var(--dg-accent-2)" font-weight="700" transform="rotate(-90 34 76)">HTTP</text><line x1="80" y1="52" x2="618" y2="52" stroke="var(--dg-ink-2)" stroke-width="1.6" marker-end="url(#wsx-ar)"></line><text x="350" y="46" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-ink)" font-weight="700">GET /ws / Upgrade: websocket / Sec-WebSocket-Key</text><line x1="620" y1="88" x2="82" y2="88" stroke="var(--dg-ink-2)" stroke-width="1.6" marker-end="url(#wsx-ar)"></line><text x="350" y="82" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-ok)" font-weight="700">101 Switching Protocols / Sec-WebSocket-Accept</text><line x1="80" y1="120" x2="620" y2="120" stroke="var(--dg-accent)" stroke-width="1.5" stroke-dasharray="5 4"></line><rect x="280" y="110" width="140" height="20" rx="10" fill="var(--dg-accent)"></rect><text x="350" y="124" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-on-accent)" font-weight="700">v no longer HTTP v</text><rect x="14" y="140" width="40" height="100" rx="5" fill="var(--dg-info-surface)"></rect><text x="34" y="190" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ok)" font-weight="700" transform="rotate(-90 34 190)">WEBSOCKET</text><line x1="80" y1="156" x2="618" y2="156" stroke="var(--dg-ok)" stroke-width="1.4" marker-end="url(#wsx-t)"></line><text x="350" y="150" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-ink-2)">frame -> "hello"</text><line x1="620" y1="182" x2="82" y2="182" stroke="var(--dg-ok)" stroke-width="1.4" marker-end="url(#wsx-t)"></line><text x="350" y="176" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-ink-2)">&#x3C;- frame "welcome" (server pushes anytime)</text><line x1="620" y1="208" x2="82" y2="208" stroke="var(--dg-ok)" stroke-width="1.4" marker-end="url(#wsx-t)"></line><text x="350" y="202" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-ink-2)">&#x3C;- frame "new message"</text><line x1="80" y1="234" x2="618" y2="234" stroke="var(--dg-ok)" stroke-width="1.4" marker-end="url(#wsx-t)"></line><text x="350" y="228" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-ink-2)">frame -> "typing..."</text><text x="350" y="258" text-anchor="middle" font-size="9.5" fill="var(--dg-ok)" font-style="italic">either side sends at will / no polling / no per-message HTTP overhead</text></svg>
+</Diagram>
+
+### The WebSocket handshake
+
+What's elegant is that it starts as ordinary HTTP, so it traverses the same ports and proxies, then upgrades:
+
+- The client sends a normal GET carrying `Upgrade: websocket`, `Connection: Upgrade`, a random `Sec-WebSocket-Key`, and a version.
+- The server agrees with 101 Switching Protocols and a `Sec-WebSocket-Accept` computed from the client's key (proving it understood the handshake, not just echoed it).
+- From that point the TCP connection is no longer HTTP, it's a persistent, **full-duplex** WebSocket carrying lightweight message frames. Either side can send at any time, with no per-message HTTP overhead and no polling.
+
+```text title="upgrade handshake"
+GET /ws HTTP/1.1
+Host: example.com
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+Sec-WebSocket-Version: 13
+
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+```
+
+<Callout type="info" title="Choosing the right tool">
+Don't reach for WebSockets reflexively. For **one-way** server->client streams, notifications, progress bars, log tails, streamed LLM tokens, **Server-Sent Events** (sec 17) are simpler: they're plain HTTP, auto-reconnect, and need no special protocol. Use **WebSockets** only when you genuinely need _bidirectional_, low-latency messaging (chat, games, collaborative editing). And for ordinary request/response APIs, neither, plain HTTP with good caching is the right answer.
+</Callout>
+
+## SSL, TLS & HTTPS
+
+This is the layer that turns HTTP into HTTPS. You rarely implement it yourself, but you must understand what it guarantees and where it runs.
+
+- **SSL** (Secure Sockets Layer), the original protocol for securing client-server communication. All its versions are now _obsolete and disabled_ due to discovered vulnerabilities; the name persists only colloquially.
+- **TLS** (Transport Layer Security), SSL's modern successor. It does two things: encrypts data **in transit** so an eavesdropper can't read it and a tamperer can't silently alter it, and uses **certificates** to authenticate that the server really is who it claims to be. The current recommended version is TLS 1.3, which is both faster and stripped of legacy weak ciphers.
+- **HTTPS**: simply HTTP carried inside a TLS connection. Identical protocol, identical semantics; everything in this manual applies unchanged, just with encryption underneath.
+
+### Defeating man-in-the-middle (MitM) attacks
+
+A **man-in-the-middle attack** happens when someone sits on the network path between client and server, for example by controlling a public Wi-Fi router, and intercepts the traffic. Over plain HTTP that attacker acts like a dishonest mail carrier: they can read passwords in transit, modify request bodies, and rewrite server responses, while both sides believe they're talking directly to each other.
+
+**This is precisely the vulnerability TLS closes.** Once the handshake below completes, every byte leaving the client is sealed inside an encrypted channel before it touches the wire. An attacker on a compromised network still sees the traffic, they just see an indecipherable stream of ciphertext, because they never obtained the session key negotiated during the handshake. Without that key the interception is useless: nothing can be read, and nothing can be altered without breaking the integrity check the receiving side verifies.
+
+<Diagram caption="What the handshake buys">
+<svg viewBox="0 0 700 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="TLS handshake establishing authentication, key exchange and encryption"><defs><marker id="tlx-ar" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--dg-ink-2)"></path></marker></defs><text x="80" y="20" text-anchor="middle" font-size="11" fill="var(--dg-accent-2)" font-weight="700">Client</text><text x="620" y="20" text-anchor="middle" font-size="11" fill="var(--dg-ok)" font-weight="700">Server</text><line x1="80" y1="28" x2="80" y2="234" stroke="var(--dg-line)" stroke-width="2"></line><line x1="620" y1="28" x2="620" y2="234" stroke="var(--dg-line)" stroke-width="2"></line><line x1="80" y1="50" x2="618" y2="50" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#tlx-ar)"></line><text x="350" y="44" text-anchor="middle" class="mono" font-size="9.5" fill="var(--dg-ink)">ClientHello / ciphers / <tspan fill="var(--dg-accent-2)" font-weight="700">SNI: example.com</tspan></text><g transform="translate(0,64)"><rect x="120" y="0" width="460" height="40" rx="9" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="138" y="17" class="mono" font-size="9" fill="var(--dg-warn)" font-weight="700">(1) AUTHENTICATION</text><text x="138" y="32" font-size="10.5" fill="var(--dg-ink)">server sends a CA-signed <tspan font-weight="700" fill="var(--dg-ink)"> certificate</tspan> -> proves it owns the domain</text><line x1="618" y1="14" x2="584" y2="14" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#tlx-ar)"></line></g><g transform="translate(0,116)"><rect x="120" y="0" width="460" height="40" rx="9" fill="var(--dg-info-surface)" stroke="var(--dg-ok)"></rect><text x="138" y="17" class="mono" font-size="9" fill="var(--dg-ok)" font-weight="700">(2) KEY EXCHANGE</text><text x="138" y="32" font-size="10.5" fill="var(--dg-ink)">asymmetric crypto agrees a shared <tspan font-weight="700" fill="var(--dg-ink)">symmetric session key</tspan>, never sent in clear</text></g><g transform="translate(0,168)"><rect x="120" y="0" width="460" height="40" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="138" y="17" class="mono" font-size="9" fill="var(--dg-ok)" font-weight="700">(3) ENCRYPTION + INTEGRITY</text><text x="138" y="32" font-size="10.5" fill="var(--dg-ink)">every byte now encrypted &#x26; tamper-checked with the fast symmetric key</text></g><line x1="80" y1="226" x2="618" y2="226" stroke="var(--dg-ok)" stroke-width="2.5"></line><line x1="80" y1="226" x2="618" y2="226" stroke="var(--dg-ok)" stroke-width="2.5" marker-end="url(#tlx-ar)"></line><rect x="270" y="216" width="160" height="20" rx="10" fill="var(--dg-ok)"></rect><text x="350" y="230" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-on-accent)" font-weight="700">HTTP now flows inside</text><text x="80" y="262" font-size="11" fill="var(--dg-ink-2)"><tspan font-weight="700" fill="var(--dg-ink)">SNI</tspan> lets one IP serving many HTTPS sites present the right certificate, the TLS-layer analogue of the </text></svg>
+</Diagram>
+
+### What the handshake actually achieves
+
+Without drowning in cryptography, the TLS handshake establishes three things before any HTTP flows:
+
+- **Authentication**: the server presents a _certificate_ signed by a Certificate Authority (CA) the client already trusts, cryptographically proving it owns `example.com`. This is what stops you connecting to an impostor. (Certificates chain up to a small set of root CAs baked into your OS/browser.)
+- **Key exchange**: using asymmetric (public-key) cryptography, both sides agree on a shared _symmetric_ session key without ever transmitting it in the clear. Asymmetric crypto is slow, so it's used only to bootstrap; the fast symmetric key encrypts the actual traffic.
+- **Encryption + integrity**: from then on every byte is encrypted and carries a tamper-evidence check, so an attacker can neither read nor modify the conversation undetected.
+
+A practical detail worth knowing: **SNI** (Server Name Indication) is the part of the handshake where the client states which hostname it wants, so one IP serving many HTTPS sites can present the correct certificate, the TLS-layer analogue of the `Host` header.
+
+<Callout type="info" title="Where TLS actually lives in your stack">
+You almost never implement TLS in application code. It's _terminated_ at the edge, by your hosting platform, load balancer, or reverse proxy (nginx, Caddy, a cloud LB), frequently with certificates auto-provisioned and renewed via Let's Encrypt. Your app then receives plain HTTP behind that boundary. This is exactly why `X-Forwarded-Proto` (sec 18) matters, it's how your app learns the user was on HTTPS, and why you set `Strict-Transport-Security` (sec 5) at the edge to force HTTPS in the first place.
+</Callout>
+
+______
+
+Go Python
+
+```go
+// Serve HTTPS directly with a certificate + private-key pair.
+err := http.ListenAndServeTLS(":443", "server.crt", "server.key", mux)
+if err != nil {
+    log.Fatal(err)
+}
+// Production note: usually you terminate TLS at a proxy/LB and run plain HTTP behind it.
+```
+
+```text
+# uvicorn can serve TLS directly with a cert + key pair:
+#   uvicorn main:app --port 443 --ssl-certfile server.crt --ssl-keyfile server.key
+import uvicorn
+uvicorn.run("main:app", host="0.0.0.0", port=443,
+            ssl_certfile="server.crt", ssl_keyfile="server.key")
+# Production note: usually terminate TLS at a proxy/LB and run plain HTTP behind it.
+```
+
+## Debugging Cheat-Sheet
+
+The payoff of understanding the machinery is fast triage: map a symptom straight to the subsystem and the headers that govern it.
+
+| Symptom                                                  | Check                                                                                                                                                                                                  |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **CORS error** in the console (but server logs show 200) | Compare `Origin` vs `Access-Control-Allow-Origin`; verify the preflight `OPTIONS` returns the right `Allow-Methods/Headers`; for cookies, check `Allow-Credentials` and that origin isn't `*`. (sec 9) |
+| **Stale data** being served                              | Inspect `Cache-Control`, `ETag`/`If-None-Match`, `Last-Modified`; is the ETag bumped on every change? Is `Vary` set correctly? (sec 12)                                                                |
+| **Lost updates** / silent overwrites                     | Add optimistic locking: require `If-Match` with the ETag, reject mismatches with 412. (sec 13)                                                                                                         |
+| **Duplicate records** on retry                           | POST is non-idempotent, require an `Idempotency-Key` and dedupe on it. (sec 7)                                                                                                                         |
+| **Redirected POST loses its body**                       | You used 301/302 (clients may switch to GET); use 307/308 to preserve method & body. (sec 11)                                                                                                          |
+| **Wrong format / language returned**                     | Compare `Accept`, `Accept-Language`, `Accept-Encoding` against the server's `Content-*`; consider 406. (sec 14)                                                                                        |
+| **401 vs 403 confusion**                                 | 401 = not authenticated (send credentials); 403 = authenticated but not permitted. (sec 10)                                                                                                            |
+| **400 vs 422**                                           | 400 = malformed syntax; 422 = valid syntax, failed business validation. (sec 10)                                                                                                                       |
+| **502 / 503 / 504**                                      | Infrastructure, not your handler, upstream unreachable / down / slow. Check the proxy and upstream health. (sec 10, sec 18)                                                                            |
+| **A header you set isn't sent**                          | You set it after writing the status or body. Always set headers first. (sec 3)                                                                                                                         |
+| **Real client IP shows as the proxy**                    | Read `X-Forwarded-For`, but only when the request came from a trusted proxy. (sec 18)                                                                                                                  |
+| **HTTPS site generates http\:// links**                  | Build absolute URLs from `X-Forwarded-Proto`, not the local (proxied) scheme. (sec 18)                                                                                                                 |
+| **Connections exhausted under load**                     | Tune keep-alive idle timeout and connection limits; watch for Slowloris via read-header timeout. (sec 16)                                                                                              |
+
+#### Headers worth memorizing, grouped by job
+
+- **Negotiation:** `Accept`, `Accept-Language`, `Accept-Encoding` &lt;-> `Content-Type`, `Content-Language`, `Content-Encoding`
+- **Representation:** `Content-Type`, `Content-Length`, `Content-Range`
+- **Identity / auth:** `Authorization`, `WWW-Authenticate`, `Cookie`, `Set-Cookie`, `Host`, `User-Agent`
+- **Caching / conditional:** `Cache-Control`, `ETag`, `Last-Modified`, `If-None-Match`, `If-Match`, `If-Modified-Since`, `Vary`
+- **CORS:** `Origin`, `Access-Control-Allow-Origin / -Methods / -Headers / -Credentials / -Max-Age`
+- **Security:** `Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`
+- **Proxy:** `X-Forwarded-For / -Proto / -Host`, `Forwarded`, `Via`
+- **Connection / transfer:** `Connection`, `Keep-Alive`, `Upgrade`, `Transfer-Encoding`, `Range`, `Accept-Ranges`
+
+<Diagram caption="The whole loop">
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The full HTTP request lifecycle in one loop"><defs><marker id="lpx-ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="var(--dg-accent-2)"></path></marker></defs><rect x="20" y="100" width="96" height="50" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="68" y="122" text-anchor="middle" font-size="12" fill="var(--dg-accent-2)" font-weight="700">client</text><text x="68" y="138" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-accent-2)">sec 1 request</text><line x1="116" y1="125" x2="166" y2="125" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#lpx-ar)"></line><rect x="170" y="98" width="120" height="54" rx="10" fill="var(--dg-inverse)"></rect><text x="230" y="118" text-anchor="middle" class="mono" font-size="8.5" fill="var(--dg-on-inverse-info)">TLS sec 20 / proxy sec 18</text><text x="230" y="132" text-anchor="middle" class="mono" font-size="8.5" fill="var(--dg-on-inverse-info)">keep-alive sec 16</text><text x="230" y="145" text-anchor="middle" font-size="8.5" fill="var(--dg-on-inverse)" font-style="italic">the reusable pipe</text><line x1="290" y1="125" x2="340" y2="125" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#lpx-ar)"></line><rect x="344" y="40" width="240" height="172" rx="12" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)"></rect><text x="464" y="60" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-ok)" font-weight="700" letter-spacing="1">STATELESS SERVER</text><rect x="358" y="70" width="212" height="20" rx="5" fill="var(--dg-paper)" stroke="var(--dg-info-border)"></rect><text x="464" y="84" text-anchor="middle" font-size="9.5" fill="var(--dg-ink)">identity / auth sec 8</text><rect x="358" y="94" width="212" height="20" rx="5" fill="var(--dg-paper)" stroke="var(--dg-info-border)"></rect><text x="464" y="108" text-anchor="middle" font-size="9.5" fill="var(--dg-ink)">authz + preconditions sec 10/sec 13</text><rect x="358" y="118" width="212" height="20" rx="5" fill="var(--dg-paper)" stroke="var(--dg-info-border)"></rect><text x="464" y="132" text-anchor="middle" font-size="9.5" fill="var(--dg-ink)">negotiate representation sec 14</text><rect x="358" y="142" width="212" height="20" rx="5" fill="var(--dg-paper)" stroke="var(--dg-info-border)"></rect><text x="464" y="156" text-anchor="middle" font-size="9.5" fill="var(--dg-ink)">consult caches sec 12</text><rect x="358" y="166" width="212" height="20" rx="5" fill="var(--dg-paper)" stroke="var(--dg-info-border)"></rect><text x="464" y="180" text-anchor="middle" font-size="9.5" fill="var(--dg-ink)">do the work, pick a method sec 6</text><text x="464" y="202" text-anchor="middle" font-size="9" fill="var(--dg-ok)" font-style="italic">method semantics: safe / idempotent / cacheable</text><path d="M344,196 C200,238 140,210 68,156" fill="none" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#lpx-ar)"></path><text x="210" y="232" text-anchor="middle" font-size="10" fill="var(--dg-ok)" font-weight="700">status-coded response sec 10-2xx / 3xx redirect sec 11 / 206 sec 15 / stream sec 17</text></svg>
+</Diagram>
+
+**The whole flow in one breath:** a client opens a connection, reusable (sec 16), usually TLS-encrypted (sec 20), often through a reverse proxy (sec 18), and sends a self-contained request (sec 1): a method with safe/idempotent/cacheable semantics (sec 6), a URL, headers (sec 4-5), and an optional body (sec 3). The stateless server re-establishes identity (sec 8), checks authorization and preconditions (sec 10, sec 13), negotiates the best representation (sec 14), consults caches (sec 12), performs the work, and returns a status-coded response (sec 10), possibly a redirect (sec 11), a partial range (sec 15), or a stream (sec 17). Internalize that loop and the headers that steer each step, and you can reason about and debug the overwhelming majority of backend HTTP you'll ever meet.
+
+Grounded in MDN (developer.mozilla.org/en-US/docs/Web/HTTP) & RFC 9110 / Go 1.22+ / Python 3.11+ examples.
+
+Backend from First Principles / Chapter 01 / HTTP. Code targets Go 1.22+ and Python 3.11+.

@@ -1,0 +1,55 @@
+---
+interface Props {
+  /** info = aside, ok = do this, warn = gotcha. */
+  type?: 'info' | 'ok' | 'warn';
+  title?: string;
+}
+const { type = 'info', title } = Astro.props;
+
+const LABEL = { info: 'Note', ok: 'Good practice', warn: 'Watch out' } as const;
+---
+<aside class:list={['callout', `is-${type}`]}>
+  <p class="callout-title">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      {type === 'ok' && <polyline points="4 10.5 8 14.5 16 5.5" />}
+      {type === 'warn' && <><path d="M10 3.2 18 17H2Z" /><line x1="10" y1="8" x2="10" y2="11.5" /><circle cx="10" cy="14.2" r="0.6" fill="currentColor" /></>}
+      {type === 'info' && <><circle cx="10" cy="10" r="7.5" /><line x1="10" y1="9" x2="10" y2="14" /><circle cx="10" cy="6.2" r="0.6" fill="currentColor" /></>}
+    </svg>
+    <span>{title ?? LABEL[type]}</span>
+  </p>
+  <div class="callout-body"><slot /></div>
+</aside>
+
+<style>
+  .callout {
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--line);
+    border-left: 2px solid var(--tone);
+    border-radius: var(--radius);
+    background: var(--tone-bg);
+  }
+  .is-info { --tone: var(--info); --tone-bg: var(--info-bg); }
+  .is-ok   { --tone: var(--ok);   --tone-bg: var(--ok-bg); }
+  .is-warn { --tone: var(--warn); --tone-bg: var(--warn-bg); }
+
+  .callout-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-family: var(--font-ui);
+    font-size: var(--text-sm);
+    font-weight: 640;
+    letter-spacing: -0.01em;
+    color: var(--tone);
+    margin: 0 0 var(--space-3);
+    text-wrap: balance;
+  }
+  .callout-title svg { width: 15px; height: 15px; flex: none; }
+
+  /* The callout keeps prose rhythm but drops a size, so it reads as an
+     interruption to the main flow rather than a competing column. */
+  .callout-body { font-size: var(--text-base); }
+  .callout-body :global(> * + *) { margin-top: var(--space-3); }
+  .callout-body :global(> :first-child) { margin-top: 0; }
+  .callout-body :global(> :last-child) { margin-bottom: 0; }
+</style>
