@@ -1,13 +1,28 @@
 /* Backend from First Principles, page shell behaviour.
    Replaces the 20-odd per-chapter table-of-contents scripts with one
-   implementation: drawer toggle plus scroll spy. */
+   implementation: drawer toggle, desktop collapse toggle, in-flow nav relocation,
+   and scroll spy. */
 (function () {
   'use strict';
 
   var toc = document.querySelector('.bfp-toc');
   if (!toc) return;
 
-  /* ---------- home link ---------- */
+  var shell = document.querySelector('.bfp-shell');
+  var content = document.querySelector('.bfp-content');
+
+  /* ---------- Relocate Chapter Navigation into In-Flow Article End ---------- */
+  var chapterNav = document.getElementById('chapterNav') || document.querySelector('.chapter-nav');
+  if (chapterNav && content) {
+    var footer = content.querySelector('.bfp-footer');
+    if (footer) {
+      content.insertBefore(chapterNav, footer);
+    } else {
+      content.appendChild(chapterNav);
+    }
+  }
+
+  /* ---------- Home Link & Sidebar Header Controls ---------- */
   var home = document.createElement('a');
   home.className = 'bfp-home-link';
   home.href = '../../index.html';
@@ -18,29 +33,87 @@
   var scrim = document.querySelector('.bfp-toc-scrim');
   var links = [].slice.call(document.querySelectorAll('.bfp-toc-link'));
 
-  /* ---------- drawer ---------- */
+  /* ---------- Sidebar Collapsed State (Desktop & Mobile) ---------- */
+  var STORAGE_SIDEBAR_KEY = 'bfp_sidebar_collapsed';
+
+  function isMobile() {
+    return window.matchMedia('(max-width: 1000px)').matches;
+  }
+
+  function setSidebarCollapsed(collapsed) {
+    if (shell) shell.classList.toggle('sidebar-collapsed', collapsed);
+    document.body.classList.toggle('bfp-sidebar-collapsed', collapsed);
+    try {
+      localStorage.setItem(STORAGE_SIDEBAR_KEY, collapsed ? 'true' : 'false');
+    } catch (e) {}
+  }
+
+  // Restore saved desktop sidebar preference
+  var savedCollapsed = false;
+  try {
+    savedCollapsed = localStorage.getItem(STORAGE_SIDEBAR_KEY) === 'true';
+  } catch (e) {}
+
+  if (savedCollapsed) {
+    setSidebarCollapsed(true);
+  }
+
+  /* ---------- Drawer / Mobile Open State ---------- */
   function setOpen(open) {
     toc.classList.toggle('is-open', open);
     document.body.classList.toggle('bfp-toc-open', open);
     if (scrim) scrim.classList.toggle('is-open', open);
     if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-    document.body.style.overflow = open && window.matchMedia('(max-width: 1000px)').matches ? 'hidden' : '';
+    document.body.style.overflow = open && isMobile() ? 'hidden' : '';
+
+    if (!isMobile()) {
+      setSidebarCollapsed(!open);
+    }
   }
 
-  if (toggle) toggle.addEventListener('click', function () { setOpen(!toc.classList.contains('is-open')); });
-  if (scrim) scrim.addEventListener('click', function () { setOpen(false); });
+  function toggleSidebar() {
+    if (isMobile()) {
+      setOpen(!toc.classList.contains('is-open'));
+    } else {
+      var currentlyCollapsed = shell ? shell.classList.contains('sidebar-collapsed') : false;
+      setSidebarCollapsed(!currentlyCollapsed);
+    }
+  }
+
+  if (toggle) {
+    toggle.addEventListener('click', function (e) {
+      e.stopPropagation();
+      toggleSidebar();
+    });
+  }
+
+  if (scrim) {
+    scrim.addEventListener('click', function () {
+      setOpen(false);
+    });
+  }
+
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && toc.classList.contains('is-open')) setOpen(false);
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (e.key === 'Escape' && toc.classList.contains('is-open')) {
+      setOpen(false);
+    } else if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+      e.preventDefault();
+      toggleSidebar();
+    } else if (e.key === '[' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      toggleSidebar();
+    }
   });
-  /* On the mobile drawer, picking a link should close it. On desktop the
-     panel pushes the content rather than covering it, so leave it open. */
+
+  /* On the mobile drawer, picking a link should close it. On desktop leave it open. */
   links.forEach(function (l) {
     l.addEventListener('click', function () {
-      if (window.matchMedia('(max-width: 1000px)').matches) setOpen(false);
+      if (isMobile()) setOpen(false);
     });
   });
 
-  /* ---------- scroll spy ---------- */
+  /* ---------- Scroll Spy ---------- */
   var byId = {};
   var targets = [];
   links.forEach(function (l) {

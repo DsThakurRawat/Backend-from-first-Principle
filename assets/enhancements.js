@@ -325,6 +325,12 @@
   var THEMES = ['default', 'dark', 'light'];
   var THEME_LABELS = { default: 'Original', neutral: 'Original', paper: 'Original', dark: 'Dark', light: 'Light' };
   var THEME_COLORS = { default: '#f3ede2', dark: '#17120e', light: '#ffffff' };
+  var THEME_ICONS = {
+    default: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>',
+    dark: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+    light: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>'
+  };
+  var READ_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>';
   var transitionTimer = null;
 
   // Must match the bootstrap in assets/theme.js: light is the default for a
@@ -340,23 +346,33 @@
 
   function applyTheme(theme, animate) {
     if (theme === 'paper' || theme === 'neutral') theme = 'default';
-    if (animate) {
-      document.documentElement.classList.add('theme-transitioning');
-      if (transitionTimer) clearTimeout(transitionTimer);
-      transitionTimer = setTimeout(function () {
-        document.documentElement.classList.remove('theme-transitioning');
-      }, 300);
-    }
-    document.documentElement.setAttribute('data-theme', theme);
-    try { localStorage.setItem(STORAGE_THEME_KEY, theme); } catch (e) {}
 
+    // Persist and update non-visual state immediately (no jank)
+    try { localStorage.setItem(STORAGE_THEME_KEY, theme); } catch (e) {}
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', THEME_COLORS[theme] || THEME_COLORS.light);
-
     var btn = document.getElementById('dockThemeBtn');
     if (btn) {
-      btn.innerHTML = THEME_LABELS[theme] || 'Original';
+      btn.innerHTML = THEME_ICONS[theme] || THEME_ICONS.default;
+      btn.setAttribute('title', 'Theme: ' + (THEME_LABELS[theme] || 'Original') + ' (Click to switch)');
+      btn.setAttribute('aria-label', 'Theme: ' + (THEME_LABELS[theme] || 'Original') + ' (Click to switch)');
     }
+
+
+    // Defer the class/attribute change to the next paint frame so the
+    // browser can finish the current frame before recalculating styles.
+    requestAnimationFrame(function () {
+      if (animate) {
+        document.documentElement.classList.add('theme-transitioning');
+        if (transitionTimer) clearTimeout(transitionTimer);
+        // Remove the class after the transition duration so it doesn't
+        // permanently hold transitions on every future style change.
+        transitionTimer = setTimeout(function () {
+          document.documentElement.classList.remove('theme-transitioning');
+        }, 220); // matches CSS transition-duration: 0.22s
+      }
+      document.documentElement.setAttribute('data-theme', theme);
+    });
   }
 
   function cycleTheme() {
@@ -523,10 +539,53 @@
     if (badge) badge.textContent = count;
   }
 
+  var STORAGE_READ_MODE_KEY = 'bfp_read_mode';
+
+  function isReadModeActive() {
+    try {
+      return localStorage.getItem(STORAGE_READ_MODE_KEY) === 'true';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function toggleReadMode(forceState) {
+    var newState = typeof forceState === 'boolean' ? forceState : !document.body.classList.contains('bfp-read-mode');
+
+    // Update button and storage immediately (no paint cost)
+    try { localStorage.setItem(STORAGE_READ_MODE_KEY, newState ? 'true' : 'false'); } catch (e) {}
+
+    var readBtn = document.getElementById('dockReadBtn');
+    if (readBtn) {
+      readBtn.classList.toggle('active', newState);
+      readBtn.setAttribute('aria-pressed', newState ? 'true' : 'false');
+      readBtn.innerHTML = READ_ICON;
+      readBtn.setAttribute('title', newState ? 'Exit Focus / Read Mode (Z)' : 'Focus / Read Mode (Z)');
+      readBtn.setAttribute('aria-label', newState ? 'Exit Focus / Read Mode (Z)' : 'Focus / Read Mode (Z)');
+    }
+
+    // Defer the layout-affecting class change to the next paint frame
+    requestAnimationFrame(function () {
+      document.body.classList.toggle('bfp-read-mode', newState);
+      // Always reset inline style so CSS takes over on exit (fixes permanent hide bug)
+      var bubble = document.getElementById('selectionBubble');
+      if (bubble) bubble.style.display = newState ? 'none' : '';
+      if (!newState) {
+        var pop = document.getElementById('noteCreatorPopover');
+        if (pop) pop.style.display = '';
+      }
+    });
+  }
+
+
   function initFloatingDock() {
     if (document.getElementById('masterclassDock')) return;
 
     var currentTheme = document.documentElement.getAttribute('data-theme') || 'default';
+    var isRead = isReadModeActive();
+    if (isRead) {
+      document.body.classList.add('bfp-read-mode');
+    }
 
     var dock = document.createElement('nav');
     dock.className = 'masterclass-dock-bar';
@@ -534,24 +593,114 @@
     dock.setAttribute('aria-label', 'Study Controls and Quick Navigation');
 
     var count = getChapterNotesCount();
-    var html = '<button class="dock-btn dock-theme-btn" id="dockThemeBtn" aria-label="Switch color theme (Original / Dark / Light)" title="Switch Theme (Original / Dark / Light)">' +
-      (THEME_LABELS[currentTheme] || 'Original') +
+    var html = '<button class="dock-btn dock-theme-btn" id="dockThemeBtn" aria-label="Theme: ' + (THEME_LABELS[currentTheme] || 'Original') + ' (Click to switch)" title="Theme: ' + (THEME_LABELS[currentTheme] || 'Original') + ' (Click to switch)">' +
+      (THEME_ICONS[currentTheme] || THEME_ICONS.default) +
+      '</button>' +
+      '<button class="dock-btn dock-read-btn' + (isRead ? ' active' : '') + '" id="dockReadBtn" aria-label="' + (isRead ? 'Exit Focus / Read Mode (Z)' : 'Focus / Read Mode (Z)') + '" aria-pressed="' + (isRead ? 'true' : 'false') + '" title="' + (isRead ? 'Exit Focus / Read Mode (Z)' : 'Focus / Read Mode (Z)') + '">' +
+      READ_ICON +
       '</button>' +
       '<button class="dock-btn dock-notebook-btn" id="dockNotebookBtn" aria-label="Open Study Notes (Alt+N)" aria-haspopup="dialog" aria-expanded="false" title="Toggle Study Notes (Alt+N)">' +
       'Notes <span class="dock-badge" id="dockNotebookBadge" aria-label="' + count + ' notes">' + count + '</span>' +
+      '</button>' +
+      '<button class="dock-btn dock-help-btn" id="dockHelpBtn" aria-label="Keyboard Shortcuts (?)" aria-haspopup="dialog" title="Keyboard Shortcuts (?)">' +
+      '<span class="dock-help-icon">?</span>' +
       '</button>' +
       '<button class="dock-btn dock-top-btn" id="dockTopBtn" title="Scroll to Top" aria-label="Scroll to top of page">' +
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>' +
       '</button>';
 
+
     dock.innerHTML = html;
     document.body.appendChild(dock);
 
     document.getElementById('dockThemeBtn').addEventListener('click', cycleTheme);
+    document.getElementById('dockReadBtn').addEventListener('click', function () { toggleReadMode(); });
     document.getElementById('dockNotebookBtn').addEventListener('click', toggleNotesSidebar);
+    document.getElementById('dockHelpBtn').addEventListener('click', function () {
+      if (typeof window.toggleShortcutsModal === 'function') {
+        window.toggleShortcutsModal();
+      }
+    });
     document.getElementById('dockTopBtn').addEventListener('click', function () {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
+  }
+
+  // --- Keyboard Shortcuts Help Modal ---
+  function initShortcutsModal() {
+    if (document.getElementById('bfpShortcutsModal')) return;
+
+    var overlay = document.createElement('div');
+    overlay.className = 'shortcuts-modal-overlay';
+    overlay.id = 'bfpShortcutsModal';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Keyboard Shortcuts Help');
+
+    var modal = document.createElement('div');
+    modal.className = 'shortcuts-modal';
+
+    var html = '<div class="shortcuts-modal-header">' +
+      '<div class="shortcuts-modal-title">' +
+        '<span class="shortcuts-title-icon">⌨</span> Keyboard Shortcuts' +
+      '</div>' +
+      '<button class="shortcuts-close-btn" id="shortcutsCloseBtn" aria-label="Close shortcuts dialog (Esc)">✕</button>' +
+    '</div>' +
+    '<div class="shortcuts-modal-body">' +
+      '<div class="shortcuts-section">' +
+        '<div class="shortcuts-section-title">Navigation & Shell</div>' +
+        '<div class="shortcuts-row"><span class="shortcuts-desc">Toggle Sidebar</span><div class="shortcuts-keys"><kbd>[</kbd> <span class="shortcuts-or">or</span> <kbd>Ctrl</kbd>+<kbd>\\</kbd></div></div>' +
+        '<div class="shortcuts-row"><span class="shortcuts-desc">Quick Search</span><div class="shortcuts-keys"><kbd>Ctrl</kbd>+<kbd>K</kbd> <span class="shortcuts-or">or</span> <kbd>/</kbd></div></div>' +
+        '<div class="shortcuts-row"><span class="shortcuts-desc">Previous / Next Chapter</span><div class="shortcuts-keys"><kbd>←</kbd> <kbd>→</kbd></div></div>' +
+        '<div class="shortcuts-row"><span class="shortcuts-desc">Keyboard Shortcuts Help</span><div class="shortcuts-keys"><kbd>?</kbd></div></div>' +
+      '</div>' +
+      '<div class="shortcuts-section">' +
+        '<div class="shortcuts-section-title">Reading & Focus</div>' +
+        '<div class="shortcuts-row"><span class="shortcuts-desc">Toggle Read / Focus Mode</span><div class="shortcuts-keys"><kbd>Z</kbd></div></div>' +
+        '<div class="shortcuts-row"><span class="shortcuts-desc">Close Modal / Drawer / Selection</span><div class="shortcuts-keys"><kbd>Esc</kbd></div></div>' +
+      '</div>' +
+      '<div class="shortcuts-section">' +
+        '<div class="shortcuts-section-title">Study & Notes</div>' +
+        '<div class="shortcuts-row"><span class="shortcuts-desc">Toggle Study Notes Drawer</span><div class="shortcuts-keys"><kbd>Alt</kbd>+<kbd>N</kbd></div></div>' +
+        '<div class="shortcuts-row"><span class="shortcuts-desc">Highlight Text & Add Note</span><div class="shortcuts-keys"><span class="shortcuts-tip">Select any text</span></div></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="shortcuts-modal-footer">' +
+      '<span>Press <kbd>Esc</kbd> or <kbd>?</kbd> to close</span>' +
+    '</div>';
+
+    modal.innerHTML = html;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    function closeModal() {
+      overlay.classList.remove('is-open');
+      document.body.classList.remove('shortcuts-modal-open');
+      document.body.style.overflow = '';
+    }
+
+    function openModal() {
+      overlay.classList.add('is-open');
+      document.body.classList.add('shortcuts-modal-open');
+      document.body.style.overflow = 'hidden';
+    }
+
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeModal();
+    });
+
+    var closeBtn = document.getElementById('shortcutsCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+
+    window.toggleShortcutsModal = function () {
+      if (overlay.classList.contains('is-open')) {
+        closeModal();
+      } else {
+        openModal();
+      }
+    };
+    window.closeShortcutsModal = closeModal;
+    window.openShortcutsModal = openModal;
   }
 
   // Global helper for resetting notes
@@ -593,9 +742,169 @@
     });
   }
 
+  function highlightRange(range, id, color, userNote) {
+    if (!range || range.collapsed) return null;
+
+    function wrapTextNode(textNode, start, end) {
+      if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return null;
+      var text = textNode.nodeValue;
+      if (!text || start >= end || start >= text.length || end <= 0) return null;
+
+      var actualStart = Math.max(0, start);
+      var actualEnd = Math.min(text.length, end);
+      if (actualStart >= actualEnd) return null;
+
+      var beforeText = text.substring(0, actualStart);
+      var highlightText = text.substring(actualStart, actualEnd);
+      var afterText = text.substring(actualEnd);
+
+      if (!highlightText || !highlightText.trim()) return null;
+
+      var mark = document.createElement('mark');
+      mark.className = 'user-highlight';
+      mark.setAttribute('data-color', color || 'rust');
+      mark.setAttribute('data-id', id);
+      if (userNote) mark.title = 'Note: ' + userNote;
+      mark.textContent = highlightText;
+
+      var parent = textNode.parentNode;
+      if (!parent) return null;
+
+      var frag = document.createDocumentFragment();
+      if (beforeText) frag.appendChild(document.createTextNode(beforeText));
+      frag.appendChild(mark);
+      if (afterText) frag.appendChild(document.createTextNode(afterText));
+
+      parent.replaceChild(frag, textNode);
+      return mark;
+    }
+
+    var startNode = range.startContainer;
+    var startOffset = range.startOffset;
+    var endNode = range.endContainer;
+    var endOffset = range.endOffset;
+
+    if (startNode === endNode && startNode.nodeType === Node.TEXT_NODE) {
+      return wrapTextNode(startNode, startOffset, endOffset);
+    }
+
+    var common = range.commonAncestorContainer;
+    var rootNode = common.nodeType === Node.TEXT_NODE ? common.parentNode : common;
+    var walker = document.createTreeWalker(rootNode, NodeFilter.SHOW_TEXT, null, false);
+    var textNodes = [];
+    var inRange = false;
+
+    var current;
+    while ((current = walker.nextNode())) {
+      if (current === startNode) {
+        inRange = true;
+        textNodes.push({ node: current, start: startOffset, end: current.nodeValue.length });
+        if (current === endNode) {
+          textNodes[textNodes.length - 1].end = endOffset;
+          break;
+        }
+        continue;
+      }
+      if (current === endNode) {
+        if (inRange) {
+          textNodes.push({ node: current, start: 0, end: endOffset });
+        }
+        break;
+      }
+      if (inRange) {
+        textNodes.push({ node: current, start: 0, end: current.nodeValue.length });
+      }
+    }
+
+    if (!textNodes.length && startNode.nodeType === Node.TEXT_NODE) {
+      textNodes.push({ node: startNode, start: startOffset, end: startNode.nodeValue.length });
+    }
+
+    var firstMark = null;
+    textNodes.forEach(function (item) {
+      if (item.node && item.node.nodeValue) {
+        var m = wrapTextNode(item.node, item.start, item.end);
+        if (!firstMark && m) firstMark = m;
+      }
+    });
+
+    return firstMark;
+  }
+
+  function findAndHighlightTextInDOM(rawText, id, color, userNote) {
+    if (!rawText) return null;
+    var clean = rawText.replace(/^\[DIAGRAM\]\s*/i, '').replace(/^\[CODE\]\s*/i, '').replace(/^>\s*/, '').trim();
+    if (!clean || clean.length < 4) return null;
+
+    var snippet = clean.substring(0, Math.min(32, clean.length)).toLowerCase().trim();
+    var elements = document.querySelectorAll('.bfp-content p, .bfp-content li, .bfp-content blockquote, .bfp-content .callout, .bfp-content h2, .bfp-content h3, .bfp-content code, main p, main li, p, li');
+
+    for (var i = 0; i < elements.length; i++) {
+      var el = elements[i];
+      if (el.closest('.shortcuts-modal, .notes-sidebar-drawer, .selection-bubble, .masterclass-dock-bar')) continue;
+
+      var elText = el.textContent || '';
+      var startPos = elText.toLowerCase().indexOf(snippet);
+      if (startPos !== -1) {
+        var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+        var textNodeList = [];
+        var node;
+        while ((node = walker.nextNode())) {
+          if (node.parentNode && node.parentNode.classList && node.parentNode.classList.contains('user-highlight')) {
+            continue;
+          }
+          textNodeList.push(node);
+        }
+
+        var fullText = '';
+        var map = [];
+        for (var j = 0; j < textNodeList.length; j++) {
+          var tn = textNodeList[j];
+          var val = tn.nodeValue;
+          map.push({ node: tn, start: fullText.length, end: fullText.length + val.length });
+          fullText += val;
+        }
+
+        var matchIdx = fullText.toLowerCase().indexOf(snippet);
+        if (matchIdx !== -1) {
+          var targetLen = Math.min(clean.length, fullText.length - matchIdx);
+          var matchEndIdx = matchIdx + targetLen;
+
+          var startTarget = null;
+          var endTarget = null;
+
+          for (var k = 0; k < map.length; k++) {
+            var entry = map[k];
+            if (!startTarget && matchIdx >= entry.start && matchIdx < entry.end) {
+              startTarget = { node: entry.node, offset: matchIdx - entry.start };
+            }
+            if (matchEndIdx > entry.start && matchEndIdx <= entry.end) {
+              endTarget = { node: entry.node, offset: matchEndIdx - entry.start };
+              break;
+            }
+          }
+
+          if (startTarget) {
+            if (!endTarget && map.length > 0) {
+              var last = map[map.length - 1];
+              endTarget = { node: last.node, offset: last.node.nodeValue.length };
+            }
+            if (endTarget) {
+              var range = document.createRange();
+              range.setStart(startTarget.node, startTarget.offset);
+              range.setEnd(endTarget.node, endTarget.offset);
+              return highlightRange(range, id, color, userNote);
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
   function findTextInDocument(text) {
     if (!text) return null;
-    var clean = text.replace(/^\[DIAGRAM\]\s*/i, '').replace(/^\[CODE\]\s*/i, '').trim();
+    var clean = text.replace(/^\[DIAGRAM\]\s*/i, '').replace(/^\[CODE\]\s*/i, '').replace(/^>\s*/, '').trim();
     var snippet = clean.substring(0, 35).trim().toLowerCase();
     if (!snippet) return null;
     var elements = document.querySelectorAll('main p, main li, main h2, main h3, main pre, main code, p, li, h2, h3');
@@ -686,12 +995,54 @@
   function restoreHighlightsOnPageLoad() {
     var activeLesson = getActiveLessonInfo();
     var currentChapter = activeLesson.isChapter ? activeLesson.title.toLowerCase() : '';
-    var notes = NotesStore.getAll();
-    if (!notes.length) return;
+    var existingNotes = NotesStore.getAll();
+    var existingTexts = [];
 
-    notes.forEach(function (item) {
+    existingNotes.forEach(function (n) {
+      if (n && n.text) existingTexts.push(n.text.trim().toLowerCase());
+    });
+
+    // 1. Auto-reconcile quotes from the active lesson's Notepad markdown doc if missing from NotesStore
+    if (activeLesson.isChapter) {
+      var doc = getLessonDoc(activeLesson.slug);
+      if (doc) {
+        var lines = doc.split('\n');
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (line.startsWith('>')) {
+            var rawExcerpt = line.replace(/^>\s*/, '').trim();
+            if (rawExcerpt.length >= 10) {
+              var cleanExcerpt = rawExcerpt.replace(/\*\*/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').trim();
+              var excerptHead = cleanExcerpt.substring(0, 30).toLowerCase();
+              var isAlreadyStored = existingTexts.some(function (t) {
+                return t.indexOf(excerptHead) !== -1 || cleanExcerpt.toLowerCase().indexOf(t.substring(0, 30)) !== -1;
+              });
+
+              if (!isAlreadyStored) {
+                var newItem = {
+                  id: 'ann_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                  chapterTitle: activeLesson.title,
+                  url: window.location.href,
+                  type: 'text',
+                  text: cleanExcerpt,
+                  userNote: '',
+                  color: 'rust',
+                  createdAt: new Date().toISOString()
+                };
+                NotesStore.add(newItem);
+                existingNotes.push(newItem);
+                existingTexts.push(cleanExcerpt.toLowerCase());
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Restore all highlights onto the page using robust range wrapping
+    existingNotes.forEach(function (item) {
+      if (!item || !item.id || !item.text) return;
       if (document.querySelector('.user-highlight[data-id="' + item.id + '"]')) return;
-      if (!item.text) return;
 
       // Scope highlight restoration to the current chapter only
       if (activeLesson.isChapter && item.chapterTitle) {
@@ -703,31 +1054,12 @@
         }
       }
 
-      var targetEl = findTextInDocument(item.text);
-      if (targetEl) {
-        var snippet = item.text.trim();
-        try {
-          var walker = document.createTreeWalker(targetEl, NodeFilter.SHOW_TEXT, null, false);
-          var node;
-          while ((node = walker.nextNode())) {
-            var searchSnippet = snippet.substring(0, Math.min(30, snippet.length));
-            var pos = node.nodeValue.toLowerCase().indexOf(searchSnippet.toLowerCase());
-            if (pos !== -1) {
-              var range = document.createRange();
-              range.setStart(node, pos);
-              range.setEnd(node, Math.min(pos + snippet.length, node.nodeValue.length));
-              var mark = document.createElement('mark');
-              mark.className = 'user-highlight';
-              mark.setAttribute('data-color', item.color || 'rust');
-              mark.setAttribute('data-id', item.id);
-              if (item.userNote) mark.title = 'Note: ' + item.userNote;
-              range.surroundContents(mark);
-              break;
-            }
-          }
-        } catch (e) {}
-      }
+      findAndHighlightTextInDOM(item.text, item.id, item.color || 'rust', item.userNote || '');
     });
+
+    // 3. Update bookmark states and floating dock badge count
+    updatePageBookmarkStates();
+    updateNotesBadge();
 
     if (window.location.hash && window.location.hash.indexOf('#hl=') !== -1) {
       var targetId = decodeURIComponent(window.location.hash.replace('#hl=', ''));
@@ -741,6 +1073,7 @@
       }, 400);
     }
   }
+
 
   function initHighlighter() {
     restoreHighlightsOnPageLoad();
@@ -900,6 +1233,9 @@
     // Keyboard Shortcuts
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') {
+        if (typeof window.closeShortcutsModal === 'function') {
+          window.closeShortcutsModal();
+        }
         var drawer = document.getElementById('notesSidebarDrawer');
         if (drawer && drawer.classList.contains('is-open')) {
           closeNotesSidebar();
@@ -921,10 +1257,18 @@
         }
         return;
       }
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if (e.altKey && e.key.toLowerCase() === 'n') {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault();
+        if (typeof window.toggleShortcutsModal === 'function') {
+          window.toggleShortcutsModal();
+        }
+      } else if (e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
         toggleNotesSidebar();
+      } else if (e.key.toLowerCase() === 'z' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        toggleReadMode();
       } else if (e.key.toLowerCase() === 'h' && activeSelectionRange && !activeSelectionRange.collapsed) {
         e.preventDefault();
         applyHighlight('rust', '');
@@ -933,9 +1277,16 @@
         openNotePopover('rust');
       }
     });
+
   }
 
   function handleTextSelection(e) {
+    if (document.body.classList.contains('bfp-read-mode')) {
+      var b = document.getElementById('selectionBubble');
+      if (b) b.style.display = 'none';
+      return;
+    }
+
     var targetEl = e && e.target ? (e.target.nodeType === 1 ? e.target : e.target.parentElement) : null;
     if (targetEl && (targetEl.closest('#selectionBubble') || targetEl.closest('#noteCreatorPopover') ||
         targetEl.closest('#highlightActionTooltip') || targetEl.closest('#masterclassDock'))) return;
@@ -1097,23 +1448,25 @@
       createdAt: new Date().toISOString()
     };
 
-    var mark = document.createElement('mark');
-    mark.className = 'user-highlight';
-    mark.setAttribute('data-color', item.color);
-    mark.setAttribute('data-id', item.id);
-    if (userNote) mark.title = 'Note: ' + userNote;
-
-    try {
-      activeSelectionRange.surroundContents(mark);
-    } catch (ex) {
+    var mark = highlightRange(activeSelectionRange, item.id, item.color, item.userNote);
+    if (!mark) {
       try {
-        var span = document.createElement('span');
-        span.className = 'user-highlight';
-        span.setAttribute('data-color', item.color);
-        span.setAttribute('data-id', item.id);
-        span.appendChild(activeSelectionRange.extractContents());
-        activeSelectionRange.insertNode(span);
-      } catch (err2) {}
+        var el = document.createElement('mark');
+        el.className = 'user-highlight';
+        el.setAttribute('data-color', item.color);
+        el.setAttribute('data-id', item.id);
+        if (userNote) el.title = 'Note: ' + userNote;
+        activeSelectionRange.surroundContents(el);
+      } catch (ex) {
+        try {
+          var span = document.createElement('span');
+          span.className = 'user-highlight';
+          span.setAttribute('data-color', item.color);
+          span.setAttribute('data-id', item.id);
+          span.appendChild(activeSelectionRange.extractContents());
+          activeSelectionRange.insertNode(span);
+        } catch (err2) {}
+      }
     }
 
     NotesStore.add(item);
@@ -1121,6 +1474,7 @@
     var b = document.getElementById('selectionBubble');
     if (b) b.style.display = 'none';
     activeSelectionRange = null;
+
 
     // Automatically append highlight & note to the active lesson's Notepad!
     appendExcerptToActiveLessonDoc(item.text, item.type, item.chapterTitle, item.userNote);
@@ -3046,6 +3400,7 @@
       try { initProgress(); } catch (e) { console.warn('[BFP] initProgress failed:', e); }
     }
     try { initFloatingDock(); } catch (e) { console.warn('[BFP] initFloatingDock failed:', e); }
+    try { initShortcutsModal(); } catch (e) { console.warn('[BFP] initShortcutsModal failed:', e); }
     try { initHighlighter(); } catch (e) { console.warn('[BFP] initHighlighter failed:', e); }
     try { initNotesSidebar(); } catch (e) { console.warn('[BFP] initNotesSidebar failed:', e); }
   }
