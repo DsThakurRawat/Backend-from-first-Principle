@@ -1,0 +1,845 @@
+---
+order: 9
+title: "Caching"
+navTitle: "Caching"
+summary: "Understanding the mechanism that makes high-performance backend systems fast, from Google Search to Netflix to Redis."
+readingTime: "2-3 hours"
+keywords:
+  - "caching"
+  - "redis"
+  - "memcached"
+  - "cache"
+  - "invalidation"
+  - "ttl"
+  - "lru"
+  - "write-through"
+---
+## What is Caching?
+
+Caching is a mechanism using which we decrease the amount of time and effort it takes to perform some work.
+
+That one line is the entire concept summarised. But let's unpack it properly because the implications run deep throughout all of backend engineering.
+
+### The Two-Part Definition
+
+There are two ways to understand caching, a plain English version and a technical one. Both say exactly the same thing, just at different levels of precision:
+
+<Callout type="info" title="Plain English Definition">
+Caching is a mechanism using which we decrease the amount of time and effort it takes to perform some amount of work. That is the on-line explanation of what exactly is caching.
+</Callout>
+
+<Callout type="info" title="Technical Definition">
+Caching is **keeping a subset of some data**: let's say we have a primary data source, when we keep a **subset** (not the whole data, a subset) of that data, **depending on the uses of the data, the frequency of uses, the probability of the next use, time, etc.**: depending on a lot of parameters, we keep that subset in a **location which is faster to access**, which takes less time, and also takes less effort. So technically speaking, caching is a mechanism using which we can decrease the amount of time and the effort it takes to retrieve or to do some kind of operation.
+</Callout>
+
+### Why "Subset" is the Most Important Word
+
+The definition says _subset_, not all the data, not a copy of everything, but a carefully chosen **portion** of the primary data. This is critical for two reasons:
+
+- **Caching is more expensive than disk storage.** Storing data in a cache (typically in RAM) costs significantly more per gigabyte than storing data on a hard disk or SSD. You simply cannot afford to cache everything. Disk storages are relatively cheaper and also offer a lot of capacity, that is the reason we don't put everything in cache memory.
+- **Cache capacity is limited.** RAM is scarce compared to secondary storage. A typical server might have 64GB or 128GB of RAM but multiple terabytes of disk. You have to be selective.
+- **Caching everything defeats the purpose.** If you cached everything, you'd just be duplicating storage at much higher cost. The whole point is to cache the _right_ things, the data that will actually be accessed again soon.
+
+### Parameters That Govern What to Cache
+
+When designing a caching layer, these are the parameters you evaluate to decide what deserves to be in the cache:
+
+- **Frequency of use**: How often is this data accessed? Data accessed thousands of times per minute is a far better candidate than data accessed once a day.
+- **Probability of next use**: Based on access patterns, what is the statistical likelihood this data will be requested again soon? Machine learning models are used at scale (Netflix, Twitter) to predict this.
+- **Recency**: Was this data accessed recently? Recently accessed data is statistically more likely to be accessed again soon (the principle of temporal locality).
+- **Cost of recomputation**: How expensive is it to regenerate this data if it's not in cache? A simple DB lookup is cheap. A trending-topics ML computation over billions of tweets is extremely expensive. The more expensive the computation, the stronger the case for caching.
+- **Data volatility**: How often does this data change? Highly volatile data (e.g. live stock prices) is a poor caching candidate because it goes stale immediately. Static data (product descriptions, user profiles) is an excellent candidate.
+
+### Why Caching Matters: The High Performance Context
+
+This single mechanism, caching, is a **huge factor in a lot of high performance applications**. When we say high performance, we mean applications that track latency in two-digit microseconds or milliseconds. At that scale, even a 5ms difference in response time is noticeable, and a 50ms difference is unacceptable.
+
+Without caching, high-traffic systems face two impossible bottlenecks:
+
+<Callout type="ok" title="The Two Core Scenarios Where Caching is Essential">
+**1. Heavy computation**: When generating a result requires significant CPU, GPU, or memory resources (ML inference, complex joins across millions of rows, aggregation pipelines). You don't want to redo this for every single user request.\
+\
+**2. Heavy data transfer**: When the data being sent is large (video files, image libraries, large JSON payloads) and sending it over the network for every request would be slow and expensive. You want that data to already be close to the user.
+</Callout>
+
+These two scenarios, avoid expensive recomputation and avoid redundant heavy data transfer, are the patterns you'll recognise in every single caching use case you encounter in your career. Whenever you see either of these two situations, your first instinct should be: _"Can we cache this?"_
+
+## Real-World Examples
+
+Before diving into the mechanics, it helps to understand why caching matters at production scale. Let's go through three examples that illustrate the concept and the two core scenarios where caching always shows up. After these examples, you'll start to see the pattern everywhere.
+
+### Example 1: Google Search
+
+Pretty much all of us use or have used Google Search in our browsers. What exactly happens when you type something into the Google search bar and hit Enter?
+
+That query is processed by Google's search engine through a pretty complex algorithm and workflow. Every query goes through a pipeline that typically involves:
+
+- **Crawling**: Google's bots continuously crawl the web, discovering and downloading billions of pages
+- **Indexing**: The crawled content is analyzed and added to a massive searchable index
+- **Ranking**: When a query arrives, hundreds of ranking algorithms determine which results are most relevant
+
+This whole process is **computationally expensive**: when we say expensive, we mean computationally expensive. It takes a lot of computing power, a lot of CPU, a lot of memory resources, etc.
+
+Now consider a query like _"what is the weather today"_, queries like this are searched **millions and millions of times every day**. Without caching, without implementing this mechanism called caching, Google's servers would need to **recompute all the results for every single query**. Every single query involving the current weather of a location would require going through all the index, running all the ranking algorithms, and fetching the results, which would in turn significantly slow down the response times and lead to very high server load.
+
+#### What Google Does Instead
+
+Google uses a distributed in-memory caching system to store the results. The key word here is _distributed_, the servers of the caching system are spread across the whole world. They are not just concentrated in a single location but spread all over the world, and those cache servers store the results, whatever results are returned by all those ranking algorithms and different algorithms involved in the whole Google Search workflow. They get cached or stored in these servers.
+
+When a user searches, the system first checks whether the results of that particular query are present in the cache or not:
+
+<Diagram caption="Fig 1.1: Google Search: Cache Hit vs Cache Miss flow with result storage loop">
+<svg width="100%" viewBox="0 0 720 200" role="img"><title>Google Search cache flow with detailed steps</title><defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="20" y="80" width="130" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="85" y="100" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">User Query</text><text x="85" y="116" text-anchor="middle" font-size="11" fill="var(--dg-ink-3)">"weather in Delhi"</text><line x1="152" y1="105" x2="195" y2="105" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#arr)"></line><rect x="197" y="72" width="155" height="66" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="274" y="96" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Distributed Cache</text><text x="274" y="112" text-anchor="middle" font-size="11" fill="var(--dg-ok)">in-memory store</text><text x="274" y="128" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">global servers</text><text x="430" y="50" text-anchor="middle" font-size="10" fill="var(--dg-ok)" font-style="italic">CACHE HIT , found it!</text><line x1="353" y1="84" x2="400" y2="68" stroke="var(--dg-ok)" stroke-width="1.2" marker-end="url(#arr)" stroke-dasharray="4 3"></line><rect x="402" y="52" width="148" height="40" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="476" y="67" text-anchor="middle" font-size="11" fill="var(--dg-ok)" font-weight="600">Return instantly</text><text x="476" y="82" text-anchor="middle" font-size="10" fill="var(--dg-ok)">very fast retrieval</text><text x="430" y="158" text-anchor="middle" font-size="10" fill="var(--dg-accent)" font-style="italic">CACHE MISS, not found</text><line x1="353" y1="126" x2="400" y2="142" stroke="var(--dg-accent)" stroke-width="1.2" marker-end="url(#arr)" stroke-dasharray="4 3"></line><rect x="402" y="145" width="148" height="48" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="476" y="164" text-anchor="middle" font-size="11" fill="var(--dg-ink)" font-weight="600">Full pipeline runs</text><text x="476" y="179" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">crawl -> rank -> results</text><path d="M550 169 Q620 169 620 120 Q620 60 552 56" fill="none" stroke="var(--dg-accent)" stroke-width="1" stroke-dasharray="3 3" marker-end="url(#arr)"></path><text x="635" y="118" font-size="9" fill="var(--dg-accent)" text-anchor="middle">store in</text><text x="635" y="130" font-size="9" fill="var(--dg-accent)" text-anchor="middle">cache</text></svg>
+</Diagram>
+
+Let's trace through both paths precisely:
+
+- **Cache Hit**: If the query has been searched before (say, "weather in Delhi" was searched 5 minutes ago by someone else), the system finds it in the cache and returns the results _instantly_. Retrieving data from a cache is very fast, that's one of the primary reasons we use a cache in the first place.
+- **Cache Miss**: If the query has never been searched before, or the cache has expired, the system goes through the normal full workflow, all the ranking, all the sorting, whatever algorithms are involved. Then it takes that result, **caches it**, and returns it to the user. So the next time the same user or some other user types the same query, those results can be fetched directly from the cache.
+
+<Callout type="ok" title="Key Vocabulary Introduced">
+**Cache Hit**: When you look for data in the cache and _find it_. Fast path. No recomputation needed.\
+\
+**Cache Miss**: When you look for data in the cache and it's _not there_. Must go to the primary source, compute the result, then store it for future use.
+</Callout>
+
+### Example 2: Netflix & CDN
+
+Netflix is a huge and global streaming platform which delivers different kinds of content, movies, series, anime, etc., to millions of users all over the world. It streams large volumes of data, and when we say large, it can be multiple terabytes, because of the way these streaming platforms work.
+
+#### How Netflix Stores a Single Movie
+
+For a single video, let's say a single movie called Movie One, it goes through a process called encoding. It prepares **different resolutions for different devices and different network speeds**. For a high level explanation, let's say it has:
+
+- 1080p, for fast internet and high-end devices
+- 720p, for moderate connections
+- 480p, for slow connections or mobile data
+- and more formats for different codecs and devices
+
+Depending on your network speed and which device you're using, Netflix **dynamically sends an optimised version** of that content so that you don't waste your bandwidth and the load on Netflix's servers also decreases. That's all about encoding. But the real question is: how does Netflix actually deliver hundreds and thousands of terabytes of data to millions of users spread across the whole world, with minimal buffering?
+
+#### The Answer: CDN (Content Delivery Network)
+
+Netflix has its own originating servers, let's say they're somewhere in the US, in different data centers and locations, with server racks that store the actual movies. But Netflix goes an extra mile. All over the world, at different locations, Netflix places what are called Edge Locations.
+
+These are called _Edge Locations_ because these servers are **strategically placed so that the latency for users in that region is minimal**. If there is a server in India, then for Indian users, the latency of data requests served from that server is going to be minimal, as compared to all requests going through the originating server which is situated in the US.
+
+Think about what happens without this: all people in India who want to watch a movie on Netflix would be sending requests all the way to the US data center. Geographically speaking, that's a long distance for data to travel. The response time would be high, you'd experience buffering. But with an edge server in Mumbai or Chennai, that distance collapses to near zero.
+
+<Diagram caption="Fig 1.2: Netflix CDN: Content distributed from origin to Edge/PoP servers globally, served to nearby users">
+<svg width="100%" viewBox="0 0 720 275" role="img"><title>Netflix CDN architecture diagram</title><defs><marker id="arr2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="280" y="14" width="160" height="55" rx="8" fill="var(--dg-inverse)" stroke="var(--dg-ink-3)" stroke-width="0.8"></rect><text x="360" y="36" text-anchor="middle" font-size="12" fill="var(--dg-on-inverse)" font-weight="600">Origin Server (US)</text><text x="360" y="52" text-anchor="middle" font-size="10" fill="var(--dg-on-inverse-3)">actual movies stored here</text><text x="360" y="64" text-anchor="middle" font-size="9" fill="var(--dg-on-inverse)">Netflix US Data Center</text><rect x="20" y="150" width="130" height="52" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="85" y="170" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Edge / Europe</text><text x="85" y="184" text-anchor="middle" font-size="10" fill="var(--dg-ok)">PoP, cached</text><text x="85" y="196" text-anchor="middle" font-size="9" fill="var(--dg-ink-3)">Frankfurt/London</text><rect x="188" y="150" width="130" height="52" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="253" y="170" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Edge / India</text><text x="253" y="184" text-anchor="middle" font-size="10" fill="var(--dg-ok)">PoP, cached</text><text x="253" y="196" text-anchor="middle" font-size="9" fill="var(--dg-ink-3)">Mumbai/Chennai</text><rect x="390" y="150" width="130" height="52" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="455" y="170" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Edge / SE Asia</text><text x="455" y="184" text-anchor="middle" font-size="10" fill="var(--dg-ok)">PoP, cached</text><text x="455" y="196" text-anchor="middle" font-size="9" fill="var(--dg-ink-3)">Singapore/Tokyo</text><rect x="570" y="150" width="130" height="52" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="635" y="170" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Edge / Americas</text><text x="635" y="184" text-anchor="middle" font-size="10" fill="var(--dg-ok)">PoP, cached</text><text x="635" y="196" text-anchor="middle" font-size="9" fill="var(--dg-ink-3)">NY/LA/Sao Paulo</text><line x1="330" y1="69" x2="85" y2="148" stroke="var(--dg-warn)" stroke-width="1" stroke-dasharray="5 3" marker-end="url(#arr2)"></line><line x1="345" y1="69" x2="253" y2="148" stroke="var(--dg-warn)" stroke-width="1" stroke-dasharray="5 3" marker-end="url(#arr2)"></line><line x1="375" y1="69" x2="455" y2="148" stroke="var(--dg-warn)" stroke-width="1" stroke-dasharray="5 3" marker-end="url(#arr2)"></line><line x1="390" y1="69" x2="635" y2="148" stroke="var(--dg-warn)" stroke-width="1" stroke-dasharray="5 3" marker-end="url(#arr2)"></line><ellipse cx="85" cy="244" rx="34" ry="16" fill="var(--dg-paper)" stroke="var(--dg-ink-3)" stroke-width="0.8"></ellipse><text x="85" y="248" text-anchor="middle" font-size="10" fill="var(--dg-ink-2)">EU users</text><ellipse cx="253" cy="244" rx="34" ry="16" fill="var(--dg-paper)" stroke="var(--dg-ink-3)" stroke-width="0.8"></ellipse><text x="253" y="248" text-anchor="middle" font-size="10" fill="var(--dg-ink-2)">IN users</text><ellipse cx="455" cy="244" rx="34" ry="16" fill="var(--dg-paper)" stroke="var(--dg-ink-3)" stroke-width="0.8"></ellipse><text x="455" y="248" text-anchor="middle" font-size="10" fill="var(--dg-ink-2)">SEA users</text><ellipse cx="635" cy="244" rx="34" ry="16" fill="var(--dg-paper)" stroke="var(--dg-ink-3)" stroke-width="0.8"></ellipse><text x="635" y="248" text-anchor="middle" font-size="10" fill="var(--dg-ink-2)">US users</text><line x1="85" y1="202" x2="85" y2="228" stroke="var(--dg-ok)" stroke-width="1.5" marker-end="url(#arr2)"></line><line x1="253" y1="202" x2="253" y2="228" stroke="var(--dg-ok)" stroke-width="1.5" marker-end="url(#arr2)"></line><line x1="455" y1="202" x2="455" y2="228" stroke="var(--dg-ok)" stroke-width="1.5" marker-end="url(#arr2)"></line><line x1="635" y1="202" x2="635" y2="228" stroke="var(--dg-ok)" stroke-width="1.5" marker-end="url(#arr2)"></line><text x="360" y="124" text-anchor="middle" font-size="10" fill="var(--dg-warn)" font-style="italic">subset of content cached at edge locations, TTL based, ML-selected</text></svg>
+</Diagram>
+
+Key terms from this example, these are important vocabulary you'll use throughout your career:
+
+- **CDN (Content Delivery Network)**: A globally distributed network of servers that caches and delivers content from locations geographically closer to the end user. Netflix has its own CDN (called Open Connect). Other CDN providers include Cloudflare, Akamai, Fastly, AWS CloudFront.
+- **Edge Location / Edge Server / Edge Computing**: Any time you see the word "edge" in infrastructure contexts, it basically means a server that is closest to the user instead of a centralised or originating server. The "edge" is the edge of the network, close to the end users.
+- **PoP (Point of Presence)**: A PoP is just a fancy term that basically means a particular region where there are multiple edge servers. A collection of multiple edge servers concentrated in a particular region is called a PoP. For example, Netflix might have a PoP in Mumbai consisting of 10-20 edge servers.
+- **Originating Server**: The master/primary server where the actual canonical data lives. The edge servers get their content from here, cache it locally, and serve users from their own copy.
+- **TTL (Time to Live)**: A duration configured on cached content, after which it is considered stale. When TTL expires, the edge server must re-fetch the content from the originating server to get a fresh copy. Companies set a "fair duration", this content should only be cached for the next few hours because after that it might have a new version.
+
+<Callout type="ok" title="Netflix's Smart Caching / Not Everything Gets Cached Everywhere">
+Netflix does not cache all its data in all the edge locations. That would incur enormous cost and also require a lot of resources. Instead, they use **machine learning algorithms, trend analysis, real-time regional data**, and a lot of other complex computations to decide what _subset_ of data to cache at each specific edge location. A server in Mumbai might cache popular Bollywood films and trending Indian shows, while a server in Tokyo caches anime and J-dramas. This is smart, regional, data-driven caching, not brute-force replication.
+</Callout>
+
+**CDN is not only for video streaming.** Platforms like **Vercel** use the exact same strategy to serve static web assets, JavaScript bundles, HTML files, CSS, images, from the edge closest to the requesting user. When you deploy a Next.js app on Vercel, it's automatically distributed to their global edge network. That's why Vercel deployments load almost instantaneously regardless of where in the world you are. Same principle, same mechanism, different type of content.
+
+### Example 3: Twitter / X (Trending Topics)
+
+Let's take a platform called X, previously known as Twitter. You can apply this example to any social media platform, Facebook, LinkedIn, YouTube, they all implement the same kind of strategy.
+
+If you're familiar with how Twitter works, it has a section called **Trending Topics**. What Twitter does is it identifies trending topics by **analyzing millions and billions of tweets in real time**. It analyzes all the tweets that people are making all over the world, extracts patterns and trends, and calculates what is trending.
+
+#### Why This Computation is Expensive
+
+This calculation is very expensive. It involves:
+
+- Machine learning-based algorithms for natural language processing, topic clustering, and trend detection
+- Large amounts of GPU and heavy infrastructure
+- Processing terabytes of data, we are talking about analyzing tweets of millions and billions of people all over the world
+
+#### What Happens Without Caching
+
+Imagine if Twitter did all this calculation _every time some user went to the trending section_. If even half of the billions of Twitter users are trying to access the trending section, and every user triggers this expensive calculation, the server cannot handle that, it would crash in **minutes or seconds**. There are billions of people, and if every single request triggers the entire ML pipeline, that's impossible to sustain.
+
+#### What Twitter Actually Does
+
+To avoid doing this heavy computation for each request, Twitter **caches the trending topics**. Every few minutes, and of course we don't know the exact algorithm or exact duration that Twitter uses, but taking a rough estimation for the sake of this example: **every few minutes**, Twitter takes all this data from different regions, executes different machine learning algorithms and trend detection algorithms on a very high level, and then **stores the results in an in-memory key-value store like Redis**.
+
+When users request the trending section, instead of computing it all again, it just **takes that data from the cache and sends it to the user**. That is the reason the moment you open your phone you get that data instantly, you do not see any kind of significant loading time. If you have a generally fast internet connection, the whole UI interaction is very fast.
+
+<Callout type="info" title="Why Trending Topics is Safe to Cache">
+For a trend to change in a particular region, let's say your country has ongoing elections, and elections are the trending topic, that's not something which is subject to change in seconds or minutes. At the very least it will stay in the trending section for a couple of hours or a couple of days. Since this data is **not dynamically changed on a minute-by-minute basis**, it is very safe to cache it. The TTL can be set to a few minutes or even longer without any noticeable loss of freshness for the user.
+</Callout>
+
+### The Pattern: Recognising When to Cache
+
+After those three examples, you should now see the pattern clearly. Every time there is a situation where it's either about:
+
+- **Doing a lot of heavy computation**: like Google's ranking algorithms or Twitter's ML-based trend detection, you don't want to recompute for every single request
+- **Sending large amounts of data to many users**: like Netflix sending terabytes of video content globally, you don't want to always serve from a single centralised location
+
+These are the two common scenarios when caching comes into play. Recognise either of these in a system design discussion, and caching is almost always part of the solution.
+
+## Levels of Caching
+
+Caching exists at multiple levels of a computer system. As a backend engineer, you'll encounter three levels most frequently:
+
+<Diagram caption="Fig 2.1: The three primary levels of caching a backend engineer encounters">
+<svg width="100%" viewBox="0 0 720 90" role="img"><title>Three levels of caching</title><rect x="20" y="20" width="200" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="120" y="42" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">1. Network Level</text><text x="120" y="58" text-anchor="middle" font-size="11" fill="var(--dg-ink-3)">CDN / DNS</text><rect x="260" y="20" width="200" height="50" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="360" y="42" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">2. Hardware Level</text><text x="360" y="58" text-anchor="middle" font-size="11" fill="var(--dg-ink-3)">L1 / L2 / L3 Cache / RAM</text><rect x="500" y="20" width="200" height="50" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="600" y="42" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">3. Software Level</text><text x="600" y="58" text-anchor="middle" font-size="11" fill="var(--dg-ink-3)">Redis / Memcached / ElastiCache</text></svg>
+</Diagram>
+
+<Callout type="ok" title="Note on &quot;Software-based&quot; caching">
+"Software-based" doesn't mean purely software. Redis uses the hardware's RAM. It's called _software-based_ because you interact with it via a library or API, the means of interaction is software. The performance still comes from the underlying hardware (RAM).
+</Callout>
+
+## Network Level Caching
+
+The two major use cases at the network layer that backend engineers deal with are CDN and DNS caching.
+
+### 4.1: CDN (Content Delivery Network)
+
+The core idea of CDN is to **cache content on servers geographically closer to the end users**. Any server placed close to the user at the "edge" of the network is called an Edge Node, Edge Server, or Edge Computing.
+
+#### How a CDN request flows
+
+<Diagram caption="Fig 3.1: Full CDN Request Flow: DNS -&gt; PoP -&gt; Cache Hit/Miss -&gt; Origin">
+<svg width="100%" viewBox="0 0 720 310" role="img"><title>CDN request flow step by step</title><defs><marker id="arr3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="20" y="20" width="130" height="54" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="85" y="43" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">1. User Browser</text><text x="85" y="60" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">enters URL</text><rect x="20" y="110" width="130" height="54" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="85" y="133" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">2. CDN DNS</text><text x="85" y="150" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">resolves nearest PoP</text><rect x="20" y="200" width="130" height="54" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="85" y="222" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">3. Edge Server</text><text x="85" y="239" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">PoP, nearest region</text><line x1="85" y1="74" x2="85" y2="108" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#arr3)"></line><line x1="85" y1="164" x2="85" y2="198" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#arr3)"></line><rect x="340" y="190" width="140" height="44" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="410" y="210" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Cache HIT </text><text x="410" y="225" text-anchor="middle" font-size="10" fill="var(--dg-ok)">serve directly to user</text><line x1="150" y1="227" x2="338" y2="212" stroke="var(--dg-ok)" stroke-width="1.2" marker-end="url(#arr3)" stroke-dasharray="5 3"></line><text x="245" y="205" text-anchor="middle" font-size="10" fill="var(--dg-ok)" font-style="italic">in cache?</text><rect x="340" y="260" width="140" height="44" rx="8" fill="var(--dg-inverse)" stroke="var(--dg-ink-3)" stroke-width="0.8"></rect><text x="410" y="280" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-on-inverse)">Cache MISS</text><text x="410" y="296" text-anchor="middle" font-size="10" fill="var(--dg-on-inverse-3)">fetch from origin server</text><line x1="150" y1="240" x2="338" y2="268" stroke="var(--dg-accent)" stroke-width="1.2" marker-end="url(#arr3)" stroke-dasharray="5 3"></line><rect x="560" y="245" width="130" height="44" rx="8" fill="var(--dg-inverse)" stroke="var(--dg-ink-3)" stroke-width="0.8"></rect><text x="625" y="265" text-anchor="middle" font-size="11" fill="var(--dg-on-inverse)" font-weight="600">Origin Server</text><text x="625" y="281" text-anchor="middle" font-size="10" fill="var(--dg-on-inverse-3)">source of truth</text><line x1="480" y1="282" x2="558" y2="267" stroke="var(--dg-accent)" stroke-width="1.2" marker-end="url(#arr3)"></line><path d="M560 260 Q520 220 480 210" fill="none" stroke="var(--dg-accent)" stroke-width="0.8" stroke-dasharray="3 3" marker-end="url(#arr3)"></path><text x="510" y="225" font-size="9" fill="var(--dg-accent)">cache + TTL</text><rect x="340" y="20" width="350" height="70" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="515" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">TTL, Time to Live</text><text x="515" y="62" text-anchor="middle" font-size="11" fill="var(--dg-ink-2)">Each cached item has an expiry duration.</text><text x="515" y="78" text-anchor="middle" font-size="11" fill="var(--dg-ink-3)">After TTL expires -> re-fetch fresh content from origin.</text></svg>
+</Diagram>
+
+CDN routing decisions consider multiple parameters:
+
+- **Geographic location of the user**: find the nearest PoP
+- **Network conditions**: a user with a slow connection may be routed to a PoP with lower-resolution content (e.g. 480p instead of 1080p)
+- **Server load**: avoid routing to an overloaded edge server
+
+### 4.2: DNS Caching
+
+DNS (Domain Name System) translates human-readable domain names (like `example.com`) into IP addresses that browsers use to connect to servers. This resolution process, without caching, is **deeply recursive and slow**.
+
+#### The DNS Resolution Chain (without cache)
+
+<Diagram caption="Fig 3.2: DNS Resolution Chain: User -&gt; Resolver -&gt; Root -&gt; TLD -&gt; Authoritative Name Server">
+<svg width="100%" viewBox="0 0 720 200" role="img"><title>DNS resolution chain</title><defs><marker id="arr4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="10" y="75" width="110" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="65" y="96" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">User Device</text><text x="65" y="112" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">types URL</text><line x1="122" y1="100" x2="148" y2="100" stroke="var(--dg-ink-3)" stroke-width="1" marker-end="url(#arr4)"></line><rect x="150" y="75" width="120" height="50" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="210" y="96" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Recursive</text><text x="210" y="110" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Resolver</text><text x="210" y="124" text-anchor="middle" font-size="9" fill="var(--dg-ink-3)">ISP / Google / Cloudflare</text><line x1="272" y1="100" x2="298" y2="100" stroke="var(--dg-ink-3)" stroke-width="1" marker-end="url(#arr4)"></line><rect x="300" y="75" width="110" height="50" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="355" y="96" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Root Server</text><text x="355" y="112" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">13-14 globally</text><line x1="412" y1="100" x2="438" y2="100" stroke="var(--dg-ink-3)" stroke-width="1" marker-end="url(#arr4)"></line><rect x="440" y="75" width="120" height="50" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="500" y="96" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">TLD Server</text><text x="500" y="112" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">.com / .in / .org</text><line x1="562" y1="100" x2="588" y2="100" stroke="var(--dg-ink-3)" stroke-width="1" marker-end="url(#arr4)"></line><rect x="590" y="75" width="120" height="50" rx="8" fill="var(--dg-inverse)" stroke="var(--dg-ink-3)" stroke-width="0.8"></rect><text x="650" y="96" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-on-inverse)">Authoritative</text><text x="650" y="110" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-on-inverse)">Name Server</text><text x="650" y="124" text-anchor="middle" font-size="9" fill="var(--dg-on-inverse-3)">has the IP </text><text x="360" y="28" text-anchor="middle" font-size="11" fill="var(--dg-accent)" font-style="italic">Recursive Resolver goes deep until it finds the IP</text><text x="360" y="44" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">example.com -> .com TLD -> example.com auth server -> IP</text></svg>
+</Diagram>
+
+This entire recursive journey is expensive. DNS solves this with **multiple levels of caching**:
+
+<Diagram caption="Fig 3.3: DNS Cache Hierarchy: four levels before a full resolution is triggered">
+<svg width="100%" viewBox="0 0 720 130" role="img"><title>DNS cache hierarchy</title><defs><marker id="arr5" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><text x="360" y="18" text-anchor="middle" font-size="12" fill="var(--dg-ink-3)" font-style="italic">Each level is checked before proceeding to the next</text><rect x="20" y="35" width="140" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="90" y="56" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">OS DNS Cache</text><text x="90" y="72" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">Windows/Mac/Linux</text><line x1="162" y1="60" x2="190" y2="60" stroke="var(--dg-ink-3)" stroke-width="1" marker-end="url(#arr5)"></line><rect x="192" y="35" width="140" height="50" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="262" y="56" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Browser Cache</text><text x="262" y="72" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">Chrome, Firefox, etc.</text><line x1="334" y1="60" x2="362" y2="60" stroke="var(--dg-ink-3)" stroke-width="1" marker-end="url(#arr5)"></line><rect x="364" y="35" width="160" height="50" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="444" y="56" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ink)">Recursive Resolver</text><text x="444" y="72" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">ISP / Google DNS / Cloudflare</text><line x1="526" y1="60" x2="554" y2="60" stroke="var(--dg-ink-3)" stroke-width="1" marker-end="url(#arr5)"></line><rect x="556" y="35" width="144" height="50" rx="8" fill="var(--dg-inverse)" stroke="var(--dg-ink-3)" stroke-width="0.8"></rect><text x="628" y="56" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-on-inverse)">Full Resolution</text><text x="628" y="72" text-anchor="middle" font-size="10" fill="var(--dg-on-inverse-3)">root -> TLD -> authoritative</text><text x="90" y="100" text-anchor="middle" font-size="10" fill="var(--dg-accent)">Level 1</text><text x="262" y="100" text-anchor="middle" font-size="10" fill="var(--dg-accent)">Level 2</text><text x="444" y="100" text-anchor="middle" font-size="10" fill="var(--dg-accent)">Level 3</text><text x="628" y="100" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">Fallback</text></svg>
+</Diagram>
+
+The Recursive Resolver is called "recursive" because it recursively queries different servers (root -> TLD -> authoritative) until it finds the answer. It is provided by your ISP or public DNS providers like Google (`8.8.8.8`) or Cloudflare (`1.1.1.1`).
+
+<Callout type="info" title="MDN Reference">
+[MDN, DNS Glossary](https://developer.mozilla.org/en-US/docs/Glossary/DNS) [MDN, DNS Prefetch (browser-side DNS caching technique)](https://developer.mozilla.org/en-US/docs/Web/Performance/dns-prefetch)
+</Callout>
+
+## Hardware Level Caching
+
+### CPU Cache Hierarchy (L1, L2, L3)
+
+The CPU doesn't read directly from RAM for every operation, that would be too slow. Instead, it maintains a hierarchy of smaller, faster memories called cache levels:
+
+<Diagram caption="Fig 4.1: CPU Memory Hierarchy: Nested levels from fastest/smallest (L1) to slowest/largest (HDD)">
+<svg width="100%" viewBox="0 0 720 200" role="img"><title>CPU to disk memory hierarchy</title><rect x="10" y="10" width="700" height="180" rx="12" fill="var(--dg-paper)" stroke="var(--dg-line)" stroke-width="1"></rect><text x="620" y="30" font-size="11" fill="var(--dg-ink-3)" font-style="italic">HDD / SSD / Network</text><rect x="30" y="30" width="560" height="148" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="540" y="50" font-size="11" fill="var(--dg-warn)" font-style="italic">RAM (main memory)</text><rect x="50" y="50" width="420" height="110" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="430" y="68" font-size="11" fill="var(--dg-ok)" font-style="italic">L3 (shared)</text><rect x="70" y="68" width="290" height="78" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="326" y="83" font-size="11" fill="var(--dg-accent)" font-style="italic">L2</text><rect x="90" y="85" width="175" height="50" rx="8" fill="var(--dg-accent)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="178" y="107" text-anchor="middle" font-size="12" font-weight="700" fill="var(--dg-on-accent)">L1 Cache</text><text x="178" y="123" text-anchor="middle" font-size="10" fill="var(--dg-on-accent)">Fastest / Smallest</text><text x="640" y="100" font-size="10" fill="var(--dg-ink-3)">Slow</text><text x="640" y="130" font-size="10" fill="var(--dg-ink-3)">Large</text><text x="640" y="160" font-size="10" fill="var(--dg-ink-3)">Cheap</text><line x1="695" y1="35" x2="695" y2="185" stroke="var(--dg-ink-3)" stroke-width="0.5"></line><line x1="688" y1="35" x2="695" y2="35" stroke="var(--dg-ink-3)" stroke-width="0.5"></line><line x1="688" y1="185" x2="695" y2="185" stroke="var(--dg-ink-3)" stroke-width="0.5"></line></svg>
+</Diagram>
+
+#### Why Arrays are Faster for Sequential Access
+
+An important practical consequence of CPU caching: when you start traversing an array sequentially, the CPU's **prefetch/predictive algorithms** detect the sequential pattern and load the entire array (or a large chunk) into L1/L2 cache proactively. This is why `for` loops over arrays are extremely fast, the data is already in the cache by the time the CPU needs it.
+
+### RAM vs Disk: Why RAM is Faster (The Physics)
+
+This is the **fundamental reason** why in-memory databases like Redis are so much faster than disk-based databases like PostgreSQL or MySQL. Understanding the actual hardware difference is important, it's not magic, it's physics and engineering.
+
+#### How Hard Disk Storage Works
+
+In a traditional hard disk drive (HDD), there is some kind of **mechanical head** which revolves around the disk. When you want to read data, the disk spins, the head moves to the right track, and it _physically finds_ the data. It is a **mechanical operation**. Think about it, a literal physical arm has to move to a location on a spinning platter. This mechanical movement takes time, milliseconds, which in computing terms is an eternity.
+
+#### How RAM Works
+
+Random Access Memory is fundamentally different. It has a bunch of capacitors and transistors, and through the use of **electrical signals** combined with **direct address-based access**, it can access any location in memory with a single electrical signal. There is no physical movement, no seeking, no spinning. The data is accessed by sending an electrical signal to a specific memory address, and that happens at near the speed of electricity itself.
+
+This is also why it's called Random Access Memory, it does _not matter from what direction you try to access the data_. The speed and the time is almost constant regardless of where in the memory the data sits. Whether you access address `0x0001` or address `0xFFFF`, the time to retrieve is essentially the same. This property is called **O(1) access time** in data structures terminology.
+
+Compare that to a hard disk: accessing data sequentially (from address 0 to 100) is fast because the head doesn't have to move much. But accessing data randomly (jumping from address 0 to 9000 to 200 to 7000) is extremely slow because the head has to physically seek to different locations each time. That's why HDDs prefer sequential access patterns.
+
+| Property                  | RAM (Primary Storage)               | HDD (Secondary Storage)                | SSD (Secondary Storage)        |
+| ------------------------- | ----------------------------------- | -------------------------------------- | ------------------------------ |
+| Access mechanism          | Electrical signal -> memory address | Mechanical head seeks spinning platter | Flash memory cells, electrical |
+| Access time               | \~60-100 nanoseconds                | \~5-10 milliseconds                    | \~50-150 microseconds          |
+| Relative speed            | \~100,000x faster than HDD          | Baseline                               | \~100x faster than HDD         |
+| Random access             | O(1), constant regardless           | Slow, mechanical seek required         | Good, no mechanical parts      |
+| Volatility                | Volatile, data lost on power off    | Persistent, survives power off         | Persistent, survives power off |
+| Capacity (typical server) | 64GB, 512GB                         | Multiple TBs                           | Multiple TBs                   |
+| Cost per GB               | \~$5-10/GB                          | \~$0.02-0.05/GB                        | \~$0.10-0.20/GB                |
+
+#### The Fundamental Tradeoff
+
+When it comes to Random Access Memory, we are trading **non-volatility and capacity for speed**. That is the tradeoff stated plainly. RAM is incredibly fast but:
+
+- **It is volatile.** Whenever you turn off the power, whatever data is stored in RAM, it goes away. It clears itself. Starts fresh whenever you start your computer. This is because of the way capacitors work, they need a constant supply of electricity to hold their state. Cut the power, the state disappears.
+- **It has limited capacity.** Even though we have speed at our disposal with RAM, we don't have it in abundance. The cost of manufacturing RAM at scale means servers have far less RAM than disk storage.
+
+This is why you **cannot completely replace a hard disk or traditional disk-based storage with RAM**. They have their own role, they are fast when it comes to data access and retrieval, but they are not a replacement for secondary storage. Storing data in secondary storage is _permanent_, not volatile. It does not matter whether your program is accessing it or not, whether your computer is on or off, the data persists there because it is physically writing the data to the disk.
+
+<Callout type="info" title="Primary vs Secondary Storage / The Summary">
+**Primary storage (RAM)**: Very fast data access, limited capacity, volatile (data lost on power off). Used for data that needs to be processed right now or retrieved instantly.\
+\
+**Secondary storage (HDD/SSD)**: Slower data access, abundant capacity, non-volatile (data persists). Used for permanent storage of all your data.
+</Callout>
+
+#### How Redis Bridges Both Worlds
+
+Technologies like Redis and Memcached make use of this Random Access Memory (primary memory / main memory) to store their data, that is why data access operations from these databases are very fast. But what about persistence? What about the fact that RAM loses data on power-off?
+
+Behind the scenes, for persistence, these technologies also make use of the secondary storage. With some kind of mechanism, when the program starts, it takes the data from the secondary storage and loads it into main memory again, so that you have data persistence. But when you actually retrieve data or modify it, that happens with the primary memory. The in-memory database is responsible for implementing this persistence layer, whether it's Redis's RDB snapshots or its AOF (Append-Only File) log.
+
+<Callout type="info" title="MDN Reference">
+[MDN, Cache Glossary](https://developer.mozilla.org/en-US/docs/Glossary/Cache)
+</Callout>
+
+## In-Memory Key-Value NoSQL Databases
+
+Coming back to the context of backend development, technologies like **Redis**, **Memcached**, and if we're talking about Cloud technologies then **AWS ElastiCache**: these come into play. They provide some kind of storage, and that storage is based on the primary memory (RAM). That is the reason data access operations from these databases are very fast.
+
+We call these technologies in-memory key-value NoSQL databases. That name has four parts, and each one tells you something important:
+
+#### In-Memory
+
+As compared to traditional databases like PostgreSQL or MySQL, these are **not stored on disk**. The storage is based on RAM (primary storage). That is the reason data access operations are extremely fast, we've just understood in the hardware section exactly why RAM is orders of magnitude faster than disk-based access. Redis reads and writes to RAM, not disk.
+
+#### Key-Value
+
+As compared to traditional relational databases which have very strict schema, you have to create tables, create rows, define columns with types, etc., here the data structure is very simple. You have **keys and values**. You have a particular key, and for that key you can store anything, it can be a list, a JSON object, a string, a number, a hash, a set. Different technologies offer different data types, but the interface is always: give me a key, I'll give you its value.
+
+#### NoSQL
+
+They **don't enforce the strictness of traditional SQL databases**. No schemas, no joins, no complex queries. The API is intentionally simple. In Redis, you essentially have `SET key value` and `GET key` as your primary operations. It's not complex like SQL queries with aggregation, GROUP BY, etc., it's pretty straightforward to access.
+
+#### Database
+
+Despite being "just" a key-value store, these are fully-fledged databases with features like TTL-based expiry, persistence options, pub/sub messaging, Lua scripting (Redis), clustering and replication. The "database" label is earned, they manage data reliably, not just as an ephemeral cache.
+
+### Why the Simplicity of Key-Value is a Feature, Not a Limitation
+
+You might wonder: why would I use a database with no complex queries? The answer is that **all that complexity you don't have is performance you get back**. When Redis receives a GET command, it literally just looks up a hash table in memory. There's no query parsing, no query planning, no disk I/O, no index traversal. It's an O(1) memory lookup, that's why Redis can serve millions of operations per second.
+
+This is what you as a backend engineer will deal with, you take whatever compatible library is available in your corresponding programming language (Node.js has `node-redis` or `ioredis`, Go has `go-redis`, Python has `redis-py`), and depending on that you just use the library. You provide a key, you provide a value, you store it. And when you want to retrieve it, you provide the key and you get the value. It is pretty straightforward, it has no complexities like SQL queries and aggregation. But all this technical familiarity with how the technology works behind the scenes, what are the major components, helps you make sense of the whole thing and make better decisions.
+
+### How Redis Handles Persistence
+
+Redis uses two primary mechanisms to ensure data isn't lost when the process restarts:
+
+- **RDB (Redis Database) Snapshots**: At configured intervals (e.g. every 5 minutes, or when N writes have occurred), Redis forks the process and writes the full in-memory dataset to a binary `.rdb` file on disk. On startup, Redis loads this file back into memory. Fast to restart, but you might lose up to N minutes of data.
+- **AOF (Append-Only File)**: Every write operation is logged to an append-only file on disk. On restart, Redis replays all these operations to reconstruct the in-memory state. Near-zero data loss, but slower to restart and the file grows larger over time (Redis periodically compacts it via a background _rewrite_ process).
+- **Both together**: Redis recommends using both RDB + AOF in production for the best balance of performance and durability.
+
+The key insight: **data is always read from and written to RAM during normal operation**. Disk is only involved for persistence (saving state for recovery). The hot path, the path every user request takes, never touches disk.
+
+<Callout type="info" title="Redis Official Docs">
+[Redis Docs, Persistence (RDB & AOF explained in detail)](https://redis.io/docs/management/persistence/) [Redis Docs, Data Types (String, List, Hash, Set, Sorted Set, Stream)](https://redis.io/docs/data-types/)
+</Callout>
+
+## Caching Strategies
+
+There are two primary caching strategies you'll encounter in day-to-day backend development. They answer different questions: _when do you populate the cache?_ and _when do you update it?_
+
+Strategy 1
+
+#### Lazy Caching (Cache-Aside)
+
+Cache is populated only when data is first requested. Proactive pre-filling is not done.
+
+Strategy 2
+
+#### Write-Through Caching
+
+Every write to the database is simultaneously written to the cache. Cache is always fresh.
+
+### Strategy 1: Lazy Caching (Cache-Aside)
+
+<Diagram caption="Fig 5.1: Lazy (Cache-Aside) Caching: populate on first miss">
+<svg width="100%" viewBox="0 0 720 190" role="img"><title>Lazy caching flow diagram</title><defs><marker id="arr6" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="20" y="75" width="100" height="44" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="70" y="100" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Client</text><line x1="122" y1="97" x2="160" y2="97" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#arr6)"></line><rect x="162" y="75" width="110" height="44" rx="8" fill="var(--dg-inverse)" stroke="var(--dg-ink-3)" stroke-width="0.8"></rect><text x="217" y="95" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-on-inverse)">Server</text><text x="217" y="110" text-anchor="middle" font-size="10" fill="var(--dg-on-inverse-3)">checks cache</text><text x="390" y="55" text-anchor="middle" font-size="10" fill="var(--dg-ok)" font-style="italic">HIT -> return instantly</text><line x1="274" y1="88" x2="350" y2="72" stroke="var(--dg-ok)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr6)"></line><rect x="352" y="58" width="100" height="36" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="402" y="80" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ok)">Cache </text><text x="390" y="140" text-anchor="middle" font-size="10" fill="var(--dg-accent)" font-style="italic">MISS -> fetch, store, return</text><line x1="274" y1="107" x2="350" y2="126" stroke="var(--dg-accent)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr6)"></line><rect x="352" y="115" width="100" height="36" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="402" y="137" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-accent)">DB</text><line x1="454" y1="133" x2="510" y2="95" stroke="var(--dg-warn)" stroke-width="1" stroke-dasharray="3 3" marker-end="url(#arr6)"></line><rect x="512" y="75" width="100" height="44" rx="6" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="562" y="95" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-warn)">Store in</text><text x="562" y="110" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-warn)">cache</text><line x1="562" y1="119" x2="70" y2="140" stroke="var(--dg-ink-3)" stroke-width="0.8" stroke-dasharray="3 3" marker-end="url(#arr6)"></line><text x="320" y="175" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)" font-style="italic">result returned; cache populated for future requests</text></svg>
+</Diagram>
+
+**Characteristics of Lazy Caching:**
+
+- Cache is only populated when data is actually requested, no wasted pre-filling
+- First request for any data always results in a cache miss (slightly higher latency for first user)
+- Stale data risk, if underlying DB changes, cached value can be outdated until TTL expires or manual invalidation
+- Simple to implement and very common in practice
+
+### Strategy 2: Write-Through Caching
+
+Every time a write operation (POST, PUT, PATCH) changes data in the database, the same change is **simultaneously applied to the cache** within the same API call execution flow.
+
+<Callout type="info" title="Advantage">
+Cache is **always fresh**. You never serve stale data because the cache is updated at the exact same time as the database.
+</Callout>
+
+<Callout type="info" title="Tradeoff">
+Every write operation carries **additional overhead**: you must update both the database and the cache atomically (or near-atomically). This increases latency of write operations. If write operations are very frequent, this can become a bottleneck.
+</Callout>
+
+#### When to use which?
+
+| Scenario                                                | Strategy                   |
+| ------------------------------------------------------- | -------------------------- |
+| Read-heavy, infrequent writes (product pages, profiles) | Lazy caching + TTL         |
+| Needs always-fresh cache (financial data, inventory)    | Write-through              |
+| Unknown access patterns, gradual rollout                | Lazy caching (safer start) |
+| Heavy write workload (logging, event streams)           | Avoid write-through        |
+
+## Eviction Policies
+
+Something else we should be aware of when working with in-memory caches like Redis is the eviction policy. What does it mean? Let's understand the problem first.
+
+### Why Eviction is Necessary
+
+When you have a cache, and as we already know, in-memory caches like Redis use primary storage (RAM), which is limited in capacity compared to secondary storage, it is pretty obvious that at one point you'll run out of memory. Whether you're running Redis on your own server and the RAM fills up, or you're using a managed service like AWS ElastiCache which has a storage limit, at some point you will hit the cap.
+
+At that point, you have to decide: you want to store _new_ data in the cache, but there's no room. You have to **delete something old** to make room for something new. And of course, as we've already discussed from the initial part of this topic, cache is only a subset of the data, the frequently accessed data stored in a different, faster location. The keyword to focus on: a **subset** of the primary storage. We cannot store all of the primary storage in the cache. So we have to decide what stays and what goes.
+
+<Callout type="ok" title="The Core Question of Eviction">
+Which piece of cached data is **least valuable** to keep? Evict that, make room for the new data which has higher priority. Different eviction policies answer this question differently.
+</Callout>
+
+- NO EVICTION
+
+  **No eviction policy configured.** This is the default if you haven't configured any eviction policy. What happens when the cache is full and you try to insert new data? You simply get an **error**: the memory is full, operation rejected. This doesn't make much sense for a cache use case, but it exists as a configuration because there are situations where you explicitly want to control the cache size and never silently drop data. For a real caching use case, you should always configure one of the policies below.
+
+- LRU
+
+  **Least Recently Used.** The algorithm checks which pieces of data were _least recently accessed_. It keeps track of when was the last time a particular key was accessed.\
+  \
+  **Walk-through example from the lecture:** Let's say we have 4 keys in the cache, Key 1, Key 2, Key 3, Key 4, and the memory is now full. The database keeps track of when each key was last accessed:
+
+  - Key 1, accessed today
+  - Key 2, accessed today
+  - Key 3, accessed today
+  - Key 4, accessed **yesterday**
+
+  Now Key 5 wants to enter the cache. With LRU eviction policy, Redis checks which is the **oldest-accessed** data point. Since Key 4 was accessed yesterday and all the others were accessed today, it selects Key 4: "you will go out, and Key 5 will go in." That is Least Recently Used eviction.\
+  \
+  _When to use:_ LRU is the most commonly used eviction policy. It works well for workloads where recently accessed data is likely to be accessed again soon, which is true for most real-world applications (temporal locality).
+
+- LFU
+
+  **Least Frequently Used.** Instead of tracking _when_ a key was last accessed, LFU tracks _how many times total_ each key has been accessed. The key with the lowest access count gets evicted.\
+  \
+  **Walk-through example from the lecture:** Forget about time, let's say we have 4 keys and Key 5 wants to come in. Each key has an access frequency counter:
+
+  - Key 1, accessed **5 times** so far
+  - Key 2, accessed **10 times** so far
+  - Key 3, accessed **6 times** so far
+  - Key 4, accessed **23 times** so far
+
+  Key 5 arrives and needs space. LFU checks which key is _least frequently used_, the one with the lowest frequency. Key 1 has been accessed only 5 times, which is the least. The other keys are being accessed more frequently. So it selects Key 1: "you will go out, Key 5 will go in."\
+  \
+  _When to use:_ LFU works better than LRU when your application has a stable set of "hot" items that are always popular (like a product catalogue where the top 100 products get 80% of the traffic). LRU might evict a hot item that just happened to not be accessed in the last minute, whereas LFU would keep it because of its high long-term frequency.
+
+- TTL-BASED
+
+  **Volatile-TTL (Time-to-Live Based Eviction).** In Redis you can configure a TTL, a time-to-live, for different keys individually. When the cache is full and needs to evict something, with this policy it checks which keys have the **lowest remaining TTL**: i.e., which key is going to expire the soonest anyway.\
+  \
+  **Walk-through example:** Same scenario, 4 keys, Key 5 wants to enter, cache is full. Each key has a TTL:
+
+  - Key 1, expires in 3 hours
+  - Key 2, expires in 45 minutes
+  - Key 3, expires in 2 hours
+  - Key 4, expires in **10 minutes** (soonest to expire)
+
+  Key 5 arrives. The policy selects Key 4, it's going to expire in 10 minutes anyway, so we might as well evict it now and make room for Key 5. The logic: "this key is about to be gone soon regardless, so let it go now."\
+  \
+  **Note:** TTL is also used independently from eviction to simply expire stale data automatically. You set a key with `SETEX weather_delhi "25 degC" 3600` and after 3600 seconds (1 hour), Redis automatically deletes it. You never have to manually clean it up. This is one of the most useful Redis features for caching external API responses.
+
+<Diagram caption="Fig 6.1: LRU Eviction: Key 4 (accessed yesterday, least recently used) evicted to make room for Key 5">
+<svg width="100%" viewBox="0 0 720 170" role="img"><title>LRU eviction step-by-step visualization</title><text x="360" y="20" text-anchor="middle" font-size="12" fill="var(--dg-ink-3)" font-style="italic">LRU Example: Cache full (4 keys), Key 5 arrives -> evict oldest-accessed key</text><rect x="20" y="35" width="130" height="60" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="85" y="60" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">Key 1</text><text x="85" y="76" text-anchor="middle" font-size="11" fill="var(--dg-ok)">last access:</text><text x="85" y="89" text-anchor="middle" font-size="11" fill="var(--dg-ok)">today</text><rect x="165" y="35" width="130" height="60" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="230" y="60" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">Key 2</text><text x="230" y="76" text-anchor="middle" font-size="11" fill="var(--dg-ok)">last access:</text><text x="230" y="89" text-anchor="middle" font-size="11" fill="var(--dg-ok)">today</text><rect x="310" y="35" width="130" height="60" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="375" y="60" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">Key 3</text><text x="375" y="76" text-anchor="middle" font-size="11" fill="var(--dg-ok)">last access:</text><text x="375" y="89" text-anchor="middle" font-size="11" fill="var(--dg-ok)">today</text><rect x="455" y="35" width="130" height="60" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="2"></rect><text x="520" y="60" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-accent)">Key 4</text><text x="520" y="76" text-anchor="middle" font-size="11" fill="var(--dg-accent)">last access:</text><text x="520" y="89" text-anchor="middle" font-size="11" fill="var(--dg-accent)">yesterday &#x3C;- OLDEST</text><text x="520" y="115" text-anchor="middle" font-size="12" fill="var(--dg-accent)" font-weight="600">^ EVICTED</text><rect x="600" y="35" width="100" height="60" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="2" stroke-dasharray="6 3"></rect><text x="650" y="60" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-warn)">Key 5</text><text x="650" y="76" text-anchor="middle" font-size="11" fill="var(--dg-warn)">new arrival</text><text x="650" y="89" text-anchor="middle" font-size="11" fill="var(--dg-warn)">needs space</text><text x="650" y="115" text-anchor="middle" font-size="12" fill="var(--dg-warn)" font-weight="600">^ ENTERS</text><text x="360" y="155" text-anchor="middle" font-size="11" fill="var(--dg-ink-3)" font-style="italic">Cache removes Key 4 (oldest), inserts Key 5, total remains at 4 keys</text></svg>
+</Diagram>
+
+<Callout type="info" title="Redis Eviction Policies / Official Docs">
+[redis.io, Key eviction (noeviction, allkeys-lru, allkeys-lfu, volatile-ttl, volatile-lru, volatile-lfu, allkeys-random)](https://redis.io/docs/reference/eviction/)
+</Callout>
+
+## Redis Use Cases in Backend Development
+
+Now that we have all the theoretical grounding, let's look at the concrete use cases where Redis and in-memory databases are used in a typical backend engineering workflow. These are the situations you'll encounter in real projects.
+
+### 9.1: Database Query Caching
+
+One of the primary use cases. Let's say you have an SQL query that has a lot of JOINs, it tries to join multiple tables, does a lot of aggregation, and finally ends up with a few rows. It is a very compute-intensive operation because you have a large dataset (let's say millions and millions of rows), and you've noticed through monitoring that this particular API which calls this particular database query is hit pretty frequently, maybe it's your landing page or a dashboard page that a lot of users are hitting.
+
+What happens to your database without caching? Every single user hitting that page triggers the same expensive multi-table JOIN. With a thousand concurrent users, you're making a thousand identical expensive queries to the database. This puts enormous load on the DB server and increases the API response latency for everyone.
+
+**What you do with caching:** You take that particular query result, cache it with some TTL (say 1 hour), and from that point on, when the next request comes, you check if the result is present in the cache. If yes, serve it from there. Otherwise do the calculation once, store it in the cache, and return it. Whenever some modification happens to the underlying data, you can manually invalidate the cache or delete it, and the next request will recompute it fresh.
+
+#### The Amazon Product Page Example
+
+This is one of the best real-world illustrations. Imagine there is a sale going on for a MacBook on Amazon. If Amazon did not cache the details of that MacBook product, then during the sale period, millions of users will hit that particular web page. Fetching the MacBook's image, all the product descriptions, the specifications, the reviews, these are all database operations.
+
+With millions of concurrent users on the sale, **the database would get a million identical requests for the exact same data**, and that puts significant load on the database for absolutely no reason, because the information like product details for a MacBook does not change very often. Product descriptions, images, specs, these are static data. They might change once a month, if that. That makes them **an excellent candidate for caching**.
+
+So Amazon caches static data like product details and prices so that they can reduce the load on the database, and the database can actually do the important work, like handling checkout transactions, inventory updates, and order management, instead of spending all its capacity serving the same static product detail page over and over.
+
+#### Social Media Profile Caching
+
+Social media platforms like Twitter and Facebook also cache user profile data. Think about it, user profile data is not something that changes very often. Maybe a couple of times a year. That's the reason they cache user profile data so that every time that data is fetched it is served from the cache instead of from the database.
+
+Now imagine if it is the social media profile of some celebrity. That particular page and that particular API for fetching the user profile details of that celebrity might get hit a thousand times per day normally, or if they have an upcoming movie, maybe a million times a day. In that case, putting all that load on the database makes absolutely no sense, since that user profile information is pretty static most of the time. It can serve that content from cache, and even if the user makes some change to their profile, you can invalidate the cache and put the new entry. This is a very read-heavy operation with very infrequent writes, the ideal scenario for caching.
+
+<Callout type="info" title="The Read-Heavy Pattern">
+Whenever we have a **read-heavy operation** and the write is pretty infrequent, we can make use of caching. Database query caching is one of the primary examples of when we use technologies like Redis or in-memory databases. The pattern: _reads are frequent, data rarely changes, computation is expensive_ -> cache it.
+</Callout>
+
+### 9.2: Session Token Storage
+
+If you've watched the authentication video in this playlist, you might be aware of this. In a typical authentication flow, after a successful authentication, a **session token is generated for that particular user** and that session token is stored in some kind of storage.
+
+Ideally, it is stored in Redis or an in-memory database, not in your main relational database. Here's why:
+
+Every time the user makes a request or an API call to any endpoint on your server, you have to **validate that session token**: fetch the session information and check if it's valid. If you did not use Redis, you'd have to fetch that from your database for _every single API call_. And as you already know, fetching data from RAM (Redis) is much much faster than fetching data from a database.
+
+Consider what happens at scale: if you have 100,000 concurrent active users, each making multiple API calls per minute, that's potentially millions of database queries per minute just for session validation, queries that return the exact same data (the session is valid, user ID is X) for the same session token again and again. This puts unnecessary load on your database and adds latency to every single API endpoint in your application.
+
+With Redis: the session token is the key, the user's session data (user ID, permissions, metadata) is the value. Validation is a single `GET session:token_id`, an O(1) RAM lookup that takes nanoseconds. The session also naturally expires via TTL, so you don't need cleanup jobs.
+
+### 9.3: External API Response Caching
+
+In your backend, you are making use of some external API, let's say some weather API, and you are taking the information from that and doing some kind of computation to serve your own frontend. Now every time your frontend makes a request to your API, if you do not make use of caching, you also make another request to the weather API to fetch the weather data.
+
+If you have a lot of users and they are making multiple API calls, you end up making thousands of API calls to this external API. External APIs usually have:
+
+- **Rate limits**: e.g. 1000 requests per hour. Hit that limit and every subsequent request fails until the window resets.
+- **Pricing per call**: Many APIs charge per request. Make a million calls instead of a thousand, and your bill increases proportionally.
+- **Network latency**: Every external HTTP call adds network round-trip time to your API's response time, making your own API slower.
+
+In this case the weather data is not real-time data in the sense that it changes every second. Weather data does not change every second or minute, that's why it is a kind of data that is **safe to cache**. What you do: you fetch that information from the weather API, cache it in Redis with a TTL of 1 hour, and for the next 1 hour all the requests from your frontend will use the cached weather data. After an hour, the cache automatically invalidates, and the next time a request comes you'll fetch fresh weather data, put it back in the cache with a new TTL, and return it. For the following hour, all requests use that fresh cached version again.
+
+<Callout type="ok" title="When External API Caching is Appropriate">
+Ask yourself: how often does this data actually change in a meaningful way? Weather -> hourly. Exchange rates -> every few minutes. Stock prices -> every second (too volatile to cache). News headlines -> every hour. The answer determines your TTL. If data changes slower than your traffic rate, cache it.
+</Callout>
+
+### 9.4: Rate Limiting
+
+One last use case that comes to mind, since we are talking about rate limiting, the rate limiting mechanism is also implemented most of the times using a technology like Redis or any in-memory cache.
+
+The way rate limiting is implemented: it is usually some kind of **middleware** which sits somewhere in the middle of the request pipeline, that's why it's called middleware. Before the request is passed to your route or controller, it goes through this rate limit middleware first.
+
+#### How Rate Limiting Middleware Works Step by Step
+
+The middleware takes a header from the incoming request, some kind of header which gives it the IP address of the user. Usually the header is something like `X-Forwarded-For`. This header is mostly used for implementing rate limiting to find out the public IP address of the client wherever the request is coming from. This is usually added by a reverse proxy like Nginx or whatever you are using.
+
+The job of this middleware is:
+
+1. Extract the `X-Forwarded-For` header from the incoming request to get the client's IP address
+2. Check Redis for a counter associated with that IP address for the current time window (say, per minute)
+3. Increment that counter by 1
+4. If the counter exceeds the configured limit (say, 50 requests per minute), **block the request** and return HTTP status `429 Too Many Requests`
+5. If under the limit, pass the request through to the actual route handler
+
+Let's say the condition is: a particular client can only make 50 requests in 1 minute. Then whenever a request comes:
+
+- Request 1: check Redis for key `rate_limit:10.0.0.1:<current_minute>` -> not found -> set to 1 -> allow
+- Request 2: key found, value is 1 -> increment to 2 -> 2 &lt;= 50 -> allow
+- Request 3: value is 2 -> increment to 3 -> allow
+- ... same way 4, 5, 6 ... up to 50 ...
+- Request 51: value is 50 -> increment to 51 -> 51 > 50 -> **block, return 429**
+
+The TTL on the key is set to 1 minute. After 1 minute, the key automatically expires, the counter resets, and the client can make requests again. This is a clean, automatic window with zero cleanup code needed.
+
+<Diagram caption="Fig 7.1: Rate Limiting: middleware reads IP -&gt; increments Redis counter -&gt; blocks at 51st request">
+<svg width="100%" viewBox="0 0 720 175" role="img"><title>Rate limiting middleware flow with counter walkthrough</title><defs><marker id="arr7" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="10" y="65" width="90" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="55" y="87" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Client</text><text x="55" y="103" text-anchor="middle" font-size="10" fill="var(--dg-accent)">IP: 10.0.0.1</text><line x1="102" y1="90" x2="136" y2="90" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#arr7)"></line><rect x="138" y="52" width="160" height="76" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="218" y="76" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Rate Limit</text><text x="218" y="91" text-anchor="middle" font-size="11" fill="var(--dg-warn)">Middleware</text><text x="218" y="106" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">reads X-Forwarded-For</text><text x="218" y="120" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)">checks + incr counter</text><rect x="336" y="60" width="182" height="60" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="427" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Redis Counter</text><text x="427" y="97" text-anchor="middle" font-size="10" fill="var(--dg-ok)">"rate:10.0.0.1:&#x3C;minute>" -> 37</text><text x="427" y="111" text-anchor="middle" font-size="9" fill="var(--dg-ink-3)">TTL: 60s (auto-resets each minute)</text><line x1="300" y1="90" x2="334" y2="90" stroke="var(--dg-ok)" stroke-width="1.2" marker-end="url(#arr7)"></line><rect x="556" y="40" width="140" height="38" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="626" y="63" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ok)">count &#x3C;= 50 -> PASS</text><rect x="556" y="102" width="140" height="38" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="626" y="125" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-accent)">count > 50 -> 429</text><line x1="520" y1="78" x2="554" y2="59" stroke="var(--dg-ok)" stroke-width="1" marker-end="url(#arr7)"></line><line x1="520" y1="102" x2="554" y2="116" stroke="var(--dg-accent)" stroke-width="1" marker-end="url(#arr7)"></line><text x="626" y="158" text-anchor="middle" font-size="10" fill="var(--dg-accent)" font-style="italic">HTTP 429: Too Many Requests</text></svg>
+</Diagram>
+
+#### Why Redis and Not a Relational Database for Rate Limiting
+
+This is a fair question. You could store the counter in PostgreSQL or MySQL, it has persistent storage and we can retrieve data. That is possible. But the difference is: **taking data out of a relational database takes more time**. Even a difference of 20 or 30 milliseconds makes a significant impact on API latency, because rate limiting runs on every single request.
+
+If we stored it in a relational database then for each request we'll be making a database call. In turn, first, the latency will be increased for that particular API since we are making a database call unnecessarily for each request. Second, the load on our database also increases, let's say there are a thousand users making 100 requests per minute. That's 100,000 database queries per minute just for rate limiting counter increments. Your database will be flooded with just the overhead of the rate limiting layer.
+
+That is the reason we want to separate this out, for two reasons. First, to make it as fast as possible so that we can minimise the latency of APIs. Second, to decrease the database load. That is the reason whenever we are talking about implementing rate limiting, we make use of in-memory databases like Redis instead of storing it in our relational databases. Redis's atomic `INCR` command is particularly well-suited: it increments a key by 1 in a single atomic operation, no race conditions, no need for transactions or locks.
+
+## Code Examples
+
+Below are practical implementations of caching patterns using Go and Python, the two languages referenced in this course.
+
+### 10.1: Lazy (Cache-Aside) Caching in Go
+
+```go title="cache_aside.go / Go + github.com/redis/go-redis/v9"
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "time"
+
+    "github.com/redis/go-redis/v9"
+)
+
+type Product struct {
+    ID    string `json:"id"`
+    Name  string `json:"name"`
+    Price float64 `json:"price"`
+}
+
+var rdb = redis.NewClient(&redis.Options{
+    Addr: "localhost:6379",
+})
+
+// GetProduct implements Cache-Aside (Lazy) caching.
+// 1. Check Redis first
+// 2. On miss, fetch from DB, store in cache, return
+func GetProduct(ctx context.Context, productID string) (*Product, error) {
+    cacheKey := "product:" + productID
+
+    // Step 1: Try cache first (Cache Hit path)
+    cached, err := rdb.Get(ctx, cacheKey).Result()
+    if err == nil {
+        var product Product
+        json.Unmarshal([]byte(cached), &product)
+        fmt.Println("[CACHE HIT]", productID)
+        return &product, nil
+    }
+
+    // Step 2: Cache Miss, fetch from database (expensive operation)
+    fmt.Println("[CACHE MISS] fetching from DB...", productID)
+    product, err := fetchFromDatabase(productID) // simulate DB call
+    if err != nil {
+        return nil, err
+    }
+
+    // Step 3: Store in cache with a 1-hour TTL
+    data, _ := json.Marshal(product)
+    rdb.Set(ctx, cacheKey, data, 1*time.Hour)
+
+    return product, nil
+}
+
+// Write-Through: update DB and cache simultaneously
+func UpdateProduct(ctx context.Context, product *Product) error {
+    // Step 1: Update in database
+    if err := updateInDatabase(product); err != nil {
+        return err
+    }
+
+    // Step 2: Write-through, update cache immediately
+    cacheKey := "product:" + product.ID
+    data, _ := json.Marshal(product)
+    rdb.Set(ctx, cacheKey, data, 1*time.Hour)
+
+    fmt.Println("[WRITE-THROUGH] DB + cache updated for", product.ID)
+    return nil
+}
+```
+
+### 10.2: Rate Limiting Middleware in Go
+
+```go title="rate_limiter.go / Go + go-redis"
+package middleware
+
+import (
+    "context"
+    "fmt"
+    "net/http"
+    "time"
+
+    "github.com/redis/go-redis/v9"
+)
+
+const (
+    maxRequests = 50
+    windowTime  = 1 * time.Minute
+)
+
+func RateLimitMiddleware(rdb *redis.Client) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        ctx := context.Background()
+
+        // Extract client IP from X-Forwarded-For header
+        // (set by reverse proxy like Nginx or Caddy)
+        clientIP := r.Header.Get("X-Forwarded-For")
+        if clientIP == "" {
+            clientIP = r.RemoteAddr
+        }
+
+        // Redis key: per IP, per minute window
+        key := fmt.Sprintf("rate_limit:%s:%d", clientIP, time.Now().Unix()/60)
+
+        // INCR is atomic, no race condition even with concurrent requests
+        count, err := rdb.Incr(ctx, key).Result()
+        if err != nil {
+            http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+            return
+        }
+
+        // Set TTL on first request of this window (key is new)
+        if count == 1 {
+            rdb.Expire(ctx, key, windowTime)
+        }
+
+        // Check if limit exceeded
+        if count > maxRequests {
+            w.Header().Set("Retry-After", "60")
+            http.Error(w, "429 Too Many Requests", http.StatusTooManyRequests)
+            return
+        }
+
+        // Proceed to actual handler
+        w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", maxRequests-count))
+    }
+}
+```
+
+### 10.3: Caching Decorator in Python
+
+```python title="cache.py / Python + redis-py + FastAPI"
+import json
+import functools
+import redis
+from fastapi import FastAPI
+
+app = FastAPI()
+
+# Connect to Redis
+r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+
+def cache_result(ttl: int = 3600):
+    """
+    Decorator that implements lazy (cache-aside) caching.
+    ttl: time-to-live in seconds (default 1 hour)
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Build cache key from function name + args
+            cache_key = f"{func.__name__}:{args}:{kwargs}"
+
+            # Step 1: Check cache (Cache Hit)
+            cached = r.get(cache_key)
+            if cached:
+                print(f"[CACHE HIT] {cache_key}")
+                return json.loads(cached)
+
+            # Step 2: Cache Miss, execute the actual function
+            print(f"[CACHE MISS] calling {func.__name__}...")
+            result = await func(*args, **kwargs)
+
+            # Step 3: Store in Redis with TTL
+            r.setex(cache_key, ttl, json.dumps(result))
+
+            return result
+        return wrapper
+    return decorator
+
+# Usage: apply cache decorator to any route handler
+@app.get("/products/{product_id}")
+@cache_result(ttl=3600)  # cache for 1 hour
+async def get_product(product_id: str):
+    # Expensive DB query, only runs on cache miss
+    product = await fetch_from_db(product_id)
+    return product
+
+# TTL-based API Response Caching (e.g. weather)
+@app.get("/weather/{city}")
+async def get_weather(city: str):
+    cache_key = f"weather:{city}"
+
+    # Check cache (TTL = 1 hour, weather doesn't change every minute)
+    cached = r.get(cache_key)
+    if cached:
+        return {"source": "cache", "data": json.loads(cached)}
+
+    # Miss: call external weather API (costs money / rate limited)
+    weather_data = await call_weather_api(city)
+
+    # Store for 1 hour
+    r.setex(cache_key, 3600, json.dumps(weather_data))
+
+    return {"source": "api", "data": weather_data}
+```
+
+### 10.4: Session Management with Redis (Python)
+
+```python title="session.py / Python + redis-py"
+import uuid
+import json
+import redis
+from datetime import timedelta
+
+r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+
+def create_session(user_id: str, user_data: dict) -> str:
+    """Create a session after successful login. Store in Redis."""
+    session_id = str(uuid.uuid4())
+    session_key = f"session:{session_id}"
+
+    # Store session data with 24-hour TTL
+    # TTL ensures sessions auto-expire, no manual cleanup needed
+    r.setex(
+        session_key,
+        timedelta(hours=24),
+        json.dumps({"user_id": user_id, **user_data})
+    )
+
+    return session_id  # returned to client as cookie/token
+
+def get_session(session_id: str) -> dict | None:
+    """
+    Validate session on every authenticated API request.
+    Redis O(1) lookup, microseconds, not milliseconds.
+    """
+    session_key = f"session:{session_id}"
+    data = r.get(session_key)
+
+    if not data:
+        return None  # session expired or invalid
+
+    # Optionally: refresh TTL on activity (sliding window)
+    r.expire(session_key, timedelta(hours=24))
+
+    return json.loads(data)
+
+def delete_session(session_id: str):
+    """Logout, delete session from Redis immediately."""
+    r.delete(f"session:{session_id}")
+```
+
+## Further Reading & Documentation
+
+#### Redis Official Docs
+
+<Callout type="info">
+[redis.io/docs, Official Redis Documentation](https://redis.io/docs/) [Redis Data Types (String, Hash, List, Set, Sorted Set, Stream)](https://redis.io/docs/data-types/) [Redis Eviction Policies (noeviction, allkeys-lru, allkeys-lfu, volatile-ttl)](https://redis.io/docs/reference/eviction/) [Redis Persistence (RDB snapshots, AOF append-only log)](https://redis.io/docs/management/persistence/) [Redis INCR command (atomic counter, used in rate limiting)](https://redis.io/commands/incr/) [Redis SETEX command (set with TTL)](https://redis.io/commands/setex/)
+</Callout>
+
+#### MDN Web Docs
+
+<Callout type="info">
+[MDN, Cache Glossary](https://developer.mozilla.org/en-US/docs/Glossary/Cache) [MDN, DNS Glossary](https://developer.mozilla.org/en-US/docs/Glossary/DNS) [MDN, Cache-Control HTTP Header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control) [MDN, HTTP 429 Too Many Requests](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429) [MDN, DNS Prefetch (browser-side DNS caching)](https://developer.mozilla.org/en-US/docs/Web/Performance/dns-prefetch)
+</Callout>
+
+#### Go Redis Client
+
+<Callout type="info">
+[github.com/redis/go-redis, Official Go Redis client](https://github.com/redis/go-redis) [go-redis Guide, Getting started, commands, pipelines](https://redis.uptrace.dev/guide/)
+</Callout>
+
+#### Python Redis Client
+
+<Callout type="info">
+[redis-py Docs, Official Python Redis client](https://redis-py.readthedocs.io/en/stable/)
+</Callout>
+
+#### Cloudflare & CDN
+
+<Callout type="info">
+[Cloudflare, What is a CDN?](https://www.cloudflare.com/learning/cdn/what-is-a-cdn/) [Cloudflare, How DNS works (excellent interactive diagrams)](https://www.cloudflare.com/learning/dns/what-is-dns/)
+</Callout>
+
+BACKEND ENGINEERING FIELD MANUAL / V2 / CHAPTER 12 / CACHING\
+Notes compiled from lecture transcript / Go + Python examples / MDN & Redis references inline
+
+Backend from First Principles / Chapter 09 / Caching. Code targets Go 1.22+ and Python 3.11+.

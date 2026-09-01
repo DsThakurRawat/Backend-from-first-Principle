@@ -1,0 +1,248 @@
+---
+import type { MarkdownHeading } from 'astro';
+import type { CollectionEntry } from 'astro:content';
+import Base from './Base.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import Toc from '../components/Toc.astro';
+import '../styles/prose.css';
+
+interface Props {
+  chapter: CollectionEntry<'chapters'>;
+  headings: MarkdownHeading[];
+  prev?: CollectionEntry<'chapters'>;
+  next?: CollectionEntry<'chapters'>;
+}
+
+const { chapter, headings, prev, next } = Astro.props;
+const { order, title, summary, readingTime } = chapter.data;
+const num = String(order).padStart(2, '0');
+---
+<Base
+  title={`${title} · Chapter ${num} · Backend from First Principles`}
+  description={summary}
+  path={`/${chapter.id}/`}
+>
+  <SiteHeader crumb={`Chapter ${num}`} />
+  <div class="progress" role="presentation"><span class="progress-fill"></span></div>
+
+  <div class="shell">
+    <aside class="rail">
+      <div class="rail-inner"><Toc headings={headings} /></div>
+    </aside>
+
+    <main class="main" id="main">
+      <header class="chapter-head">
+        <p class="eyebrow">
+          <span class="eyebrow-num">Chapter {num}</span>
+          <span class="dot" aria-hidden="true"></span>
+          <span>{readingTime}</span>
+        </p>
+        <h1 class="chapter-title">{title}</h1>
+        <p class="chapter-summary">{summary}</p>
+      </header>
+
+      <article class="prose" data-pagefind-body>
+        <slot />
+      </article>
+
+      <nav class="chapter-nav" aria-label="Chapter navigation">
+        {prev ? (
+          <a class="nav-card is-prev" href={`/${prev.id}/`} rel="prev">
+            <span class="nav-dir">← Previous</span>
+            <span class="nav-title">{prev.data.navTitle ?? prev.data.title}</span>
+          </a>
+        ) : <span class="nav-card is-empty" aria-hidden="true"></span>}
+
+        {next ? (
+          <a class="nav-card is-next" href={`/${next.id}/`} rel="next">
+            <span class="nav-dir">Next →</span>
+            <span class="nav-title">{next.data.navTitle ?? next.data.title}</span>
+          </a>
+        ) : <span class="nav-card is-empty" aria-hidden="true"></span>}
+      </nav>
+    </main>
+  </div>
+</Base>
+
+<style>
+  .progress {
+    position: sticky;
+    top: 56px;
+    z-index: 39;
+    height: 2px;
+    background: transparent;
+  }
+  .progress-fill {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--accent);
+    transform-origin: left;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    gap: clamp(var(--space-6), 5vw, var(--space-9));
+    max-width: 96rem;
+    margin-inline: auto;
+    padding-inline: clamp(var(--space-4), 3vw, var(--space-7));
+  }
+
+  .rail { position: relative; }
+  .rail-inner {
+    position: sticky;
+    top: calc(56px + var(--space-6));
+    max-height: calc(100vh - 56px - var(--space-8));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-block: var(--space-6);
+    padding-right: var(--space-3);
+  }
+
+  .main { min-width: 0; padding-block: var(--space-8) var(--space-9); }
+
+  .chapter-head { max-width: var(--measure); margin-bottom: var(--space-8); }
+
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: var(--space-4);
+  }
+  .eyebrow-num { color: var(--accent); }
+  .dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: 0.6; }
+
+  .chapter-title {
+    font-size: var(--text-3xl);
+    font-weight: 660;
+    letter-spacing: -0.03em;
+  }
+  .chapter-summary {
+    margin-top: var(--space-4);
+    font-family: var(--font-prose);
+    font-size: var(--text-xl);
+    line-height: var(--leading-snug);
+    color: var(--ink-2);
+    text-wrap: pretty;
+  }
+
+  /* --- prev / next ------------------------------------------------------ */
+  .chapter-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-4);
+    margin-top: var(--space-9);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--line);
+  }
+  .nav-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    text-decoration: none;
+    transition: border-color 120ms ease, background-color 120ms ease;
+  }
+  .nav-card:hover { border-color: var(--accent); background: var(--accent-bg); }
+  .nav-card.is-empty { border: none; background: none; }
+  .is-next { text-align: right; }
+  .nav-dir {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .nav-title { font-weight: 600; font-size: var(--text-base); color: var(--ink); text-wrap: balance; }
+
+  @media (max-width: 1080px) {
+    .shell { grid-template-columns: minmax(0, 1fr); }
+    .rail { display: none; }
+    .main { padding-top: var(--space-7); }
+  }
+  @media (max-width: 620px) {
+    .chapter-nav { grid-template-columns: 1fr; }
+    .is-next { text-align: left; }
+  }
+</style>
+
+<script>
+  // --- reading progress -------------------------------------------------
+  const fill = document.querySelector<HTMLElement>('.progress-fill');
+  const article = document.querySelector<HTMLElement>('.prose');
+
+  if (fill && article) {
+    const update = () => {
+      const start = article.offsetTop;
+      const span = article.offsetHeight - window.innerHeight;
+      const pct = span <= 0 ? 1 : (window.scrollY - start) / span;
+      fill.style.width = `${Math.min(Math.max(pct, 0), 1) * 100}%`;
+    };
+    update();
+    addEventListener('scroll', update, { passive: true });
+    addEventListener('resize', update, { passive: true });
+  }
+
+  // --- table-of-contents scroll spy ------------------------------------
+  // IntersectionObserver rather than a scroll handler: no work on frames
+  // where nothing crossed a boundary.
+  const links = new Map<string, HTMLAnchorElement>();
+  document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]').forEach((a) => {
+    links.set(a.dataset.tocLink!, a);
+  });
+
+  if (links.size) {
+    const visible = new Set<string>();
+    const order = [...links.keys()];
+
+    const paint = () => {
+      // The topmost visible heading wins; if none is on screen (mid-section
+      // scroll) keep the last one we set rather than clearing the rail.
+      const active = order.find((id) => visible.has(id));
+      if (!active) return;
+      links.forEach((a, id) => {
+        if (id === active) a.setAttribute('aria-current', 'true');
+        else a.removeAttribute('aria-current');
+      });
+    };
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) visible.add(e.target.id);
+          else visible.delete(e.target.id);
+        }
+        paint();
+      },
+      { rootMargin: '-56px 0px -70% 0px' },
+    );
+
+    links.forEach((_, id) => {
+      const el = document.getElementById(id);
+      if (el) io.observe(el);
+    });
+  }
+
+  // --- keyboard navigation ---------------------------------------------
+  addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target as HTMLElement;
+    if (t.matches('input, textarea, select, [contenteditable]')) return;
+
+    const go = (rel: string) => {
+      const a = document.querySelector<HTMLAnchorElement>(`a[rel='${rel}']`);
+      if (a) location.href = a.href;
+    };
+    if (e.key === 'ArrowLeft') go('prev');
+    if (e.key === 'ArrowRight') go('next');
+  });
+</script>

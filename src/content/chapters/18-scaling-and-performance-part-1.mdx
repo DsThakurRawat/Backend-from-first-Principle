@@ -1,0 +1,838 @@
+---
+order: 18
+title: "Mastering Scaling & Performance"
+navTitle: "Scaling & Performance (Part 1)"
+summary: "Chapter 18 of Backend from First Principles: Scaling & Performance (Part 1)."
+readingTime: "2-3 hours"
+keywords:
+  - "scaling"
+  - "performance"
+  - "horizontal"
+  - "vertical"
+  - "load"
+  - "balancing"
+  - "sharding"
+---
+A detailed backend reference
+
+Performance engineering is the discipline of understanding _how_ systems behave under load, _where_ bottlenecks hide, and _how_ to think clearly when everything seems to be falling apart. This chapter builds intuition layer by layer, from the raw definition of "fast" through latency measurement, database tuning, caching strategy, and the two fundamental modes of scaling. Everything is grounded in practical backend engineering.
+
+## What Do We Mean by "Fast"?
+
+When a user clicks a button on your web app, a cascade of events fires: the browser packages an HTTP request, that request traverses the internet to your server, the server processes it (possibly hitting a database, calling an external API, or sending an email), and finally the server assembles a response, typically JSON, which travels back across the internet. The browser then parses the response and renders the result on screen.
+
+The total elapsed time between the click and the final render is what the user _perceives_ as speed. When someone says "your app is slow," they're describing this end-to-end duration, even if they've never heard the word latency.
+
+<Diagram caption="Fig 1 / Request lifecycle: every millisecond adds up">
+<svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg" style="max-width:700px;width:100%"><rect x="20" y="65" width="90" height="65" rx="5" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.5"></rect><text x="65" y="95" text-anchor="middle" font-family="var(--font-prose)" font-size="12" font-weight="600" fill="var(--dg-ink)">User</text><text x="65" y="112" text-anchor="middle" font-family="var(--font-prose)" font-size="10" fill="var(--dg-ink-2)">Browser</text><line x1="110" y1="82" x2="210" y2="82" stroke="var(--dg-accent)" stroke-width="1.5" marker-end="url(#arrowR)"></line><text x="160" y="74" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">HTTP Request</text><rect x="210" y="55" width="110" height="85" rx="5" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.5"></rect><text x="265" y="85" text-anchor="middle" font-family="var(--font-prose)" font-size="12" font-weight="600" fill="var(--dg-ink)">Server</text><text x="265" y="102" text-anchor="middle" font-family="var(--font-prose)" font-size="10" fill="var(--dg-ink-2)">Process</text><text x="265" y="118" text-anchor="middle" font-family="var(--font-prose)" font-size="10" fill="var(--dg-ink-2)">Logic</text><line x1="320" y1="80" x2="400" y2="80" stroke="var(--dg-info)" stroke-width="1.3" marker-end="url(#arrowB)"></line><text x="360" y="72" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">Query</text><rect x="400" y="55" width="100" height="50" rx="5" fill="var(--dg-surface)" stroke="var(--dg-info)" stroke-width="1.5"></rect><text x="450" y="82" text-anchor="middle" font-family="var(--font-prose)" font-size="12" font-weight="600" fill="var(--dg-ink)">Database</text><rect x="400" y="120" width="100" height="45" rx="5" fill="var(--dg-surface)" stroke="var(--dg-ok)" stroke-width="1.5"></rect><text x="450" y="147" text-anchor="middle" font-family="var(--font-prose)" font-size="11" font-weight="600" fill="var(--dg-ink)">External API</text><line x1="305" y1="140" x2="400" y2="142" stroke="var(--dg-ok)" stroke-width="1.3" marker-end="url(#arrowG)"></line><line x1="210" y1="115" x2="110" y2="115" stroke="var(--dg-accent)" stroke-width="1.5" marker-end="url(#arrowR)"></line><text x="160" y="132" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">JSON Response</text><line x1="30" y1="160" x2="30" y2="175" stroke="var(--dg-accent)" stroke-width="1"></line><line x1="30" y1="175" x2="490" y2="175" stroke="var(--dg-accent)" stroke-width="1" stroke-dasharray="4 3"></line><line x1="490" y1="160" x2="490" y2="175" stroke="var(--dg-accent)" stroke-width="1"></line><text x="260" y="192" text-anchor="middle" font-family="var(--font-ui)" font-size="10" font-weight="600" fill="var(--dg-accent)" letter-spacing="0.1em">TOTAL LATENCY</text><defs><marker id="arrowR" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="var(--dg-accent)"></path></marker><marker id="arrowB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="var(--dg-info)"></path></marker><marker id="arrowG" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="var(--dg-ok)"></path></marker></defs></svg>
+</Diagram>
+
+Performance is not a vague, subjective quality. It can, and must, be expressed in numbers. The three fundamental metrics are **latency** (how long one request takes), **throughput** (how many requests per unit time), and **utilization** (what percentage of capacity is in use). Together, they form the vocabulary of performance engineering.
+
+## Latency Deep Dive
+
+Latency is the time elapsed from the moment a request is sent to the moment a response is received. It is the single most user-visible performance metric, the number your customers _feel_ in their fingers.
+
+### Latency is not a single number
+
+A common mistake is to treat latency as one fixed value like "our API responds in 200ms." In reality, latency varies from request to request because of many real-world factors:
+
+**Cache hits vs. misses**: a request served from a CDN or an in-memory cache like Redis may return in 5ms, while the same request hitting the database cold takes 200ms. **Server load**: when your server is idle, it picks up each request immediately; when it's processing 50 concurrent requests, the new arrival waits in a queue. **Network conditions**: packet loss, route changes, and geographic distance all introduce variability. **Request complexity**: fetching a user profile is faster than generating a monthly analytics report.
+
+<Callout type="info" title="Why averages lie">
+Imagine 1,000 requests: 990 complete in 50ms and 10 take 5,000ms. The average is \~100ms, which sounds healthy. But those 10 outlier requests represent real users staring at a loading spinner for 5 seconds. At 1 million requests/day, that's **10,000 terrible user experiences** per day, completely invisible to the average.
+</Callout>
+
+Because averages absorb variation, they are nearly useless for performance analysis. What we need instead is a way to talk about the _distribution_ of latencies, which brings us to percentiles.
+
+## Percentiles: P50, P90, P99
+
+A percentile tells you the latency threshold below which a certain percentage of requests fall. The three percentiles you'll encounter constantly are:
+
+| Percentile       | Meaning                                               | Example                                     |
+| ---------------- | ----------------------------------------------------- | ------------------------------------------- |
+| **P50** (median) | 50% of requests are faster than this value            | P50 = 80ms -> half your users see &lt;=80ms    |
+| **P90**          | 90% faster; **10% of users** experience this or worse | P90 = 400ms -> 1 in 10 users waits 400ms+   |
+| **P99**          | 99% faster; **1% of users** experience this or worse  | P99 = 2s -> 1 in 100 users waits 2 seconds+ |
+
+<Diagram caption="Fig 2 / Latency distribution with percentile markers">
+<svg viewBox="0 0 660 260" xmlns="http://www.w3.org/2000/svg" style="max-width:660px;width:100%"><line x1="60" y1="210" x2="620" y2="210" stroke="var(--dg-ink-2)" stroke-width="1.5"></line><line x1="60" y1="210" x2="60" y2="30" stroke="var(--dg-ink-2)" stroke-width="1.5"></line><text x="340" y="250" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)" letter-spacing="0.05em">Latency -></text><text x="22" y="120" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)" transform="rotate(-90,22,120)">Requests</text><path d="M80,208 C120,205 140,170 180,80 C200,40 230,38 260,80 C290,130 320,170 360,190 C400,200 450,206 520,208 C560,209 600,209 620,210" fill="none" stroke="var(--dg-accent)" stroke-width="2.5"></path><path d="M80,208 C120,205 140,170 180,80 C200,40 230,38 260,80 C290,130 320,170 360,190 C400,200 450,206 520,208 C560,209 600,209 620,210 L620,210 L80,210 Z" fill="var(--dg-accent-tint)" ></path><line x1="220" y1="210" x2="220" y2="50" stroke="var(--dg-info)" stroke-width="1.2" stroke-dasharray="5 3"></line><text x="220" y="28" text-anchor="middle" font-family="var(--font-ui)" font-size="10" font-weight="700" fill="var(--dg-info)">P50</text><line x1="370" y1="210" x2="370" y2="50" stroke="var(--dg-ok)" stroke-width="1.2" stroke-dasharray="5 3"></line><text x="370" y="28" text-anchor="middle" font-family="var(--font-ui)" font-size="10" font-weight="700" fill="var(--dg-ok)">P90</text><line x1="520" y1="210" x2="520" y2="50" stroke="var(--dg-accent)" stroke-width="1.2" stroke-dasharray="5 3"></line><text x="520" y="28" text-anchor="middle" font-family="var(--font-ui)" font-size="10" font-weight="700" fill="var(--dg-accent)">P99</text><text x="220" y="228" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-info)">80ms</text><text x="370" y="228" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ok)">400ms</text><text x="520" y="228" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-accent)">2000ms</text></svg>
+</Diagram>
+
+### Why P99 and P95 matter most
+
+Backend engineers focus on tail latencies (P95/P99) for two reasons. First, the requests that land in the tail are typically the most _complex_, they involve the heaviest business logic, the most joins, or the most service-to-service calls. Second, these requests often represent your most _valuable_ users: someone making a purchase, generating a report, or completing a checkout flow, exactly the workflows where a 5-second hang loses revenue and trust.
+
+### Measuring percentiles in Go
+
+The Go standard library doesn't ship a percentile calculator, but you can compute them from sorted slices or use a library. Here's a simple implementation from scratch:
+
+```go
+Go
+package main
+
+import (
+    "fmt"
+    "math"
+    "sort"
+    "time"
+)
+
+// Percentile returns the p-th percentile from a slice of durations.
+// p must be between 0 and 100.
+func Percentile(latencies []time.Duration, p float64) time.Duration {
+    if len(latencies) == 0 {
+        return 0
+    }
+    sorted := make([]time.Duration, len(latencies))
+    copy(sorted, latencies)
+    sort.Slice(sorted, func(i, j int) bool {
+        return sorted[i] < sorted[j]
+    })
+
+    rank := (p / 100.0) * float64(len(sorted)-1)
+    idx  := int(math.Ceil(rank))
+    return sorted[idx]
+}
+
+func main() {
+    // Simulated latency samples
+    samples := []time.Duration{
+        12 * time.Millisecond, 15 * time.Millisecond,
+        22 * time.Millisecond, 48 * time.Millisecond,
+        95 * time.Millisecond, 110 * time.Millisecond,
+        340 * time.Millisecond, 890 * time.Millisecond,
+        1200 * time.Millisecond, 4800 * time.Millisecond,
+    }
+
+    fmt.Printf("P50:  %v\n", Percentile(samples, 50))
+    fmt.Printf("P90:  %v\n", Percentile(samples, 90))
+    fmt.Printf("P99:  %v\n", Percentile(samples, 99))
+}
+```
+
+### Measuring percentiles in Python
+
+```text
+Python
+import numpy as np
+
+# Simulated latency samples (in milliseconds)
+samples = [12, 15, 22, 48, 95, 110, 340, 890, 1200, 4800]
+
+print(f"P50:  {np.percentile(samples, 50):.0f}ms")
+print(f"P90:  {np.percentile(samples, 90):.0f}ms")
+print(f"P99:  {np.percentile(samples, 99):.0f}ms")
+print(f"P99.9:{np.percentile(samples, 99.9):.0f}ms")
+```
+
+<Callout type="info">
+**Reference:** [Prometheus, Histograms & Summaries](https://prometheus.io/docs/practices/histograms/), the industry standard for collecting percentile data in production.
+</Callout>
+
+## Throughput
+
+While latency describes the duration of a single request, throughput measures how many requests your system can handle in a given time window, typically expressed as **requests per second (RPS)** or **requests per minute (RPM)**.
+
+The two metrics are deeply intertwined but not in a simple, linear way. Your system might show excellent latency at 10 RPS, say 50ms per request. But at 5,000 RPS, latency might spike to 2 seconds. Understanding throughput alongside latency lets you answer critical operational questions: Can we survive the Black Friday traffic spike? How many concurrent users can we support before we need more resources? What happens if we get featured on a popular podcast tomorrow?
+
+Throughput = Requests Handled / Time Period
+
+### The latency: throughput curve
+
+As throughput increases, latency increases slowly at first but then _dramatically_, it follows a curve, not a line. At low throughput, the server is mostly idle and each request gets served instantly. As throughput climbs toward capacity, requests begin queuing and contending for CPU, memory, and I/O. Near saturation, latency explodes exponentially.
+
+<Diagram caption="Fig 3 / Latency grows exponentially as throughput approaches capacity">
+<svg viewBox="0 0 560 280" xmlns="http://www.w3.org/2000/svg" style="max-width:560px;width:100%"><line x1="60" y1="230" x2="520" y2="230" stroke="var(--dg-ink-2)" stroke-width="1.5"></line><line x1="60" y1="230" x2="60" y2="30" stroke="var(--dg-ink-2)" stroke-width="1.5"></line><text x="290" y="268" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">Throughput (RPS) -></text><text x="22" y="130" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)" transform="rotate(-90,22,130)">Latency -></text><line x1="60" y1="220" x2="500" y2="60" stroke="var(--dg-info)" stroke-width="1.2" stroke-dasharray="6 4"></line><text x="430" y="55" font-family="var(--font-ui)" font-size="9" fill="var(--dg-info)">Expected (linear)</text><path d="M60,220 C120,218 200,215 280,210 C340,205 380,195 420,160 C450,125 470,80 490,40" fill="none" stroke="var(--dg-accent)" stroke-width="2.5"></path><text x="500" y="38" font-family="var(--font-ui)" font-size="9" font-weight="700" fill="var(--dg-accent)">Actual</text><rect x="65" y="195" width="260" height="30" fill="var(--dg-ok-tint)" rx="3"></rect><text x="195" y="215" text-anchor="middle" font-family="var(--font-ui)" font-size="9" fill="var(--dg-ok)">Safe operating zone (60-80%)</text><rect x="380" y="35" width="120" height="190" fill="var(--dg-accent-tint)" rx="3"></rect><text x="440" y="230" text-anchor="middle" font-family="var(--font-ui)" font-size="9" fill="var(--dg-accent)">Danger zone</text></svg>
+</Diagram>
+
+This relationship is governed by **queuing theory**: specifically the M/M/1 queue model from operations research. As utilization _rho_ approaches 1.0, the average wait time tends toward infinity:
+
+W = S / (1 - rho)   where S = service time, rho = utilization
+
+<Callout type="info">
+**Reference:** [MDN, Web Performance](https://developer.mozilla.org/en-US/docs/Web/Performance), Mozilla's comprehensive guide to front-to-back performance measurement.
+</Callout>
+
+## Utilization & Queuing
+
+Utilization is the percentage of your system's total capacity that is actively in use. At 0% the system is idle; at 100% every resource is saturated and nothing new can be processed.
+
+### The ice cream shop analogy
+
+Imagine an ice cream shop with one worker. On a quiet Sunday evening, you walk in, order, and get served instantly, low utilization, low latency. On Tuesday lunchtime, there's a long queue. The worker prepares each cone at the _exact same speed_, but your wait time has skyrocketed because you must wait for everyone ahead of you. The worker's throughput hasn't changed. Your perceived latency has.
+
+Backend systems behave identically: when CPU and memory utilization are low, requests are served instantly. As more requests arrive, each one waits for the requests ahead of it to complete, forming a queue. The higher the utilization, the longer the queue, and the longer each request waits.
+
+### The highway analogy
+
+Think of a highway at different capacity levels. At **50%**, traffic flows smoothly and cars maintain speed. At **80%**, lane changes require more caution and speeds begin to drop. At **90%**, the system becomes chaotic, sometimes flowing, sometimes jamming. Every brake tap creates a ripple effect. At **100%**, total gridlock: no one moves.
+
+### The exponential relationship
+
+The relationship between utilization and latency is _not_ linear. We intuitively expect doubling utilization to double latency, but the reality is far worse. Latency stays relatively flat until roughly 70% utilization, then curves sharply upward, and near 100% goes nearly vertical, approaching infinity.
+
+<Callout type="info" title="Key Takeaway">
+You can **never** run your systems at 100% utilization and expect them to perform. Production systems typically target **60-80% utilization**, reserving 20-40% as headroom for traffic bursts. Traffic is _bursty_ by nature, it arrives in waves, not at a steady rate, and your buffer is what absorbs those spikes.
+</Callout>
+
+## Finding Bottlenecks
+
+When your system is slow, _something specific_ is causing the slowness. That something is called the bottleneck. The most critical discipline in performance engineering is identifying the actual bottleneck before applying a fix, not guessing.
+
+### The trap of jumping to solutions
+
+When engineers encounter a slow API, the instinct is to reach for standard by-the-book remedies: add Redis caching, upgrade Postgres, throw more servers at it. Sometimes you get lucky. But more often, you spend days or weeks implementing a solution to a problem you don't actually have, while the real bottleneck sits untouched.
+
+### A real-world example
+
+Consider a `GET /products/:id` endpoint that feels slow. The knee-jerk reaction: the database must be the problem. You spend a week building a Redis caching layer. You deploy. The API is still slow.
+
+Now you add timing measurements throughout the code and discover: the database query takes 10ms, the new Redis lookup takes 5ms, but a _synchronous logging call_ to a remote Elasticsearch service takes 500ms, blocking the request while it waits for a network response. The database was never the problem.
+
+<Callout type="info" title="The golden rule">
+**Never guess. Always measure.** Common hidden bottlenecks include: synchronous logging to remote services, JSON/XML serialization of large payloads, external API calls in loops, large response payloads causing slow network transmission, and middleware that runs on every request.
+</Callout>
+
+### Timing middleware in Go
+
+Here's a practical middleware that logs per-request timing, so you can start identifying slow endpoints:
+
+```go
+Go
+package middleware
+
+import (
+    "log"
+    "net/http"
+    "time"
+)
+
+// TimingMiddleware logs the duration of every HTTP request.
+func TimingMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        start := time.Now()
+
+        // Wrap the ResponseWriter to capture the status code
+        rw := &statusWriter{ResponseWriter: w, status: 200}
+        next.ServeHTTP(rw, r)
+
+        duration := time.Since(start)
+        log.Printf(
+            "method=%s path=%s status=%d duration=%v",
+            r.Method, r.URL.Path, rw.status, duration,
+        )
+    })
+}
+
+type statusWriter struct {
+    http.ResponseWriter
+    status int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+    w.status = code
+    w.ResponseWriter.WriteHeader(code)
+}
+```
+
+### Timing decorator in Python (FastAPI)
+
+```python
+Python
+import time
+import logging
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+
+logger = logging.getLogger("perf")
+
+class TimingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        logger.info(
+            f"method={request.method} path={request.url.path} "
+            f"status={response.status_code} duration={duration_ms:.1f}ms"
+        )
+        return response
+```
+
+## Profiling & Flame Graphs
+
+Profiling is the practice of measuring exactly where your application spends its time. A profiler attaches to your running application, samples the call stack at regular intervals, and records which functions are executing, how long they run, and how much CPU or memory they consume.
+
+### How a profiler works
+
+CPU profilers (like Go's built-in `pprof` or Python's `cProfile`) periodically interrupt the program and capture a snapshot of the current call stack. After thousands of samples, a statistical picture emerges showing which functions dominate execution time.
+
+### Flame graphs
+
+Raw profiler output can list thousands of functions, each accounting for some fraction of total time. Flame graphs make this data visual: each function is a horizontal bar, wider bars indicate more time spent, and functions called by other functions are stacked vertically. One glance at a flame graph tells you where your application's hotspots are.
+
+<Diagram caption="Fig 4 / Flame graph: wider bars = more time; the logging call dominates">
+<svg viewBox="0 0 600 180" xmlns="http://www.w3.org/2000/svg" style="max-width:600px;width:100%"><rect x="10" y="140" width="580" height="28" rx="3" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1"></rect><text x="300" y="158" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="10" fill="var(--dg-ink-2)">main.handleRequest(), 100%</text><rect x="10" y="108" width="90" height="28" rx="3" fill="var(--dg-info-tint)" stroke="var(--dg-info)" stroke-width="1"></rect><text x="55" y="126" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-info-soft)">parseJSON</text><text x="55" y="136" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">8%</text><rect x="100" y="108" width="60" height="28" rx="3" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1"></rect><text x="130" y="126" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ok-soft)">auth</text><text x="130" y="136" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">5%</text><rect x="160" y="108" width="140" height="28" rx="3" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1"></rect><text x="230" y="126" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-accent-2)">db.QueryProducts</text><text x="230" y="136" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">12%</text><rect x="300" y="108" width="260" height="28" rx="3" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="1.5"></rect><text x="430" y="126" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" font-weight="600" fill="var(--dg-accent-2)">logging.SendRemote </text><text x="430" y="136" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-accent)" font-weight="600">70% &#x3C;- BOTTLENECK</text><rect x="300" y="76" width="180" height="28" rx="3" fill="var(--dg-accent-tint)" stroke="var(--dg-accent-soft)" stroke-width="1"></rect><text x="390" y="94" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-accent-soft)">net.http.Post</text><text x="390" y="104" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">55%</text><rect x="480" y="76" width="80" height="28" rx="3" fill="var(--dg-plum-tint)" stroke="var(--dg-plum)" stroke-width="1"></rect><text x="520" y="94" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-plum)">serialize</text><text x="520" y="104" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">15%</text><rect x="300" y="44" width="120" height="28" rx="3" fill="var(--dg-accent-tint)" stroke="var(--dg-accent-soft)" stroke-width="1"></rect><text x="360" y="62" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-accent-soft)">tcp.Dial</text><text x="360" y="72" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">40%</text></svg>
+</Diagram>
+
+### CPU profiling in Go with pprof
+
+```go
+Go
+import (
+    "net/http"
+    _ "net/http/pprof"  // side-effect import: registers /debug/pprof/
+)
+
+func main() {
+    // Your normal app setup...
+    // pprof endpoints are now accessible at /debug/pprof/
+    // Collect a 30-second CPU profile:
+    //   go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30
+    //   (pprof) web   <- opens flame graph in browser
+    http.ListenAndServe(":6060", nil)
+}
+```
+
+### CPU profiling in Python
+
+```text
+Python
+import cProfile
+import pstats
+
+# Profile a function and print the top 20 slowest calls
+with cProfile.Profile() as pr:
+    handle_request()  # your function under test
+
+stats = pstats.Stats(pr)
+stats.sort_stats("cumulative")
+stats.print_stats(20)
+
+# For flame graphs, use py-spy (external tool):
+#   pip install py-spy
+#   py-spy record -o profile.svg -- python app.py
+```
+
+### CPU-bound vs I/O-bound bottlenecks
+
+Profilers excel at finding **CPU-bound** bottlenecks, functions that consume excessive computation cycles (image processing, machine learning inference, heavy math). However, most backend applications are **I/O-bound**: the time is spent waiting for database responses, external API calls, file reads, or message queue acknowledgments. CPU profilers are less effective here because the CPU isn't working, it's _waiting_. For I/O-bound work, you need distributed tracing.
+
+## Distributed Tracing
+
+Distributed tracing follows a single request as it flows through your entire system, across services, databases, caches, and external APIs, recording timestamps at every boundary. The output is a _trace_: a tree of "spans," each representing a timed operation.
+
+Where a profiler shows _what the CPU did_, a trace shows _where the clock ticked_. For example, a trace of `GET /products/5` might reveal: 2ms in your API logic, 800ms in the database query, and 50ms in serialization. Now you know exactly where to focus.
+
+<Diagram caption="Fig 5 / Distributed trace: the DB query dominates this request's timeline">
+<svg viewBox="0 0 620 210" xmlns="http://www.w3.org/2000/svg" style="max-width:620px;width:100%"><text x="130" y="20" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">0ms</text><text x="230" y="20" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">200ms</text><text x="350" y="20" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">400ms</text><text x="470" y="20" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">600ms</text><text x="570" y="20" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">800ms</text><line x1="130" y1="28" x2="130" y2="190" stroke="var(--dg-line)" stroke-width="0.5" stroke-dasharray="3 3"></line><line x1="250" y1="28" x2="250" y2="190" stroke="var(--dg-line)" stroke-width="0.5" stroke-dasharray="3 3"></line><line x1="370" y1="28" x2="370" y2="190" stroke="var(--dg-line)" stroke-width="0.5" stroke-dasharray="3 3"></line><line x1="490" y1="28" x2="490" y2="190" stroke="var(--dg-line)" stroke-width="0.5" stroke-dasharray="3 3"></line><text x="10" y="52" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">Request</text><rect x="130" y="38" width="480" height="22" rx="3" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1"></rect><text x="370" y="53" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-accent-2)">852ms total</text><text x="10" y="87" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">Auth</text><rect x="130" y="73" width="24" height="22" rx="3" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1"></rect><text x="162" y="88" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ok-soft)">5ms</text><text x="10" y="122" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">DB Query</text><rect x="154" y="108" width="406" height="22" rx="3" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.5"></rect><text x="357" y="123" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" font-weight="600" fill="var(--dg-accent-2)">800ms &#x3C;- BOTTLENECK</text><text x="10" y="157" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">Serialize</text><rect x="560" y="143" width="50" height="22" rx="3" fill="var(--dg-info-tint)" stroke="var(--dg-info)" stroke-width="1"></rect><text x="585" y="158" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-info-soft)">42ms</text><text x="10" y="190" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">Response</text><rect x="560" y="178" width="20" height="16" rx="3" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1"></rect><text x="585" y="190" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ok-soft)">5ms</text></svg>
+</Diagram>
+
+Popular tracing tools include **Jaeger**, **Zipkin**, and **OpenTelemetry** (the emerging standard that unifies tracing, metrics, and logging). OpenTelemetry provides SDKs for Go, Python, Java, and most major languages.
+
+<Callout type="info">
+**Reference:** [OpenTelemetry Documentation](https://opentelemetry.io/docs/), the vendor-neutral standard for distributed tracing, metrics, and logs.
+</Callout>
+
+## The N+1 Query Problem
+
+The N+1 query problem is one of the most notorious performance anti-patterns in backend engineering. It occurs when you make 1 query to fetch a list of N items, then N additional queries to fetch a related piece of data for each item, totaling N+1 database round-trips.
+
+### How it happens
+
+Imagine a blog application. To render the homepage, you need 20 blog posts with each post's author name. The naive approach: query for all 20 posts, then loop through and make a separate query for each post's author. That's 21 database queries. For 1,000 posts, it's 1,001 queries. Even at 5ms per query, 1,001 queries take over 5 seconds.
+
+<Diagram caption="Fig 6 / N+1 queries vs. bulk fetch: same data, vastly different performance">
+<svg viewBox="0 0 580 200" xmlns="http://www.w3.org/2000/svg" style="max-width:580px;width:100%"><text x="20" y="22" font-family="var(--font-ui)" font-size="10" font-weight="700" fill="var(--dg-accent)" letter-spacing="0.08em">N+1 PATTERN (BAD)</text><rect x="20" y="32" width="240" height="24" rx="3" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1"></rect><text x="140" y="48" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-accent-2)">SELECT &#42; FROM posts (1 query)</text><rect x="20" y="62" width="240" height="16" rx="2" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="140" y="74" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-accent-2)">SELECT author WHERE id=1</text><rect x="20" y="80" width="240" height="16" rx="2" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="140" y="92" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-accent-2)">SELECT author WHERE id=2</text><rect x="20" y="98" width="240" height="16" rx="2" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="140" y="110" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-accent-2)">... (x 20 more)</text><text x="140" y="138" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="10" font-weight="600" fill="var(--dg-accent)">21 queries = 105ms</text><text x="320" y="22" font-family="var(--font-ui)" font-size="10" font-weight="700" fill="var(--dg-ok)" letter-spacing="0.08em">BULK FETCH (GOOD)</text><rect x="320" y="32" width="240" height="24" rx="3" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1"></rect><text x="440" y="48" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ok-soft)">SELECT &#42; FROM posts (1 query)</text><rect x="320" y="62" width="240" height="24" rx="3" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1"></rect><text x="440" y="78" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ok-soft)">SELECT &#42; FROM users WHERE id IN (...)</text><text x="440" y="110" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="10" font-weight="600" fill="var(--dg-ok)">2 queries = 10ms</text><text x="300" y="185" text-anchor="middle" font-family="var(--font-ui)" font-size="11" font-weight="700" fill="var(--dg-ink-2)">10x faster by eliminating the loop</text></svg>
+</Diagram>
+
+### The fix: batch fetching
+
+Instead of querying in a loop, collect all the IDs you need and fetch them in a single query using `WHERE id IN (...)`. The result: always 2 queries regardless of the number of items, one for the list, one for the related data.
+
+#### Go: solving N+1 with a batch query
+
+```go
+Go
+func GetPostsWithAuthors(ctx context.Context, db *sql.DB) ([]PostWithAuthor, error) {
+    // Query 1: fetch all posts
+    posts, err := queryPosts(ctx, db)
+    if err != nil {
+        return nil, err
+    }
+
+    // Collect unique author IDs
+    authorIDSet := make(map[int64]struct{})
+    for _, p := range posts {
+        authorIDSet[p.AuthorID] = struct{}{}
+    }
+    authorIDs := make([]int64, 0, len(authorIDSet))
+    for id := range authorIDSet {
+        authorIDs = append(authorIDs, id)
+    }
+
+    // Query 2: fetch ALL authors in one batch
+    authors, err := queryAuthorsByIDs(ctx, db, authorIDs)
+    if err != nil {
+        return nil, err
+    }
+
+    // Build lookup map and merge
+    authorMap := make(map[int64]Author)
+    for _, a := range authors {
+        authorMap[a.ID] = a
+    }
+
+    result := make([]PostWithAuthor, len(posts))
+    for i, p := range posts {
+        result[i] = PostWithAuthor{Post: p, Author: authorMap[p.AuthorID]}
+    }
+    return result, nil
+}
+```
+
+#### Python (Django): select\_related & prefetch\_related
+
+```text
+Python
+# BAD, N+1 queries (Django ORM)
+posts = Post.objects.all()
+for post in posts:
+    print(post.author.name)  # Each access fires a separate query!
+
+# GOOD, 1 query with JOIN (ForeignKey)
+posts = Post.objects.select_related("author").all()
+
+# GOOD, 2 queries (ManyToMany or reverse FK)
+posts = Post.objects.prefetch_related("tags").all()
+```
+
+Every modern ORM provides bulk-fetch primitives: Django has `select_related` / `prefetch_related`, Ruby on Rails has `includes`, Prisma and Drizzle offer `leftJoin` and relation loading. If you're writing raw SQL, the answer is `JOIN`. The pattern to avoid is any loop that fires a query per iteration.
+
+<Callout type="info" title="Pro tip">
+Most modern ORMs have a "print generated SQL" mode. Enable it during development to catch N+1 patterns before they reach production. In Django: `settings.LOGGING` with the `django.db.backends` logger. In Go's GORM: `db.Debug()`.
+</Callout>
+
+## Indexes & Query Plans
+
+The most common source of database performance problems is the _absence_ of appropriate indexes. An index is a data structure, typically a B-tree, that maintains a sorted copy of the values in one or more columns, along with pointers back to the full rows. It transforms a slow sequential scan (examining every row) into a fast lookup.
+
+### The library analogy
+
+Imagine a library with a million books but no catalog. Finding all books by John Green requires walking every shelf, examining every book, a full table scan. Now add a catalog sorted by author name with shelf locations. You look up "Green, John," find three shelf references, walk directly to those shelves, and return in minutes instead of days. That catalog is the index.
+
+### Sequential scan vs. index scan
+
+Without an index, your database performs a sequential scan (also called a full table scan), it reads every row to check the `WHERE` clause. For a million rows, this can take several seconds. With a B-tree index, the database performs a logarithmic lookup, finding matching rows in a few milliseconds regardless of table size.
+
+Sequential scan: O(n) -> Index scan: O(log n)
+
+### Creating indexes
+
+```text
+SQL
+-- Basic single-column index
+CREATE INDEX idx_posts_author_id ON posts (author_id);
+
+-- Composite index: order matters!
+-- This helps queries filtering by user_id, or user_id + created_at
+-- It does NOT help queries filtering ONLY by created_at
+CREATE INDEX idx_orders_user_created ON orders (user_id, created_at);
+
+-- Covering index: all needed data lives IN the index
+-- The query never touches the main table at all
+CREATE INDEX idx_departments_name ON departments (name) INCLUDE (id);
+```
+
+### Composite vs. Covering indexes
+
+##### Composite Index
+
+- Indexes **multiple columns** together
+- Optimizes queries that filter on those columns
+- Column **order matters**: leftmost prefix rule
+- Index on `(A, B)` helps `WHERE A=...` and `WHERE A=... AND B=...` but not `WHERE B=...` alone
+
+##### Covering Index
+
+- Includes all columns needed by a query
+- Database serves data **entirely from the index**
+- Eliminates the "heap lookup" (going back to the table)
+- Uses `INCLUDE` clause in Postgres to add non-key columns
+
+### The cost of indexes
+
+Indexes are not free. Each index consumes disk space (and ideally fits in memory). More critically, every `INSERT`, `UPDATE`, or `DELETE` must update all associated indexes. If you blindly index every column, your write operations slow dramatically. The guideline: index columns that appear in `WHERE`, `JOIN`, and `ORDER BY` clauses of your most frequent queries, and leave the rest alone.
+
+### EXPLAIN ANALYZE: reading the query plan
+
+To discover whether your queries use indexes, Postgres provides the `EXPLAIN ANALYZE` command. It runs the query and shows the exact execution plan, which tables were scanned, which indexes were used, and how long each step took.
+
+```dockerfile
+SQL
+EXPLAIN ANALYZE
+SELECT p.*, u.name AS author_name
+FROM posts p
+JOIN users u ON u.id = p.author_id
+WHERE p.published = true
+ORDER BY p.created_at DESC
+LIMIT 20;
+
+-- Look for "Seq Scan" in the output, that means no index is being used.
+-- After adding an index, re-run and confirm it shows "Index Scan".
+```
+
+<Callout type="info">
+**Reference:** [PostgreSQL, Using EXPLAIN](https://www.postgresql.org/docs/current/using-explain.html), official documentation on reading query execution plans.
+</Callout>
+
+## Connection Pooling
+
+Establishing a database connection is expensive. Each new connection involves a TCP three-way handshake, authentication, encryption negotiation, session state setup, and memory allocation on the database server (typically several MB per connection). If your application opens a new connection for every query and closes it immediately, you're paying this cost on every single request.
+
+### The two problems
+
+**Problem 1: Latency overhead.** Each connection setup adds tens of milliseconds of overhead, wasted time before any actual query runs. **Problem 2: Connection exhaustion.** Databases have hard limits on simultaneous connections (Postgres defaults to \~100, often configured to 300-500). During traffic spikes, your backend can exhaust the connection limit and crash the database.
+
+### Connection pooling
+
+A connection pool maintains a set of pre-established, reusable connections. Instead of creating a new connection for each query, your application borrows a connection from the pool, uses it, and returns it. The connection stays open for reuse by the next request. This eliminates both the latency overhead and the risk of connection exhaustion.
+
+<Diagram caption="Fig 7 / External connection pool (PgBouncer) sits between servers and database">
+<svg viewBox="0 0 620 220" xmlns="http://www.w3.org/2000/svg" style="max-width:620px;width:100%"><rect x="20" y="30" width="80" height="50" rx="4" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.2"></rect><text x="60" y="58" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">Server 1</text><rect x="20" y="90" width="80" height="50" rx="4" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.2"></rect><text x="60" y="118" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">Server 2</text><rect x="20" y="150" width="80" height="50" rx="4" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.2"></rect><text x="60" y="178" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">Server 3</text><line x1="100" y1="55" x2="230" y2="110" stroke="var(--dg-ink-2)" stroke-width="1" marker-end="url(#arrowD)"></line><line x1="100" y1="115" x2="230" y2="115" stroke="var(--dg-ink-2)" stroke-width="1" marker-end="url(#arrowD)"></line><line x1="100" y1="175" x2="230" y2="120" stroke="var(--dg-ink-2)" stroke-width="1" marker-end="url(#arrowD)"></line><rect x="230" y="70" width="150" height="90" rx="6" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1.5"></rect><text x="305" y="92" text-anchor="middle" font-family="var(--font-ui)" font-size="9" font-weight="700" fill="var(--dg-ok-soft)" letter-spacing="0.08em">EXTERNAL POOL</text><text x="305" y="107" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">(e.g. PgBouncer)</text><rect x="245" y="118" width="18" height="18" rx="3" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><rect x="268" y="118" width="18" height="18" rx="3" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><rect x="291" y="118" width="18" height="18" rx="3" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><rect x="314" y="118" width="18" height="18" rx="3" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><rect x="337" y="118" width="18" height="18" rx="3" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="305" y="150" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ink-2)">max: 250 conns</text><line x1="380" y1="115" x2="470" y2="115" stroke="var(--dg-info)" stroke-width="1.5" marker-end="url(#arrowB2)"></line><rect x="470" y="80" width="120" height="70" rx="6" fill="var(--dg-surface)" stroke="var(--dg-info)" stroke-width="1.5"></rect><text x="530" y="112" text-anchor="middle" font-family="var(--font-prose)" font-size="12" font-weight="600" fill="var(--dg-ink)">PostgreSQL</text><text x="530" y="132" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">max: 300</text><defs><marker id="arrowD" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="var(--dg-ink-2)"></path></marker><marker id="arrowB2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="var(--dg-info)"></path></marker></defs></svg>
+</Diagram>
+
+### Internal vs. external pooling
+
+##### Internal Pool
+
+- Pool lives **inside** each server instance
+- Each instance maintains its own connections
+- Simple setup; most DB drivers include one
+- **Risk:** 3 instances x 150 connections = 450, which can exceed DB limit of 300
+
+##### External Pool
+
+- Standalone process (PgBouncer, PgCat)
+- **All** server instances share one pool
+- Total connections to DB are centrally controlled
+- Preferred for **horizontally scaled** production systems
+
+#### Connection pooling in Go
+
+```go
+Go
+import "database/sql"
+
+db, err := sql.Open("postgres", connStr)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Configure the built-in connection pool
+db.SetMaxOpenConns(25)                  // max open connections to the DB
+db.SetMaxIdleConns(10)                  // max idle connections kept ready
+db.SetConnMaxLifetime(5 * time.Minute)  // recycle connections after 5 min
+db.SetConnMaxIdleTime(1 * time.Minute)  // close idle connections after 1 min
+```
+
+#### Connection pooling in Python (SQLAlchemy)
+
+```text
+Python
+from sqlalchemy import create_engine
+
+engine = create_engine(
+    "postgresql://user:pass@host/db",
+    pool_size=20,          # number of persistent connections
+    max_overflow=10,       # extra connections allowed during spikes
+    pool_timeout=30,       # seconds to wait for a free connection
+    pool_recycle=1800,     # recycle connections every 30 minutes
+    pool_pre_ping=True,    # test connection health before use
+)
+```
+
+<Callout type="info">
+**Reference:** [PgBouncer](https://www.pgbouncer.org/), lightweight connection pooler for PostgreSQL, the de facto standard for production Postgres deployments.
+</Callout>
+
+## Caching Fundamentals
+
+Caching is the practice of storing the result of an expensive operation in a faster storage layer so that subsequent requests for the same data can be served without repeating the expensive work. The idea is beautifully simple: compute once, serve many.
+
+In practice, you place a cache (typically Redis, Memcached, or Valkey) in front of your database. When a request arrives, you first check the cache. On a **cache hit**, you return the cached data immediately, often in under 5ms. On a **cache miss**, you query the database, store the result in the cache, and then return it. A single move can reduce perceived latency from 800ms to 50ms.
+
+### Local vs. distributed caching
+
+##### Local Cache
+
+- In-process memory (dictionary/map)
+- Fastest possible access: 1-3ms
+- Private to each server instance
+- **Problem:** cache inconsistency across instances
+
+##### Distributed Cache
+
+- External service (Redis, Memcached, Valkey)
+- Shared across all server instances
+- No inconsistency between servers
+- **Con:** network round-trip adds \~5-50ms
+
+### Tiered caching
+
+Many production systems use both: a small local cache for the "hottest" data (most frequently accessed items) backed by a larger distributed cache. A request checks the local cache first (sub-millisecond), then falls back to the distributed cache (a few milliseconds), and only hits the database on a full miss.
+
+#### Simple Redis caching in Go
+
+```go
+Go
+import (
+    "context"
+    "encoding/json"
+    "time"
+    "github.com/redis/go-redis/v9"
+)
+
+var rdb = redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+
+func GetProduct(ctx context.Context, id string) (*Product, error) {
+    cacheKey := "product:" + id
+
+    // 1. Try cache first
+    cached, err := rdb.Get(ctx, cacheKey).Result()
+    if err == nil {
+        var p Product
+        json.Unmarshal([]byte(cached), &p)
+        return &p, nil  // Cache HIT, ~2ms
+    }
+
+    // 2. Cache miss, query database
+    p, err := queryProductFromDB(ctx, id)
+    if err != nil {
+        return nil, err
+    }
+
+    // 3. Store in cache with TTL
+    data, _ := json.Marshal(p)
+    rdb.Set(ctx, cacheKey, data, 10*time.Minute)
+
+    return p, nil
+}
+```
+
+#### Simple Redis caching in Python
+
+```python
+Python
+import json, redis
+
+r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+
+def get_product(product_id: str) -> dict:
+    cache_key = f"product:{product_id}"
+
+    # 1. Try cache
+    cached = r.get(cache_key)
+    if cached:
+        return json.loads(cached)  # Cache HIT
+
+    # 2. Cache miss, query database
+    product = query_product_from_db(product_id)
+
+    # 3. Store with 10-minute TTL
+    r.setex(cache_key, 600, json.dumps(product))
+    return product
+```
+
+## Cache Invalidation
+
+There's a famous saying in computer science: _"There are only two hard problems in programming: naming things, cache invalidation, and off-by-one errors."_ Cache invalidation, keeping cached data in sync with the source of truth, is genuinely one of the hardest problems in distributed systems.
+
+### Time-based expiration (TTL)
+
+The simplest approach: set a **Time To Live (TTL)** on each cache entry. After the TTL expires, the entry is automatically deleted. The next request triggers a fresh database query. The challenge is choosing the right TTL, too short and you lose most caching benefit; too long and users see stale data.
+
+### Event-based invalidation
+
+Instead of waiting for a timer, you explicitly delete or update the cache entry whenever the underlying data changes. For example, when a user updates their profile, the update handler also deletes the cached profile entry. The next read request will fetch fresh data from the database and repopulate the cache.
+
+The advantage: data is always fresh. The risk: if you forget to invalidate at even one code path that modifies the data, you serve stale results. This requires discipline and thorough code review.
+
+## Caching Patterns
+
+The caching _pattern_ determines when and how data enters the cache. Three primary patterns dominate backend engineering:
+
+### 1. Cache-Aside (Lazy Loading)
+
+The most common pattern. Your application code manages the cache explicitly: check cache -> on miss, query DB -> store result in cache -> return. On write, invalidate or delete the cache entry.
+
+<Callout type="info" title="Cache-Aside Flow">
+**Read:** Check cache -> hit? Return. Miss? Query DB -> write to cache -> return.\
+**Write:** Update DB -> delete cache entry (next read repopulates).
+</Callout>
+
+### 2. Write-Through
+
+Every write operation updates _both_ the cache and the database simultaneously. Reads always find fresh data in the cache, there are no cache misses after the first write. The tradeoff: write latency increases because you're writing to two systems before returning a success response.
+
+### 3. Write-Behind (Write-Back)
+
+The write updates only the cache and returns immediately. The database update happens asynchronously in the background. This gives the fastest write latency but introduces risk: if the cache fails before the async write completes, data is lost. The cache and database may be temporarily inconsistent.
+
+| Pattern       | Read Speed              | Write Speed         | Consistency                  | Complexity |
+| ------------- | ----------------------- | ------------------- | ---------------------------- | ---------- |
+| Cache-Aside   | Fast (after first miss) | Normal              | Good (explicit invalidation) | Low        |
+| Write-Through | Always fast             | Slower (dual write) | Strong                       | Medium     |
+| Write-Behind  | Always fast             | Fastest             | Eventual (risk of loss)      | High       |
+
+## Cache Hit Rate
+
+The cache hit rate measures what percentage of requests are successfully served from the cache rather than falling through to the database. A 90% hit rate means 9 out of 10 requests are served from cache; only 10% touch the database. A 20% hit rate means your caching layer is barely working.
+
+Cache Hit Rate = Cache Hits / (Cache Hits + Cache Misses) x 100%
+
+### Factors that affect hit rate
+
+**TTL duration:** Longer TTLs keep items in the cache longer, increasing hit rate but risking staleness. **Cache size:** A larger cache holds more entries, naturally increasing the probability of a hit. **Data access patterns:** If your traffic is highly concentrated on a small set of "hot" items (power-law distribution), caching is extremely effective. If traffic is spread evenly across millions of unique keys, hit rates will be lower. **Eviction policy:** Algorithms like LRU (Least Recently Used) and LFU (Least Frequently Used) determine which entries are evicted when the cache is full, choosing the right one depends on your access patterns.
+
+<Callout type="info" title="Target hit rates">
+For most web applications, a **70-95%** hit rate is considered healthy. Below 50% suggests a fundamental mismatch between your caching strategy and your actual access patterns, time to re-examine your TTLs, cache keys, and eviction policy.
+</Callout>
+
+## Vertical Scaling
+
+Vertical scaling (also called "scaling up") means replacing your server with a more powerful machine, more CPU cores, more RAM, faster storage, better network cards. Your code doesn't change. Your architecture doesn't change. You simply upgrade the hardware.
+
+### Why it's appealing
+
+Vertical scaling is the simplest form of scaling. A server with 2x the CPU cores handles roughly 2x the requests. A server with 2x the RAM can hold 2x the cached data. You avoid the entire category of distributed systems complexity: no load balancers, no state synchronization, no network partition handling. Economically, a single machine with 2x power often costs less than two machines of half its size, and you skip the operational overhead of managing a fleet.
+
+### Hard limits of vertical scaling
+
+**Hardware ceiling:** Cloud providers offer machines up to a certain size. Once you've maxed out the largest available instance (e.g., 96 cores, 384 GB RAM), you simply cannot scale further. **Single point of failure:** One machine means one failure domain. If it crashes, your entire service goes offline. **No geographic distribution:** A single server in one data center means users on the other side of the world experience high latency, physics imposes a speed-of-light floor on cross-continental round trips (\~100ms US&lt;->India).
+
+<Diagram caption="Fig 8 / Vertical scaling: bigger machines, same architecture, hard ceiling">
+<svg viewBox="0 0 580 170" xmlns="http://www.w3.org/2000/svg" style="max-width:580px;width:100%"><rect x="30" y="60" width="80" height="80" rx="5" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.2"></rect><text x="70" y="90" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">2 cores</text><text x="70" y="105" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">4 GB</text><text x="70" y="120" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">50 GB</text><text x="70" y="155" text-anchor="middle" font-family="var(--font-ui)" font-size="9" fill="var(--dg-ink-2)">$50/mo</text><text x="175" y="105" text-anchor="middle" font-family="var(--font-prose)" font-size="22" fill="var(--dg-accent)">-></text><rect x="220" y="45" width="100" height="95" rx="5" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.2"></rect><text x="270" y="78" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">8 cores</text><text x="270" y="93" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">32 GB</text><text x="270" y="108" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">500 GB SSD</text><text x="270" y="155" text-anchor="middle" font-family="var(--font-ui)" font-size="9" fill="var(--dg-ink-2)">$320/mo</text><text x="385" y="105" text-anchor="middle" font-family="var(--font-prose)" font-size="22" fill="var(--dg-accent)">-></text><rect x="420" y="25" width="130" height="115" rx="5" fill="var(--dg-surface)" stroke="var(--dg-accent)" stroke-width="1.5"></rect><text x="485" y="60" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">32 cores</text><text x="485" y="75" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">96 GB RAM</text><text x="485" y="90" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">2 TB NVMe</text><text x="485" y="105" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">10 Gbps NIC</text><text x="485" y="155" text-anchor="middle" font-family="var(--font-ui)" font-size="9" fill="var(--dg-ink-2)">$2,400/mo</text><line x1="420" y1="18" x2="550" y2="18" stroke="var(--dg-accent)" stroke-width="1.5" stroke-dasharray="4 3"></line><text x="485" y="12" text-anchor="middle" font-family="var(--font-ui)" font-size="8" font-weight="700" fill="var(--dg-accent)" letter-spacing="0.1em">HARDWARE CEILING</text></svg>
+</Diagram>
+
+## Horizontal Scaling
+
+Horizontal scaling (also called "scaling out") takes the opposite approach: instead of making one machine bigger, you add more machines of similar size that work together to handle the load.
+
+### Advantages
+
+**No hard ceiling:** Need more capacity? Add more servers. There's no limit on how many instances you can run. **Redundancy:** If one server fails, the others continue serving traffic, the failure is absorbed, not catastrophic. **Geographic distribution:** You can place servers in multiple data centers around the world, routing users to the nearest one for minimal latency.
+
+### The complexity cost
+
+Horizontal scaling introduces an entirely new category of problems, the problems of distributed systems:
+
+**Request distribution:** How do you decide which server handles each request? You need a load balancer, a new component in your infrastructure. **State synchronization:** If user A updates their profile on Server 1, how does Server 2 know about it? **Network partitions:** What happens when the network connecting your servers fails? Servers may make conflicting decisions. **Health checking:** How do you detect when a server is down, and how do you reroute traffic away from it and back to it when it recovers?
+
+All these problems have solutions, load balancers, shared databases, consensus algorithms, health checks, but each solution adds complexity and requires careful engineering. Distributed systems don't eliminate problems; they _transform_ one set of problems into a different set, and you must evaluate which set of problems is more manageable for your situation.
+
+##### Vertical Scaling
+
+- Simple, no architectural changes
+- No distributed systems complexity
+- Economically efficient at small scale
+- Hard hardware ceiling
+- Single point of failure
+- No geographic distribution
+
+##### Horizontal Scaling
+
+- No capacity ceiling
+- Built-in redundancy
+- Geographic distribution possible
+- Requires load balancing
+- State synchronization needed
+- Operationally complex
+
+## Load Balancing
+
+The moment you have more than one server, you need a mechanism to distribute incoming requests across them. That mechanism is the load balancer. It sits in front of your servers, receives all incoming traffic, and forwards each request to one of the available backend instances based on a chosen algorithm.
+
+### Common algorithms
+
+**Round Robin:** Requests are distributed sequentially, server 1, server 2, server 3, repeat. Simple and even. **Least Connections:** Each request goes to the server currently handling the fewest active connections. Better for requests with varying duration. **IP Hash:** The client's IP address determines which server receives the request, ensuring the same client always hits the same server (useful for session affinity). **Weighted Round Robin:** Servers with more capacity receive proportionally more requests.
+
+<Diagram caption="Fig 9 / Load balancer distributes traffic across geographically distributed servers">
+<svg viewBox="0 0 600 210" xmlns="http://www.w3.org/2000/svg" style="max-width:600px;width:100%"><rect x="20" y="70" width="65" height="70" rx="4" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.2"></rect><text x="52" y="100" text-anchor="middle" font-family="var(--font-prose)" font-size="10" fill="var(--dg-ink-2)">Users</text><text x="52" y="118" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ink-2)">10K RPS</text><line x1="85" y1="105" x2="160" y2="105" stroke="var(--dg-ink-2)" stroke-width="1.2" marker-end="url(#arrowD2)"></line><rect x="160" y="55" width="110" height="100" rx="6" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.5"></rect><text x="215" y="85" text-anchor="middle" font-family="var(--font-ui)" font-size="9" font-weight="700" fill="var(--dg-accent)" letter-spacing="0.06em">LOAD</text><text x="215" y="100" text-anchor="middle" font-family="var(--font-ui)" font-size="9" font-weight="700" fill="var(--dg-accent)" letter-spacing="0.06em">BALANCER</text><text x="215" y="120" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ink-2)">Nginx / HAProxy</text><text x="215" y="140" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ink-2)">ALB / Traefik</text><line x1="270" y1="80" x2="370" y2="40" stroke="var(--dg-ink-2)" stroke-width="1" marker-end="url(#arrowD2)"></line><line x1="270" y1="105" x2="370" y2="105" stroke="var(--dg-ink-2)" stroke-width="1" marker-end="url(#arrowD2)"></line><line x1="270" y1="130" x2="370" y2="170" stroke="var(--dg-ink-2)" stroke-width="1" marker-end="url(#arrowD2)"></line><rect x="370" y="18" width="90" height="42" rx="4" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.2"></rect><text x="415" y="38" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">Server 1</text><text x="415" y="52" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ink-2)">US-East</text><rect x="370" y="84" width="90" height="42" rx="4" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.2"></rect><text x="415" y="104" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">Server 2</text><text x="415" y="118" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ink-2)">EU-West</text><rect x="370" y="150" width="90" height="42" rx="4" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.2"></rect><text x="415" y="170" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">Server 3</text><text x="415" y="184" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ink-2)">AP-South</text><text x="520" y="42" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ok)">~3.3K RPS</text><text x="520" y="108" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ok)">~3.3K RPS</text><text x="520" y="174" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ok)">~3.3K RPS</text><defs><marker id="arrowD2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="var(--dg-ink-2)"></path></marker></defs></svg>
+</Diagram>
+
+### Load balancer in practice (Nginx config)
+
+```text
+Nginx
+upstream backend {
+    # Least connections algorithm
+    least_conn;
+
+    server 10.0.1.10:8080 weight=3;   # stronger machine
+    server 10.0.1.11:8080 weight=2;
+    server 10.0.1.12:8080 weight=2;
+    server 10.0.1.13:8080 backup;     # only used if others are down
+}
+
+server {
+    listen 443 ssl;
+    server_name api.example.com;
+
+    location / {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+### Health checks
+
+Load balancers periodically send health check probes (HTTP requests to a `/health` endpoint) to each backend. If a server fails to respond, the load balancer stops routing traffic to it. When the server recovers, traffic resumes. This is the mechanism that provides the redundancy benefit of horizontal scaling.
+
+#### Simple health endpoint in Go
+
+```go
+Go
+http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+    // Check database connectivity
+    if err := db.PingContext(r.Context()); err != nil {
+        w.WriteHeader(http.StatusServiceUnavailable)
+        json.NewEncoder(w).Encode(map[string]string{
+            "status": "unhealthy",
+            "reason": "database unreachable",
+        })
+        return
+    }
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]string{
+        "status": "healthy",
+    })
+})
+```
+
+## Summary & Key Principles
+
+Performance engineering is not about memorizing a checklist of techniques. It's about building mental models for how systems behave under load and applying the right tool at the right time. Here are the core principles:
+
+**1. Measure, don't guess.** Never assume where the bottleneck is. Use timing middleware, distributed tracing, profilers, and `EXPLAIN ANALYZE` to identify the actual problem before investing in a solution.
+
+**2. Think in percentiles, not averages.** P50 tells you the typical experience. P99 tells you the worst experience, and it often represents your most valuable users doing your most complex operations.
+
+**3. Respect the utilization curve.** Latency grows exponentially as utilization approaches 100%. Keep headroom for traffic bursts. Target 60-80% utilization in production.
+
+**4. Fix the database first.** Eliminate N+1 queries, add appropriate indexes (but not too many), and use connection pooling. These low-hanging optimizations often provide the biggest gains.
+
+**5. Cache strategically.** Understand your access patterns. Choose the right caching pattern (cache-aside, write-through, write-behind). Monitor your cache hit rate. Remember that cache invalidation is genuinely hard, respect it.
+
+**6. Scale appropriately.** Start with vertical scaling, it's simpler and cheaper. Move to horizontal scaling when you hit hardware limits, need redundancy, or need geographic distribution. Understand that horizontal scaling transforms your problems rather than eliminating them.
+
+<Callout type="info">
+**Further reading:** [MDN Web Performance](https://developer.mozilla.org/en-US/docs/Web/Performance) / [Postgres Performance Tips](https://www.postgresql.org/docs/current/performance-tips.html) / [OpenTelemetry Docs](https://opentelemetry.io/docs/) / [Redis Documentation](https://redis.io/docs/latest/)
+</Callout>
+
+[^ Back to top](#top)
+
+Backend from First Principles / Chapter 18 / Scaling. Code targets Go 1.22+ and Python 3.11+.

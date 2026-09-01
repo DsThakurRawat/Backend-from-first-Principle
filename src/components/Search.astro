@@ -1,0 +1,109 @@
+---
+// Search is Pagefind: the index is generated from the built pages at the end
+// of `npm run build`, so it always matches what shipped. It replaces the
+// hand-maintained CHAPTERS keyword array the old site carried in
+// enhancements.js, which had to be edited by hand for every chapter.
+---
+<dialog class="search" aria-label="Search the series">
+  <div class="search-panel">
+    <div id="pagefind" data-pagefind-ui></div>
+  </div>
+</dialog>
+
+<style is:global>
+  .search {
+    width: min(42rem, calc(100vw - 2rem));
+    max-height: min(34rem, calc(100vh - 6rem));
+    /* A dialog centres itself via auto margins; setting only margin-top
+       replaces that shorthand and pins it to the corner. */
+    margin: 10vh auto auto;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--bg);
+    color: var(--ink);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+  .search::backdrop { background: color-mix(in oklab, var(--bg) 55%, #000); backdrop-filter: blur(3px); }
+  .search-panel {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-4);
+    max-height: min(34rem, calc(100vh - 6rem));
+    overflow: hidden;
+  }
+  /* The query stays put; only the results scroll. */
+  #pagefind .pagefind-ui__form { flex: none; }
+  #pagefind .pagefind-ui__drawer { overflow-y: auto; }
+  #pagefind { display: flex; flex-direction: column; min-height: 0; }
+
+  /* Pagefind ships its own markup; map it onto the design tokens. */
+  #pagefind {
+    --pagefind-ui-scale: 0.86;
+    --pagefind-ui-primary: var(--ink);
+    --pagefind-ui-text: var(--ink);
+    --pagefind-ui-background: var(--bg);
+    --pagefind-ui-border: var(--line);
+    --pagefind-ui-tag: var(--surface);
+    --pagefind-ui-border-width: 1px;
+    --pagefind-ui-border-radius: var(--radius);
+    --pagefind-ui-font: var(--font-ui);
+  }
+  #pagefind .pagefind-ui__result-title a { color: var(--ink); }
+  #pagefind .pagefind-ui__result-excerpt { color: var(--ink-2); font-family: var(--font-prose); }
+  #pagefind mark { background: var(--accent-bg); color: var(--accent); padding: 0 2px; border-radius: 3px; }
+</style>
+
+<script>
+  const dialog = document.querySelector<HTMLDialogElement>('.search');
+  if (dialog) {
+    let loaded = false;
+
+    function loadOnce(): Promise<void> {
+      if (loaded) return Promise.resolve();
+      loaded = true;
+      // A plain <script>/<link> pair rather than a dynamic import: Pagefind's
+      // bundle is produced after the Astro build, and routing it through
+      // Vite's import machinery makes the bundler emit a preload helper it
+      // then fails to define at runtime.
+      return new Promise((resolve) => {
+        const css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = '/pagefind/pagefind-ui.css';
+        document.head.appendChild(css);
+
+        const js = document.createElement('script');
+        js.src = '/pagefind/pagefind-ui.js';
+        js.onload = () => resolve();
+        js.onerror = () => resolve();
+        document.head.appendChild(js);
+      });
+    }
+
+    async function open() {
+      await loadOnce();
+      const UI = (window as any).PagefindUI;
+      if (UI && !dialog!.dataset.ready) {
+        dialog!.dataset.ready = '1';
+        new UI({ element: '#pagefind', showImages: false, pageSize: 6 });
+      }
+      dialog!.showModal();
+      dialog!.querySelector<HTMLInputElement>('input')?.focus();
+    }
+
+    document.querySelectorAll('[data-search-open]').forEach((b) => b.addEventListener('click', open));
+
+    addEventListener('keydown', (e) => {
+      const t = e.target as HTMLElement;
+      const typing = t.matches('input, textarea, select, [contenteditable]');
+      if (e.key === '/' && !typing && !dialog.open) { e.preventDefault(); open(); }
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); open(); }
+    });
+
+    // Click outside the panel closes it.
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+  }
+</script>

@@ -1,0 +1,319 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+
+const chapters = (await getCollection('chapters'))
+  .filter((c) => !c.data.draft)
+  .sort((a, b) => a.data.order - b.data.order);
+
+// Parts are derived, not typed: a chapter's part is a function of its order,
+// so inserting a chapter never means re-labelling the ones after it.
+const PARTS = [
+  { from: 1,  to: 7,  label: 'The Request Path',  blurb: 'How bytes on a socket become a handled request.' },
+  { from: 8,  to: 14, label: 'State & Machinery',  blurb: 'Where data lives, and the moving parts around it.' },
+  { from: 15, to: 20, label: 'Running in Production', blurb: 'Keeping it observable, secure and fast under load.' },
+  { from: 21, to: 24, label: 'Distribution & Scale', blurb: 'Shipping it, testing it, and connecting services.' },
+];
+const grouped = PARTS.map((p) => ({
+  ...p,
+  chapters: chapters.filter((c) => c.data.order >= p.from && c.data.order <= p.to),
+})).filter((p) => p.chapters.length > 0);
+---
+<Base
+  title="Backend from First Principles — a 24-chapter engineering reference"
+  description="A 24-chapter reference on backend engineering, from HTTP and routing through databases, caching and Kafka to production deployment. Notes, diagrams and runnable Go and Python examples."
+  path="/"
+>
+  <SiteHeader />
+
+  <main class="home" id="main">
+    <section class="hero">
+      <p class="eyebrow">A 24-chapter engineering reference</p>
+      <h1 class="hero-title">Backend, from <em>first principles</em>.</h1>
+      <p class="hero-lede">
+        Most backend material teaches a framework. This teaches the machinery underneath it —
+        what an HTTP request actually is, why a connection pool has the size it has, what a
+        broker guarantees and what it does not. Every chapter is a self-contained field manual
+        with diagrams and runnable Go and Python.
+      </p>
+      <div class="hero-actions">
+        <a class="btn-primary" href={chapters.length ? `/${chapters[0].id}/` : '#chapters'}>
+          Start with Chapter 01
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2.5" y1="8" x2="12.5" y2="8" /><polyline points="8.5,4 12.5,8 8.5,12" /></svg>
+        </a>
+        <button class="btn-ghost" type="button" data-search-open>Search the series</button>
+      </div>
+
+      <dl class="facts">
+        <div class="fact"><dt>Chapters</dt><dd>{chapters.length}</dd></div>
+        <div class="fact"><dt>Languages</dt><dd>Go · Python</dd></div>
+        <div class="fact"><dt>Format</dt><dd>Theory + code</dd></div>
+      </dl>
+    </section>
+
+    <section class="parts" id="chapters" aria-label="All chapters">
+      {grouped.map((part) => (
+        <section class="part">
+          <header class="part-head">
+            <h2 class="part-title">{part.label}</h2>
+            <p class="part-blurb">{part.blurb}</p>
+            <p class="part-range">
+              {String(part.from).padStart(2, '0')}–{String(part.to).padStart(2, '0')}
+            </p>
+          </header>
+
+          <ul class="grid">
+            {part.chapters.map((c) => (
+              <li>
+                <a class="card" href={`/${c.id}/`}>
+                  <span class="card-num">{String(c.data.order).padStart(2, '0')}</span>
+                  <span class="card-body">
+                    <span class="card-title">{c.data.navTitle ?? c.data.title}</span>
+                    <span class="card-summary">{c.data.summary}</span>
+                  </span>
+                  <span class="card-time">{c.data.readingTime}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </section>
+
+    <section class="contribute">
+      <div class="contribute-inner">
+        <p class="eyebrow">Open source</p>
+        <h2 class="contribute-title">These notes get better when people argue with them.</h2>
+        <p class="contribute-body">
+          Found an explanation that hand-waves, an edge case that is missing, or a diagram
+          that is wrong? Chapters are plain Markdown now — a correction is a pull request,
+          not a wrestling match with hand-written HTML. Implementations in other languages
+          are especially welcome.
+        </p>
+        <div class="contribute-actions">
+          <a class="btn-primary" href="https://github.com/DsThakurRawat/Backend-from-first-Principle" target="_blank" rel="noopener noreferrer">Contribute on GitHub</a>
+          <a class="btn-ghost" href="https://github.com/DsThakurRawat/Backend-from-first-Principle/issues" target="_blank" rel="noopener noreferrer">Open an issue</a>
+        </div>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <p>Curated by <a href="https://github.com/DsThakurRawat" target="_blank" rel="noopener noreferrer">@DsThakurRawat</a></p>
+      <p class="quote">“Learn the fundamentals, and the frameworks become obvious.”</p>
+    </footer>
+  </main>
+</Base>
+
+<style>
+  .home {
+    max-width: 74rem;
+    margin-inline: auto;
+    padding-inline: clamp(var(--space-4), 4vw, var(--space-7));
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  /* --- hero ------------------------------------------------------------- */
+  .hero { padding-block: clamp(var(--space-8), 11vh, var(--space-10)) var(--space-9); }
+
+  .hero-title {
+    margin-top: var(--space-5);
+    font-size: var(--text-4xl);
+    font-weight: 660;
+    letter-spacing: -0.038em;
+    max-width: 16ch;
+  }
+  .hero-title em {
+    font-family: var(--font-prose);
+    font-style: italic;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    color: var(--accent);
+  }
+
+  .hero-lede {
+    margin-top: var(--space-5);
+    max-width: 60ch;
+    font-family: var(--font-prose);
+    font-size: var(--text-xl);
+    line-height: 1.6;
+    color: var(--ink-2);
+    text-wrap: pretty;
+  }
+
+  .hero-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-6); }
+
+  .btn-primary, .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 42px;
+    padding-inline: var(--space-5);
+    border-radius: var(--radius);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-primary svg { width: 15px; height: 15px; }
+  .btn-ghost { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+  .btn-ghost:hover { border-color: var(--line-2); }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-7);
+    margin-top: var(--space-8);
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--line);
+  }
+  .fact dt {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-caps);
+    color: var(--ink-3);
+  }
+  .fact dd {
+    margin: var(--space-1) 0 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-lg);
+    font-weight: 500;
+  }
+
+  /* --- parts + chapter grid --------------------------------------------- */
+  .part + .part { margin-top: var(--space-9); }
+
+  .part-head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    gap: var(--space-3) var(--space-5);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--line);
+    margin-bottom: var(--space-5);
+  }
+  .part-title { font-size: var(--text-xl); font-weight: 640; }
+  .part-range {
+    grid-row: 1;
+    grid-column: 2;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+    letter-spacing: var(--tracking-wide);
+  }
+  .part-blurb {
+    grid-column: 1 / -1;
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+    gap: var(--space-3);
+    list-style: none;
+    padding: 0;
+  }
+
+  .card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    column-gap: var(--space-4);
+    row-gap: var(--space-2);
+    height: 100%;
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    text-decoration: none;
+    transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+  }
+  .card:hover {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+    transform: translateY(-2px);
+  }
+
+  .card-num {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--accent);
+    padding-top: 0.15em;
+  }
+  .card-body { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  .card-title { font-weight: 620; font-size: var(--text-base); line-height: 1.3; text-wrap: balance; }
+  .card-summary {
+    font-family: var(--font-prose);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    color: var(--ink-2);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card-time {
+    grid-column: 2;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* --- contribute ------------------------------------------------------- */
+  .contribute { margin-top: var(--space-10); }
+  .contribute-inner {
+    padding: clamp(var(--space-6), 5vw, var(--space-8));
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+  }
+  .contribute-title {
+    margin-top: var(--space-4);
+    font-size: var(--text-2xl);
+    max-width: 22ch;
+  }
+  .contribute-body {
+    margin-top: var(--space-4);
+    max-width: 62ch;
+    font-family: var(--font-prose);
+    font-size: var(--text-lg);
+    color: var(--ink-2);
+    text-wrap: pretty;
+  }
+  .contribute-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-5); }
+
+  /* --- footer ----------------------------------------------------------- */
+  .site-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-top: var(--space-9);
+    padding-block: var(--space-6) var(--space-8);
+    border-top: 1px solid var(--line);
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+  }
+  .site-footer a { color: var(--ink-2); }
+  .quote { font-family: var(--font-prose); font-style: italic; }
+
+  @media (max-width: 560px) {
+    .part-head { grid-template-columns: 1fr; }
+    .part-range { grid-row: auto; grid-column: 1; }
+  }
+</style>

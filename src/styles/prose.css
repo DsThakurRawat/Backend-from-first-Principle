@@ -1,0 +1,286 @@
+/* ==========================================================================
+   .prose — the chapter reading surface.
+
+   This one file replaces the ~291 KB of per-chapter inline CSS that the
+   hand-written pages each carried. Markdown output is styled by element,
+   so a chapter author writes plain Markdown and gets the full design.
+   ========================================================================== */
+
+.prose {
+  font-family: var(--font-prose);
+  font-size: var(--text-lg);
+  line-height: var(--leading-body);
+  color: var(--ink);
+
+  /* The column is as wide as the widest thing it may hold; text is pulled
+     back to the reading measure per element below. Doing it this way -- and
+     not with negative margins on the wide items -- means wide content can
+     never escape the main column and collide with the sidebar. */
+  max-width: var(--measure-wide);
+  min-width: 0;
+}
+
+/* Text keeps the reading measure. Everything not listed here (diagrams,
+   code, tables) is free to use the full column. */
+.prose > :is(p, ul, ol, h2, h3, h4, blockquote, dl) { max-width: var(--measure); }
+
+/* --- vertical rhythm ---------------------------------------------------
+   Flow spacing rather than per-element margins: every child gets top
+   space from its predecessor, so no margin ever collapses unpredictably
+   and the first child never pushes the container down. */
+.prose > * + * { margin-top: var(--space-5); }
+
+.prose > h2 { margin-top: var(--space-9); }
+.prose > h3 { margin-top: var(--space-7); }
+.prose > h2 + *, .prose > h3 + * { margin-top: var(--space-4); }
+.prose > .full-bleed + *, .prose > figure + * { margin-top: var(--space-6); }
+
+/* --- headings ----------------------------------------------------------
+   Sections are numbered from the document outline, not typed by hand, so
+   inserting a section never means renumbering the ones after it. */
+.prose h2, .prose h3, .prose h4 { font-family: var(--font-ui); }
+
+.prose h2 {
+  font-size: var(--text-2xl);
+  font-weight: 640;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+  counter-increment: section;
+  position: relative;
+}
+.prose h2::before {
+  content: counter(section, decimal-leading-zero);
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-caps);
+  color: var(--accent);
+  margin-bottom: var(--space-3);
+}
+
+.prose h3 { font-size: var(--text-xl); font-weight: 600; }
+.prose h4 {
+  font-size: var(--text-sm);
+  font-weight: 660;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--ink-2);
+}
+
+/* Anchor affordance — the link appears in the gutter on hover, so it never
+   shifts the heading or clutters the reading state. */
+.prose :is(h2, h3) > .anchor {
+  position: absolute;
+  left: -1.4em;
+  color: var(--ink-3);
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+.prose :is(h2, h3):hover > .anchor,
+.prose .anchor:focus-visible { opacity: 1; }
+@media (max-width: 900px) { .prose :is(h2, h3) > .anchor { display: none; } }
+
+/* --- body --------------------------------------------------------------- */
+.prose p { text-wrap: pretty; }
+
+.prose > p:first-of-type {
+  font-size: var(--text-xl);
+  line-height: var(--leading-snug);
+  color: var(--ink-2);
+}
+
+.prose a:not(.anchor) {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: color-mix(in oklab, var(--accent) 35%, transparent);
+  transition: text-decoration-color 120ms ease;
+}
+.prose a:not(.anchor):hover { text-decoration-color: var(--accent); }
+
+.prose strong { font-weight: 640; color: var(--ink); }
+.prose em { font-style: italic; }
+
+/* --- lists -------------------------------------------------------------- */
+.prose :is(ul, ol) { padding-left: var(--space-5); }
+.prose li + li { margin-top: var(--space-2); }
+.prose li::marker { color: var(--ink-3); }
+.prose ol { list-style: decimal; }
+.prose ol li::marker { font-family: var(--font-mono); font-size: 0.85em; }
+.prose ul { list-style: none; }
+.prose ul > li { position: relative; }
+.prose ul > li::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--space-4));
+  top: 0.62em;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.65;
+}
+.prose li > :is(ul, ol) { margin-top: var(--space-2); }
+
+/* --- inline code -------------------------------------------------------
+   One treatment everywhere. Inline code sits in serif prose, so it is
+   size-corrected down to match the surrounding x-height. */
+.prose :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  font-weight: 500;
+  padding: 0.12em 0.36em;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  word-break: break-word;
+}
+
+/* --- blockquote --------------------------------------------------------- */
+.prose blockquote {
+  border-left: 2px solid var(--accent);
+  padding-left: var(--space-5);
+  color: var(--ink-2);
+  font-style: italic;
+}
+
+/* --- rules -------------------------------------------------------------- */
+.prose hr {
+  border: none;
+  height: 1px;
+  background: var(--line);
+  margin-block: var(--space-7);
+}
+
+/* --- tables ------------------------------------------------------------
+   Tables and code may break the measure; they scroll inside their own
+   container so the page body never scrolls sideways. */
+.prose .table-wrap {
+  /* The wrapper must be allowed to be narrower than its table, or the table's
+     intrinsic width pushes the whole page sideways instead of scrolling here. */
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+.prose :is(th, td) {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+.prose th {
+  font-weight: 620;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-2);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.prose tbody tr:last-child :is(th, td) { border-bottom: none; }
+.prose td code { font-size: 0.82em; }
+
+/* --- wide content ------------------------------------------------------
+   Diagrams, code and tables already fill the column, which is the wide
+   measure. This class only marks them for the layout's benefit. */
+.prose .full-bleed { width: 100%; }
+
+/* --- figures ------------------------------------------------------------ */
+.prose figure { margin: 0; }
+.prose figcaption {
+  margin-top: var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* --- code blocks --------------------------------------------------------
+   Shiki emits the highlighted markup at build time; everything below is
+   the chrome around it. Code keeps a dark ground in both themes (see the
+   note in tokens.css), so these values do not vary by theme. */
+.prose pre.astro-code {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: var(--space-5);
+  border-radius: var(--radius);
+  background: var(--code-bg) !important;
+  border: 1px solid var(--code-line);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+/* Filename bar, from ```lang title="..." */
+.prose pre.astro-code[data-title] {
+  padding-top: calc(var(--space-5) + 2.35rem);
+}
+.prose pre.astro-code[data-title]::before {
+  content: attr(data-title);
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2.35rem;
+  display: flex;
+  align-items: center;
+  padding-inline: var(--space-5);
+  background: var(--code-surface);
+  border-bottom: 1px solid var(--code-line);
+  border-radius: var(--radius) var(--radius) 0 0;
+  color: var(--code-ink-2);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* Language tag, right-aligned in the bar. */
+.prose pre.astro-code[data-lang]:not([data-lang=''])::after {
+  content: attr(data-lang);
+  position: absolute;
+  top: 0;
+  right: var(--space-5);
+  height: 2.35rem;
+  display: flex;
+  align-items: center;
+  color: var(--code-ink-3);
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+.prose pre.astro-code:not([data-title])::after { display: none; }
+
+.prose pre.astro-code code {
+  font-family: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Code scrollbars: visible enough to signal overflow, quiet enough to ignore. */
+.prose pre.astro-code::-webkit-scrollbar { height: 9px; }
+.prose pre.astro-code::-webkit-scrollbar-track { background: transparent; }
+.prose pre.astro-code::-webkit-scrollbar-thumb {
+  background: var(--code-line);
+  border-radius: 99px;
+}
+.prose pre.astro-code::-webkit-scrollbar-thumb:hover { background: var(--code-scroll); }

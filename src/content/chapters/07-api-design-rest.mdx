@@ -1,0 +1,1325 @@
+---
+order: 7
+title: "API Design (REST)"
+navTitle: "API Design (REST)"
+summary: "REST isn't a technology you install, it's a set of agreements that let millions of clients and servers talk without coordinating. This chapter takes the standard apart, rebuilds it from the scalability crisis that created it, and turns every fuzzy question (plural or singular? PUT or PATCH? which status code?) into a rule you never have to guess about again."
+readingTime: "3-4 hours"
+keywords:
+  - "api"
+  - "rest"
+  - "restful"
+  - "design"
+  - "versioning"
+  - "pagination"
+  - "hateoas"
+  - "idempotency"
+---
+## What REST Actually Is
+
+In 1990 **Tim Berners-Lee** started a project to share knowledge across the world, the World Wide Web. Within about a year he invented essentially everything we still use: the **URI** (uniform resource identifier), the **HTTP** protocol, **HTML**, the first web server, the first browser, and the first WYSIWYG HTML editor built into that browser. Remarkable for one person in twelve months.
+
+Then the problem arrived: **scale**. The web grew exponentially, far past anything Berners-Lee had planned for. The original design simply could not absorb the user base it was acquiring every day. Around 1993, **Roy Fielding**: co-founder of the Apache HTTP server project, got concerned about exactly this. To make the web scalable he proposed a set of architectural _constraints_. He and Berners-Lee then co-wrote the specification for **HTTP/1.1**, the first standardized version of the protocol. Finally, in **2000**, Fielding named and described the whole architectural style in his PhD dissertation: **REST, REpresentational State Transfer**.
+
+<Callout type="info" title="Worth reading">
+Fielding's dissertation is the original source document for REST. Search "Roy Fielding REST dissertation", it's a genuinely worthwhile read for any backend engineer, because it explains _why_ these patterns exist, not just what they are.
+</Callout>
+
+The name decomposes into three ideas, and each one is a real concept you use every day:
+
+### Representational
+
+A resource (a piece of data, a user, a book, a cart) can be _represented_ in different formats depending on who's asking. The same `user` record might be sent as **JSON** to an API client (server-to-server), or as **HTML** to a browser, or as **XML** to some legacy consumer. The underlying resource is one thing; its representations are many.
+
+<Diagram caption="One resource / many representations">
+<svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)"><rect x="290" y="92" width="140" height="46" rx="9" fill="var(--dg-accent)"></rect><text x="360" y="113" fill="var(--dg-on-accent)" font-size="13" font-weight="600" text-anchor="middle">user</text><text x="360" y="129" fill="var(--dg-on-accent)" font-size="9.5" text-anchor="middle">id / name / createdAt</text><line x1="290" y1="108" x2="180" y2="55" stroke="var(--dg-line-2)" stroke-width="1.5"></line><line x1="290" y1="115" x2="170" y2="115" stroke="var(--dg-line-2)" stroke-width="1.5"></line><line x1="290" y1="122" x2="180" y2="180" stroke="var(--dg-line-2)" stroke-width="1.5"></line><rect x="20" y="34" width="150" height="42" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="95" y="52" fill="var(--dg-ok)" font-size="11" font-weight="600" text-anchor="middle">JSON</text><text x="95" y="67" fill="var(--dg-ink-2)" font-size="9" text-anchor="middle">API client / server&#x3C;->server</text><rect x="20" y="94" width="150" height="42" rx="8" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="95" y="112" fill="var(--dg-info)" font-size="11" font-weight="600" text-anchor="middle">HTML</text><text x="95" y="127" fill="var(--dg-ink-2)" font-size="9" text-anchor="middle">browser / human</text><rect x="20" y="158" width="150" height="42" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="95" y="176" fill="var(--dg-warn)" font-size="11" font-weight="600" text-anchor="middle">XML</text><text x="95" y="191" fill="var(--dg-ink-2)" font-size="9" text-anchor="middle">legacy consumer</text><text x="510" y="118" fill="var(--dg-ink-3)" font-size="11" text-anchor="start">same data,</text><text x="510" y="134" fill="var(--dg-ink-3)" font-size="11" text-anchor="start">different clothes</text></svg>
+</Diagram>
+
+### State
+
+State is the _current condition_ of a resource, its present attributes. Think of an Amazon shopping cart: its state is the set of items in it, their quantities, and the total price _right now_. That state lives on the server and is what gets moved around.
+
+<Diagram caption="State / the resource right now">
+<svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)"><rect x="50" y="67" width="140" height="46" rx="9" fill="var(--dg-accent)"></rect><text x="120" y="88" fill="var(--dg-on-accent)" font-size="13" font-weight="600" text-anchor="middle">cart</text><text x="120" y="104" fill="var(--dg-on-accent)" font-size="9.5" text-anchor="middle">id / userId / status</text><path d="M 190 83 Q 230 53 270 53" fill="none" stroke="var(--dg-line-2)" stroke-width="1.2" stroke-dasharray="3 3"></path><path d="M 190 97 Q 245 99 305 99" fill="none" stroke="var(--dg-line-2)" stroke-width="1.5"></path><rect x="270" y="26" width="230" height="54" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)" stroke-dasharray="3 3"></rect><text x="385" y="47" fill="var(--dg-ink-3)" font-size="10" font-weight="600" text-anchor="middle">earlier snapshot</text><text x="385" y="63" fill="var(--dg-ink-3)" font-size="8.5" text-anchor="middle">items: 1 / qty: 1 / total: $18.00</text><rect x="305" y="67" width="245" height="64" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="428" y="88" fill="var(--dg-ok)" font-size="11" font-weight="600" text-anchor="middle">current state (now)</text><text x="428" y="105" fill="var(--dg-ink-2)" font-size="9" text-anchor="middle">items: 2 / qty: 3 / total: $47.00</text><text x="428" y="119" fill="var(--dg-ink-3)" font-size="8.5" text-anchor="middle">updatedAt: just now</text><text x="580" y="88" fill="var(--dg-ink-3)" font-size="11" text-anchor="start">a snapshot in time,</text><text x="580" y="104" fill="var(--dg-ink-3)" font-size="11" text-anchor="start">not a history</text></svg>
+</Diagram>
+
+### Transfer
+
+Because we have a client and a server, the whole point is moving these representations between them. The _transfer_ happens over the common standard, HTTP, using its methods (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, ...). When your browser asks for a page with `GET`, it's transferring a representation from server to client.
+
+<Diagram caption="Transfer / representations on the wire">
+<svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)"><rect x="40" y="62" width="140" height="56" rx="8" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="110" y="84" fill="var(--dg-info)" font-size="11" font-weight="600" text-anchor="middle">CLIENT</text><text x="110" y="101" fill="var(--dg-ink-2)" font-size="9" text-anchor="middle">browser / human</text><rect x="410" y="62" width="140" height="56" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="480" y="84" fill="var(--dg-warn)" font-size="11" font-weight="600" text-anchor="middle">SERVER</text><text x="480" y="101" fill="var(--dg-ink-2)" font-size="9" text-anchor="middle">where state lives</text><path d="M 180 72 Q 295 64 410 72" fill="none" stroke="var(--dg-line-2)" stroke-width="1.5"></path><polyline points="404,68 410,72 404,76" fill="none" stroke="var(--dg-line-2)" stroke-width="1.5"></polyline><text x="295" y="55" fill="var(--dg-ink-3)" font-size="10" font-weight="600" text-anchor="middle">GET /cart</text><line x1="410" y1="108" x2="350" y2="108" stroke="var(--dg-line-2)" stroke-width="1.5"></line><line x1="240" y1="108" x2="180" y2="108" stroke="var(--dg-line-2)" stroke-width="1.5"></line><polyline points="186,104 180,108 186,112" fill="none" stroke="var(--dg-line-2)" stroke-width="1.5"></polyline><rect x="240" y="88" width="110" height="40" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="295" y="105" fill="var(--dg-ok)" font-size="10.5" font-weight="600" text-anchor="middle">JSON</text><text x="295" y="119" fill="var(--dg-ink-2)" font-size="9" text-anchor="middle">&#123; cart: ... &#125;</text><text x="295" y="145" fill="var(--dg-ink-3)" font-size="10" font-weight="600" text-anchor="middle">200 / current cart state</text><text x="580" y="88" fill="var(--dg-ink-3)" font-size="11" text-anchor="start">state stays put</text><text x="580" y="104" fill="var(--dg-ink-3)" font-size="11" text-anchor="start">only copies travel</text></svg>
+</Diagram>
+
+<Callout type="info" title="Mental model">
+REST = resources that have multiple **representations**, whose **state** can be **transferred** between client and server over HTTP, all within a set of constraints that keep the system scalable. You don't need to memorize the theory, but knowing the three words tells you what every API call is really doing: moving a representation of some resource's current state.
+</Callout>
+
+## The Six Constraints
+
+To be truly "RESTful", and to get the scalability Fielding was after, a system follows six constraints. Five are required; the sixth is optional. These aren't bureaucracy; each one buys a concrete scaling property.
+
+The six constraints & what each one buys
+
+| Constraint                        | What it says                                                                         | What it buys                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| **1 / Client-Server**             | Strict separation of concerns: client owns UI/UX, server owns data & business logic. | Each side evolves independently.                              |
+| **2 / Uniform Interface**         | One standardized way for all components to talk. (Four sub-constraints below.)       | Consistency across every service.                             |
+| **3 / Layered System**            | Hierarchical layers; a layer only sees the one immediately below it.                 | Drop in load balancers / proxies without touching core logic. |
+| **4 / Cache**                     | Responses must label themselves cacheable or not.                                    | Less server load, faster responses.                           |
+| **5 / Stateless**                 | Server keeps no memory of past requests; each request carries everything it needs.   | Any server can handle any request -> horizontal scaling.      |
+| **6 / Code on Demand** (optional) | Server may ship executable code (e.g. JavaScript) to extend the client.              | Flexible client behavior when needed.                         |
+
+### The two that matter most in practice
+
+**Stateless** is the heavy hitter. The server does not remember your previous request, every request must contain all the information needed to understand and process it. This is what makes scaling possible: put a load balancer in front of three identical servers, and because no server holds your session in memory, _any_ of them can handle _any_ request via round-robin. Statelessness is the reason you can add servers and they "just work."
+
+**Layered System** is what statelessness enables. Because the client only ever talks to the layer immediately in front of it, you can slip in CDNs, reverse proxies, load balancers, and API gateways between client and origin, and the client never knows or cares. This is the entire foundation of how a small app grows into one serving millions.
+
+<Diagram caption="Statelessness -&gt; any server can answer">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="11"><rect x="18" y="100" width="104" height="44" rx="9" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="70" y="120" fill="var(--dg-info)" text-anchor="middle" font-weight="600">client</text><text x="70" y="135" fill="var(--dg-ink-2)" text-anchor="middle" font-size="9">full request</text><line x1="122" y1="122" x2="210" y2="122" stroke="var(--dg-line-2)" stroke-width="1.5"></line><rect x="210" y="98" width="120" height="48" rx="9" fill="var(--dg-accent)"></rect><text x="270" y="118" fill="var(--dg-on-accent)" text-anchor="middle" font-weight="600">load balancer</text><text x="270" y="133" fill="var(--dg-on-accent)" text-anchor="middle" font-size="9">round-robin</text><line x1="330" y1="118" x2="430" y2="50" stroke="var(--dg-line-2)" stroke-width="1.5"></line><line x1="330" y1="122" x2="430" y2="122" stroke="var(--dg-line-2)" stroke-width="1.5"></line><line x1="330" y1="126" x2="430" y2="194" stroke="var(--dg-line-2)" stroke-width="1.5"></line><rect x="430" y="30" width="120" height="42" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="490" y="56" fill="var(--dg-ok)" text-anchor="middle" font-weight="600">server 1</text><rect x="430" y="101" width="120" height="42" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="490" y="127" fill="var(--dg-ok)" text-anchor="middle" font-weight="600">server 2</text><rect x="430" y="172" width="120" height="42" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="490" y="198" fill="var(--dg-ok)" text-anchor="middle" font-weight="600">server 3</text><line x1="550" y1="51" x2="640" y2="118" stroke="var(--dg-line)" stroke-width="1.2" stroke-dasharray="3 3"></line><line x1="550" y1="122" x2="640" y2="122" stroke="var(--dg-line)" stroke-width="1.2" stroke-dasharray="3 3"></line><line x1="550" y1="193" x2="640" y2="126" stroke="var(--dg-line)" stroke-width="1.2" stroke-dasharray="3 3"></line><rect x="640" y="100" width="62" height="44" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="671" y="126" fill="var(--dg-warn)" text-anchor="middle" font-weight="600" font-size="10">DB</text></svg>
+</Diagram>
+
+#### The four sub-constraints of Uniform Interface
+
+- **Resource identification**: every resource is addressable by a URI.
+- **Manipulation through representations**: you act on a resource by sending/receiving its representation (the JSON you PUT _is_ how you change it).
+- **Self-descriptive messages**: each message carries enough metadata (headers, content-type, method) to be understood on its own.
+- **HATEOAS**: _Hypermedia As The Engine of Application State_: responses can include links telling the client what it can do next. (The most aspirational sub-constraint; few APIs implement it fully.)
+
+## Why REST Confuses Us Now
+
+Here's the honest backstory the transcript leans on: people still get tripped up by REST, _plural or singular path? PUT or PATCH? which status code for a custom action?_, and the reason is historical. When these standards were forming, the web ran on **MPAs (multi-page applications)**: every interaction was a full-page request to the server, which rendered HTML and sent it back.
+
+Today we mostly build **SPAs (single-page applications)**: the first request downloads a big bundle of JavaScript, and from then on the browser does its own routing on the client side, fetching _data_ (JSON) from APIs rather than whole pages. The client got heavy; the server became a pure data API. The old standards never anticipated this shift, which is why some of their rules feel ambiguous against modern usage.
+
+<Callout type="info" title="The goal of this chapter">
+Not to invent new rules, the standards already exist, but to _extract_ clear, practical guidelines from them and commit to one consistent style. Once you've internalized the conventions, you stop re-litigating "is this RESTful?" on every endpoint and get to spend your energy on business logic instead.
+</Callout>
+
+## Anatomy of a Route
+
+Start with a normal website URL and its parts:
+
+A typical URL, decomposed
+
+https\://api.example.com/v1/books/harry-potter?sort=name#reviews
+
+**Scheme**: `https`, the encrypted transport.
+
+**Authority**: domain + optional `api.` subdomain.
+
+**Version**: `v1`, API versioning via path.
+
+**Path / resource**: the thing you're accessing; `/` means hierarchy.
+
+**Query params**: key/value pairs for filters & options.
+
+**Fragment**: scrolls the browser to a section.
+
+The **industry-standard** shape of an API route (a convention, not a hard rule) layers these together: `https://` + an `api.` subdomain + a version like `/v1` + the resource path.
+
+### Rule 1: always plural nouns
+
+The resource in the path is **always plural**, even when fetching a single item. List all books -> `/books`. Fetch one book -> `/books/123`, _not_ `/book/123`. The resource _type_ ("books") is a collection; the ID just narrows into it. This is the single most common beginner mistake.
+
+### Rule 2: no spaces or underscores; use slugs
+
+URLs travel across many server/client/OS environments, so keep them clean. Never put spaces or underscores in a path. To put a human-readable name in a URL, build a **slug**:
+
+1
+
+Take the name: `Harry Potter`
+
+2
+
+Lowercase everything (avoid case-mismatch bugs across environments): `harry potter`
+
+3
+
+Replace spaces with hyphens: `harry-potter` -> `/books/harry-potter`
+
+### Rule 3: the slash means hierarchy
+
+A forward slash expresses a **hierarchical relationship** between resources. `/organizations/123/projects` reads as "the projects that belong specifically to organization 123." First level: the collection. Next level: a specific member. Next: that member's sub-collection. Design your paths so the nesting tells the story.
+
+## Methods & Idempotency
+
+**Idempotency** is the concept that unlocks "which method should I use?" An operation is idempotent if performing it many times has the _same effect on the server_ as performing it once. The key subtlety: idempotency is about the **side effect you cause on the server**, not about whether the response bytes are identical.
+
+The five methods at a glance
+
+| Method   | Purpose                           | Idempotent? | Has body?     |
+| -------- | --------------------------------- | ----------- | ------------- |
+| `GET`    | Read / fetch a representation     | yes + safe  | No            |
+| `POST`   | Create a resource / custom action | no          | Yes           |
+| `PUT`    | Replace a resource entirely       | yes         | Yes (full)    |
+| `PATCH`  | Update part of a resource         | usually     | Yes (partial) |
+| `DELETE` | Remove a resource                 | yes         | No            |
+
+`HEAD` (fetch only headers) and `OPTIONS` (used in the CORS pre-flight to ask "is this origin allowed?") exist too, but these five carry the real data work.
+
+### GET: idempotent & safe
+
+Fetches data; changes nothing on the server. Call it once or a thousand times, the server state is identical. "But what if someone else creates a book between my calls and the response changes?" That doesn't break idempotency: idempotency asks what side effect _your_ call causes, and a `GET` causes none. Because it's safe, it's freely retryable and cacheable.
+
+On the wire, a GET is just a request line, headers, and a blank line, **no body**. All input rides in the URL (path + query string), which is why you never put secrets in a GET: the whole URL lands in browser history, server logs, and CDN logs.
+
+GET /v1/books/123 HTTP/1.1 Host: api.example.com Authorization: Bearer eyJhbGci... Accept: application/json &lt;- blank line = "headers done, no body" HTTP/1.1 200 OK Content-Type: application/json Cache-Control: max-age=300 ETag: "9a3f-1f" \{ "id": 123, "title": "The Hobbit" \}
+
+| Code                    | On a GET, this means                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| `200 OK`                | Found it; the body is the representation.                                                        |
+| `304 Not Modified`      | Your cached copy is still fresh (you sent `If-None-Match`); no body returned, saves the payload. |
+| `301` / `302`           | Moved; follow the `Location` header.                                                             |
+| `400 Bad Request`       | Your query string is malformed.                                                                  |
+| `401` / `403`           | Not authenticated / authenticated but not allowed.                                               |
+| `404 Not Found`         | No such single resource.                                                                         |
+| `429 Too Many Requests` | Rate-limited; check `Retry-After`.                                                               |
+
+### PUT & PATCH: idempotent updates
+
+Both update. The difference is scope:
+
+- **PATCH**: partial update. Send only the fields you want to change (e.g. just `status`). Best fit for SPA-era JSON apps, where you almost always update a few fields, not the whole record.
+- **PUT**: full replacement. You must send the _entire_ representation; the server replaces what it has with your payload. Omit a field and you've wiped it.
+
+Why idempotent? Say a user's name is `A` and you PATCH it to `B`. First call: `A -> B`. Second identical call: `B -> B`. Thousandth call: still `B`. The end state never changes after the first call, so repeating the same update payload is idempotent.
+
+<Callout type="info" title="PUT vs PATCH in the real world">
+Developers often use them interchangeably, and internally that's mostly fine. But for a **public API**, stick to the semantics: PATCH for partial, PUT for full replacement. Consumers assume you follow the standard, if you use PUT where you mean PATCH, you hand them a confusing, wrong assumption. In practice most modern (SPA-driven) APIs lean on PATCH, because you rarely want to replace an entire entity.
+</Callout>
+
+#### On the wire: the body is the whole difference
+
+\# PATCH, send ONLY what changes PATCH /v1/users/divyansh HTTP/1.1 Content-Type: application/json \{ "city": "Bangalore" \} &lt;- name & email untouched # PUT, send the ENTIRE representation PUT /v1/users/divyansh HTTP/1.1 Content-Type: application/json \{ "name": "Divyansh", "email": "d\@x.com", "city": "Bangalore" \}
+
+<Callout type="info" title="The PUT trap / silent field wipe">
+PUT _replaces_. If the stored user has `name`, `email`, and `city`, but you PUT only `{"city":"Bangalore"}`, you've just blanked the name and email. Fields you forget to send are gone. If you only have _some_ of the record in hand, use PATCH, never PUT. This is the #1 way people accidentally destroy data through an API.
+</Callout>
+
+#### Concurrent edits: the lost-update problem
+
+Two clients GET the same record. A changes the email and saves. B (who never saw A's change) saves the city using B's stale copy, and B's write silently overwrites A's email. The fix is **optimistic concurrency** with `ETag` + `If-Match`: the server hands out a version fingerprint, and only applies your write if that version is still current.
+
+\# GET first, server returns a version tag ETag: "v7" # later, when writing back, echo the version you saw PATCH /v1/users/divyansh HTTP/1.1 If-Match: "v7" # if someone else already bumped it to "v8": HTTP/1.1 412 Precondition Failed &lt;- re-fetch, re-merge, retry
+
+______
+
+GoPython
+
+PATCH with optimistic-concurrency guard
+
+```go
+func UpdateOrganization(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	org := store.Get(id)
+	if org == nil {
+		writeJSON(w, 404, errBody("organization not found"))
+		return
+	}
+	// optimistic concurrency: reject stale writes
+	if m := r.Header.Get("If-Match"); m != "" && m != org.ETag {
+		writeJSON(w, 412, errBody("resource changed; re-fetch and retry"))
+		return
+	}
+	var patch map[string]any
+	json.NewDecoder(r.Body).Decode(&patch) // only the fields to change
+	updated := store.Patch(id, patch)        // merge, don't replace
+	w.Header().Set("ETag", updated.ETag)
+	writeJSON(w, 200, updated)               // 200 + updated entity
+}
+```
+
+```python
+@app.patch("/v1/organizations/{id}")
+def update_organization(id: str, body: dict, if_match: str | None = Header(None)):
+    org = store.get(id)
+    if org is None:
+        raise HTTPException(404, "organization not found")
+    # optimistic concurrency: reject stale writes
+    if if_match is not None and if_match != org.etag:
+        raise HTTPException(412, "resource changed; re-fetch and retry")
+    updated = store.patch(id, body)   # merge only the given fields, don't replace
+    return Response(
+        content=json.dumps(updated),
+        media_type="application/json",
+        headers={"ETag": updated["etag"]},
+    )                                  # 200 + updated entity
+```
+
+| Code                         | On a PUT / PATCH, this means                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------------ |
+| `200 OK`                     | Updated; body holds the new state.                                                   |
+| `201 Created`                | PUT only, created the resource at a client-chosen URL (upsert). PATCH never creates. |
+| `204 No Content`             | Updated; nothing to return.                                                          |
+| `400 Bad Request`            | Body malformed.                                                                      |
+| `404 Not Found`              | Resource doesn't exist (PATCH); PUT without upsert.                                  |
+| `409 Conflict`               | Change collides with current state (e.g. unique-field clash).                        |
+| `412 Precondition Failed`    | Stale `If-Match`, somebody edited it first.                                          |
+| `415 Unsupported Media Type` | Wrong `Content-Type` (esp. PATCH's merge-patch vs json-patch).                       |
+| `422 Unprocessable Entity`   | Well-formed JSON, but fails a business rule (e.g. `age: -5`).                        |
+
+### DELETE: idempotent
+
+Delete user `1`. First call: the user is removed (a real side effect). Second call: the server checks, finds no such user, and returns `404`, but _nothing changed on the server_. No new side effect occurred. You only changed state on the first call; every call after that is a no-op that simply reports "not found." Hence DELETE is idempotent.
+
+### POST: the only non-idempotent one
+
+POST creates. Send a "create book" payload once -> one book with ID `1`. Send the exact same payload again -> a _second_ book with ID `2` (IDs are generated server/DB-side, and names usually needn't be unique). Ten identical POSTs -> ten distinct books. The side effect changes every time, so POST is non-idempotent.
+
+On the wire, POST carries a **body** (declared by `Content-Type`), and a successful create returns `201` with a `Location` header pointing at the new resource:
+
+POST /v1/orders HTTP/1.1 Authorization: Bearer eyJhbGci... Content-Type: application/json \{ "productId": "sku\_42", "quantity": 2 \} HTTP/1.1 201 Created Location: /v1/orders/ord\_9f2a &lt;- where the new resource lives \{ "id": "ord\_9f2a", "status": "pending" \}
+
+<Callout type="info" title="The non-idempotency danger / and the fix">
+Say you `POST /payments {amount: 5000}` and the network drops _after_ the server charged the card but _before_ the response reached you. You don't know if it worked, so you retry, and now you've charged INR 10,000. The standard fix is an **idempotency key**: the client sends a unique ID, the server records it with the result, and any retry carrying the same key returns the _original_ result instead of charging again. This is how Stripe and every serious payment API make POST safe to retry.
+</Callout>
+
+______
+
+GoPython
+
+making POST retry-safe with an idempotency key
+
+```go
+func CreatePayment(w http.ResponseWriter, r *http.Request) {
+	key := r.Header.Get("Idempotency-Key") // client-generated UUID
+
+	// already processed this exact request? return the SAME result, don't re-charge
+	if prior, ok := idemStore.Get(key); ok {
+		writeJSON(w, prior.Status, prior.Body)
+		return
+	}
+
+	var in struct{ Amount int `json:"amount"` }
+	json.NewDecoder(r.Body).Decode(&in)
+
+	payment := charge(in.Amount)          // the real, non-idempotent side effect
+	idemStore.Save(key, 201, payment)     // remember it, keyed by the idempotency key
+	writeJSON(w, 201, payment)
+}
+```
+
+```python
+@app.post("/v1/payments", status_code=201)
+def create_payment(body: dict, idempotency_key: str = Header(...)):
+    # already processed this exact request? return the SAME result, don't re-charge
+    prior = idem_store.get(idempotency_key)
+    if prior is not None:
+        return JSONResponse(status_code=prior["status"], content=prior["body"])
+
+    payment = charge(body["amount"])               # the real, non-idempotent side effect
+    idem_store.save(idempotency_key, 201, payment) # remember it, keyed by the idempotency key
+    return payment
+```
+
+| Code                         | On a POST, this means                                                    |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| `200 OK`                     | Action ran; no new resource created (e.g. "send email", custom actions). |
+| `201 Created`                | A new resource was created; `Location` points to it.                     |
+| `202 Accepted`               | Queued for async processing, "I'll do it later" (reports, heavy jobs).   |
+| `400 Bad Request`            | Body malformed or missing required fields.                               |
+| `409 Conflict`               | Collides with existing state (e.g. "username already taken").            |
+| `413 Payload Too Large`      | Body exceeds the server's size limit.                                    |
+| `415 Unsupported Media Type` | Server doesn't accept the `Content-Type` you sent.                       |
+| `422 Unprocessable Entity`   | Valid JSON, but fails validation at the business-rule level.             |
+| `429 Too Many Requests`      | Rate-limited.                                                            |
+
+<Diagram caption="Same call, twice / what changes on the server">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="11"><text x="14" y="40" fill="var(--dg-ok)" font-weight="600" font-size="12">PATCH name=B</text><rect x="150" y="22" width="120" height="34" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="210" y="43" fill="var(--dg-ink)" text-anchor="middle">A -> B</text><text x="290" y="43" fill="var(--dg-ink-3)" text-anchor="middle">then</text><rect x="340" y="22" width="120" height="34" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="400" y="43" fill="var(--dg-ink)" text-anchor="middle">B -> B</text><rect x="510" y="22" width="190" height="34" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="605" y="43" fill="var(--dg-ok)" text-anchor="middle" font-weight="600">state stable / idempotent</text><text x="14" y="115" fill="var(--dg-ok)" font-weight="600" font-size="12">DELETE /users/1</text><rect x="150" y="97" width="120" height="34" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="210" y="118" fill="var(--dg-ink)" text-anchor="middle">deleted</text><text x="290" y="118" fill="var(--dg-ink-3)" text-anchor="middle">then</text><rect x="340" y="97" width="120" height="34" rx="7" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="400" y="118" fill="var(--dg-accent)" text-anchor="middle">404</text><rect x="510" y="97" width="190" height="34" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="605" y="118" fill="var(--dg-ok)" text-anchor="middle" font-weight="600">no new effect / idempotent</text><text x="14" y="190" fill="var(--dg-accent)" font-weight="600" font-size="12">POST /books</text><rect x="150" y="172" width="120" height="34" rx="7" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="210" y="193" fill="var(--dg-ink)" text-anchor="middle">book id=1</text><text x="290" y="193" fill="var(--dg-ink-3)" text-anchor="middle">then</text><rect x="340" y="172" width="120" height="34" rx="7" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="400" y="193" fill="var(--dg-ink)" text-anchor="middle">book id=2</text><rect x="510" y="172" width="190" height="34" rx="7" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="605" y="193" fill="var(--dg-accent)" text-anchor="middle" font-weight="600">new each time / NOT idempotent</text></svg>
+</Diagram>
+
+## Custom Actions: beyond CRUD
+
+Sometimes an action doesn't fit Create/Read/Update/Delete. "Clone a project," "archive an organization," "send an email", these trigger a web of background work beyond a simple database write. The REST spec makes `POST` the **open-ended method** for exactly these cases.
+
+### The rule & the route shape
+
+When an action doesn't map to a standard method, make it a `POST` and append the action as a **verb at the end** of a specific resource path:
+
+POST /organizations/5/archive POST /projects/123/clone
+
+This keeps the hierarchy honest: all organizations -> one specific organization -> the action to run on it.
+
+<Callout type="info" title="Why archive isn't just a PATCH">
+On the surface, archiving looks like setting `status = "archived"`, so why not PATCH? Because archiving an organization may trigger far more than a field write: deleting all its projects and their tasks, emailing the owner, revoking access, queuing cleanup jobs. The status flip is a _side effect_ of the action, not the action itself. When the real operation is bigger than the data change, it's a custom action -> POST.
+</Callout>
+
+### The "send email" example
+
+Consider `POST /emails` with body `{"target": "someone@example.com"}`. Is sending an email a fetch? No. A create? Not really. An update or delete? No. It's a custom action, so it lives under POST. And note: a custom action POST often returns `200 OK` (the action ran), not `201 Created`, because nothing new was necessarily created. Never assume "POST => 201."
+
+## List APIs: Page / Sort / Filter
+
+A list endpoint can't just dump every row. Three features make it robust, and all three ride on query parameters.
+
+### Pagination: why & how
+
+Returning a thousand records at once is expensive on both ends: JSON serialization/deserialization is heavy work, the network bottlenecks, and the user perceives a multi-second delay, even though on screen they only see the first 10-20 items before scrolling. So the server returns the data in **chunks (pages)**.
+
+<Diagram caption="limit = 2, five organizations -&gt; three pages">
+<svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="11"><text x="14" y="30" fill="var(--dg-ink-3)" font-size="10">sorted newest -> oldest</text><g><rect x="14" y="42" width="100" height="34" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="64" y="63" text-anchor="middle" fill="var(--dg-ink)">org 5</text><rect x="120" y="42" width="100" height="34" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="170" y="63" text-anchor="middle" fill="var(--dg-ink)">org 4</text><rect x="240" y="42" width="100" height="34" rx="7" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="290" y="63" text-anchor="middle" fill="var(--dg-ink)">org 3</text><rect x="346" y="42" width="100" height="34" rx="7" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="396" y="63" text-anchor="middle" fill="var(--dg-ink)">org 2</text><rect x="466" y="42" width="100" height="34" rx="7" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="516" y="63" text-anchor="middle" fill="var(--dg-ink)">org 1</text></g><text x="64" y="100" text-anchor="middle" fill="var(--dg-ok)" font-weight="600" font-size="10">page 1</text><line x1="14" y1="84" x2="220" y2="84" stroke="var(--dg-ok-border)" stroke-width="2"></line><text x="290" y="100" text-anchor="middle" fill="var(--dg-info)" font-weight="600" font-size="10">page 2</text><line x1="240" y1="84" x2="446" y2="84" stroke="var(--dg-info-soft)" stroke-width="2"></line><text x="516" y="100" text-anchor="middle" fill="var(--dg-warn)" font-weight="600" font-size="10">page 3</text><line x1="466" y1="84" x2="566" y2="84" stroke="var(--dg-warn-border)" stroke-width="2"></line><text x="14" y="135" fill="var(--dg-ink-2)" font-size="10.5">?limit=2&#x26;page=2  ->  returns org 3, org 2  /  total=5, page=2, totalPages=3</text></svg>
+</Diagram>
+
+A paginated response includes four fields:
+
+- `data`, the array of items for this page.
+- `total`, the absolute count of items in the DB (so the UI can say "showing 10 of 50").
+- `page`, which page this response represents.
+- `totalPages`, the maximum number of pages (the frontend uses this to know when to stop fetching on infinite scroll: when `page === totalPages`, stop).
+
+The client controls it with two params: `limit` (how many per page) and `page` (which chunk). And, a sane-defaults moment, if the client sends neither, the server should default `page` to `1` and `limit` to something like `10` or `20`, never crash.
+
+### Sorting
+
+Two params: `sortBy` (which field) and `sortOrder` (`ascending` / `descending`). Crucial default: even with no sort params, the server must sort by _something_, otherwise the DB returns rows in arbitrary order and the same call yields different orderings each time. The natural default is `sortBy=createdAt`, `sortOrder=descending` (newest first).
+
+### Filtering
+
+Pass resource fields as query params to narrow the list: `?status=active`, or combine them: `?status=archived&name=org`. The server applies each as a filter on the result set.
+
+______
+
+GoPython
+
+list endpoint / page / sort / filter / sane defaults
+
+```go
+// GET /v1/organizations?status=active&sortBy=name&sortOrder=ascending&page=1&limit=10
+func ListOrganizations(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	// --- sane defaults: never crash if the client omits params ---
+	page := atoiDefault(q.Get("page"), 1)
+	limit := atoiDefault(q.Get("limit"), 10)
+	sortBy := defaultStr(q.Get("sortBy"), "createdAt")
+	sortOrder := defaultStr(q.Get("sortOrder"), "descending")
+
+	filters := map[string]string{}
+	if s := q.Get("status"); s != "" {
+		filters["status"] = s // ?status=active
+	}
+
+	rows, total := store.Query(filters, sortBy, sortOrder, page, limit)
+	totalPages := (total + limit - 1) / limit // ceil division
+
+	writeJSON(w, 200, map[string]any{
+		"data":       rows,
+		"total":      total,
+		"page":       page,
+		"totalPages": totalPages,
+	})
+}
+```
+
+```python
+# GET /v1/organizations?status=active&sortBy=name&sortOrder=ascending&page=1&limit=10
+@app.get("/v1/organizations")
+def list_organizations(
+    status: str | None = None,
+    sortBy: str = "createdAt",        # sane default
+    sortOrder: str = "descending",    # sane default
+    page: int = 1,                    # sane default
+    limit: int = 10,                  # sane default
+):
+    filters = {}
+    if status:
+        filters["status"] = status    # ?status=active
+
+    rows, total = store.query(filters, sortBy, sortOrder, page, limit)
+    total_pages = (total + limit - 1) // limit   # ceil division
+
+    return {
+        "data": rows,
+        "total": total,
+        "page": page,
+        "totalPages": total_pages,
+    }
+```
+
+## Status Codes: done right
+
+| Code             | Meaning             | Use it when                                                                  |
+| ---------------- | ------------------- | ---------------------------------------------------------------------------- |
+| `200 OK`         | Success             | Fetch, update (PATCH/PUT), or a custom action that ran.                      |
+| `201 Created`    | Created             | A POST successfully created a new entity. Return the new entity in the body. |
+| `204 No Content` | Success, empty body | A successful DELETE, nothing to send back.                                   |
+| `404 Not Found`  | Resource missing    | Client asked for one specific ID that doesn't exist.                         |
+
+### The 404 rule: the one people get wrong
+
+Return `404` only when a client requests a **specific single resource** that doesn't exist (e.g. `GET /users/999`). If a client hits a **list API** and nothing matches (e.g. "all users named Zack," or a filter that matches nothing), do _not_ return 404. Return `200 OK` with an empty array `[]`. A list that found nothing still succeeded, it just found nothing.
+
+<Diagram caption="404 or empty array?">
+<svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="11"><rect x="250" y="14" width="220" height="40" rx="9" fill="var(--dg-inverse)"></rect><text x="360" y="39" fill="var(--dg-on-inverse)" text-anchor="middle" font-size="11">request found nothing</text><line x1="320" y1="54" x2="180" y2="92" stroke="var(--dg-line-2)" stroke-width="1.5"></line><line x1="400" y1="54" x2="540" y2="92" stroke="var(--dg-line-2)" stroke-width="1.5"></line><rect x="60" y="92" width="240" height="62" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="180" y="114" fill="var(--dg-accent)" text-anchor="middle" font-weight="600">asked for ONE id</text><text x="180" y="132" fill="var(--dg-ink-2)" text-anchor="middle" font-size="10">GET /users/999</text><text x="180" y="147" fill="var(--dg-accent)" text-anchor="middle" font-size="11">-> 404 Not Found</text><rect x="420" y="92" width="240" height="62" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="540" y="114" fill="var(--dg-ok)" text-anchor="middle" font-weight="600">asked for a LIST</text><text x="540" y="132" fill="var(--dg-ink-2)" text-anchor="middle" font-size="10">GET /users?name=Zack</text><text x="540" y="147" fill="var(--dg-ok)" text-anchor="middle" font-size="11">-> 200 OK / data: &#91;&#93;</text></svg>
+</Diagram>
+
+### The five families: read the first digit
+
+Every status code's **first digit** tells you almost everything. This is the fastest debugging instinct you can build.
+
+| Family | Class         | Whose problem                                            |
+| ------ | ------------- | -------------------------------------------------------- |
+| `1xx`  | Informational | Rare; you'll basically never handle these directly.      |
+| `2xx`  | Success       | It worked.                                               |
+| `3xx`  | Redirection   | Go look elsewhere / use your cache.                      |
+| `4xx`  | Client error  | **You** sent something wrong, fix the request.           |
+| `5xx`  | Server error  | **The server** broke, not your fault; retry / alert ops. |
+
+<Callout type="info" title="The first-digit reflex">
+When a call fails: **4xx -> fix your request** (check body, auth, URL). **5xx -> not your fault**; retry with backoff or page the server team. When it succeeds: **20x -> done**, **30x -> follow the redirect**. That single split resolves most "what do I do with this response?" questions instantly.
+</Callout>
+
+### The 4xx codes people confuse
+
+#### 401 vs 403
+
+**401 Unauthorized** means "I don't know who you are", no credentials, or they're invalid/expired. The fix is to log in or refresh the token. **403 Forbidden** means "I know exactly who you are, and you're not allowed", valid credentials, insufficient permission. Logging in again won't help. (The names are historically swapped, 401 is really about authentication, 403 about authorization.)
+
+#### 409 Conflict
+
+The request collides with the current state of the resource: creating something that already exists, a unique-field clash, or deleting something other records still depend on ("can't delete a user with active orders").
+
+#### 422 vs 400
+
+**400 Bad Request** = the request is malformed at the _syntax_ level (broken JSON, a string where a number was required). **422 Unprocessable Entity** = the syntax is perfect, but it fails a _semantic_/business rule (a negative age, an email that isn't an email, an end-date before the start-date). Use 422 when you parsed the body fine but the values don't make sense.
+
+#### 429 Too Many Requests
+
+Rate-limited. Respect the `Retry-After` header (seconds to wait) instead of hammering, or you'll just stay throttled.
+
+### The codes you'll meet 90% of the time
+
+| Code        | Plain meaning                       |
+| ----------- | ----------------------------------- |
+| `200`       | worked                              |
+| `201`       | created (POST success)              |
+| `204`       | worked, no body (DELETE success)    |
+| `301 / 302` | redirect                            |
+| `304`       | your cache is still good            |
+| `400`       | your request is broken (syntax)     |
+| `401`       | log in                              |
+| `403`       | logged in, but not allowed          |
+| `404`       | that one thing doesn't exist        |
+| `409`       | conflict with current state         |
+| `422`       | data fails validation (semantics)   |
+| `429`       | slow down                           |
+| `500`       | they crashed                        |
+| `503`       | they're overloaded / in maintenance |
+
+## Worked Example: a PM platform
+
+Following the transcript's build: a project-management product (think Jira / Linear). From the wireframes we extract the **nouns** -> resources: `organizations`, `projects`, `tasks` (also users, tags). Those become tables, then endpoints. Here's the full endpoint set for one resource, the same pattern repeats for every other resource.
+
+| Action              | Method + Route                       | Success               |
+| ------------------- | ------------------------------------ | --------------------- |
+| List organizations  | `GET /v1/organizations`              | 200 / paginated       |
+| Create organization | `POST /v1/organizations`             | 201 / new entity      |
+| Get one             | `GET /v1/organizations/:id`          | 200 / 404             |
+| Update (partial)    | `PATCH /v1/organizations/:id`        | 200 / updated entity  |
+| Delete              | `DELETE /v1/organizations/:id`       | 204 / empty           |
+| Archive (custom)    | `POST /v1/organizations/:id/archive` | 200 / archived entity |
+
+Notice the symmetry: **list** and **create** share the collection URL (`/organizations`) and differ only by method, the server routes `GET` to the list handler and `POST` to the create handler. Likewise **get-one / update / delete** share `/organizations/:id` and differ only by method. The custom action appends a verb. `projects` would mirror this exactly, with `clone` as its custom action.
+
+______
+
+GoPython
+
+wiring the full resource / CRUD + custom action
+
+```go
+func RegisterOrgRoutes(mux *http.ServeMux) {
+	// list + create share the collection URL, split by method
+	mux.HandleFunc("GET /v1/organizations", ListOrganizations)
+	mux.HandleFunc("POST /v1/organizations", CreateOrganization)
+
+	// get-one / update / delete share /:id, split by method
+	mux.HandleFunc("GET /v1/organizations/{id}", GetOrganization)
+	mux.HandleFunc("PATCH /v1/organizations/{id}", UpdateOrganization)
+	mux.HandleFunc("DELETE /v1/organizations/{id}", DeleteOrganization)
+
+	// custom action: verb at the end of a specific resource
+	mux.HandleFunc("POST /v1/organizations/{id}/archive", ArchiveOrganization)
+}
+
+func CreateOrganization(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name        string `json:"name"`
+		Status      string `json:"status"`
+		Description string `json:"description"`
+	}
+	json.NewDecoder(r.Body).Decode(&in)
+
+	if in.Status == "" {
+		in.Status = "active" // sane default, don't force the client to send the obvious
+	}
+	org := store.Insert(in.Name, in.Status, in.Description) // id, createdAt set server-side
+	writeJSON(w, 201, org) // 201 Created + the new entity
+}
+
+func DeleteOrganization(w http.ResponseWriter, r *http.Request) {
+	store.Delete(r.PathValue("id"))
+	w.WriteHeader(204) // No Content
+}
+
+func ArchiveOrganization(w http.ResponseWriter, r *http.Request) {
+	org := store.Archive(r.PathValue("id")) // flips status + cascades: projects, tasks, emails...
+	writeJSON(w, 200, org) // custom action -> 200, NOT 201
+}
+```
+
+```python
+from fastapi import FastAPI, Response
+app = FastAPI()
+
+# list + create share the collection URL, split by method
+@app.get("/v1/organizations")
+def list_organizations(): ...      # (see section 07)
+
+@app.post("/v1/organizations", status_code=201)   # 201 Created
+def create_organization(body: dict):
+    status = body.get("status") or "active"        # sane default
+    return store.insert(                            # id, createdAt set server-side
+        name=body["name"], status=status, description=body.get("description"),
+    )
+
+# get-one / update / delete share /{id}, split by method
+@app.get("/v1/organizations/{id}")
+def get_organization(id: str):
+    org = store.get(id)
+    if org is None:
+        raise HTTPException(404, "organization not found")  # single id -> 404
+    return org
+
+@app.patch("/v1/organizations/{id}")                # partial update -> 200
+def update_organization(id: str, body: dict):
+    return store.update(id, body)
+
+@app.delete("/v1/organizations/{id}", status_code=204)  # No Content
+def delete_organization(id: str):
+    store.delete(id)
+    return Response(status_code=204)
+
+# custom action: verb at the end -> POST, returns 200 (created nothing)
+@app.post("/v1/organizations/{id}/archive")
+def archive_organization(id: str):
+    return store.archive(id)   # flips status + cascades: projects, tasks, emails...
+```
+
+## Golden Rules
+
+### Extract nouns from the UI first
+
+Before writing a line of business logic, look at the wireframes (Figma) or talk to the product people. The **nouns** users interact with, projects, users, tasks, tags, are your resources. Looking at how the end-user touches data tells you how the lowest layer (the DB) relates to the top layer (the screen), and that's the right place to start designing the interface.
+
+### Design the interface before coding
+
+A REST API is _designed_, not programmed-first. Lay out routes, payloads, and responses in a tool like **Insomnia** or **Postman** before touching Go, Python, or any framework. The whole point is a delightful, intuitive, unambiguous interface, so the consumer never has to read your source code or guess your behavior by trial and error.
+
+### Provide sane defaults
+
+Never crash because the client omitted something obvious. No `page` -> default `1`. No `limit` -> default `10`. No `sortBy` -> `createdAt` descending. No `status` on create -> `active`. Require only the information you genuinely cannot infer.
+
+### Be ruthlessly consistent
+
+- **JSON in `camelCase`, always**: both payloads and responses.
+- **No abbreviations**: if a field is `description`, never call it `desc` in another endpoint. You have context the consumer doesn't; an abbreviation they can't decode costs them a failed call and a docs hunt.
+- **Same shapes across resources**: if `organizations` are plural and paginated with `{data,total,page,totalPages}`, then `projects` and `tasks` are too. Consumers integrate one endpoint, then _assume_ the rest follow the same style. Reward that assumption.
+
+<Callout type="info" title="Why consistency is the whole game">
+Following a shared standard removes guesswork, assumptions, and human error from integration. If a consumer can assume your API is \~80% standard-compliant, their integration time drops sharply, fewer bugs, fewer "how does this endpoint behave?" calls. Consistency of style is one of the clearest marks of a good backend engineer.
+</Callout>
+
+### Ship interactive docs
+
+Generate an interactive playground with **Swagger / OpenAPI** from the start. It doubles as documentation for frontend engineers integrating you, and as a testing ground for you. How consistently you maintain your OpenAPI spec genuinely sets you apart.
+
+<Callout type="info" title="The chapter in one breath">
+Pull resources (plural nouns) from your UI, give each the CRUD set on a clean hierarchical URL, pick the method by intent (GET read / POST create/action / PUT replace / PATCH partial / DELETE remove), let idempotency decide retryability, return the honest status code (201 created / 204 deleted / 404 only for a missing single resource), make lists page/sort/filter with sane defaults, and stay ruthlessly consistent, so you can stop arguing about REST and get back to your business logic.
+</Callout>
+
+## Versioning: not breaking your consumers
+
+The moment another team or another company integrates your API, you can no longer change it freely, a field you rename or a response you reshape breaks _their_ code in production. Versioning is how you evolve without breaking what's already deployed. Three common strategies:
+
+| Strategy                   | Looks like                                | Trade-off                                                                                                                                         |
+| -------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **URL path** (most common) | `/v1/books` -> `/v2/books`                | Dead obvious, trivial to debug, easy to route. Slightly "impure" REST (the version isn't part of the resource's identity). The pragmatic default. |
+| **Header**                 | `Accept: application/vnd.example.v2+json` | Keeps URLs clean and "pure," but invisible in a browser and harder to test/debug. Used by GitHub for years.                                       |
+| **Query param**            | `/books?version=2`                        | Simple but clutters every URL and muddies caching. Least recommended.                                                                             |
+
+### When to bump the version
+
+Only on a **breaking change**: something that would break an existing consumer:
+
+- Removing or renaming a field; changing its type or meaning.
+- Removing an endpoint, or changing its method/route.
+- Making a previously-optional field required, or changing default behavior.
+
+**Additive changes are NOT breaking**: and don't need a new version. Adding a new optional field, a new endpoint, or a new optional query param leaves old clients working untouched (they just ignore what they don't know about). Bumping the version for additive changes is needless churn.
+
+<Callout type="info" title="Deprecation, done kindly">
+When you must retire a version, don't yank it. Announce a timeline, run `v1` and `v2` in parallel during a migration window, and send a `Deprecation` / `Sunset` response header on the old version so integrators get a programmatic heads-up. Breaking people silently is how you lose their trust.
+</Callout>
+
+## Error Responses: the other half of the contract
+
+People design the happy path carefully and then return raw stack traces or bare strings on failure. But the error shape is part of your API contract too, the consumer's error-handling code depends on it being **consistent and machine-readable**. A status code alone isn't enough; the body should explain what went wrong in a predictable structure.
+
+### A consistent error envelope
+
+Pick one error shape and use it on _every_ error, across every endpoint. A solid, minimal envelope:
+
+HTTP/1.1 422 Unprocessable Entity Content-Type: application/json \{ "error": \{ "code": "validation\_failed", &lt;- stable, machine-readable "message": "Some fields are invalid.", &lt;- human-readable "details": \[ &lt;- per-field, for forms \{ "field": "email", "issue": "must be a valid email" \}, \{ "field": "age", "issue": "must be >= 0" \} ], "requestId": "req\_9f2a3c" &lt;- trace it in your logs \} \}
+
+Why each piece earns its place:
+
+- **`code`**: a stable string the client can `switch` on. Never make them parse the human message; messages get reworded, codes don't.
+- **`message`**: for humans/logs. Safe to show or surface.
+- **`details`**: per-field errors so a form can highlight exactly which inputs failed (pairs naturally with `422`).
+- **`requestId`**: the single most useful field in production: the consumer quotes it in a bug report and you find the exact request in your logs in seconds.
+
+<Callout type="info" title="Never leak internals">
+Don't return stack traces, SQL errors, file paths, or framework exception dumps to clients, they're useless to the consumer and a gift to attackers (they reveal your stack, schema, and structure). Log the gory details server-side against the `requestId`; return the clean envelope to the client. A `500` body should say "something went wrong, here's your request id", nothing more.
+</Callout>
+
+______
+
+GoPython
+
+one error helper, used everywhere
+
+```go
+type FieldError struct {
+	Field string `json:"field"`
+	Issue string `json:"issue"`
+}
+
+func writeError(w http.ResponseWriter, status int, code, msg string, details ...FieldError) {
+	body := map[string]any{"error": map[string]any{
+		"code":      code,
+		"message":   msg,
+		"details":   details,
+		"requestId": requestIDFromCtx(),
+	}}
+	writeJSON(w, status, body) // SAME shape for every error in the whole API
+}
+
+// usage
+writeError(w, 422, "validation_failed", "Some fields are invalid.",
+	FieldError{"email", "must be a valid email"},
+	FieldError{"age", "must be >= 0"},
+)
+```
+
+```python
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+def error_response(status, code, message, details=None, request_id=""):
+    return JSONResponse(status_code=status, content={"error": {
+        "code": code,
+        "message": message,
+        "details": details or [],
+        "requestId": request_id,
+    }})  # SAME shape for every error in the whole API
+
+# usage
+error_response(
+    422, "validation_failed", "Some fields are invalid.",
+    details=[
+        {"field": "email", "issue": "must be a valid email"},
+        {"field": "age",   "issue": "must be >= 0"},
+    ],
+)
+```
+
+<Callout type="info" title="There's a standard for this too">
+If you'd rather adopt a spec than invent an envelope, **RFC 9457 (Problem Details for HTTP APIs)** defines a standard `application/problem+json` body with `type`, `title`, `status`, `detail`, and `instance` fields. Either approach is fine, the only wrong move is being _inconsistent_ about error shape across your endpoints.
+</Callout>
+
+<Callout type="info" title="The whole error story in one line">
+Return the honest status code, wrap every failure in one consistent JSON envelope with a machine-readable `code` + human `message` + per-field `details` + a `requestId`, and never leak internals, so a consumer can handle your errors as reliably as your successes.
+</Callout>
+
+## Constraints vs Conventions
+
+Zoom back out. Plural-or-singular and `PUT`-or-`PATCH` aren't the only things that trip people up about REST, so does the _count_ itself. Ask one engineer for "the principles of REST" and you'll hear **six**; ask another and you'll get a checklist of **eight** or ten. Both are correct, because they answer two different questions. This closing section is a reference card for telling them apart.
+
+### Two lists, two questions
+
+The **six** are Roy Fielding's formal _architectural constraints_, they define what makes a system RESTful _at all_. That's the academic answer, and it's the whole of [sec 02](#s2). The **eight** are practical _conventions_, how you design a clean, predictable API once you've accepted those constraints. That's what most of this manual actually teaches, spread across its chapters. Constraints are the theory; conventions are the craft.
+
+#### The six constraints: the definition of REST
+
+1. **Client-Server**: split the UI from data & logic so each side evolves on its own.
+2. **Uniform Interface**: one standard way to address and manipulate every resource.
+3. **Layered System**: let proxies, caches, and gateways sit between client and origin, invisibly.
+4. **Cacheable**: every response declares whether it may be cached.
+5. **Stateless**: each request carries everything it needs; the server remembers nothing between calls.
+6. **Code on Demand** (optional), the server may ship executable code to extend the client.
+
+All six, plus the four sub-constraints of the uniform interface, HATEOAS among them, are unpacked in [sec 02](#s2).
+
+#### The eight conventions: how to build one well
+
+The eight conventions & where this manual covers them
+
+| Convention                    | In one line                                                                            | Covered in                  |
+| ----------------------------- | -------------------------------------------------------------------------------------- | --------------------------- |
+| **Resources as plural nouns** | Model _things_, not actions; the method is the verb. `/orders/123`, never `/getOrder`. | [sec 04 Routes](#s4)        |
+| **Methods by intent**         | `GET` read / `POST` create/action / `PUT` replace / `PATCH` partial / `DELETE` remove. | [sec 05 Methods](#s5)       |
+| **Honest status codes**       | Let the code carry the outcome, don't bury an error inside a `200`.                    | [sec 08 Status](#s8)        |
+| **Statelessness** \*          | Every request self-contained -> any server can answer it -> horizontal scaling.        | [sec 02 Constraints](#s2)   |
+| **Ruthless consistency**      | One casing, one date format, one pagination shape, everywhere.                         | [sec 10 Golden Rules](#s10) |
+| **Versioning**                | Bump only on breaking changes; additive changes need no new version.                   | [sec 11 Versioning](#s11)   |
+| **Page / sort / filter**      | Never dump a whole table; paginate lists and give sane defaults.                       | [sec 07 List APIs](#s7)     |
+| **Structured errors**         | One consistent, machine-readable envelope on every failure.                            | [sec 12 Errors](#s12)       |
+
+\* Statelessness is the one item that lands on _both_ lists, see below.
+
+<Callout type="info" title="Where the two lists touch">
+They aren't rivals, the conventions are _how you honor_ the constraints day to day. The clearest overlap is **statelessness**, which is both Fielding's constraint #5 and a rule you follow on every endpoint. The others echo too: **cacheability** surfaces as your `Cache-Control` / `ETag` headers, and the **uniform interface** is exactly what "plural-noun URLs + methods by intent + consistent shapes" delivers in practice. **HATEOAS**: the most aspirational sub-constraint, is the one piece of the theory most real-world APIs quietly skip.
+</Callout>
+
+<Callout type="info" title="Which list does someone want?">
+If the question is academic, an interview, "define REST," a systems exam, they want **the six constraints**. If it's "how do I design a clean API?", a code review, a new service, they want **the eight conventions**. Same standard, two altitudes: the six say what REST _is_; the eight say how to _do it well_.
+</Callout>
+
+## The Eight Principles
+
+[sec 13](#s13) lined these up against Fielding's six at a glance; this is the same eight written out in full, the plain-English checklist. Each is a working convention that turns the theory into an API other developers actually enjoy consuming, and each links back to the chapter that unpacks it in depth.
+
+### 1. Model resources as nouns, not actions
+
+URLs should represent _things_, not operations. Use `/users/123/orders` rather than `/getUserOrders?id=123`. The HTTP method supplies the verb, so the noun and the method together describe the action. Collections are plural, `/orders`, not `/order`. (Full treatment in [sec 04](#s4).)
+
+### 2. Use HTTP methods for their intended semantics
+
+`GET` reads (and never changes state), `POST` creates, `PUT` replaces a resource wholesale, `PATCH` updates part of it, and `DELETE` removes it. Respecting this lets clients, caches, and proxies reason about your API correctly, a `GET` is safe to retry, a `PUT` is idempotent (calling it twice has the same effect as once), but a `POST` generally isn't. (See [sec 05](#s5).)
+
+### 3. Return meaningful status codes
+
+Lean on the standard ones instead of always returning `200` with an error buried in the body: `200`/`201`/`204` for success, `400` for bad input, `401`/`403` for auth problems, `404` when something's missing, `409` for conflicts, `422` for validation failures, `500` for server faults. This lets clients handle outcomes programmatically. (See [sec 08](#s8).)
+
+### 4. Stay stateless
+
+Each request should carry everything the server needs to process it, auth token, parameters, with no reliance on server-side session memory from previous calls. This is what lets you scale horizontally: any server can handle any request. It's also one of Fielding's core constraints ([sec 02](#s2)).
+
+### 5. Be consistent
+
+Pick conventions and apply them everywhere: naming style (`snake_case` vs `camelCase` in JSON), date formats (ISO 8601), how errors are shaped, how pagination works. Predictability is worth more than cleverness, a developer who learns one endpoint should be able to guess the others. (See [sec 10](#s10).)
+
+### 6. Version your API
+
+Breaking changes are inevitable, so plan for them from the start, commonly via the URL path (`/v1/users`) or a header. This lets you evolve without breaking existing clients. ([sec 11](#s11) goes deeper on when to bump the version.)
+
+### 7. Handle collections gracefully
+
+Large lists need pagination (`?page=2&limit=50` or cursor-based), plus filtering (`?status=active`), sorting (`?sort=-created_at`), and often field selection. Returning ten thousand records in one response serves no one. ([sec 07](#s7) has the full pattern.)
+
+### 8. Design clear, structured errors
+
+A good error response tells the client what went wrong and ideally how to fix it, a machine-readable code, a human-readable message, and often which field failed. Consistency here matters as much as consistency in success responses. ([sec 12](#s12) shows a concrete envelope.)
+
+<Callout type="info" title="The through-line">
+An API is a contract meant to be used by other developers, so predictability, standards-compliance, and clear communication beat novelty every time. Nail these eight and a consumer can integrate one endpoint, then correctly _guess_ the rest.
+</Callout>
+
+## Worked Code: a Task API in Go
+
+Everything in this chapter, compiled into one runnable file: a complete REST API for a single resource, `tasks`, built on nothing but Go's standard library and the method-aware router introduced in **Go 1.22**. Before the source itself, here is how it actually behaves at runtime, how it boots, how a request is dispatched, and every branch a request can take.
+
+<Diagram caption="Execution flow / from &quot;go run&quot; to a listening server">
+<svg viewBox="0 0 720 128" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)"><defs><marker id="ahA" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L6,3 L0,6 Z" fill="var(--dg-line-2)"></path></marker></defs><line x1="142" y1="52" x2="168" y2="52" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahA)"></line><line x1="278" y1="52" x2="304" y2="52" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahA)"></line><line x1="414" y1="52" x2="440" y2="52" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahA)"></line><line x1="550" y1="52" x2="576" y2="52" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahA)"></line><rect x="34" y="28" width="108" height="48" rx="9" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="88" y="49" text-anchor="middle" fill="var(--dg-ink-2)" font-size="9.5" font-weight="600">go run ./RestAPI</text><text x="88" y="64" text-anchor="middle" fill="var(--dg-ink-3)" font-size="8">compile -> run</text><rect x="170" y="28" width="108" height="48" rx="9" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="224" y="49" text-anchor="middle" fill="var(--dg-ink-2)" font-size="11" font-weight="600">main()</text><text x="224" y="64" text-anchor="middle" fill="var(--dg-ink-3)" font-size="8">entry point</text><rect x="306" y="28" width="108" height="48" rx="9" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="360" y="49" text-anchor="middle" fill="var(--dg-warn)" font-size="10" font-weight="600">newStore()</text><text x="360" y="64" text-anchor="middle" fill="var(--dg-ink-3)" font-size="8">seed 12 tasks</text><rect x="442" y="28" width="108" height="48" rx="9" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="496" y="49" text-anchor="middle" fill="var(--dg-ink-2)" font-size="10" font-weight="600">http.Server</text><text x="496" y="64" text-anchor="middle" fill="var(--dg-ink-3)" font-size="8">timeouts 10s</text><rect x="578" y="28" width="108" height="48" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="632" y="49" text-anchor="middle" fill="var(--dg-ok)" font-size="8.5" font-weight="600">ListenAndServe</text><text x="632" y="64" text-anchor="middle" fill="var(--dg-ok)" font-size="8">:8080 / ready</text><text x="360" y="108" text-anchor="middle" fill="var(--dg-ink-3)" font-size="9.5">now serving, every incoming request runs the flow below</text></svg>
+</Diagram>
+
+<Diagram caption="Request flow / the router dispatches on METHOD + PATH">
+<svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)"><defs><marker id="ahB" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L6,3 L0,6 Z" fill="var(--dg-line-2)"></path></marker></defs><rect x="14" y="124" width="118" height="54" rx="9" fill="var(--dg-accent)"></rect><text x="73" y="147" text-anchor="middle" fill="var(--dg-on-accent)" font-size="11" font-weight="600">HTTP request</text><text x="73" y="163" text-anchor="middle" fill="var(--dg-on-accent)" font-size="8.5">method + path</text><line x1="132" y1="151" x2="164" y2="151" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahB)"></line><rect x="168" y="124" width="140" height="54" rx="9" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="238" y="146" text-anchor="middle" fill="var(--dg-info)" font-size="11.5" font-weight="600">ServeMux</text><text x="238" y="162" text-anchor="middle" fill="var(--dg-ink-2)" font-size="8">method-aware / Go 1.22</text><line x1="308" y1="151" x2="340" y2="25" stroke="var(--dg-line-2)" stroke-width="1.3" marker-end="url(#ahB)"></line><line x1="308" y1="151" x2="340" y2="67" stroke="var(--dg-line-2)" stroke-width="1.3" marker-end="url(#ahB)"></line><line x1="308" y1="151" x2="340" y2="109" stroke="var(--dg-line-2)" stroke-width="1.3" marker-end="url(#ahB)"></line><line x1="308" y1="151" x2="340" y2="151" stroke="var(--dg-line-2)" stroke-width="1.3" marker-end="url(#ahB)"></line><line x1="308" y1="151" x2="340" y2="193" stroke="var(--dg-line-2)" stroke-width="1.3" marker-end="url(#ahB)"></line><line x1="308" y1="151" x2="340" y2="235" stroke="var(--dg-line-2)" stroke-width="1.3" marker-end="url(#ahB)"></line><line x1="308" y1="151" x2="340" y2="277" stroke="var(--dg-line-2)" stroke-width="1.3" stroke-dasharray="3 3" marker-end="url(#ahB)"></line><rect x="344" y="10" width="300" height="30" rx="7" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="356" y="29" fill="var(--dg-ink-2)" font-size="9.5">GET /v1/tasks -> handleList</text><rect x="590" y="15" width="48" height="20" rx="6" fill="var(--dg-ok-surface)"></rect><text x="614" y="29" text-anchor="middle" fill="var(--dg-ok)" font-size="9" font-weight="600">200</text><rect x="344" y="52" width="300" height="30" rx="7" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="356" y="71" fill="var(--dg-ink-2)" font-size="9.5">POST /v1/tasks -> handleCreate</text><rect x="590" y="57" width="48" height="20" rx="6" fill="var(--dg-ok-surface)"></rect><text x="614" y="71" text-anchor="middle" fill="var(--dg-ok)" font-size="9" font-weight="600">201</text><rect x="344" y="94" width="300" height="30" rx="7" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="356" y="113" fill="var(--dg-ink-2)" font-size="9.5">GET /v1/tasks/&#123;id&#125; -> handleGet</text><rect x="590" y="99" width="48" height="20" rx="6" fill="var(--dg-ok-surface)"></rect><text x="614" y="113" text-anchor="middle" fill="var(--dg-ok)" font-size="9" font-weight="600">200</text><rect x="344" y="136" width="300" height="30" rx="7" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="356" y="155" fill="var(--dg-ink-2)" font-size="9.5">PUT /v1/tasks/&#123;id&#125; -> handleUpdate</text><rect x="590" y="141" width="48" height="20" rx="6" fill="var(--dg-ok-surface)"></rect><text x="614" y="155" text-anchor="middle" fill="var(--dg-ok)" font-size="9" font-weight="600">200</text><rect x="344" y="178" width="300" height="30" rx="7" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="356" y="197" fill="var(--dg-ink-2)" font-size="9.5">DELETE /v1/tasks/&#123;id&#125; -> handleDelete</text><rect x="590" y="183" width="48" height="20" rx="6" fill="var(--dg-ok-surface)"></rect><text x="614" y="197" text-anchor="middle" fill="var(--dg-ok)" font-size="9" font-weight="600">204</text><rect x="344" y="220" width="300" height="30" rx="7" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="356" y="239" fill="var(--dg-ink-2)" font-size="9.5">GET /healthz -> health check</text><rect x="590" y="225" width="48" height="20" rx="6" fill="var(--dg-ok-surface)"></rect><text x="614" y="239" text-anchor="middle" fill="var(--dg-ok)" font-size="9" font-weight="600">200</text><rect x="344" y="262" width="300" height="30" rx="7" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="356" y="281" fill="var(--dg-accent)" font-size="9.5">/ unmatched route / method</text><rect x="590" y="267" width="48" height="20" rx="6" fill="var(--dg-accent)"></rect><text x="614" y="281" text-anchor="middle" fill="var(--dg-on-accent)" font-size="9" font-weight="600">404</text></svg>
+</Diagram>
+
+<Diagram caption="Deep dive / every branch inside &quot;GET /v1/tasks&quot;">
+<svg viewBox="0 0 720 540" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)"><defs><marker id="ahC" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L6,3 L0,6 Z" fill="var(--dg-line-2)"></path></marker></defs><line x1="250" y1="60" x2="250" y2="74" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahC)"></line><line x1="250" y1="116" x2="250" y2="130" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahC)"></line><line x1="250" y1="180" x2="250" y2="194" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahC)"></line><line x1="250" y1="234" x2="250" y2="248" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahC)"></line><line x1="250" y1="302" x2="250" y2="316" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahC)"></line><line x1="250" y1="356" x2="250" y2="370" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahC)"></line><line x1="250" y1="420" x2="250" y2="434" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahC)"></line><line x1="250" y1="484" x2="250" y2="498" stroke="var(--dg-line-2)" stroke-width="1.5" marker-end="url(#ahC)"></line><line x1="375" y1="156" x2="468" y2="156" stroke="var(--dg-line-2)" stroke-width="1.3" marker-end="url(#ahC)"></line><line x1="375" y1="274" x2="468" y2="274" stroke="var(--dg-line-2)" stroke-width="1.3" marker-end="url(#ahC)"></line><line x1="375" y1="394" x2="468" y2="394" stroke="var(--dg-line-2)" stroke-width="1.3" marker-end="url(#ahC)"></line><rect x="135" y="14" width="230" height="46" rx="9" fill="var(--dg-accent)"></rect><text x="250" y="36" text-anchor="middle" fill="var(--dg-on-accent)" font-size="11.5" font-weight="600">GET /v1/tasks</text><text x="250" y="51" text-anchor="middle" fill="var(--dg-on-accent)" font-size="9">handleList()</text><rect x="135" y="74" width="230" height="42" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)"></rect><text x="250" y="100" text-anchor="middle" fill="var(--dg-warn)" font-size="9.5" font-weight="600">list(), snapshot of all tasks (RLock)</text><rect x="125" y="130" width="250" height="50" rx="8" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="250" y="151" text-anchor="middle" fill="var(--dg-info)" font-size="9.5" font-weight="600">is ?done a valid bool?</text><text x="250" y="166" text-anchor="middle" fill="var(--dg-ink-2)" font-size="8">strconv.ParseBool</text><text x="415" y="150" text-anchor="middle" fill="var(--dg-ink-3)" font-size="7.5">no</text><text x="262" y="192" fill="var(--dg-ink-3)" font-size="7.5">valid v</text><rect x="468" y="132" width="234" height="46" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="585" y="153" text-anchor="middle" fill="var(--dg-accent)" font-size="9.5" font-weight="600">400 Bad Request</text><text x="585" y="168" text-anchor="middle" fill="var(--dg-accent)" font-size="7.5">done -> true or false</text><rect x="135" y="194" width="230" height="40" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="250" y="219" text-anchor="middle" fill="var(--dg-ink-2)" font-size="9.5">filter: done + title (substring)</text><rect x="125" y="248" width="250" height="54" rx="8" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="250" y="269" text-anchor="middle" fill="var(--dg-info)" font-size="9.5" font-weight="600">sortBy in allow-list?</text><text x="250" y="284" text-anchor="middle" fill="var(--dg-ink-2)" font-size="8.5">&#x26; sortOrder asc | desc?</text><text x="415" y="268" text-anchor="middle" fill="var(--dg-ink-3)" font-size="7.5">no</text><text x="118" y="268" text-anchor="end" fill="var(--dg-ink-3)" font-size="7.5">defaults:</text><text x="118" y="280" text-anchor="end" fill="var(--dg-ink-3)" font-size="7.5">createdAt / desc</text><rect x="468" y="250" width="234" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="585" y="271" text-anchor="middle" fill="var(--dg-accent)" font-size="9.5" font-weight="600">400 Bad Request</text><text x="585" y="286" text-anchor="middle" fill="var(--dg-accent)" font-size="7.5">bad sortBy / sortOrder</text><rect x="135" y="316" width="230" height="40" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="250" y="341" text-anchor="middle" fill="var(--dg-ink-2)" font-size="9.5">sort.Slice(tasks, ...)</text><rect x="125" y="370" width="250" height="50" rx="8" fill="var(--dg-info-surface)" stroke="var(--dg-info-soft)"></rect><text x="250" y="391" text-anchor="middle" fill="var(--dg-info)" font-size="9.5" font-weight="600">page >= 1 and limit >= 1?</text><text x="250" y="406" text-anchor="middle" fill="var(--dg-ink-2)" font-size="8">parsePositiveInt</text><text x="415" y="390" text-anchor="middle" fill="var(--dg-ink-3)" font-size="7.5">no</text><text x="118" y="386" text-anchor="end" fill="var(--dg-ink-3)" font-size="7.5">defaults:</text><text x="118" y="398" text-anchor="end" fill="var(--dg-ink-3)" font-size="7.5">page 1 / limit 10</text><text x="118" y="410" text-anchor="end" fill="var(--dg-ink-3)" font-size="7.5">cap 100</text><rect x="468" y="372" width="234" height="46" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)"></rect><text x="585" y="393" text-anchor="middle" fill="var(--dg-accent)" font-size="9.5" font-weight="600">400 Bad Request</text><text x="585" y="408" text-anchor="middle" fill="var(--dg-accent)" font-size="7.5">page / limit must be >= 1</text><rect x="120" y="434" width="260" height="50" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="250" y="455" text-anchor="middle" fill="var(--dg-ink-2)" font-size="9.5" font-weight="600">slice out the page / cap 100</text><text x="250" y="470" text-anchor="middle" fill="var(--dg-ink-3)" font-size="8">past the end -> &#91;&#93; (still 200)</text><rect x="135" y="498" width="230" height="40" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)"></rect><text x="250" y="516" text-anchor="middle" fill="var(--dg-ok)" font-size="11" font-weight="600">200 OK</text><text x="250" y="530" text-anchor="middle" fill="var(--dg-ok)" font-size="8">&#123; data, pagination &#125;</text></svg>
+</Diagram>
+
+### Every response the API can return
+
+Reading the three diagrams together, here is the complete set of outcomes, every status code this server can produce, and the condition that triggers each.
+
+| Request                 | When                                                       | Response                                                |
+| ----------------------- | ---------------------------------------------------------- | ------------------------------------------------------- |
+| `GET /v1/tasks`         | Valid query, or a page past the end                        | **200**: `{data, pagination}`; empty page -> `data: []` |
+| `GET /v1/tasks`         | `done`, `sortBy`, `sortOrder`, `page` or `limit` malformed | **400**: message naming the bad param                   |
+| `GET /v1/tasks/{id}`    | Numeric id that exists                                     | **200**: the task                                       |
+| `GET /v1/tasks/{id}`    | id is not a number                                         | **400**: `invalid id`                                   |
+| `GET /v1/tasks/{id}`    | Numeric id that does not exist                             | **404**: `task not found`                               |
+| `POST /v1/tasks`        | Valid JSON with a non-empty `title`                        | **201**: the created task                               |
+| `POST /v1/tasks`        | Body is not valid JSON                                     | **400**: `invalid JSON body`                            |
+| `POST /v1/tasks`        | `title` missing or empty                                   | **400**: `title is required`                            |
+| `PUT /v1/tasks/{id}`    | Valid id + valid body                                      | **200**: the updated task                               |
+| `PUT /v1/tasks/{id}`    | Bad id, bad JSON, or empty title                           | **400**: the matching message                           |
+| `PUT /v1/tasks/{id}`    | id does not exist                                          | **404**: `task not found`                               |
+| `DELETE /v1/tasks/{id}` | Numeric id that exists                                     | **204**: no body                                        |
+| `DELETE /v1/tasks/{id}` | Bad id                                                     | **400**: `invalid id`                                   |
+| `DELETE /v1/tasks/{id}` | id does not exist                                          | **404**: `task not found`                               |
+| `GET /healthz`          | Always                                                     | **200**: `{status: "ok"}`                               |
+| _anything else_         | No route matches the method + path                         | **404**: default mux                                    |
+
+### The complete program
+
+______
+
+Go
+
+task API / net/http / Go 1.22+
+
+```go
+// A REST API in Go (standard library) for managing "tasks".
+//
+// This version applies three REST-design rules from the course notes:
+//
+//	sec 3  URL versioning         -> every route lives under /v1
+//	sec 6  List query parameters  -> pagination + sorting + filtering
+//	sec 8  Consistent naming      -> JSON fields use camelCase, with sane defaults
+//
+// Requires Go 1.22+ for the method-aware router.
+//
+//	Run:   go run ./RestAPI       (from the module root, where go.mod is)
+//	Then:  curl "http://localhost:8080/v1/tasks?limit=5&sortBy=title&sortOrder=asc&done=false"
+
+///- stateless HTTP server that exposes one resource (tasks) as a REST API:
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"math"
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+// ---------- Model ----------
+
+// Task is a single to-do item.
+//
+// sec 8 (consistent naming): every JSON field is camelCase, note `createdAt`,
+// NOT `created_at`. The Go field names stay idiomatic PascalCase; only the
+// json struct tags define the wire format the client sees.
+type Task struct {
+	ID        int       `json:"id"`
+	Title     string    `json:"title"`
+	Done      bool      `json:"done"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// ---------- Store (unchanged: thread-safe in-memory map) ----------
+
+var errNotFound = errors.New("task not found")
+
+type store struct {
+	mu     sync.RWMutex
+	tasks  map[int]Task
+	nextID int
+}
+
+func newStore() *store { return &store{tasks: make(map[int]Task), nextID: 1} }
+
+func (s *store) list() []Task {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Task, 0, len(s.tasks)) // non-nil so an empty result encodes as [] not null
+	for _, t := range s.tasks {
+		out = append(out, t)
+	}
+	return out
+}
+
+func (s *store) get(id int) (Task, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return Task{}, errNotFound
+	}
+	return t, nil
+}
+
+func (s *store) create(title string, done bool) Task {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t := Task{ID: s.nextID, Title: title, Done: done, CreatedAt: time.Now()}
+	s.tasks[t.ID] = t
+	s.nextID++
+	return t
+}
+
+func (s *store) update(id int, title string, done bool) (Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return Task{}, errNotFound
+	}
+	t.Title, t.Done = title, done
+	s.tasks[id] = t
+	return t, nil
+}
+
+func (s *store) delete(id int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tasks[id]; !ok {
+		return errNotFound
+	}
+	delete(s.tasks, id)
+	return nil
+}
+
+// ---------- HTTP helpers ----------
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if v != nil {
+		_ = json.NewEncoder(w).Encode(v)
+	}
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func idFromPath(r *http.Request) (int, error) { return strconv.Atoi(r.PathValue("id")) }
+
+// ---------- List endpoint: pagination, sorting, filtering (sec 6) ----------
+
+// listResponse is the envelope returned by GET /v1/tasks. Wrapping the array
+// in an object gives us a place to attach pagination metadata beside the data.
+// sec 8: these fields are camelCase too.
+type listResponse struct {
+	Data       []Task     `json:"data"`
+	Pagination pagination `json:"pagination"`
+}
+
+type pagination struct {
+	Page       int `json:"page"`
+	Limit      int `json:"limit"`
+	TotalItems int `json:"totalItems"`
+	TotalPages int `json:"totalPages"`
+}
+
+// sortableFields is an allowlist, clients may only sort by these, never by an
+// arbitrary field name they invent.
+var sortableFields = map[string]bool{"id": true, "title": true, "createdAt": true}
+
+func (s *server) handleList(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	tasks := s.store.list()
+
+	// --- Filtering (sec 6): narrow the set by matching query params. ---
+	if raw := q.Get("done"); raw != "" {
+		done, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "query param 'done' must be true or false")
+			return
+		}
+		filtered := make([]Task, 0)
+		for _, t := range tasks {
+			if t.Done == done {
+				filtered = append(filtered, t)
+			}
+		}
+		tasks = filtered
+	}
+	if title := strings.TrimSpace(q.Get("title")); title != "" {
+		needle := strings.ToLower(title)
+		filtered := make([]Task, 0)
+		for _, t := range tasks {
+			if strings.Contains(strings.ToLower(t.Title), needle) {
+				filtered = append(filtered, t)
+			}
+		}
+		tasks = filtered
+	}
+
+	// --- Sorting (sec 6) with sane defaults (sec 8: default = createdAt, descending). ---
+	sortBy := q.Get("sortBy")
+	if sortBy == "" {
+		sortBy = "createdAt" // sane default
+	}
+	if !sortableFields[sortBy] {
+		writeError(w, http.StatusBadRequest, "query param 'sortBy' must be one of: id, title, createdAt")
+		return
+	}
+	sortOrder := q.Get("sortOrder")
+	if sortOrder == "" {
+		sortOrder = "desc" // sane default
+	}
+	if sortOrder != "asc" && sortOrder != "desc" {
+		writeError(w, http.StatusBadRequest, "query param 'sortOrder' must be 'asc' or 'desc'")
+		return
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		var less bool
+		switch sortBy {
+		case "id":
+			less = tasks[i].ID < tasks[j].ID
+		case "title":
+			less = strings.ToLower(tasks[i].Title) < strings.ToLower(tasks[j].Title)
+		case "createdAt":
+			less = tasks[i].CreatedAt.Before(tasks[j].CreatedAt)
+		}
+		if sortOrder == "desc" {
+			return !less
+		}
+		return less
+	})
+
+	// --- Pagination (sec 6) with sane defaults (sec 8: default limit = 10). ---
+	page, err := parsePositiveInt(q.Get("page"), 1)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "query param 'page' must be a positive integer")
+		return
+	}
+	limit, err := parsePositiveInt(q.Get("limit"), 10)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "query param 'limit' must be a positive integer")
+		return
+	}
+	if limit > 100 {
+		limit = 100 // cap the page size so a client can't ask for everything at once
+	}
+
+	totalItems := len(tasks)
+	totalPages := int(math.Ceil(float64(totalItems) / float64(limit)))
+
+	// Slice out the requested page. A page past the end yields an EMPTY data
+	// array, still 200 OK, never 404 (sec 7: an empty list is not "not found").
+	start := (page - 1) * limit
+	if start > totalItems {
+		start = totalItems
+	}
+	end := start + limit
+	if end > totalItems {
+		end = totalItems
+	}
+	data := tasks[start:end]
+	if data == nil {
+		data = []Task{} // guarantee [] rather than null in the JSON
+	}
+
+	writeJSON(w, http.StatusOK, listResponse{
+		Data: data,
+		Pagination: pagination{
+			Page:       page,
+			Limit:      limit,
+			TotalItems: totalItems,
+			TotalPages: totalPages,
+		},
+	})
+}
+
+// parsePositiveInt returns def when raw is empty, otherwise the parsed value if
+// it is a positive integer. Anything else (non-numeric, zero, negative) errors.
+func parsePositiveInt(raw string, def int) (int, error) {
+	if raw == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 0, errors.New("invalid")
+	}
+	return n, nil
+}
+
+// ---------- Single-resource handlers (unchanged logic) ----------
+
+type server struct{ store *store }
+
+func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
+	id, err := idFromPath(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	t, err := s.store.get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (s *server) handleCreate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+	writeJSON(w, http.StatusCreated, s.store.create(body.Title, false))
+}
+
+func (s *server) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := idFromPath(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var body struct {
+		Title string `json:"title"`
+		Done  bool   `json:"done"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+	t, err := s.store.update(id, body.Title, body.Done)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (s *server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := idFromPath(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := s.store.delete(id); err != nil {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---------- Wiring ----------
+
+func (s *server) routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	// sec 3 (versioning): everything is namespaced under /v1, so a future breaking
+	// change can ship as /v2 without disturbing clients still using /v1.
+	mux.HandleFunc("GET /v1/tasks", s.handleList)
+	mux.HandleFunc("POST /v1/tasks", s.handleCreate)
+	mux.HandleFunc("GET /v1/tasks/{id}", s.handleGet)
+	mux.HandleFunc("PUT /v1/tasks/{id}", s.handleUpdate)
+	mux.HandleFunc("DELETE /v1/tasks/{id}", s.handleDelete)
+
+	// Health check stays unversioned, it's an infrastructure concern, not part
+	// of the versioned resource API.
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	return mux
+}
+
+func main() {
+	srv := &server{store: newStore()}
+
+	// Seed enough varied data to actually exercise pagination/sorting/filtering.
+	seed := []struct {
+		title string
+		done  bool
+	}{
+		{"Learn Go", true},
+		{"Build a REST API", true},
+		{"Add pagination", false},
+		{"Add sorting", false},
+		{"Add filtering", false},
+		{"Write unit tests", false},
+		{"Add request logging", false},
+		{"Write API docs", false},
+		{"Set up CI pipeline", false},
+		{"Dockerize the service", false},
+		{"Add authentication", false},
+		{"Deploy to staging", false},
+	}
+	for _, sd := range seed {
+		srv.store.create(sd.title, sd.done)
+	}
+
+	const addr = ":8080"
+	httpServer := &http.Server{
+		Addr:         addr,
+		Handler:      srv.routes(),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	log.Printf("listening on http://localhost%s  (try /v1/tasks)", addr)
+	log.Fatal(httpServer.ListenAndServe())
+}
+```
+
+### What the code implements
+
+One file, three clean layers, the same shape every real service grows from. Read from the bottom up, each layer only knows about the one beneath it.
+
+#### 1. The model
+
+A single struct, `Task`, with four fields. The `json` struct tags are doing quiet but important work: the Go fields stay idiomatic PascalCase (`CreatedAt`) while the wire format the client sees is camelCase (`createdAt`, never `created_at`). The tags are the one place the naming convention ([sec 10](#s10)) is enforced.
+
+#### 2. The store
+
+An in-memory `map[int]Task` guarded by a `sync.RWMutex`, the stand-in for a database. Reads (`list`, `get`) take a shared `RLock`; writes (`create`, `update`, `delete`) take an exclusive `Lock`, so concurrent requests can't corrupt the map. Two details matter for the API contract: `list()` returns a _non-nil_ slice so an empty result serialises as `[]` rather than `null`, and a missing key returns the `errNotFound` sentinel that the HTTP layer turns into a 404. Swap this layer for Postgres later and not a single handler changes.
+
+#### 3. The HTTP layer
+
+This is where REST lives. Three small helpers keep every handler honest: `writeJSON` sets the content type, writes the status, and encodes the body in one place; `writeError` wraps a message in a consistent `{"error": ...}` envelope; `idFromPath` pulls `{id}` out of the URL. The five resource handlers plus the health check each do one job, and `routes()` binds them to `"METHOD /path"` patterns on the Go 1.22 `ServeMux`, the router itself encodes which verb belongs to which URL, so the handlers never have to check the method by hand.
+
+### A request, start to finish
+
+Take the exact command from the top of the file: `curl ".../v1/tasks?limit=5&sortBy=title&sortOrder=asc&done=false"`. Following Diagram C: the router matches `GET /v1/tasks` and calls `handleList`. It snapshots all twelve seeded tasks, filters to the ten that are `done=false`, validates `sortBy=title` and `sortOrder=asc` (both pass), sorts A->Z, then takes page 1 at 5 per page, the first five rows. The reply:
+
+GET /v1/tasks?limit=5\&sortBy=title\&sortOrder=asc\&done=false 200 OK \{ "data": \[ \{ "id": 5, "title": "Add filtering", "done": false, "createdAt": "2026-07-02T..." \}, ... four more, ordered by title A->Z ... ], "pagination": \{ "page": 1, "limit": 5, "totalItems": 10, "totalPages": 2 \} \}
+
+Change one thing and the branch changes with it: `POST /v1/tasks` with a title returns **201** and the new row; `GET /v1/tasks/999` returns **404**; `DELETE /v1/tasks/3` returns **204** with no body; and `?sortBy=colour` is rejected up front with **400** because it isn't in the allow-list.
+
+### Which principles it demonstrates
+
+This one file touches nearly every rule in the chapter, repetition on purpose, so you can see the theory land in real code.
+
+| Principle                                | Where it shows up in the code                                                      |
+| ---------------------------------------- | ---------------------------------------------------------------------------------- |
+| **Resource nouns, plural** [sec 04](#s4) | `/v1/tasks` and `/v1/tasks/{id}`, a thing, never a verb like `/getTask`            |
+| **Methods by intent** [sec 05](#s5)      | `GET` reads / `POST` creates / `PUT` replaces / `DELETE` removes, one handler each |
+| **Honest status codes** [sec 08](#s8)    | `200` / `201` / `204` / `400` / `404`, see the outcomes table                      |
+| **Statelessness** [sec 02](#s2)          | No sessions; the store is shared and each request carries everything it needs      |
+| **Consistency** [sec 10](#s10)           | camelCase JSON, one `{data, pagination}` envelope, sane defaults everywhere        |
+| **Versioning** [sec 11](#s11)            | Every resource route under `/v1`; `/healthz` deliberately left unversioned         |
+| **Page / sort / filter** [sec 07](#s7)   | `?page ?limit ?sortBy ?sortOrder ?done ?title`, with `limit` capped at 100         |
+| **Structured errors** [sec 12](#s12)     | A consistent `{"error": ...}` body on every failure                                |
+
+<Callout type="info" title="Small touches worth stealing">
+The **allow-list** on `sortBy` means a client can only sort by fields you approved, never an arbitrary column name they invent. Capping `limit` at **100** stops one request from asking for the entire table. Returning `[]` instead of `null` saves every consumer a null-check. And `DELETE` replies **204** with no body, because there's nothing meaningful left to send.
+</Callout>
+
+<Callout type="info" title="What's intentionally left out">
+This is a teaching skeleton, so a few production concerns are deliberately absent: **persistence** (swap the map for a real database behind the same store interface), **authentication**, a **PATCH** route for partial updates (only `PUT`/full-replace is here), and the richer **RFC 9457** error envelope from [sec 12](#s12). Each is a natural next step, and none of them changes the shape you see here.
+</Callout>
+
+<Callout type="info" title="The file in one breath">
+One resource, three layers, a method-aware router, and an in-memory store behind a mutex, every REST rule in this chapter applied in a couple hundred lines you can actually `go run` and hit with `curl`.
+</Callout>
+
+The Backend Lens / Field Manual v2, Chapter 11.\
+Further reading: [MDN / REST](https://developer.mozilla.org/en-US/docs/Glossary/REST) / [MDN / Web APIs](https://developer.mozilla.org/en-US/docs/Web/API) / Roy Fielding's 2000 dissertation on REST.
+
+Backend from First Principles / Chapter 07 / REST. Code targets Go 1.22+ and Python 3.11+.

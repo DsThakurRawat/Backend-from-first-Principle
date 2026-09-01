@@ -1,0 +1,512 @@
+---
+order: 16
+title: "Graceful Shutdown"
+navTitle: "Graceful Shutdown"
+summary: "Teaching your backend good manners, how to finish ongoing work, clean up after itself, and close the door politely instead of slamming it shut."
+readingTime: "2-3 hours"
+keywords:
+  - "graceful"
+  - "shutdown"
+  - "signals"
+  - "sigterm"
+  - "sigint"
+  - "sigkill"
+  - "process"
+  - "lifecycle"
+---
+## The Scenario
+
+Let's picture a very realistic scenario. You're in the middle of processing a **critical payment transaction** and suddenly your server needs to restart for a deployment. Someone pushed something to the production environment and your server needs to deploy itself.
+
+### Zero-Downtime Deployment Doesn't Eliminate the Problem
+
+Of course, we have techniques like zero-downtime deployment which makes sure that our existing server does not go down before our new server (the server with our new code) comes up and is ready to receive traffic. Those mechanisms are there.
+
+But here's the catch: at some point, when our new server is ready to go online and ready to receive traffic, **our old server has to shut down**. It has to stop receiving traffic, and the transition will happen to the new server. We're talking about that critical moment, and you happen to be in the middle of a transaction.
+
+<Callout type="info" title="The E-Commerce Payment Question">
+Say you're in the middle of an e-commerce transaction, buying something from Amazon or Flipkart, and the Amazon/Flipkart server needs to restart for a deployment. The question becomes:\
+\
+**1.** What exactly happens to that payment? Does it get lost in the digital world?\
+**2.** Does the customer (you) get **charged twice** because of some kind of race condition?\
+\
+These are scenarios you have to think about as a backend engineer.
+</Callout>
+
+This is not a new problem. It has been around since the start of servers and backends. And of course we already have a solution, that solution is called graceful shutdown, and it is exactly as the name sounds: we want to stop our server _gracefully_. We don't want to stop abruptly or suddenly. That is the whole idea.
+
+<Callout type="ok" title="Why Graceful Shutdown Matters">
+Worrying about graceful shutdown gives your application a very good user experience and avoids issues like **data corruption**. If you're in the middle of a payment transaction, it lets you avoid:\
+\
+\- Double-charging the customer\
+\- The transaction getting lost\
+\- Having to process refunds for failed/duplicate charges
+</Callout>
+
+## What is Graceful Shutdown?
+
+We want to teach our backend good manners, it cannot just slam the door when it's time to leave.
+
+If we oversimplify what graceful shutdown means for our server, we can basically say we want to teach our server, teach our backend, **good manners**. It cannot stop abruptly when it is between a transition into a new deployment. It has to perform some kind of steps.
+
+### The "Good Manners" Analogy
+
+Think of it like having guests over. When it's 9:00 PM and time to go to sleep, you don't just push your guests out of the door and slam the door in their face. There are steps you have to perform. Similarly, your backend politely:
+
+- **Finishes its ongoing conversations**: completes whatever it's currently doing
+- **Says goodbye to all the guests**: closes out existing interactions properly
+- **Cleans up after itself**: tidies up the resources it was using
+- **Then finally closes the door**: only then does it actually exit
+
+This is the art and science of making your backend applications as well-mannered and efficient as possible. The rest of this chapter builds the foundations: _why_ we do this, the surrounding concepts, and how it's actually implemented.
+
+## Process Lifecycle Management
+
+The first concept to understand. Your backend is an application that runs as a process in some kind of server, in some kind of computer. This is important: **everything that runs in an operating system runs as a process**.
+
+If you're familiar with operating system concepts, this will make sense. If not, it's not a big deal, just learn the term: _process_. Whatever you run, it runs inside a process.
+
+### Every Process Has a Lifecycle
+
+Like all living things, every process has a lifecycle, when it starts, how it starts, when it ends, and how it ends. In a way:
+
+<Diagram caption="Fig 1.1: The three phases of a process lifecycle: born -&gt; living -&gt; dies">
+<svg width="100%" viewBox="0 0 720 110" role="img"><title>Process lifecycle three phases</title><defs><marker id="lc" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="40" y="35" width="180" height="50" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="130" y="56" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">Born</text><text x="130" y="73" text-anchor="middle" font-size="10" fill="var(--dg-ok)">process starts</text><line x1="222" y1="60" x2="258" y2="60" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#lc)"></line><rect x="260" y="35" width="180" height="50" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="350" y="56" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">Living</text><text x="350" y="73" text-anchor="middle" font-size="10" fill="var(--dg-warn)">process executing</text><line x1="442" y1="60" x2="478" y2="60" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#lc)"></line><rect x="480" y="35" width="180" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="570" y="56" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">Dies</text><text x="570" y="73" text-anchor="middle" font-size="10" fill="var(--dg-accent)">process terminated</text></svg>
+</Diagram>
+
+They are **born** when the process starts, they **live** while the process is executing, and they **die** when the process is terminated. This whole thing is called the lifecycle of a process. Understanding it is essential because it's very closely connected to how graceful shutdown is implemented.
+
+### The OS Doesn't Just Pull the Plug
+
+When your operating system decides it's time for your application to stop running, it does **not** just pull the plug or kill the process. It follows an **established protocol of communication**: how to communicate with the process to say "it's time for you to stop, we're going to follow these steps, and then we're going to stop it."
+
+You can imagine it like a conversation between your operating system and your application (which is running inside a process in your OS):
+
+<Callout type="info" title="The Conversation (Simplified)">
+**OS:** "Hey, it's time for you to stop."\
+**Application:** "Okay, give me a few seconds (realistically), then I'll stop myself, or you can stop me."\
+\
+Of course, this conversation does not happen through text, we're talking about programs, which don't understand text. This entire communication happens through a concept called **signals**.
+</Callout>
+
+## Signals & Inter-Process Communication
+
+Signals are an important concept in **Unix operating systems**. When we say Unix, we mean all the Linux operating systems (Arch, Ubuntu, etc.) and also Macs, Mac originated from a Unix core, a Unix kernel.
+
+<Callout type="ok" title="Why Linux Matters for Servers">
+Mostly when we talk about servers, we mean Linux only, because 99% of the time, whenever you deploy your application to a cloud provider, it selects a Linux operating system and deploys your application there. You'll never see Windows except for some specialized use cases like Windows Server. For deploying servers, we overwhelmingly use Linux-based operating systems.
+</Callout>
+
+### Signals Are Used for IPC
+
+Unix operating systems have this concept called signals, which is used for IPC (Inter-Process Communication). Simply speaking, IPC is a technique using which two processes can communicate with each other using an established protocol (which you don't have to worry about the internals of).
+
+### How Handlers Work
+
+Your application runs inside a process, and it **registers some handlers**. What do we mean by handlers?
+
+Handlers are basically code that:
+
+- Waits and runs continuously behind the scenes
+- Is waiting for some kind of communication, some kind of **signal**: from the operating system
+- Detects whenever these signals come, and then does something (cleanup, finishing requests, etc.)
+
+These handlers are essentially telling your operating system: _"When you want me to stop, send me this specific message, and I'll handle it appropriately. I'll stop myself using predefined protocols and predefined steps."_ You can't just say "stop", that's human-readable text. It has to be a specific signal.
+
+<Diagram caption="Fig 2.1: The OS sends a signal; the application's registered handler detects it and runs the shutdown steps">
+<svg width="100%" viewBox="0 0 720 160" role="img"><title>OS to application signal handler communication</title><defs><marker id="sg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="30" y="50" width="170" height="60" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="115" y="76" text-anchor="middle" font-size="13" font-weight="600" fill="var(--dg-ink)">Operating System</text><text x="115" y="93" text-anchor="middle" font-size="10" fill="var(--dg-warn)">sends signal</text><rect x="300" y="25" width="380" height="115" rx="10" fill="var(--dg-paper)" stroke="var(--dg-ink-2)" stroke-width="0.8" stroke-dasharray="5 4"></rect><text x="490" y="45" text-anchor="middle" font-size="11" fill="var(--dg-ink-2)" font-style="italic">Process</text><rect x="330" y="58" width="150" height="56" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="405" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Application</text><text x="405" y="98" text-anchor="middle" font-size="10" fill="var(--dg-ok)">your backend</text><rect x="500" y="58" width="160" height="56" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="580" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Signal Handler</text><text x="580" y="98" text-anchor="middle" font-size="10" fill="var(--dg-accent)">waits + reacts</text><line x1="200" y1="80" x2="328" y2="86" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#sg)"></line><text x="262" y="72" text-anchor="middle" font-size="9" fill="var(--dg-ink-3)">SIGTERM</text><line x1="480" y1="86" x2="498" y2="86" stroke="var(--dg-ok)" stroke-width="1.2" marker-end="url(#sg)"></line><text x="490" y="135" text-anchor="middle" font-size="10" fill="var(--dg-ink-2)" font-style="italic">handler runs cleanup &#x26; finishes work, then process exits</text></svg>
+</Diagram>
+
+### The Three Signals
+
+The prefix `SIG` in all of these simply means **signal**. The second part is the actual command. There are three signals we care about:
+
+### 4.1: SIGTERM (Terminate)
+
+`SIG` means signal, `TERM` means terminate. SIGTERM is a **polite way** for your operating system to ask your application to shut down. It is not an extreme way, it's just a nudge.
+
+<Callout type="info" title="The Shoulder-Poke Analogy">
+Imagine you're standing and someone comes from behind and gently pokes your shoulder, "hey, excuse me, could you please finish up and leave?" That's SIGTERM. It's a very gentle request, and because of that, your backend has an **opportunity to complete whatever it's already doing**. It doesn't have to leave that exact moment, it gets a window of a few seconds.
+</Callout>
+
+What might your backend be doing when it receives SIGTERM? Since we're talking about an HTTP backend, it might be **processing requests**: that's the primary thing your backend does. Your client (front end, web app, Chrome extension, whatever) sends HTTP requests, and your backend processes them and returns responses.
+
+At a random point in time, your backend might be processing 10-12 requests, or if your application is big enough, hundreds or even 500-600 requests concurrently. When it gets a SIGTERM signal, it's time for it to perform these three steps:
+
+<Diagram caption="Fig 2.2: The three SIGTERM steps: finish requests -&gt; clean up -&gt; exit">
+<svg width="100%" viewBox="0 0 720 100" role="img"><title>SIGTERM three steps</title><defs><marker id="st" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="30" y="30" width="190" height="48" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="125" y="50" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">1. Finish existing requests</text><text x="125" y="66" text-anchor="middle" font-size="10" fill="var(--dg-ok)">complete in-flight work</text><line x1="222" y1="54" x2="248" y2="54" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#st)"></line><rect x="250" y="30" width="190" height="48" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="345" y="50" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">2. Clean up resources</text><text x="345" y="66" text-anchor="middle" font-size="10" fill="var(--dg-warn)">DB, files, connections</text><line x1="442" y1="54" x2="468" y2="54" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#st)"></line><rect x="470" y="30" width="190" height="48" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="565" y="50" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">3. Exit</text><text x="565" y="66" text-anchor="middle" font-size="10" fill="var(--dg-accent)">close the door</text></svg>
+</Diagram>
+
+#### Who Uses SIGTERM?
+
+SIGTERM is mostly used by **deployment systems, process managers, or orchestration platforms**: basically any system you've established for managing your process:
+
+- **Kubernetes**: container orchestration
+- **systemd**: Linux service manager
+- **PM2**: Node.js process manager
+
+These systems and tools use SIGTERM to properly let your application finish whatever it's doing, clean up, and leave gracefully.
+
+### 4.2: SIGINT (Interrupt)
+
+`SIG` means signal, `INT` means interrupt. The most famous use case of this signal, which you've almost certainly used as a developer, is **Ctrl + C**.
+
+If you've worked with any command-line or terminal-based applications, you've used this, some process or task is running, and if you want to abruptly close it, you press `Ctrl + C` and that process is instantly stopped.
+
+<Callout type="ok" title="Live Demo From the Lecture">
+In the lecture, a Go-based backend was running locally, ready to accept requests. Pressing `Ctrl + C` on the keyboard logged: _"a signal has been received and the signal type is an interrupt signal."_ Because graceful shutdown was implemented, the app logged each step as it shut down, rather than dying instantly.
+</Callout>
+
+SIGINT requires a **user/developer to press a key** (Ctrl + C using a keyboard). So it's mostly used during development environments and is also called a user-initiated shutdown. In process-to-process communication, SIGINT is normally not used, since it requires a key press.
+
+#### Handle SIGINT the Same Way as SIGTERM
+
+In pretty much all cases, you want to handle SIGINT the **same way** you handle SIGTERM. If you think about it, it makes sense:
+
+| Signal  | Typically initiated by | Example context                                                    |
+| ------- | ---------------------- | ------------------------------------------------------------------ |
+| SIGINT  | A human (key press)    | Developer pressing Ctrl+C locally to stop the dev server           |
+| SIGTERM | A program              | PM2 on an AWS EC2 instance signaling your deployed backend to stop |
+
+It doesn't matter whether your backend is running in a development environment and you stop it with Ctrl + C, versus running inside an AWS EC2 instance managed by PM2 (a process manager) which sends a SIGTERM. In both cases, the **intention is the same**: we want to shut down. And we want to shut down in a clean, graceful way. What matters is the intention, not whether a human or a program initiated it.
+
+### 4.3: SIGKILL (The Nuclear Option)
+
+`SIG` means signal, `KILL` is the actual command, and it is exactly as it sounds. We want to **instantly kill the application**.
+
+<Callout type="info" title="SIGKILL Cannot Be Caught or Ignored">
+The interesting (and dangerous) thing about SIGKILL is that it **cannot be caught** and **cannot be ignored**:\
+\
+**Cannot be caught**: Your application cannot register a handler that does cleanup when it receives SIGKILL. The application is simply not given that capability/permission to detect it.\
+\
+**Cannot be ignored**: You can't say "since I couldn't detect it, I'll just ignore it and not stop." That doesn't happen either.
+</Callout>
+
+If your application is sent a SIGKILL, it will not be able to detect it, and it has to stop at that exact moment. Nothing else happens, it just stops. That's why it's called a kill signal.
+
+<Callout type="ok" title="The Pull-the-Plug Analogy">
+Imagine the difference between two ways of turning off your computer:\
+\
+**Graceful (SIGTERM/SIGINT):** Clicking your system icon -> clicking "Shutdown" -> the OS closes apps properly.\
+\
+**SIGKILL:** Going straight to the power plug and **pulling it**. Your computer just dies. No cleanup, no goodbye.
+</Callout>
+
+### Why This Makes Graceful Shutdown Important
+
+Here's the critical chain of consequences. The **polite signals** are SIGTERM and SIGINT, these let you finish whatever you're doing, clean up, and gracefully exit. If you **don't respect** the polite signals, then eventually you _will_ receive a SIGKILL. You'll have to stop, and you won't even get the opportunity to clean up after yourself.
+
+<Diagram caption="Fig 2.3: Ignore the polite signals and the OS escalates to SIGKILL, which gives you no chance to clean up">
+<svg width="100%" viewBox="0 0 720 130" role="img"><title>Signal escalation from polite to forced</title><defs><marker id="es" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="30" y="40" width="240" height="56" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="150" y="63" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Polite: SIGTERM / SIGINT</text><text x="150" y="80" text-anchor="middle" font-size="10" fill="var(--dg-ok)">window to finish + clean up</text><text x="350" y="60" text-anchor="middle" font-size="10" fill="var(--dg-accent)" font-style="italic">if ignored /</text><text x="350" y="74" text-anchor="middle" font-size="10" fill="var(--dg-accent)" font-style="italic">timeout exceeded</text><line x1="272" y1="68" x2="428" y2="68" stroke="var(--dg-accent)" stroke-width="1.2" marker-end="url(#es)" stroke-dasharray="5 3"></line><rect x="430" y="40" width="240" height="56" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="1.2"></rect><text x="550" y="63" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-accent)">Forced: SIGKILL</text><text x="550" y="80" text-anchor="middle" font-size="10" fill="var(--dg-accent)">instant stop, no cleanup</text></svg>
+</Diagram>
+
+This is the core reason graceful shutdown is an important concept: it's your chance to handle shutdown _before_ the OS resorts to the nuclear option.
+
+## Connection Draining
+
+Now we go deep into the two important things that happen during a graceful shutdown: **finishing existing requests** (this section) and **cleaning up resources** (next section). The first important part is stopping on-the-fly requests.
+
+### What Are On-the-Fly Requests?
+
+Your HTTP server processes multiple requests concurrently. When it's time to stop your server, it's possible your backend is already processing a number of requests, 10, 12, hundreds, or thousands depending on scale. Those requests already being processed at that moment are the on-the-fly (in-flight) requests.
+
+### The Restaurant Analogy
+
+Imagine you've gone to a restaurant with friends, and the restaurant has to close (it's 10:30-11 PM, or for some other reason). What happens? The owners **cannot** just turn all the lights off and throw you out. Instead:
+
+<Diagram caption="Fig 3.1: Restaurant closing maps directly onto connection draining">
+<svg width="100%" viewBox="0 0 720 110" role="img"><title>Restaurant closing analogy three steps</title><defs><marker id="rs" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="20" y="32" width="205" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="122" y="52" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">1. Stop new customers</text><text x="122" y="68" text-anchor="middle" font-size="10" fill="var(--dg-accent)">-> stop accepting new conns</text><line x1="227" y1="57" x2="251" y2="57" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#rs)"></line><rect x="253" y="32" width="205" height="50" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="355" y="52" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">2. Let diners finish</text><text x="355" y="68" text-anchor="middle" font-size="10" fill="var(--dg-warn)">-> finish in-flight requests</text><line x1="460" y1="57" x2="484" y2="57" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#rs)"></line><rect x="486" y="32" width="205" height="50" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="588" y="52" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">3. Pay &#x26; leave</text><text x="588" y="68" text-anchor="middle" font-size="10" fill="var(--dg-ok)">-> close the connection</text></svg>
+</Diagram>
+
+- **Stop allowing new customers**: Someone at the reception/gate stops letting new people in. You don't want new customers you'd have to say no to.
+- **Announce to existing customers**: Tell everyone already eating: "It's time to close, you have 15-20 minutes to finish your meal. Take your time." 15-20 minutes is more than enough.
+- **Pay bills and leave**: They finish, pay their bills (and tips!), and leave the restaurant.
+
+### The Same Idea for Your Backend
+
+We call this process connection draining. When your application receives a shutdown signal (SIGTERM from a process, or SIGINT from a developer's Ctrl+C), the first thing it must do is **stop accepting new connections**: exactly like stopping new customers from entering. This prevents the situation from getting messier and more difficult to deal with. Then it lets the existing connections finish as soon as possible.
+
+### Connection Draining Per Architecture
+
+The implementation differs depending on the application architecture, but the high-level idea is always the same three-step process: **stop accepting new -> finish existing -> close connection**.
+
+| Architecture               | What "draining" means                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| HTTP backend               | Stop accepting new HTTP requests from any client; allow in-flight requests to complete                         |
+| Database (also a backend!) | Finish all existing queries/transactions; stop taking new queries into execution before closing the connection |
+| WebSocket connections      | First notify the clients that it's closing, then close the socket, never close abruptly                        |
+
+<Callout type="info" title="A Database is a Backend Too">
+As discussed in previous chapters, a database is also a backend, it can be imagined as a backend. Not in the HTTP sense, but it's still an application that runs as a process and follows the same graceful shutdown principles: finish existing transactions, stop accepting new ones, then close.
+</Callout>
+
+### 5.1: The Timeout Tradeoff
+
+The challenge with connection draining is the **timing**. You want to give existing connections enough time to complete their work, but you cannot wait as long as they need. There must be a limit.
+
+Most production systems implement a **timeout mechanism**: commonly **30 seconds** (sometimes 60). This is the maximum duration your system will wait. After that, it just stops. Most of the time, if you're not accepting new requests, 30 seconds is more than enough to finish all existing requests. But if some blocking operation can't finish within the window, you'll be **forcefully stopped**: that's the backup plan. You cannot let your backend take as long as it wants; the timeout is the hard limit.
+
+<Callout type="ok" title="The Design Consideration / How Long Should You Wait?">
+**Too short** -> you risk interrupting actual legitimate operations (a real payment mid-flight gets cut off).\
+\
+**Too long** -> your whole shutdown process becomes sluggish, which eventually impacts your deployment speed and system responsiveness.\
+\
+There's no hard-and-fast rule. The right timeout depends on your application's **typical request duration** and your **operational requirements**. For a traditional/normal backend, 30 seconds is more than enough. For WebSockets or more complicated architectures, you have to understand your system and choose accordingly.
+</Callout>
+
+### Coordination With Load Balancers & Service Discovery
+
+Connection draining also requires coordination between your **load balancers** and **service discovery systems**. It has to work with your health check systems and the registering/deregistering with your service discovery.
+
+This is slightly advanced: service discovery means that if you've deployed a set of applications (your backend, your database, your Elasticsearch instance), service discovery is the mechanism responsible for how they find, connect, and communicate with each other after deployment. During shutdown, your instance needs to deregister itself so the load balancer stops routing new traffic to it.
+
+## Resource Cleanup
+
+The second important step. Think of working at your desk: when it's time to leave the house or go to sleep, you do some cleanup first. If you've had coffee, you take the cup to the sink; you manage your cables, etc. We all have tiny cleanup tasks before leaving our desks. The same applies to your backend.
+
+### What Counts as a "Resource"?
+
+When we say resources, we mean things the application acquired during its execution that it now has to let go of:
+
+- **File handles**
+- **Network connections**
+- **Database connections**
+- **Temporary files**
+- **Caches**
+- **Any other system resources**
+
+### File Handles
+
+When your backend was running and tried to access a particular location in the file system, the way it works is: you send a signal to your operating system, and it provides you a **handle** to that file. There's a protocol for how a process accesses the underlying file system, but at a high level, you get a handle which you **must let go of / clean up** at some point.
+
+<Callout type="info" title="Why Unclosed Handles Are Dangerous">
+If you don't clean up a file handle, that handle keeps running and you'll acquire more and more memory, meaning you keep eating your **RAM (random access memory)**, and at some point you'll run out of it. Operating systems also **limit the number of file handles** (and network connections) a single process can have open simultaneously, so leaking them eventually breaks your app.
+</Callout>
+
+### Network Connections (The Most Common Cleanup)
+
+The most common kind of resource cleanup is cleaning up network connections. Your operating system is the **mediator**: all requests from the internet go through your OS before reaching your application. The OS is the actual driver that receives all requests from your network card and passes them to you, so it has full knowledge of all your network connections.
+
+<Diagram caption="Fig 4.1: All network traffic passes through the OS before reaching your application">
+<svg width="100%" viewBox="0 0 720 130" role="img"><title>OS as mediator between internet and application</title><defs><marker id="nw" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><rect x="30" y="42" width="170" height="50" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="115" y="63" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Internet</text><text x="115" y="79" text-anchor="middle" font-size="10" fill="var(--dg-ok)">incoming requests</text><line x1="202" y1="67" x2="258" y2="67" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#nw)"></line><rect x="260" y="42" width="200" height="50" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)" stroke-width="0.8"></rect><text x="360" y="63" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Operating System</text><text x="360" y="79" text-anchor="middle" font-size="10" fill="var(--dg-warn)">mediator / driver</text><line x1="462" y1="67" x2="518" y2="67" stroke="var(--dg-ink-3)" stroke-width="1.2" marker-end="url(#nw)"></line><rect x="520" y="42" width="170" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="605" y="63" text-anchor="middle" font-size="12" font-weight="600" fill="var(--dg-ink)">Your Backend</text><text x="605" y="79" text-anchor="middle" font-size="10" fill="var(--dg-accent)">the application</text></svg>
+</Diagram>
+
+Just like file handles, if you don't give up a network connection after dealing with it, you'll eventually run out of memory or face performance issues, because the OS limits how many connections a process can hold open.
+
+### Database Connections: Commit or Rollback
+
+This is the part directly tied to our payment scenario from the start. Before your application/backend process shuts down, the database transactions it was dealing with must be either **committed** or **rolled back explicitly** by your application.
+
+<Callout type="ok" title="What Happens If You Don't">
+If you don't commit or roll back open transactions, they might get into an **inconsistent state**, which can lead to:\
+\
+\- **Deadlocks**\
+\- **Data corruption**\
+\- All kinds of other issues\
+\
+This is exactly the double-charge / lost-payment problem from the opening scenario, resolved by explicit transaction handling during shutdown.
+</Callout>
+
+### Clean Up in Reverse Order of Acquisition
+
+One important rule: when cleaning up resources during graceful shutdown, you want to clean them up in the **reverse order** of how you acquired them, Last In, First Out (LIFO), like a stack.
+
+<Diagram caption="Fig 4.2: Acquire Redis -&gt; DB -&gt; HTTP, but release in reverse: HTTP -&gt; DB -&gt; Redis (LIFO)">
+<svg width="100%" viewBox="0 0 720 175" role="img"><title>Reverse order resource cleanup LIFO</title><defs><marker id="ro" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs><text x="175" y="22" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-ok)">ACQUIRE (in order)</text><rect x="90" y="32" width="170" height="34" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="175" y="54" text-anchor="middle" font-size="11" fill="var(--dg-ink)">1. Redis connection</text><rect x="90" y="72" width="170" height="34" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="175" y="94" text-anchor="middle" font-size="11" fill="var(--dg-ink)">2. DB connection</text><rect x="90" y="112" width="170" height="34" rx="6" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="0.8"></rect><text x="175" y="134" text-anchor="middle" font-size="11" fill="var(--dg-ink)">3. HTTP server</text><line x1="175" y1="66" x2="175" y2="70" stroke="var(--dg-ok)" stroke-width="1.2" marker-end="url(#ro)"></line><line x1="175" y1="106" x2="175" y2="110" stroke="var(--dg-ok)" stroke-width="1.2" marker-end="url(#ro)"></line><line x1="270" y1="89" x2="445" y2="89" stroke="var(--dg-ink-3)" stroke-width="1" marker-end="url(#ro)" stroke-dasharray="5 3"></line><text x="357" y="80" text-anchor="middle" font-size="10" fill="var(--dg-ink-3)" font-style="italic">shutdown reverses it</text><text x="555" y="22" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dg-accent)">RELEASE (reverse)</text><rect x="470" y="32" width="170" height="34" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="555" y="54" text-anchor="middle" font-size="11" fill="var(--dg-ink)">1. HTTP server</text><rect x="470" y="72" width="170" height="34" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="555" y="94" text-anchor="middle" font-size="11" fill="var(--dg-ink)">2. DB connection</text><rect x="470" y="112" width="170" height="34" rx="6" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="0.8"></rect><text x="555" y="134" text-anchor="middle" font-size="11" fill="var(--dg-ink)">3. Redis connection</text><line x1="555" y1="66" x2="555" y2="70" stroke="var(--dg-accent)" stroke-width="1.2" marker-end="url(#ro)"></line><line x1="555" y1="106" x2="555" y2="110" stroke="var(--dg-accent)" stroke-width="1.2" marker-end="url(#ro)"></line></svg>
+</Diagram>
+
+For example, say you established a Redis connection, then a DB connection, then started the HTTP server. When giving up resources, go in reverse. **Why?** To prevent situations where you're cleaning up a resource or operation that _depends on a previous operation_. Tearing down in reverse ensures dependencies are still alive when the things that need them are being shut down.
+
+## Code Examples
+
+We typically avoid looking at code in this series, but a practical example helps avoid a hollow understanding. You don't have to understand every line, just follow the narrative. In practice, most frameworks (Node.js, Go, Rust, Python) provide this code ready to copy-paste; what matters is understanding _what happens_ and _why_.
+
+### 7.1: Graceful Shutdown in Go
+
+This mirrors the live demo from the lecture: register a handler waiting for signals, then on receipt run the shutdown function which closes the HTTP server, then the database, then the Redis-backed background job server, in reverse order of acquisition.
+
+```go title="main.go / Go / net/http + signal.NotifyContext"
+package main
+
+import (
+    "context"
+    "errors"
+    "log"
+    "net/http"
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
+)
+
+func main() {
+    // --- Startup phase: acquire resources in order ---
+    db := connectDatabase()           // 1. acquire DB (TCP pool)
+    jobs := startBackgroundJobs()     // 2. acquire Redis-backed worker
+
+    srv := &http.Server{Addr: ":8080", Handler: router()}
+
+    // Register a handler that waits for SIGINT (Ctrl+C) or SIGTERM (PM2/k8s).
+    // We handle BOTH the same way, the intention is identical: shut down.
+    ctx, stop := signal.NotifyContext(context.Background(),
+        os.Interrupt, syscall.SIGTERM)
+    defer stop()
+
+    // Run the server in a goroutine so main can wait for the signal.
+    go func() {
+        log.Println("server started, ready to accept requests")
+        if err := srv.ListenAndServe(); err != nil &&
+            !errors.Is(err, http.ErrServerClosed) {
+            log.Fatalf("listen error: %v", err)
+        }
+    }()
+
+    // Block here until a signal arrives (the "living" phase).
+    <-ctx.Done()
+    log.Println("signal received, starting graceful shutdown")
+
+    // Hard limit: give in-flight work up to 30 seconds, then force stop.
+    shutdownCtx, cancel := context.WithTimeout(
+        context.Background(), 30*time.Second)
+    defer cancel()
+
+    gracefulShutdown(shutdownCtx, srv, db, jobs)
+    log.Println("server exited properly")
+}
+
+// gracefulShutdown releases resources in REVERSE order of acquisition.
+// Acquired: DB -> jobs -> HTTP server. Released: HTTP -> jobs -> DB.
+func gracefulShutdown(
+    ctx context.Context,
+    srv *http.Server,
+    db *Database,
+    jobs *JobServer,
+) {
+    // 1. CONNECTION DRAINING: srv.Shutdown stops accepting NEW
+    //    connections and waits for in-flight requests to finish
+    //    (or until the 30s ctx deadline forces it).
+    log.Println("draining HTTP connections...")
+    if err := srv.Shutdown(ctx); err != nil {
+        log.Printf("forced HTTP shutdown: %v", err)
+    }
+
+    // 2. Stop the background job server (closes Redis connections,
+    //    waits for workers to finish current jobs).
+    log.Println("stopping background job server...")
+    jobs.Shutdown()
+
+    // 3. Close the database LAST, finish/commit open transactions,
+    //    then close all pooled TCP connections one by one.
+    log.Println("closing database connection...")
+    if err := db.Close(); err != nil {
+        log.Printf("db close error: %v", err)
+    }
+}
+```
+
+### 7.2: Graceful Shutdown in Python
+
+The same concepts in Python using the `signal` module: register handlers for SIGINT and SIGTERM, drain in-flight work, then release resources in reverse.
+
+```python title="server.py / Python / signal + asyncio"
+import asyncio
+import signal
+import logging
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("app")
+
+SHUTDOWN_TIMEOUT = 30  # hard limit in seconds
+
+class Application:
+    def __init__(self):
+        self._shutdown = asyncio.Event()
+
+    async def startup(self):
+        # Acquire resources IN ORDER
+        self.redis = await connect_redis()       # 1
+        self.db = await connect_database()      # 2
+        self.server = await start_http_server()  # 3
+        log.info("server started, ready to accept requests")
+
+    def install_signal_handlers(self):
+        # Handle SIGINT (Ctrl+C, dev) and SIGTERM (PM2/k8s, prod)
+        # the SAME way, both mean "shut down gracefully".
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, self._on_signal, sig)
+
+    def _on_signal(self, sig):
+        # NOTE: SIGKILL can never reach here, it cannot be
+        # caught or ignored. Only the polite signals arrive.
+        log.info(f"signal received: {sig.name}, shutting down")
+        self._shutdown.set()
+
+    async def graceful_shutdown(self):
+        # 1. CONNECTION DRAINING: stop accepting new requests,
+        #    let in-flight requests finish within the timeout.
+        log.info("draining HTTP connections...")
+        self.server.stop_accepting_new()
+        try:
+            await asyncio.wait_for(
+                self.server.wait_for_inflight(),
+                timeout=SHUTDOWN_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            log.warning("timeout exceeded, forcing shutdown")
+
+        # 2 & 3. Release resources in REVERSE order of acquisition.
+        #    Acquired redis -> db -> server; release server -> db -> redis.
+        log.info("committing/rolling back open transactions...")
+        await self.db.close()     # commit or rollback, then close pool
+        log.info("closing redis connection...")
+        await self.redis.close()
+        log.info("server exited properly")
+
+async def main():
+    app = Application()
+    await app.startup()
+    app.install_signal_handlers()
+    await app._shutdown.wait()   # the "living" phase, block until signal
+    await app.graceful_shutdown()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Further Reading & Documentation
+
+#### Unix Signals
+
+<Callout type="info">
+[man7, signal(7): overview of signals (SIGTERM, SIGINT, SIGKILL)](https://man7.org/linux/man-pages/man7/signal.7.html) [GNU libc, Termination Signals](https://www.gnu.org/software/libc/manual/html_node/Termination-Signals.html)
+</Callout>
+
+#### Go
+
+<Callout type="info">
+[Go docs, http.Server.Shutdown (graceful HTTP draining)](https://pkg.go.dev/net/http#Server.Shutdown) [Go docs, signal.NotifyContext](https://pkg.go.dev/os/signal#NotifyContext)
+</Callout>
+
+#### Python & Node.js
+
+<Callout type="info">
+[Python docs, signal module](https://docs.python.org/3/library/signal.html) [Node.js docs, process signal events](https://nodejs.org/api/process.html#signal-events)
+</Callout>
+
+#### Orchestration & Process Managers
+
+<Callout type="info">
+[Kubernetes, Container Lifecycle & termination (SIGTERM -> grace period -> SIGKILL)](https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/) [PM2, Graceful start / shutdown & signals](https://pm2.keymetrics.io/docs/usage/signals-clean-restart/) [systemd, kill & shutdown behaviour](https://www.freedesktop.org/software/systemd/man/systemd.kill.html)
+</Callout>
+
+#### MDN Web Docs
+
+<Callout type="info">
+[MDN, WebSockets API (closing handshake)](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) [MDN, HTTP connection management](https://developer.mozilla.org/en-US/docs/Web/HTTP/Connection_management_in_HTTP_1.x)
+</Callout>
+
+BACKEND ENGINEERING FIELD MANUAL / V2 / CHAPTER 14 / GRACEFUL SHUTDOWN\
+Notes compiled from lecture transcript / Go + Python examples / Unix signals & orchestration references inline
+
+Backend from First Principles / Chapter 16 / Shutdown. Code targets Go 1.22+ and Python 3.11+.

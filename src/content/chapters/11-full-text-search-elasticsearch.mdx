@@ -1,0 +1,521 @@
+---
+order: 11
+title: "Full-Text Search & Elasticsearch"
+navTitle: "Full-Text Search (Elasticsearch)"
+summary: "Chapter 11 of Backend from First Principles: Full-Text Search (Elasticsearch)."
+readingTime: "2-3 hours"
+keywords:
+  - "elasticsearch"
+  - "search"
+  - "full-text"
+  - "inverted"
+  - "index"
+  - "fuzzy"
+  - "tokenizer"
+  - "analyzer"
+---
+A detailed backend reference
+
+From a simple `ILIKE` query that suffocates under millions of rows, to relevance-ranked millisecond search, this chapter explains _why_ tools like Elasticsearch exist, how the inverted index works, what BM25 does, and when to reach for Postgres FTS versus Elasticsearch in a real backend.
+
+01
+
+## The Origin Story: Why Search Got Hard
+
+Imagine it's **2005**. You're a backend engineer at a fast-growing e-commerce startup. The product catalog has \~5,000 items. You write a search endpoint using a classic SQL pattern:
+
+```sql
+SQL-- Works great at 5 000 rows
+SELECT * FROM products
+WHERE  name        ILIKE '%laptop%'
+   OR  description ILIKE '%laptop%';
+```
+
+This returns results in roughly **50 ms**. Users are happy, managers are happy, life is simple.
+
+Fast-forward two years. The catalog explodes to **millions of products**. The same query now takes **30 seconds**. The company is losing sales. On top of the speed issue, new requirements arrive:
+
+- **Relevance**: searching "laptop" should show a MacBook Pro before a laptop bag.
+- **Typo tolerance**: users type _lapto_ during a sale rush; results must still appear.
+- **Speed**: search must return in milliseconds, not seconds.
+
+<Callout type="info">
+These three requirements, speed, relevance, typo-tolerance, are exactly the founding charter of dedicated full-text search engines.
+</Callout>
+
+02
+
+## The Librarian Analogy
+
+Think of your relational database (Postgres, MySQL, etc.) as a **librarian** in a giant library. The librarian knows exactly where every book lives on the shelf.
+
+But it has one **fatal flaw**: to find books _about_ a topic, it must physically walk to every single shelf, pull out every book, and read it page by page looking for your keyword.
+
+<Diagram caption="Fig 1: Postgres ILIKE performs a full sequential scan: every row is examined individually.">
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" width="100%"><rect x="0" y="0" width="760" height="260" fill="var(--dg-paper)"></rect><rect x="30" y="100" width="140" height="60" rx="8" fill="var(--dg-accent)"></rect><text x="100" y="126" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="13" font-weight="700">User Query</text><text x="100" y="146" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-diagram-mono)" font-size="12">"machine learning"</text><line x1="172" y1="130" x2="210" y2="130" stroke="var(--dg-ink-2)" stroke-width="2" marker-end="url(#arr)"></line><rect x="212" y="90" width="130" height="80" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="277" y="120" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-prose)" font-size="14" font-weight="700">Postgres</text><text x="277" y="138" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="12">ILIKE Scan</text><text x="277" y="156" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11">scans EVERY row</text><line x1="344" y1="130" x2="380" y2="130" stroke="var(--dg-ink-2)" stroke-width="2" marker-end="url(#arr)"></line><g transform="translate(382,80)"><rect x="0" y="0" width="30" height="80" rx="3" fill="var(--dg-warn-surface)"></rect><text x="15" y="40" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="9" transform="rotate(-90,15,40)">Harry Potter</text><rect x="34" y="0" width="30" height="80" rx="3" fill="var(--dg-info-surface)"></rect><text x="49" y="40" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="9" transform="rotate(-90,49,40)">Game of Thrones</text><rect x="68" y="0" width="36" height="80" rx="3" fill="var(--dg-ok)"></rect><text x="86" y="40" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="9" font-weight="700" transform="rotate(-90,86,40)">Intro to ML </text><rect x="108" y="0" width="28" height="80" rx="3" fill="var(--dg-plum-surface)"></rect><text x="122" y="40" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="9" transform="rotate(-90,122,40)">Cooking</text><rect x="140" y="0" width="32" height="80" rx="3" fill="var(--dg-accent-surface)"></rect><text x="156" y="40" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="9" transform="rotate(-90,156,40)">Deep Learning </text><rect x="176" y="0" width="28" height="80" rx="3" fill="var(--dg-info-surface)"></rect><text x="190" y="40" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="9" transform="rotate(-90,190,40)">Fiction</text></g><polyline points="382,170 550,170 550,185 382,185 382,200" fill="none" stroke="var(--dg-accent)" stroke-width="1.5" stroke-dasharray="4 3"></polyline><text x="466" y="220" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11">Scans every book one by one, O(n)</text><text x="620" y="110" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="12" font-weight="700">Two Fatal Flaws:</text><text x="620" y="132" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="12">(1) Slow, O(n) scan</text><text x="620" y="152" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="12">(2) No relevance order</text><defs><marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--dg-ink-2)"></path></marker></defs></svg>
+</Diagram>
+
+The two problems summarised:
+
+1. **Speed**: A table with 50 million rows means 50 million row comparisons. On spinning disk this was catastrophic even in the SSD era it wastes enormous I/O.
+2. **No relevance**: A book whose _title_ is "Introduction to Machine Learning" ranks identically to a book that merely mentions "machine" once in the appendix. The database has zero concept of importance.
+
+03
+
+## Why `ILIKE '%term%'` Cannot Use Indexes
+
+Postgres B-tree indexes work by sorting values. A B-tree can locate `name LIKE 'lapt%'` (prefix match) efficiently because sorted strings share prefixes. But `ILIKE '%laptop%'` has a leading wildcard, there is no useful prefix to sort on. The engine **must fall back to a sequential scan**.
+
+<Callout type="info">
+A leading `%` in a LIKE/ILIKE expression _disables_ B-tree index usage. Postgres will read every single page of the heap.
+</Callout>
+
+### What the query plan looks like
+
+```dockerfile
+SQL / EXPLAIN ANALYZEEXPLAIN ANALYZE
+SELECT id, name
+FROM  products
+WHERE name ILIKE '%laptop%';
+
+-- Output (simplified)
+-- Seq Scan on products  (cost=0.00..18450.00 rows=5 width=36)
+--   Filter: ((name)::text ~~* '%laptop%'::text)
+--   Rows Removed by Filter: 4 999 995
+-- Planning Time: 0.2 ms
+-- Execution Time: 28 940.7 ms   <- 29 seconds!
+```
+
+Notice **Seq Scan**: every row examined, 4,999,995 rows thrown away, execution time \~29 s.
+
+04
+
+## The Inverted Index: The Core Invention
+
+> "Instead of going through every document to find the term, maintain a map from every term to the documents that contain it."
+
+This insight, **inverting the search**: is what the name captures. A normal index maps _document -> words_. An **inverted index** maps _word -> documents_.
+
+### How It Is Built
+
+When a document is first stored (or updated), the search engine runs it through an **analysis pipeline**:
+
+1. **Tokenisation**: break text into individual tokens (words). "Introduction to Machine Learning" -> `["introduction", "to", "machine", "learning"]`
+2. **Normalisation / Lowercasing**: convert to lowercase so "Machine" and "machine" are the same token.
+3. **Stop-word removal**: drop common words with no discriminative value ("to", "the", "a"). (Optional, configurable.)
+4. **Stemming / Lemmatisation**: reduce words to their root: "running" -> "run", "searches" -> "search". So a query for "searching" also matches "searched".
+5. **Index entry creation**: for each resulting term, record the document ID and position.
+
+<Diagram caption="Fig 2: Inverted index: term -&gt; posting list (document IDs + positions). Lookup is O(1) hash or O(log n) B-tree.">
+<svg viewBox="0 0 740 340" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="740" height="340" fill="var(--dg-paper)"></rect><text x="30" y="28" font-family="var(--font-prose)" font-size="15" font-weight="700" fill="var(--dg-ink)">Documents</text><rect x="20" y="40" width="200" height="44" rx="6" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="30" y="58" font-family="var(--font-diagram-mono)" font-size="11" fill="var(--dg-ink)">Doc 1: "Intro to</text><text x="30" y="74" font-family="var(--font-diagram-mono)" font-size="11" fill="var(--dg-ink)">        Machine Learning"</text><rect x="20" y="92" width="200" height="44" rx="6" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="30" y="110" font-family="var(--font-diagram-mono)" font-size="11" fill="var(--dg-ink)">Doc 2: "The Machine</text><text x="30" y="126" font-family="var(--font-diagram-mono)" font-size="11" fill="var(--dg-ink)">        Age"</text><rect x="20" y="144" width="200" height="44" rx="6" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="30" y="162" font-family="var(--font-diagram-mono)" font-size="11" fill="var(--dg-ink)">Doc 3: "Coffee</text><text x="30" y="178" font-family="var(--font-diagram-mono)" font-size="11" fill="var(--dg-ink)">        Machine Manual"</text><rect x="20" y="196" width="200" height="44" rx="6" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="30" y="214" font-family="var(--font-diagram-mono)" font-size="11" fill="var(--dg-ink)">Doc 4: "Deep Learning</text><text x="30" y="230" font-family="var(--font-diagram-mono)" font-size="11" fill="var(--dg-ink)">        Fundamentals"</text><text x="230" y="148" font-family="var(--font-ui)" font-size="12" fill="var(--dg-ink-2)">Analyse &#x26;</text><text x="230" y="164" font-family="var(--font-ui)" font-size="12" fill="var(--dg-ink-2)">Index</text><line x1="258" y1="155" x2="298" y2="155" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#arr2)"></line><text x="310" y="28" font-family="var(--font-prose)" font-size="15" font-weight="700" fill="var(--dg-ink)">Inverted Index</text><rect x="306" y="38" width="130" height="26" rx="4" fill="var(--dg-inverse)"></rect><rect x="440" y="38" width="280" height="26" rx="4" fill="var(--dg-inverse)"></rect><text x="371" y="56" text-anchor="middle" fill="var(--dg-on-inverse)" font-family="var(--font-ui)" font-size="12" font-weight="700">TERM</text><text x="580" y="56" text-anchor="middle" fill="var(--dg-on-inverse)" font-family="var(--font-ui)" font-size="12" font-weight="700">POSTINGS (doc, positions)</text><g font-family="var(--font-diagram-mono)" font-size="12"><rect x="306" y="66" width="130" height="28" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><rect x="440" y="66" width="280" height="28" fill="var(--dg-paper)" stroke="var(--dg-line)"></rect><text x="315" y="84" fill="var(--dg-accent)" font-weight="700">machine</text><text x="450" y="84" fill="var(--dg-ink-2)">Doc1(p1,15,23) Doc2(p5,89) Doc3(p1)</text><rect x="306" y="96" width="130" height="28" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><rect x="440" y="96" width="280" height="28" fill="var(--dg-paper)" stroke="var(--dg-line)"></rect><text x="315" y="114" fill="var(--dg-accent)" font-weight="700">learning</text><text x="450" y="114" fill="var(--dg-ink-2)">Doc1(p1,16,24) Doc4(p2,8,45)</text><rect x="306" y="126" width="130" height="28" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><rect x="440" y="126" width="280" height="28" fill="var(--dg-paper)" stroke="var(--dg-line)"></rect><text x="315" y="144" fill="var(--dg-ok)" font-weight="700">intro</text><text x="450" y="144" fill="var(--dg-ink-2)">Doc1(p1)</text><rect x="306" y="156" width="130" height="28" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><rect x="440" y="156" width="280" height="28" fill="var(--dg-paper)" stroke="var(--dg-line)"></rect><text x="315" y="174" fill="var(--dg-ok)" font-weight="700">coffee</text><text x="450" y="174" fill="var(--dg-ink-2)">Doc3(p1,4,12)</text><rect x="306" y="186" width="130" height="28" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><rect x="440" y="186" width="280" height="28" fill="var(--dg-paper)" stroke="var(--dg-line)"></rect><text x="315" y="204" fill="var(--dg-ok)" font-weight="700">deep</text><text x="450" y="204" fill="var(--dg-ink-2)">Doc4(p1,3)</text></g><text x="310" y="260" font-family="var(--font-ui)" font-size="12" fill="var(--dg-ink-2)">Query: "machine learning"</text><line x1="310" y1="268" x2="310" y2="300" stroke="var(--dg-accent)" stroke-width="1.5" stroke-dasharray="4 3"></line><text x="315" y="316" font-family="var(--font-ui)" font-size="12" fill="var(--dg-accent)">-> Intersect postings -> ranked results in O(log n)</text><defs><marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--dg-accent)"></path></marker></defs></svg>
+</Diagram>
+
+<Callout type="info">
+The key insight: inverted index lookup time depends on the _number of matching documents_, not the total number of documents. Millions of documents = no problem, as long as the hit list is small.
+</Callout>
+
+05
+
+## Elasticsearch: What It Is & How It Works
+
+Elasticsearch is a distributed, JSON-document search engine built on top of **Apache Lucene**: the battle-tested Java library that implements the inverted index and BM25 scoring. Lucene has been around since 1999; Elasticsearch (2010) wraps it in a REST API and adds distributed clustering, replication, and a rich query DSL.
+
+Key characteristics:
+
+- **Schema-less JSON documents**: like MongoDB, you store JSON. Fields are auto-detected (or explicitly mapped).
+- **Near real-time**: newly indexed documents are searchable within \~1 second (configurable).
+- **Horizontal scaling**: data is split into _shards_ (sub-indexes), each shard is a complete Lucene index. More nodes = more throughput.
+- **Powerful query DSL**: JSON-based. Supports full-text, fuzzy, range, geo-distance, aggregations, etc.
+
+### Creating an Index with Field Mapping
+
+```text
+HTTP / Elasticsearch DSLPUT /products
+{
+  "mappings": {
+    "properties": {
+      "name": {
+        "type": "text",          // analysed, tokenised, stemmed
+        "boost": 3            // title matches are 3x more relevant
+      },
+      "description": {
+        "type": "text",
+        "boost": 1.5
+      },
+      "category": {
+        "type": "keyword"     // not analysed, exact match only
+      },
+      "price": { "type": "float" }
+    }
+  }
+}
+```
+
+The difference between `text` and `keyword` is critical:
+
+| Mapping Type | Analysed?               | Use For                              |
+| ------------ | ----------------------- | ------------------------------------ |
+| `text`       | Yes, tokenised, stemmed | Product names, descriptions, reviews |
+| `keyword`    | No, stored as-is        | Status codes, tags, category IDs     |
+
+### A Full-Text Search Query
+
+```text
+HTTP / Elasticsearch DSLGET /products/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "laptop",
+      "fields": ["name^3", "description^1.5", "category"],
+      "fuzziness": "AUTO"    // typo tolerance
+    }
+  },
+  "size": 10
+}
+```
+
+`^3` is **field boosting**: matches in `name` contribute 3x as much to the relevance score as matches in the default field weight.
+
+06
+
+## BM25: How Relevance Scoring Works
+
+BM25 (_Best Match 25_) is the default ranking function in Elasticsearch (and also in Postgres FTS). It produces a floating-point score per document; higher = more relevant. The full formula has several components, but conceptually four factors drive the score:
+
+<Diagram caption="Fig 3: The four pillars of BM25 relevance scoring in Elasticsearch.">
+<svg viewBox="0 0 700 220" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="700" height="220" fill="var(--dg-paper)"></rect><ellipse cx="350" cy="110" rx="80" ry="40" fill="var(--dg-accent)"></ellipse><text x="350" y="106" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-prose)" font-size="16" font-weight="700">BM25</text><text x="350" y="124" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="11">Relevance Score</text><rect x="20" y="30" width="160" height="56" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="100" y="52" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Term Frequency (TF)</text><text x="100" y="68" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">How often term appears</text><text x="100" y="82" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">in THIS document</text><line x1="180" y1="58" x2="270" y2="100" stroke="var(--dg-accent)" stroke-width="1.5" stroke-dasharray="5 3"></line><rect x="20" y="130" width="160" height="56" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="100" y="152" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Inverse Doc Freq (IDF)</text><text x="100" y="168" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">How rare the term is</text><text x="100" y="182" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">across ALL documents</text><line x1="180" y1="158" x2="270" y2="120" stroke="var(--dg-accent)" stroke-width="1.5" stroke-dasharray="5 3"></line><rect x="520" y="30" width="160" height="56" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="600" y="52" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Document Length</text><text x="600" y="68" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">Normalise for long docs</text><text x="600" y="82" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">(shorter = higher boost)</text><line x1="520" y1="58" x2="430" y2="100" stroke="var(--dg-accent)" stroke-width="1.5" stroke-dasharray="5 3"></line><rect x="520" y="130" width="160" height="56" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="600" y="152" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Field Boosting</text><text x="600" y="168" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">title > description</text><text x="600" y="182" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">> content (configurable)</text><line x1="520" y1="158" x2="430" y2="120" stroke="var(--dg-accent)" stroke-width="1.5" stroke-dasharray="5 3"></line></svg>
+</Diagram>
+
+| Factor                    | What It Measures                | Effect on Score                                     |
+| ------------------------- | ------------------------------- | --------------------------------------------------- |
+| **Term Frequency**        | Count of query term in document | Higher = more relevant (with diminishing returns)   |
+| **Inverse Doc Frequency** | Rarity of term across index     | Rare terms carry more signal than common ones       |
+| **Document Length**       | Length vs. avg document length  | Short docs with the term rank higher than long docs |
+| **Field Boost**           | Which field the term appears in | Title match > body match (configurable multiplier)  |
+
+<Callout type="info">
+You don't need to understand the BM25 math to use Elasticsearch productively. Just know: field-boosted + term-frequency + IDF = the score. Tune boosts in mapping and query DSL.
+</Callout>
+
+### Why IDF Matters
+
+Consider the word "the", it appears in virtually every English document, so it has very high document frequency and a very low IDF weight. It contributes almost nothing to scores. A rare word like "photovoltaic" or "elasticsearch" appearing in a document is a strong signal of topical relevance.
+
+07
+
+## Typo Tolerance: Fuzzy Search
+
+Elasticsearch uses **Levenshtein edit distance** under the hood for fuzzy matching. Edit distance is the minimum number of single-character operations (insert, delete, substitute) needed to transform one word into another.
+
+- `lapto` -> `laptop`: 1 insertion -> edit distance 1
+- `treading` -> `trending`: 1 substitution -> edit distance 1
+- `mcbook` -> `macbook`: 1 insertion -> edit distance 1
+
+```text
+Elasticsearch DSL / fuzzy query{
+  "query": {
+    "fuzzy": {
+      "name": {
+        "value": "lapto",
+        "fuzziness": "AUTO",  // 0 for 1-2 chars, 1 for 3-5, 2 for 6+
+        "prefix_length": 1       // first N chars must match exactly
+      }
+    }
+  }
+}
+```
+
+`"fuzziness": "AUTO"` is the recommended setting. It automatically adjusts the allowed edit distance based on word length. `prefix_length: 1` prevents matching completely unrelated words that happen to be 1-2 edits away.
+
+<Callout type="info">
+Type-ahead / autocomplete interfaces like those on Amazon or Google use this capability. As you type "trendin", Elasticsearch finds "trending" with fuzziness=1 and returns suggestions in &lt;50 ms.
+</Callout>
+
+08
+
+## The ELK Stack: Logs & Observability
+
+Elasticsearch isn't only for product search. It's the "E" in the famous **ELK Stack** used for centralised log management and observability.
+
+<Diagram caption="Fig 4: The ELK Stack. Logstash ingests &amp; parses, Elasticsearch indexes, Kibana visualises.">
+<svg viewBox="0 0 680 130" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="680" height="130" fill="var(--dg-paper)"></rect><rect x="30" y="30" width="140" height="70" rx="8" fill="var(--dg-ok)"></rect><text x="100" y="62" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-prose)" font-size="16" font-weight="700">Logstash</text><text x="100" y="82" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="11">Collect &#x26; Parse Logs</text><line x1="172" y1="65" x2="212" y2="65" stroke="var(--dg-ink-2)" stroke-width="2" marker-end="url(#arr3)"></line><rect x="214" y="30" width="140" height="70" rx="8" fill="var(--dg-accent)"></rect><text x="284" y="62" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-prose)" font-size="16" font-weight="700">Elasticsearch</text><text x="284" y="82" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="11">Index &#x26; Search Logs</text><line x1="356" y1="65" x2="396" y2="65" stroke="var(--dg-ink-2)" stroke-width="2" marker-end="url(#arr3)"></line><rect x="398" y="30" width="140" height="70" rx="8" fill="var(--dg-info)"></rect><text x="468" y="62" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-prose)" font-size="16" font-weight="700">Kibana</text><text x="468" y="82" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="11">Visualise &#x26; Dashboard</text><rect x="30" y="108" width="508" height="16" rx="4" fill="var(--dg-surface)"></rect><text x="284" y="120" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">Beats (Filebeat / Metricbeat) -> lightweight agents that ship logs/metrics to Logstash or directly to ES</text><defs><marker id="arr3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--dg-ink-2)"></path></marker></defs></svg>
+</Diagram>
+
+If your company already runs ELK for logging, adding product/content search on top of the same Elasticsearch cluster is a natural, cost-effective choice, you're already paying for the infrastructure and your ops team already knows it.
+
+09
+
+## Postgres Full-Text Search in Go
+
+Postgres has had native full-text search since version 8.3 via the `tsvector` / `tsquery` types. It uses its own inverted index (the **GIN** index) and a BM25-variant scorer called `ts_rank`. It's not as feature-rich as Elasticsearch but perfectly adequate for moderate search needs on data already in Postgres.
+
+### DDL: Add a GIN Index
+
+```text
+SQL-- Add a generated tsvector column and index it
+ALTER TABLE products
+  ADD COLUMN search_vec tsvector
+    GENERATED ALWAYS AS (
+      setweight(to_tsvector('english', coalesce(name, '')), 'A') ||
+      setweight(to_tsvector('english', coalesce(description, '')), 'B')
+    ) STORED;
+
+CREATE INDEX idx_products_fts ON products USING GIN(search_vec);
+```
+
+`setweight('A')` means title matches outrank description matches, the Postgres equivalent of field boosting.
+
+### Go: Full-Text Search Handler
+
+```go
+Gopackage main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "net/http"
+
+    "github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Product struct {
+    ID          int
+    Name        string
+    Description string
+    Rank        float64
+}
+
+func searchHandler(pool *pgxpool.Pool) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        query := r.URL.Query().Get("q")
+        if query == "" {
+            http.Error(w, "missing query param q", http.StatusBadRequest)
+            return
+        }
+
+        // plainto_tsquery converts plain text safely (no special chars needed)
+        // websearch_to_tsquery also supports AND/OR/-term syntax
+        sql := `
+            SELECT id, name, description,
+                   ts_rank(search_vec, plainto_tsquery('english', $1)) AS rank
+            FROM   products
+            WHERE  search_vec @@ plainto_tsquery('english', $1)
+            ORDER  BY rank DESC
+            LIMIT  20
+        `
+
+        rows, err := pool.Query(context.Background(), sql, query)
+        if err != nil {
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return
+        }
+        defer rows.Close()
+
+        var results []Product
+        for rows.Next() {
+            var p Product
+            rows.Scan(&p.ID, &p.Name, &p.Description, &p.Rank)
+            results = append(results, p)
+        }
+
+        w.Header().Set("Content-Type", "application/json")
+        fmt.Fprintf(w, "found %d results\n", len(results))
+    }
+}
+
+func main() {
+    pool, _ := pgxpool.New(context.Background(), "postgres://...")
+    http.HandleFunc("/search", searchHandler(pool))
+    log.Fatal(http.ListenAndServe(":8080", nil))
+}
+```
+
+<Callout type="info">
+The `@@` operator is Postgres's full-text match operator. It uses the GIN index, query time stays O(log n) regardless of table size.
+</Callout>
+
+10
+
+## Elasticsearch in Python (Official SDK)
+
+The official Python client is [elasticsearch-py](https://www.elastic.co/guide/en/elasticsearch/client/python-api/current/index.html). Install:
+
+```text
+Shellpip install elasticsearch
+```
+
+### Index Setup & Bulk Insert
+
+```python
+Pythonfrom elasticsearch import Elasticsearch, helpers
+import csv
+
+es = Elasticsearch(
+    cloud_id="YOUR_CLOUD_ID",
+    api_key="YOUR_API_KEY"
+)
+
+INDEX = "reviews"
+
+# 1. Create index with explicit mapping
+if es.indices.exists(index=INDEX):
+    es.indices.delete(index=INDEX)
+
+es.indices.create(index=INDEX, body={
+    "mappings": {
+        "properties": {
+            "review":    {"type": "text"},     # analysed full-text
+            "sentiment": {"type": "keyword"}  # exact: "positive" / "negative"
+        }
+    }
+})
+
+# 2. Bulk insert from CSV
+def generate_docs(path: str):
+    with open(path) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row.get("review") and row.get("sentiment"):
+                yield {
+                    "_index": INDEX,
+                    "_source": {
+                        "review":    row["review"],
+                        "sentiment": row["sentiment"]
+                    }
+                }
+
+success, errors = helpers.bulk(es, generate_docs("reviews.csv"))
+print(f"Inserted {success} documents, {len(errors)} errors")
+```
+
+### Search with Fuzzy + Field Boost
+
+```python
+Pythondef search_reviews(query: str, sentiment_filter: str = None) -> list:
+    must_clauses = [{
+        "multi_match": {
+            "query":     query.lower(),
+            "fields":   ["review"],
+            "fuzziness": "AUTO",
+            "operator":  "and"   # all terms must appear
+        }
+    }]
+
+    filter_clauses = []
+    if sentiment_filter:
+        filter_clauses.append({
+            "term": {"sentiment": sentiment_filter}
+        })
+
+    body = {
+        "query": {"bool": {"must": must_clauses, "filter": filter_clauses}},
+        "size": 20
+    }
+
+    resp = es.search(index=INDEX, body=body)
+    return [
+        {"score": hit["_score"], **hit["_source"]}
+        for hit in resp["hits"]["hits"]
+    ]
+
+# Usage
+results = search_reviews("gret product", sentiment_filter="positive")
+# "gret" (typo for "great") matched via fuzziness=AUTO (edit distance 1)
+```
+
+### Streaming Results from Two Sources (Node.js Pattern)
+
+The demo in the lecture used a Next.js API route that streams results from Postgres and Elasticsearch simultaneously so neither waits for the other. Here is the pattern in pure Node.js:
+
+```text
+Node.js (ESM)import { Client } from '@elastic/elasticsearch'
+import { neon }     from '@neondatabase/serverless'
+
+export async function GET(req) {
+  const { searchParams } = new URL(req.url)
+  const term = searchParams.get('q')
+
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream({
+    async start(controller) {
+      // Fire BOTH queries concurrently, don't await sequentially
+      const [pgResult, esResult] = await Promise.allSettled([
+        pgSearch(term),
+        esSearch(term),
+      ])
+
+      controller.enqueue(encoder.encode(JSON.stringify({
+        source: 'postgres',
+        ...pgResult
+      })))
+      controller.enqueue(encoder.encode(JSON.stringify({
+        source: 'elasticsearch',
+        ...esResult
+      })))
+      controller.close()
+    }
+  })
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+}
+```
+
+11
+
+## The Benchmark: ILIKE vs Elasticsearch on 50k Rows
+
+The demo in the lecture populated **50,000 review documents** into both Neon (cloud Postgres) and Elastic Cloud, both hosted in `us-west` to keep network latency equal. Results:
+
+<Diagram caption="Fig 5: Postgres ILIKE scales poorly with wider matches; Elasticsearch stays flat at ~500ms.">
+<svg viewBox="0 0 600 220" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="600" height="220" fill="var(--dg-paper)"></rect><text x="300" y="24" text-anchor="middle" font-family="var(--font-prose)" font-size="15" font-weight="700" fill="var(--dg-ink)">Search Latency on 50 000 rows</text><line x1="80" y1="40" x2="80" y2="180" stroke="var(--dg-line)" stroke-width="1.5"></line><line x1="80" y1="180" x2="560" y2="180" stroke="var(--dg-line)" stroke-width="1.5"></line><line x1="80" y1="130" x2="560" y2="130" stroke="var(--dg-surface)" stroke-width="1"></line><line x1="80" y1="80" x2="560" y2="80" stroke="var(--dg-surface)" stroke-width="1"></line><text x="70" y="133" text-anchor="end" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">3 s</text><text x="70" y="83" text-anchor="end" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">7 s</text><text x="70" y="183" text-anchor="end" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">0</text><rect x="130" y="173" width="70" height="7" rx="3" fill="var(--dg-ok)"></rect><text x="165" y="168" text-anchor="middle" font-family="var(--font-ui)" font-size="11" font-weight="700" fill="var(--dg-ok)">500ms</text><text x="165" y="197" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">ES: "laptop"</text><rect x="240" y="171" width="70" height="9" rx="3" fill="var(--dg-ok)"></rect><text x="275" y="166" text-anchor="middle" font-family="var(--font-ui)" font-size="11" font-weight="700" fill="var(--dg-ok)">500ms</text><text x="275" y="197" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">ES: "only"</text><rect x="360" y="130" width="70" height="50" rx="3" fill="var(--dg-accent)"></rect><text x="395" y="125" text-anchor="middle" font-family="var(--font-ui)" font-size="11" font-weight="700" fill="var(--dg-accent)">~3s</text><text x="395" y="197" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">PG: "laptop"</text><rect x="460" y="75" width="70" height="105" rx="3" fill="var(--dg-accent)"></rect><text x="495" y="70" text-anchor="middle" font-family="var(--font-ui)" font-size="11" font-weight="700" fill="var(--dg-accent)">~7.5s</text><text x="495" y="197" text-anchor="middle" font-family="var(--font-ui)" font-size="11" fill="var(--dg-ink-2)">PG: "only"</text></svg>
+</Diagram>
+
+| Query          | Elasticsearch | Postgres ILIKE | Speedup |
+| -------------- | ------------- | -------------- | ------- |
+| "laptop"       | \~500 ms      | \~3 s          | 6x      |
+| "only" (broad) | \~500 ms      | \~7.5 s        | 15x     |
+
+The broader the search term (more matching rows), the worse ILIKE gets, because Postgres must retrieve and return all those rows from disk. Elasticsearch computes relevance scores in-memory on the shard and only returns the top-N, so latency stays low.
+
+12
+
+## When to Use What
+
+#### Postgres Full-Text Search
+
+- Data already in Postgres
+- Search is a secondary feature, not the core product
+- Team small / no dedicated infra for ES
+- Moderate data volume (&lt; a few million rows)
+- Don't need fuzzy/typo search on day one
+
+#### Elasticsearch
+
+- Search is a first-class feature
+- Millions+ of documents
+- Need typo tolerance / autocomplete
+- Complex relevance tuning needed
+- Already running ELK for logs anyway
+- Need aggregations / analytics on search results
+
+<Callout type="info">
+As the lecturer noted: _"You don't have to master Elasticsearch the way you must master databases. Most search use cases are covered by copy-pasting from the official docs or an LLM."_ Know when to reach for the tool; the tool's docs will handle the rest.
+</Callout>
+
+### Decision Flow
+
+<Diagram caption="Fig 6: Quick decision tree for choosing your search backend.">
+<svg viewBox="0 0 640 200" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="640" height="200" fill="var(--dg-paper)"></rect><defs><marker id="arr4" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--dg-ink-2)"></path></marker></defs><rect x="240" y="16" width="160" height="36" rx="18" fill="var(--dg-inverse)"></rect><text x="320" y="39" text-anchor="middle" fill="var(--dg-on-inverse)" font-family="var(--font-ui)" font-size="13">Need text search?</text><line x1="320" y1="52" x2="320" y2="72" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#arr4)"></line><polygon points="320,72 420,100 320,128 220,100" fill="var(--dg-surface)" stroke="var(--dg-line)"></polygon><text x="320" y="96" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="12">Millions of docs or</text><text x="320" y="112" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="12">search-first product?</text><line x1="420" y1="100" x2="520" y2="100" stroke="var(--dg-accent)" stroke-width="1.5" marker-end="url(#arr4)"></line><text x="468" y="92" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="11">Yes</text><rect x="522" y="76" width="100" height="48" rx="8" fill="var(--dg-accent)"></rect><text x="572" y="98" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Elasticsearch</text><text x="572" y="114" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="10">/ OpenSearch</text><line x1="220" y1="100" x2="100" y2="100" stroke="var(--dg-ok)" stroke-width="1.5" marker-end="url(#arr4)"></line><text x="162" y="92" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-ui)" font-size="11">No</text><rect x="18" y="76" width="80" height="48" rx="8" fill="var(--dg-ok)"></rect><text x="58" y="98" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Postgres</text><text x="58" y="114" text-anchor="middle" fill="var(--dg-on-accent)" font-family="var(--font-ui)" font-size="10">tsvector+GIN</text><text x="320" y="160" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="12">Both route through Apache Lucene (or compatible) under the hood.</text><text x="320" y="180" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="12">Master your database first; search is the second skill to add.</text></svg>
+</Diagram>
+
+13
+
+## References & Further Reading
+
+[Elasticsearch Official Docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html) [Postgres Full-Text Search](https://www.postgresql.org/docs/current/textsearch.html) [Elasticsearch Query DSL](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html) [BM25 Similarity Config](https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules-similarity.html) [Apache Lucene](https://lucene.apache.org/core/) [Analysis & Tokenisation](https://www.elastic.co/guide/en/elasticsearch/reference/current/analysis.html) [ELK Stack Overview](https://www.elastic.co/what-is/elk-stack) [pgx Go Driver Docs](https://pkg.go.dev/github.com/jackc/pgx/v5) [Python ES Client](https://www.elastic.co/guide/en/elasticsearch/client/python-api/current/index.html)
+
+---
+
+Backend Field Manual / Full-Text Search Chapter / Notes compiled from video lecture
+
+Backend from First Principles / Chapter 11 / Search. Code targets Go 1.22+ and Python 3.11+.

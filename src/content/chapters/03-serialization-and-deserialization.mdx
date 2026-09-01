@@ -1,0 +1,351 @@
+---
+order: 3
+title: "Serialization, the shared language of machines."
+navTitle: "Serialization & Deserialization"
+summary: "A JavaScript client and a Rust server have nothing in common at the level of data types. Serialization is how they talk anyway: both convert their native data to and from one agreed format for the trip across the network. This manual covers the whole idea, the language barrier, the common standard, text vs binary formats, JSON in depth, the OSI mental model, and the full client<->server round-trip, with worked code in Go and Python."
+readingTime: "2-3 hours"
+keywords:
+  - "serialization"
+  - "deserialization"
+  - "json"
+  - "protobuf"
+  - "encoding"
+  - "decoding"
+  - "marshal"
+---
+01
+
+## The Language Barrier
+
+A typical web application is two machines in different places, connected over the internet. The **client**: the frontend, often a JavaScript app (React, Angular, Vue) running in a browser like Chrome, talks to a **server**, the backend, which may run on localhost or somewhere remote in AWS, GCP, or Azure. They communicate through some network protocol: HTTP (traditional REST APIs), or gRPC, or WebSocket. This manual assumes HTTP/REST, since it is still the most common.
+
+Here is the catch. The client might be JavaScript and the server might be Rust, and those two languages handle data _completely differently_:
+
+- **JavaScript** is dynamic and not compiled, types are loose and decided at runtime.
+- **Rust** is compiled and extremely strict about types.
+
+So when a JavaScript client sends an object like `{ name: "..." }` in the request body, the Rust server _cannot natively understand_ a JavaScript data structure, its own data types are nothing like JavaScript's. The same problem runs in reverse for the response. Two machines, two incompatible internal worlds, one wire between them.
+
+<Diagram>
+<svg viewBox="0 0 900 230" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="13"><rect x="20" y="40" width="240" height="150" rx="14" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)"></rect><text x="140" y="68" text-anchor="middle" fill="var(--dg-warn)" font-weight="700" font-size="14">CLIENT / JavaScript</text><text x="140" y="86" text-anchor="middle" fill="var(--dg-ink-3)" font-size="11">dynamic / not compiled</text><rect x="46" y="104" width="188" height="68" rx="8" fill="var(--dg-inverse)"></rect><text x="62" y="126" fill="var(--dg-on-inverse)">&#123;</text><text x="78" y="146" fill="var(--dg-on-inverse-info)">name</text><text x="118" y="146" fill="var(--dg-on-inverse)">: </text><text x="132" y="146" fill="var(--dg-on-inverse-ok)">"Ada"</text><text x="62" y="164" fill="var(--dg-on-inverse)">&#125;</text><rect x="640" y="40" width="240" height="150" rx="14" fill="var(--dg-info-tint)" stroke="var(--dg-info)"></rect><text x="760" y="68" text-anchor="middle" fill="var(--dg-info)" font-weight="700" font-size="14">SERVER / Rust</text><text x="760" y="86" text-anchor="middle" fill="var(--dg-ink-3)" font-size="11">compiled / strict types</text><rect x="666" y="104" width="188" height="68" rx="8" fill="var(--dg-inverse)"></rect><text x="682" y="126" fill="var(--dg-on-inverse-accent)">struct</text><text x="742" y="126" fill="var(--dg-on-inverse-warn)"> User &#123;</text><text x="698" y="146" fill="var(--dg-on-inverse-info)">name</text><text x="738" y="146" fill="var(--dg-on-inverse)">: String</text><text x="682" y="164" fill="var(--dg-on-inverse)">&#125;</text><text x="450" y="100" text-anchor="middle" fill="var(--dg-accent)" font-weight="700" font-size="40">?</text><text x="450" y="135" text-anchor="middle" fill="var(--dg-ink-3)" font-size="11">incompatible data types</text><path d="M270 130 L420 130" stroke="var(--dg-accent)" stroke-width="2" stroke-dasharray="5 5" fill="none"></path><path d="M480 130 L630 130" stroke="var(--dg-accent)" stroke-width="2" stroke-dasharray="5 5" fill="none"></path></svg>
+</Diagram>
+
+**The barrier.** A Rust server can't natively parse a JavaScript object. They need a **universal language** for the trip across the network.
+
+02
+
+## Serialize & Deserialize
+
+The solution: both sides agree on a single, common, standard format for data on the wire. Each machine converts _into_ that format before sending, and _out of_ it after receiving.
+
+Serialization
+
+Converting **native data** (a JavaScript object, a Rust struct, a Go struct, a Python object) **into the common standard format** before sending it over the network (or storing it).
+
+Deserialization
+
+The exact reverse: taking data _in_ the common format and **parsing it back into the machine's own native data type**, so it can run its business logic.
+
+<Diagram>
+<svg viewBox="0 0 900 200" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="13"><rect x="40" y="70" width="200" height="60" rx="11" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)"></rect><text x="140" y="95" text-anchor="middle" fill="var(--dg-ink)" font-weight="600">native data</text><text x="140" y="115" text-anchor="middle" fill="var(--dg-ink-3)" font-size="11">object / struct</text><rect x="350" y="70" width="200" height="60" rx="11" fill="var(--dg-inverse)"></rect><text x="450" y="95" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-weight="700">common format</text><text x="450" y="115" text-anchor="middle" fill="var(--dg-on-inverse-3)" font-size="11">e.g. JSON text</text><rect x="660" y="70" width="200" height="60" rx="11" fill="var(--dg-info-tint)" stroke="var(--dg-info)"></rect><text x="760" y="95" text-anchor="middle" fill="var(--dg-ink)" font-weight="600">native data</text><text x="760" y="115" text-anchor="middle" fill="var(--dg-ink-3)" font-size="11">struct / object</text><path d="M242 90 L348 90" stroke="var(--dg-accent)" stroke-width="2" fill="none" marker-end="url(#a)"></path><text x="295" y="80" text-anchor="middle" fill="var(--dg-accent)" font-weight="700" font-size="11">serialize -></text><path d="M552 110 L658 110" stroke="var(--dg-info)" stroke-width="2" fill="none" marker-end="url(#a2)"></path><text x="605" y="128" text-anchor="middle" fill="var(--dg-info)" font-weight="700" font-size="11">-> deserialize</text><defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker><marker id="a2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-info)"></path></marker></defs></svg>
+</Diagram>
+
+**Two directions, one format.** Serialize = native -> common. Deserialize = common -> native. The format in the middle is what travels.
+
+Language-agnostic & domain-agnostic
+
+Because the format is neutral, **any machine can talk to any other machine** regardless of the languages or technologies underneath. "Language-agnostic" = it doesn't care whether you're JS or Rust. "Domain-agnostic" = it doesn't care which environment or technology stack you run.
+
+<Callout type="info" title="Not only for the network">
+The same convert-to-and-from-a-common-format idea also applies to **storage**: writing data to disk or a config/log file and reading it back later. Transmission is the focus here, but the phenomenon is the same.
+</Callout>
+
+03
+
+## Agreeing on a Common Standard
+
+If you were handed this problem cold, two machines in different locations, connected over the internet, that must exchange data in a way that is _language-agnostic_, the obvious solution is to define a **common standard**.
+
+A "standard" / "format"
+
+Just a fancy word for an agreed **set of rules** describing how data must be written. Both client and server promise: "we will send and receive data shaped like _this_."
+
+With that agreement in place, the client converts its native logic (say, from JavaScript) into the standard before sending; the server reads the standard and converts it into _its_ native type (say, a Rust struct); it does its work, converts the response back into the standard, and sends it; and the client parses it back into JavaScript. That round-trip _is_ serialization and deserialization. In one line: **converting data to and from a common format during transmission (or storage), so it is understandable across languages and domains.**
+
+04
+
+## Text-based vs Binary Formats
+
+There are many serialization standards, but they fall into two families.
+
+<Diagram>
+<svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="13"><rect x="330" y="20" width="220" height="44" rx="10" fill="var(--dg-inverse)"></rect><text x="440" y="47" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-weight="700">Serialization standards</text><rect x="80" y="110" width="300" height="44" rx="10" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)"></rect><text x="230" y="131" text-anchor="middle" fill="var(--dg-ok)" font-weight="700">TEXT-BASED</text><text x="230" y="148" text-anchor="middle" fill="var(--dg-ink-2)" font-size="11">human-readable</text><rect x="80" y="180" width="90" height="40" rx="8" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="125" y="205" text-anchor="middle" fill="var(--dg-ink)" font-weight="600">JSON</text><rect x="185" y="180" width="90" height="40" rx="8" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="230" y="205" text-anchor="middle" fill="var(--dg-ink)">YAML</text><rect x="290" y="180" width="90" height="40" rx="8" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="335" y="205" text-anchor="middle" fill="var(--dg-ink)">XML</text><rect x="500" y="110" width="300" height="44" rx="10" fill="var(--dg-info-tint)" stroke="var(--dg-info)"></rect><text x="650" y="131" text-anchor="middle" fill="var(--dg-info)" font-weight="700">BINARY FORMAT</text><text x="650" y="148" text-anchor="middle" fill="var(--dg-ink-2)" font-size="11">compact / efficient / not human-readable</text><rect x="520" y="180" width="120" height="40" rx="8" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="580" y="205" text-anchor="middle" fill="var(--dg-ink)">Protobuf</text><rect x="655" y="180" width="120" height="40" rx="8" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="715" y="205" text-anchor="middle" fill="var(--dg-ink)">Avro</text><g stroke="var(--dg-line-2)" stroke-width="2" fill="none"><path d="M420 64 L230 108" marker-end="url(#b)"></path><path d="M460 64 L650 108" marker-end="url(#b)"></path></g><defs><marker id="b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-line-2)"></path></marker></defs></svg>
+</Diagram>
+
+**Two families.** Text-based formats are readable by humans; binary formats compile to raw bytes for compact, efficient transmission.
+
+- **Text-based formats**: human-readable. `JSON`, `YAML`, and `XML`. You can open the payload and read it.
+- **Binary formats**: compiled into raw binary for highly efficient, compact transmission. `Protobuf` (Protocol Buffers) and `Avro` are the popular ones. Not meant to be read by eye.
+
+YAML and XML are still used for serialization, but not so often for HTTP communication. For traditional HTTP REST APIs, the default choice is JSON.
+
+05
+
+## JSON: the Industry Standard
+
+For traditional HTTP REST API communication, **JSON** is the most popular serialization standard, used something like **80% of the time**.
+
+JSON
+
+**J**ava**S**cript **O**bject **N**otation. Named because it looks and behaves much like a JavaScript object, but despite the name it is **not limited to JavaScript** and is used everywhere, across every language.
+
+#### Why it won
+
+- **Human-readable.** JSON was designed to be read by people; you can glance at a payload and understand it. That is one of its strongest selling points.
+- **Fundamental data types.** Its value types map cleanly onto concepts every programmer already knows.
+
+#### Where you'll meet it
+
+- **HTTP transmission**: the request/response bodies of REST APIs (the focus here).
+- **Logging**: a very popular choice for application and server logs at runtime.
+- **Configuration files**: app and tool config.
+
+06
+
+## JSON Syntax Rules
+
+JSON has very few rules, that is the whole point. Here is a typical object, annotated with every rule the source calls out:
+
+<Diagram>
+<svg viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="15"><rect x="30" y="20" width="560" height="280" rx="12" fill="var(--dg-inverse)"></rect><g><text x="55" y="56" fill="var(--dg-on-inverse)">&#123;</text><text x="80" y="86" fill="var(--dg-on-inverse-info)">"name"</text><text x="150" y="86" fill="var(--dg-on-inverse)">:</text><text x="166" y="86" fill="var(--dg-on-inverse-ok)">"Ada"</text><text x="226" y="86" fill="var(--dg-on-inverse)">,</text><text x="80" y="116" fill="var(--dg-on-inverse-info)">"age"</text><text x="138" y="116" fill="var(--dg-on-inverse)">:</text><text x="154" y="116" fill="var(--dg-on-inverse-accent)">30</text><text x="180" y="116" fill="var(--dg-on-inverse)">,</text><text x="80" y="146" fill="var(--dg-on-inverse-info)">"active"</text><text x="166" y="146" fill="var(--dg-on-inverse)">:</text><text x="182" y="146" fill="var(--dg-on-inverse-accent)">true</text><text x="226" y="146" fill="var(--dg-on-inverse)">,</text><text x="80" y="176" fill="var(--dg-on-inverse-info)">"tags"</text><text x="146" y="176" fill="var(--dg-on-inverse)">:</text><text x="162" y="176" fill="var(--dg-on-inverse)">&#91;</text><text x="174" y="176" fill="var(--dg-on-inverse-ok)">"a"</text><text x="200" y="176" fill="var(--dg-on-inverse)">,</text><text x="212" y="176" fill="var(--dg-on-inverse-ok)">"b"</text><text x="238" y="176" fill="var(--dg-on-inverse)">&#93;,</text><text x="80" y="206" fill="var(--dg-on-inverse-info)">"address"</text><text x="178" y="206" fill="var(--dg-on-inverse)">: &#123;</text><text x="110" y="236" fill="var(--dg-on-inverse-info)">"country"</text><text x="208" y="236" fill="var(--dg-on-inverse)">:</text><text x="224" y="236" fill="var(--dg-on-inverse-ok)">"India"</text><text x="296" y="236" fill="var(--dg-on-inverse)">,</text><text x="110" y="266" fill="var(--dg-on-inverse-info)">"phone"</text><text x="186" y="266" fill="var(--dg-on-inverse)">:</text><text x="202" y="266" fill="var(--dg-on-inverse-accent)">123456</text><text x="80" y="286" fill="var(--dg-on-inverse)">&#125;</text></g><g font-size="11.5"><text x="615" y="50" fill="var(--dg-accent)" font-weight="700">opening brace &#123;</text><text x="615" y="90" fill="var(--dg-info)" font-weight="700">key, string, in</text><text x="615" y="106" fill="var(--dg-info)">double quotes</text><text x="615" y="140" fill="var(--dg-ok)" font-weight="700">values: string,</text><text x="615" y="156" fill="var(--dg-ok)">number, boolean,</text><text x="615" y="172" fill="var(--dg-ok)">array ...</text><text x="615" y="212" fill="var(--dg-warn)" font-weight="700">... or a NESTED</text><text x="615" y="228" fill="var(--dg-warn)">object (same rules)</text><text x="615" y="296" fill="var(--dg-accent)" font-weight="700">closing brace &#125;</text></g><g stroke="var(--dg-line-2)" stroke-width="1" stroke-dasharray="3 3" fill="none"><path d="M70 50 L610 46"></path><path d="M150 82 L610 92"></path><path d="M260 130 L610 150"></path><path d="M300 206 L610 212"></path><path d="M95 282 L610 292"></path></g></svg>
+</Diagram>
+
+**Every rule in one object.** Braces wrap it; keys are quoted strings; values are simple types or nested objects.
+
+#### The rules, spelled out
+
+- A JSON object **starts with `{` and ends with `}`**.
+- **Keys must be strings wrapped in double quotes**: e.g. `"name":`. No other data type can be a key. (Double quotes, always, not single.)
+- **Values** are limited to fundamental types: a **string**, a **number**, a **boolean**, an **array**, or another **nested object**.
+- A **nested object** follows the exact same rules recursively: braces, quoted string keys, and values of those same fundamental types. JSON can nest as deep as you like.
+
+<Callout type="info" title="That's the whole spec, basically">
+There isn't much more to memorise. Braces around the object, double-quoted string keys, and values that are strings, numbers, booleans, arrays, or nested objects, each nested object obeying the same characteristics. That is all there is to JSON.
+</Callout>
+
+07
+
+## The OSI Mental Model
+
+When data crosses the internet it passes through many network layers, the **OSI model**. You do _not_ need to master IP packets and data frames to be a backend engineer; a high-level picture is enough. The two ends of the stack are the **application layer** (top) and the **physical layer** (bottom); there are several layers in between, and the same stack exists on both client and server.
+
+<Diagram>
+<svg viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="12"><text x="140" y="28" text-anchor="middle" fill="var(--dg-warn)" font-weight="700">CLIENT</text><rect x="40" y="40" width="200" height="42" rx="7" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)"></rect><text x="140" y="60" text-anchor="middle" fill="var(--dg-accent)" font-weight="700">Application, JSON</text><text x="140" y="75" text-anchor="middle" fill="var(--dg-ink-3)" font-size="10">you live here</text><rect x="40" y="92" width="200" height="34" rx="7" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="140" y="114" text-anchor="middle" fill="var(--dg-ink-2)">...transport / network...</text><rect x="40" y="136" width="200" height="34" rx="7" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="140" y="158" text-anchor="middle" fill="var(--dg-ink-2)">data frames / IP packets</text><rect x="40" y="180" width="200" height="42" rx="7" fill="var(--dg-inverse)"></rect><text x="140" y="200" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-weight="700">Physical, bits</text><text x="140" y="215" text-anchor="middle" fill="var(--dg-on-inverse-3)" font-size="10">0 1 0 1 0 1</text><text x="760" y="28" text-anchor="middle" fill="var(--dg-info)" font-weight="700">SERVER</text><rect x="660" y="40" width="200" height="42" rx="7" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)"></rect><text x="760" y="60" text-anchor="middle" fill="var(--dg-accent)" font-weight="700">Application, JSON</text><text x="760" y="75" text-anchor="middle" fill="var(--dg-ink-3)" font-size="10">you live here too</text><rect x="660" y="92" width="200" height="34" rx="7" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="760" y="114" text-anchor="middle" fill="var(--dg-ink-2)">...transport / network...</text><rect x="660" y="136" width="200" height="34" rx="7" fill="var(--dg-veil)" stroke="var(--dg-line-2)"></rect><text x="760" y="158" text-anchor="middle" fill="var(--dg-ink-2)">data frames / IP packets</text><rect x="660" y="180" width="200" height="42" rx="7" fill="var(--dg-inverse)"></rect><text x="760" y="200" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-weight="700">Physical, bits</text><text x="760" y="215" text-anchor="middle" fill="var(--dg-on-inverse-3)" font-size="10">0 1 0 1 0 1</text><path d="M240 201 C400 280 500 280 660 201" stroke="var(--dg-accent)" stroke-width="2" fill="none" stroke-dasharray="5 4"></path><text x="450" y="300" text-anchor="middle" fill="var(--dg-ink-3)">the wire, electrical / optical signals carrying 0s and 1s</text><text x="290" y="130" fill="var(--dg-ink-3)" font-size="10" transform="rotate(90 290 130)">JSON -> bits</text><text x="610" y="100" fill="var(--dg-ink-3)" font-size="10" transform="rotate(-90 610 100)">bits -> JSON</text></svg>
+</Diagram>
+
+**The abstraction.** Your data starts and ends as JSON at the application layer. In between it becomes frames, packets, and bits, but that is not your concern.
+
+The backend engineer's mental model
+
+You only focus on the **application layer**. Assume your client serializes data into JSON and sends it. Under the hood the network turns that JSON into data frames -> IP packets -> physical bits (`0`s and `1`s) sent as electrical or optical signals. Before your server ever touches the data, the network reassembles those bits back into the _exact same JSON_ the client sent. **You never deal with the intermediate conversions, only the JSON.**
+
+08
+
+## The End-to-End Workflow
+
+Putting every piece together, here is the complete round-trip in a real request, the phenomenon that, as a whole, _is_ serialization & deserialization.
+
+<Diagram>
+<svg viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-diagram-mono)" font-size="12"><defs><marker id="w" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker></defs><text x="150" y="28" text-anchor="middle" fill="var(--dg-warn)" font-weight="700">CLIENT (JavaScript)</text><rect x="40" y="42" width="220" height="40" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)"></rect><text x="150" y="66" text-anchor="middle" fill="var(--dg-ink)">1 / gather user input</text><rect x="40" y="92" width="220" height="40" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)"></rect><text x="150" y="110" text-anchor="middle" fill="var(--dg-ink)" font-weight="600">2 / SERIALIZE -> JSON</text><text x="150" y="124" text-anchor="middle" fill="var(--dg-ink-3)" font-size="10">attach to HTTP body</text><rect x="320" y="92" width="260" height="40" rx="9" fill="var(--dg-inverse)"></rect><text x="450" y="110" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-weight="700">3 / TRANSMIT</text><text x="450" y="124" text-anchor="middle" fill="var(--dg-on-inverse-3)" font-size="10">JSON -> bits -> across the internet</text><text x="750" y="28" text-anchor="middle" fill="var(--dg-info)" font-weight="700">SERVER (Rust)</text><rect x="640" y="92" width="220" height="40" rx="9" fill="var(--dg-info-tint)" stroke="var(--dg-info)"></rect><text x="750" y="110" text-anchor="middle" fill="var(--dg-ink)" font-weight="600">4 / DESERIALIZE</text><text x="750" y="124" text-anchor="middle" fill="var(--dg-ink-3)" font-size="10">JSON -> Rust struct</text><rect x="640" y="160" width="220" height="40" rx="9" fill="var(--dg-info-tint)" stroke="var(--dg-info)"></rect><text x="750" y="184" text-anchor="middle" fill="var(--dg-ink)">5 / PROCESS / save to DB</text><rect x="640" y="210" width="220" height="40" rx="9" fill="var(--dg-info-tint)" stroke="var(--dg-info)"></rect><text x="750" y="228" text-anchor="middle" fill="var(--dg-ink)" font-weight="600">6 / SERIALIZE -> JSON</text><text x="750" y="242" text-anchor="middle" fill="var(--dg-ink-3)" font-size="10">the HTTP response</text><rect x="320" y="210" width="260" height="40" rx="9" fill="var(--dg-inverse)"></rect><text x="450" y="228" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-weight="700">transmit back</text><text x="450" y="242" text-anchor="middle" fill="var(--dg-on-inverse-3)" font-size="10">JSON -> bits -> across the internet</text><rect x="40" y="210" width="220" height="40" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)"></rect><text x="150" y="228" text-anchor="middle" fill="var(--dg-ink)" font-weight="600">7 / DESERIALIZE</text><text x="150" y="242" text-anchor="middle" fill="var(--dg-ink-3)" font-size="10">JSON -> JS object</text><rect x="40" y="290" width="220" height="40" rx="9" fill="var(--dg-accent-tint)" stroke="var(--dg-warn)"></rect><text x="150" y="314" text-anchor="middle" fill="var(--dg-ink)">update the UI</text><g stroke="var(--dg-accent)" stroke-width="2" fill="none"><path d="M150 82 L150 90" marker-end="url(#w)"></path><path d="M260 112 L318 112" marker-end="url(#w)"></path><path d="M580 112 L638 112" marker-end="url(#w)"></path><path d="M750 132 L750 158" marker-end="url(#w)"></path><path d="M750 200 L750 208" marker-end="url(#w)"></path><path d="M638 230 L582 230" marker-end="url(#w)"></path><path d="M318 230 L262 230" marker-end="url(#w)"></path><path d="M150 250 L150 288" marker-end="url(#w)"></path></g></svg>
+</Diagram>
+
+**The full round-trip.** Serialize on each side before sending; deserialize on each side after receiving. Four conversions per request/response cycle.
+
+In words: the client gathers input, **serializes** it to a JSON string in the request body, and ships it; the bits cross the internet; the server **deserializes** the JSON into its native type, runs business logic (e.g. saves to a database), **serializes** its response back to JSON, and sends it; the client **deserializes** that JSON into a JavaScript object and updates the UI. That whole flow is what we call serialization and deserialization, a phenomenon you mostly just need to know _exists_; it has very few concepts of its own.
+
+09
+
+## Serialization in Go
+
+Go serializes to/from JSON with the standard `encoding/json` package: `Marshal` = serialize, `Unmarshal` = deserialize. The pillars show up through interfaces (abstraction + polymorphism), unexported fields + struct tags (encapsulation), and embedding (composition, Go's inheritance). Pillars are tagged OOP.
+
+```go title="Go 1.22+serialize.go"
+package main
+
+import ("encoding/json"; "fmt"; "time")
+
+// ABSTRACTION: Serializer names a capability, "turn data into
+// bytes and back", without binding to a concrete format. Code
+// depends on this contract, so JSON could be swapped for another
+// format with zero changes to callers.
+type Serializer interface {
+    Serialize(v any) ([]byte, error)   // native -> common format
+    Deserialize(data []byte, v any) error // common format -> native
+}
+
+// POLYMORPHISM: JSONSerializer implements Serializer. Any other
+// format (YAML, Protobuf) could implement the same interface and
+// be used interchangeably through a Serializer variable.
+type JSONSerializer struct{}
+
+func (JSONSerializer) Serialize(v any) ([]byte, error) {
+    return json.Marshal(v)   // SERIALIZE: struct -> JSON bytes
+}
+func (JSONSerializer) Deserialize(data []byte, v any) error {
+    return json.Unmarshal(data, v) // DESERIALIZE: JSON bytes -> struct
+}
+
+// "INHERITANCE" via COMPOSITION: BaseModel holds shared fields;
+// embedding it into User reuses them (and their json tags).
+type BaseModel struct {
+    ID        int       `json:"id"`         // tag = the JSON key name
+    CreatedAt time.Time `json:"created_at"`
+}
+
+// ENCAPSULATION: an exported struct whose JSON shape is controlled
+// by tags. "password" is unexported (lowercase) -> private AND
+// invisible to the JSON encoder, so it never leaks over the wire.
+type User struct {
+    BaseModel            // embedded -> inherits ID, CreatedAt
+    Name    string      `json:"name"`
+    Active  bool        `json:"active"`
+    Address Address     `json:"address"` // nested object
+    password string     // unexported: hidden from JSON output
+}
+
+type Address struct {
+    Country string `json:"country"`
+    Phone   int    `json:"phone"`
+}
+
+func main() {
+    var codec Serializer = JSONSerializer{} // program to the interface
+
+    u := User{
+        BaseModel: BaseModel{ID: 1, CreatedAt: time.Now()},
+        Name:      "Ada", Active: true,
+        Address:   Address{Country: "India", Phone: 123456},
+    }
+
+    // SERIALIZE, native Go struct into the common JSON format
+    out, _ := codec.Serialize(u)
+    fmt.Println(string(out))
+    // {"id":1,"created_at":"...","name":"Ada","active":true,
+    //  "address":{"country":"India","phone":123456}}
+
+    // DESERIALIZE, JSON received over HTTP back into a Go struct
+    incoming := []byte(`{"name":"Lin","address":{"country":"IN","phone":42}}`)
+    var back User
+    codec.Deserialize(incoming, &back)
+    fmt.Println(back.Name, back.Address.Country) // Lin IN
+}
+```
+
+10
+
+## Serialization in Python
+
+Python uses the built-in `json` module: `json.dumps` = serialize (dump to string), `json.loads` = deserialize (load from string). The same OOP architecture: an ABC contract, inheritance, polymorphism, and a private attribute.
+
+```python title="Python 3.11+serialize.py"
+import json
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, asdict, field
+
+# ABSTRACTION: Serializer is an Abstract Base Class. The
+# @abstractmethod forces subclasses to implement both directions.
+# You cannot instantiate Serializer itself, it is a pure contract.
+class Serializer(ABC):
+    @abstractmethod
+    def serialize(self, obj) -> str: ...      # native -> common
+    @abstractmethod
+    def deserialize(self, data: str): ...      # common -> native
+
+# INHERITANCE + POLYMORPHISM: JSONSerializer IS-A Serializer and
+# overrides both methods. A YamlSerializer could subclass the same
+# ABC and be dropped in wherever a Serializer is expected.
+class JSONSerializer(Serializer):
+    def serialize(self, obj) -> str:
+        return json.dumps(obj)               # SERIALIZE: dict -> JSON text
+    def deserialize(self, data: str):
+        return json.loads(data)              # DESERIALIZE: JSON text -> dict
+
+# INHERITANCE: BaseModel is a shared parent (id, timestamps).
+@dataclass
+class BaseModel:
+    id: int = 0
+
+@dataclass
+class Address:
+    country: str
+    phone: int                              # nested object
+
+# ENCAPSULATION: __password is name-mangled (-> _User__password),
+# effectively private, and to_dict() chooses what leaves the
+# object, the secret never appears in the serialized output.
+@dataclass
+class User(BaseModel):                     # IS-A BaseModel
+    name: str = ""
+    active: bool = True
+    address: Address | None = None
+    __password: str = ""                  # private; excluded below
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d.pop("_User__password", None)        # keep the secret out
+        return d
+
+if __name__ == "__main__":
+    codec: Serializer = JSONSerializer()    # program to the contract
+
+    user = User(id=1, name="Ada",
+                address=Address("India", 123456))
+
+    # SERIALIZE, native object into the common JSON format
+    payload = codec.serialize(user.to_dict())
+    print(payload)
+    # {"id": 1, "name": "Ada", "active": true,
+    #  "address": {"country": "India", "phone": 123456}}
+
+    # DESERIALIZE, JSON received over HTTP back into native data
+    incoming = '{"name": "Lin", "address": {"country": "IN", "phone": 42}}'
+    data = codec.deserialize(incoming)
+    print(data["name"], data["address"]["country"])  # Lin IN
+```
+
+<Callout type="info" title="Same shape, two languages">
+Both define a **Serializer** contract (abstraction), implement it for JSON (polymorphism), share fields through a base model (inheritance / composition), and keep secrets out of the wire format (encapsulation). The verbs are universal: **serialize** = native -> JSON (Go `Marshal`, Python `dumps`); **deserialize** = JSON -> native (Go `Unmarshal`, Python `loads`).
+</Callout>
+
+11
+
+## Glossary
+
+Every term from the source, in one place.
+
+| Term                         | Meaning                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------ |
+| **Serialization**            | Converting native data (object/struct) into a common standard format to send or store.     |
+| **Deserialization**          | The reverse, parsing the common format back into the machine's native data type.           |
+| **Client / frontend**        | The app sending requests, often a JavaScript app in a browser.                             |
+| **Server / backend**         | The machine receiving requests and running business logic (e.g. a Rust app).               |
+| **Native data type**         | A language's own internal representation, a JS object, a Rust/Go struct, a Python object.  |
+| **Parse**                    | To read a format and turn it into something the machine can use.                           |
+| **Common standard / format** | An agreed set of rules for how data is written, so both sides understand it.               |
+| **Language-agnostic**        | Works regardless of which programming language each side uses.                             |
+| **Domain-agnostic**          | Works regardless of the environment / technology stack on each side.                       |
+| **Text-based format**        | Human-readable serialization, JSON, YAML, XML.                                             |
+| **Binary format**            | Compact, efficient, non-readable serialization, Protobuf, Avro.                            |
+| **JSON**                     | JavaScript Object Notation; the \~80% choice for HTTP REST; human-readable; not JS-only.   |
+| **Key / value**              | JSON keys are quoted strings; values are string, number, boolean, array, or nested object. |
+| **Nested object**            | A JSON object inside another, following the same rules recursively.                        |
+| **OSI model**                | The layered model of network communication, from application layer down to physical layer. |
+| **Application layer**        | The top layer, where you, the backend engineer, work in JSON.                              |
+| **Physical layer**           | The bottom layer, raw bits (0s and 1s) as electrical/optical signals.                      |
+| **Data frames / IP packets** | Intermediate forms the data takes between application and physical layers.                 |
+
+<Callout type="info" title="The whole idea in one breath">
+Two machines with incompatible native data types agree on a **common format** (usually **JSON**). Each **serializes** its data into that format before sending and **deserializes** it back after receiving, so communication is **language- and domain-agnostic**. The network turns JSON into bits and back; at the **application layer** you only ever deal with the JSON.
+</Callout>
+
+Backend from First Principles / Chapter 03 / Serialization. Code targets Go 1.22+ and Python 3.11+.

@@ -1,0 +1,27 @@
+---
+import { getCollection, render } from 'astro:content';
+import Chapter from '../layouts/Chapter.astro';
+import Callout from '../components/Callout.astro';
+import Diagram from '../components/Diagram.astro';
+
+// Chapters use <Callout> and <Diagram> without importing them, so a chapter
+// file stays plain content. Register them once, here.
+const mdxComponents = { Callout, Diagram };
+
+export async function getStaticPaths() {
+  const all = (await getCollection('chapters'))
+    .filter((c) => !c.data.draft)
+    .sort((a, b) => a.data.order - b.data.order);
+
+  return all.map((chapter, i) => ({
+    params: { slug: chapter.id },
+    props: { chapter, prev: all[i - 1], next: all[i + 1] },
+  }));
+}
+
+const { chapter, prev, next } = Astro.props;
+const { Content, headings } = await render(chapter);
+---
+<Chapter chapter={chapter} headings={headings} prev={prev} next={next}>
+  <Content components={mdxComponents} />
+</Chapter>

@@ -1,0 +1,1020 @@
+---
+order: 15
+title: "Logging & Observability"
+navTitle: "Logging & Observability"
+summary: "Chapter 15 of Backend from First Principles: Logging & Observability."
+readingTime: "2-3 hours"
+keywords:
+  - "logging"
+  - "monitoring"
+  - "observability"
+  - "structured"
+  - "logs"
+  - "metrics"
+  - "tracing"
+---
+A detailed backend reference
+
+Logging, Monitoring\
+& Observability
+===============
+
+These are not features, they are practices. A production backend without them is a black box. With them, you can determine the internal state of your entire system just by looking at what it emits. That is the definition of an observable system.
+
+---
+
+01
+
+## Why Observability Matters
+
+Modern backend applications run in **distributed environments**: multiple services, multiple servers, multiple regions, users spread across the globe. Something will go wrong. The question is not _if_, but _when_, and more importantly, how fast can you find out and fix it?
+
+Without logging, monitoring, and observability, when an incident happens you are completely blind. You know _something_ is wrong (users are complaining, conversion dropped), but you have no idea _what_, _where_, or _why_. Every minute of debugging in the dark is revenue lost and user trust eroded.
+
+<Callout type="info" title="Important Framing">
+These are implemented on a **spectrum**: no company can honestly say they follow 100% of all observability practices. The goal is to continuously improve your coverage, not to reach some mythical perfect state. Don't be intimidated by the sheer number of tools and practices in this space.
+</Callout>
+
+These practices also require a **collective effort**. As a developer, you instrument your code. DevOps / SRE teams configure the infrastructure that collects, stores, and displays that data. Neither side alone is sufficient.
+
+<Diagram>
+<svg viewBox="0 0 680 180" xmlns="http://www.w3.org/2000/svg" width="640"><defs><marker id="a1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-accent)"></path></marker><marker id="a2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-ok-soft)"></path></marker><marker id="a3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-warn-soft)"></path></marker></defs><rect x="10" y="65" width="110" height="50" rx="5" fill="var(--dg-inverse)" stroke="var(--dg-accent-soft)" stroke-width="1.5"></rect><text x="65" y="87" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-family="var(--font-diagram-mono)" font-size="10">INCIDENT</text><text x="65" y="103" text-anchor="middle" fill="var(--dg-on-inverse-2)" font-family="var(--font-diagram-mono)" font-size="9">something broke</text><rect x="170" y="20" width="130" height="50" rx="5" fill="var(--dg-inverse)" stroke="var(--dg-accent-soft)" stroke-width="1.2" stroke-dasharray="4 3"></rect><text x="235" y="41" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-family="var(--font-diagram-mono)" font-size="10">WITHOUT LMO</text><text x="235" y="57" text-anchor="middle" fill="var(--dg-on-inverse-2)" font-family="var(--font-diagram-mono)" font-size="9">blind debugging</text><rect x="170" y="110" width="130" height="50" rx="5" fill="var(--dg-inverse)" stroke="var(--dg-ok-soft)" stroke-width="1.5"></rect><text x="235" y="131" text-anchor="middle" fill="var(--dg-on-inverse-ok)" font-family="var(--font-diagram-mono)" font-size="10">WITH LMO</text><text x="235" y="147" text-anchor="middle" fill="var(--dg-on-inverse-2)" font-family="var(--font-diagram-mono)" font-size="9">alert -> metrics -> logs -> trace</text><line x1="122" y1="78" x2="168" y2="52" stroke="var(--dg-accent-soft)" stroke-width="1.2" marker-end="url(#a1)"></line><line x1="122" y1="98" x2="168" y2="128" stroke="var(--dg-ok-soft)" stroke-width="1.2" marker-end="url(#a2)"></line><rect x="360" y="20" width="150" height="50" rx="5" fill="var(--dg-inverse)" stroke="var(--dg-accent-soft)" stroke-width="1"></rect><text x="435" y="40" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-family="var(--font-diagram-mono)" font-size="10">hours of manual</text><text x="435" y="56" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-family="var(--font-diagram-mono)" font-size="10">log grep / guessing</text><rect x="360" y="110" width="150" height="50" rx="5" fill="var(--dg-inverse)" stroke="var(--dg-ok-soft)" stroke-width="1.5"></rect><text x="435" y="130" text-anchor="middle" fill="var(--dg-on-inverse-ok)" font-family="var(--font-diagram-mono)" font-size="10">exact function, line,</text><text x="435" y="146" text-anchor="middle" fill="var(--dg-on-inverse-ok)" font-family="var(--font-diagram-mono)" font-size="10">user, timestamp</text><line x1="302" y1="45" x2="358" y2="45" stroke="var(--dg-accent-soft)" stroke-width="1.2" marker-end="url(#a1)"></line><line x1="302" y1="135" x2="358" y2="135" stroke="var(--dg-ok-soft)" stroke-width="1.2" marker-end="url(#a2)"></line><text x="550" y="90" text-anchor="middle" fill="var(--dg-ink-3)" font-family="var(--font-diagram-mono)" font-size="9">same incident,</text><text x="550" y="102" text-anchor="middle" fill="var(--dg-ink-3)" font-family="var(--font-diagram-mono)" font-size="9">different outcomes</text></svg>
+</Diagram>
+
+02
+
+## The Three Pillars of Observability
+
+Observability theory defines three foundational pillars. A system is only fully observable when all three are in place. Each pillar answers a different question about your system's behaviour.
+
+LOGS
+
+**What happened?**\
+Timestamped records of discrete events in your application, a request came in, a database query ran, an error occurred. Think of logs as your backend's diary.
+
+METRICS
+
+**What are the patterns?**\
+Numerical measurements aggregated over time, request rate, error rate, latency p99, CPU usage. Metrics tell you _trends_, not individual events.
+
+TRACES
+
+**Where did it go?**\
+A trace follows a single request through every component it touched, handler -> service -> DB -> external API. Shows component interactions and latency per step.
+
+Logs -> Answer
+
+"User 42 tried to log in at 14:32:01 and failed, invalid password."
+
+Metrics -> Answer
+
+"In the last 5 minutes, 800 requests/sec, 12% error rate, p99 latency 340ms."
+
+Traces -> Answer
+
+"This request spent 240ms in the DB query layer and 80ms calling the email provider, that's where the latency is."
+
+03
+
+## Monitoring vs Observability: The Difference
+
+These terms are often used interchangeably but they are distinct concepts at different levels of capability.
+
+| Dimension              | Monitoring                                         | Observability                                                                 |
+| ---------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **Core question**      | "Is something wrong?"                              | "What exactly is wrong and why?"                                              |
+| **Approach**           | Pre-defined dashboards and alerts on known metrics | Ad-hoc investigation using logs + metrics + traces together                   |
+| **Scope**              | Tracks metrics you decided to measure in advance   | Can answer questions you didn't know to ask when you set it up                |
+| **Output**             | "CPU is at 95%" -> alert fires                     | "CPU is 95% because function X is running an N+1 DB query for user segment Y" |
+| **Historical analogy** | Dashboard on a car: speed, fuel, temp              | Full diagnostic system: tells you the exact faulty component and cause        |
+| **What it requires**   | Metrics collection, alert rules                    | Logs + Metrics + Traces all correlated and linked                             |
+
+<Callout type="info" title="Historical Context">
+A decade ago, monitoring was the primary form of error detection. You'd set up Nagios alerts on CPU and memory and call it a day. The observability movement emerged because in microservices/distributed systems, knowing _that_ something failed is almost useless without knowing _where_ across dozens of services the failure actually originated.
+</Callout>
+
+**Key insight:** Monitoring tells you _there is a problem_. Observability tells you _exactly what the problem is_, the specific function, the specific service, the specific user, the specific query. This is only possible if you've properly implemented all three pillars.
+
+04
+
+## How All Three Work Together: The Debugging Workflow
+
+In practice, when an incident occurs, you navigate from coarse-grained signals to fine-grained details. Here's the canonical flow used in production systems:
+
+- 1
+
+  **Alert fires (Monitoring)**
+
+  Grafana / New Relic detects error rate > 80% and fires a Slack webhook. You get a message: "API service error rate spiked at 14:32." This is monitoring doing its job.
+
+- 2
+
+  **Go to Metrics dashboard**
+
+  Open Grafana / New Relic. You see concrete numbers: 840 requests/min, 82% returning 5xx, p99 latency jumped from 120ms to 4.2s at 14:31. You now know the _scale_ of the problem and _when_ it started.
+
+- 3
+
+  **Correlate to Logs**
+
+  From the metrics view, click through to the associated error logs for that 2-minute window. You see hundreds of logs: `ERROR: connection pool exhausted after 4000ms`. Now you know _what_ is failing.
+
+- 4
+
+  **Follow the Trace**
+
+  Click on one of those error logs. It links to a trace. The trace shows the full request journey: `AuthMiddleware (2ms) -> UserHandler (5ms) -> UserService (3ms) -> DB.GetUser (3990ms <- HERE)`. The DB query is timing out. Root cause found.
+
+- 5
+
+  **Fix & Confirm with Metrics**
+
+  You add a missing index to the query. Within minutes, the Grafana dashboard shows error rate dropping back to 0.2%, latency back to 110ms. Monitoring confirms the fix worked.
+
+<Callout type="ok" title="The Power of Correlation">
+Alert -> Metric -> Log -> Trace is only possible when all three pillars are **correlated**. Tools like Grafana, New Relic, and Datadog link them using a shared `trace_id` / `request_id` that flows through every component. This is why setting a request ID in middleware and passing it everywhere is critical.
+</Callout>
+
+05
+
+## Logging: Deep Dive
+
+Logging is the practice of **recording all important events** throughout your application's execution lifecycle. Think of it as a journal your backend keeps, timestamped, detailed, structured entries for every significant thing that happens.
+
+### What Should You Log?
+
+A good rule of thumb: anything a developer would want to know when debugging an issue at 2 AM, without access to the live system, without the ability to reproduce the bug, with only the logs to go on.
+
+Business events
+
+User created a to-do. Order was placed. Payment succeeded. Subscription cancelled. These are the events that matter to the business and to auditing.
+
+Security events
+
+Login attempt (success or failure). Password reset. Token revoked. Admin action. These are critical for security audits and intrusion detection.
+
+System events
+
+Server startup / shutdown. Database connection established / lost. Background job started / finished. Config loaded.
+
+Errors & exceptions
+
+Every unhandled error, every caught exception, every failed external API call. Always include: timestamp, user ID, request ID, error type, stack trace.
+
+Performance signals
+
+Slow queries (> 500ms), large payload responses, DB connection pool warnings. These are logs that become metrics over time.
+
+### What Metadata to Include in Every Log
+
+A log without context is almost useless. Every log entry should carry enough metadata to answer: _who did what, when, where, and with what result?_
+
+```text
+// A well-structured log entry (JSON, production format)
+{
+  "timestamp":   "2024-01-15T14:32:01.234Z",
+  "level":        "error",
+  "message":      "database query failed",
+  "service":      "todo-api",
+  "environment":  "production",
+  "request_id":   "req_01J2KXYZ",    // unique per request
+  "trace_id":     "abc123def456",    // links to distributed trace
+  "span_id":      "span_789",
+  "user_id":      "usr_01J2K",
+  "method":       "POST",
+  "path":         "/todos",
+  "error":        "pq: deadlock detected",
+  "duration_ms":  4001,
+  "host":         "worker-node-3"
+}
+JSON Log Entry
+```
+
+06
+
+## Log Levels
+
+Every log entry is assigned a **severity level**. This lets you filter what you see, in development you want everything, in production you care about warnings and above. Your logging library will let you set a minimum level per environment.
+
+DEBUG
+
+**Verbose diagnostic info for development only.** Variable values, function entry/exit, loop iterations. Never enable in production, the volume would overwhelm your log pipeline and cost a fortune in storage. Used when troubleshooting a specific issue locally.
+
+INFO
+
+**Normal, successful application operations.** Server started. User logged in. To-do created. Background job completed. These record the normal flow of business events. This is the default level for production.
+
+WARN
+
+**Something unexpected, but not a failure.** A user typed the wrong password (not your fault). An API responded slowly but successfully. A deprecated config option is still in use. Something you should investigate eventually but the system is still working.
+
+ERROR
+
+**Something failed and needs attention.** Database query failed. External API returned 500. Validation failed in a way that should not have happened. A task handler threw an unhandled exception. This is the level you build alerts around.
+
+FATAL
+
+**The application cannot continue and is shutting down.** Cannot connect to database on startup. Config file missing. Critical dependency unavailable. After logging FATAL, the process terminates. Infrastructure will restart it. Use sparingly, only for truly unrecoverable states.
+
+<Callout type="info" title="Level Hierarchy">
+Levels form a hierarchy: **DEBUG &lt; INFO &lt; WARN &lt; ERROR &lt; FATAL**. Setting your logger to `INFO` means it emits INFO, WARN, ERROR, and FATAL, but suppresses DEBUG. Setting to `ERROR` means only ERROR and FATAL are emitted. This is how you control log volume per environment.
+</Callout>
+
+### Environment-Specific Level Configuration (Go)
+
+```go
+// logger/logger.go, Environment-aware log level
+package logger
+
+import (
+    "os"
+    "go.uber.org/zap"
+    "go.uber.org/zap/zapcore"
+)
+
+func getLogLevel() zapcore.Level {
+    env := os.Getenv("APP_ENV")
+    switch env {
+    case "production":
+        return zapcore.InfoLevel   // production: INFO and above
+    case "staging":
+        return zapcore.WarnLevel   // staging: WARN and above only
+    default:
+        return zapcore.DebugLevel  // local dev: everything
+    }
+}
+
+func New() *zap.Logger {
+    env := os.Getenv("APP_ENV")
+    level := getLogLevel()
+
+    var cfg zap.Config
+    if env == "production" {
+        // Production: JSON format, parseable by Loki, ELK, New Relic
+        cfg = zap.NewProductionConfig()
+        cfg.EncoderConfig.TimeKey = "timestamp"
+        cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+    } else {
+        // Development: coloured console format, human-readable
+        cfg = zap.NewDevelopmentConfig()
+        cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+    }
+
+    cfg.Level = zap.NewAtomicLevelAt(level)
+    logger, _ := cfg.Build()
+    return logger
+}
+Go / Zap
+```
+
+07
+
+## Structured vs Unstructured Logging
+
+There are two fundamental ways to write a log entry. The choice of which to use depends on your environment.
+
+| Property                 | Unstructured (Plain Text)                                     | Structured (JSON)                                            |
+| ------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------ |
+| **Format**               | `2024-01-15 14:32 ERROR: DB query failed for user 42`         | `{"level":"error","user_id":"42","error":"pq: timeout",...}` |
+| **Human readability**    | Easy to read in a terminal                                    | Harder to read without a viewer                              |
+| **Machine parseability** | Hard, requires regex to extract user\_id, error message, etc. | Native JSON, any tool can parse instantly                    |
+| **Field extraction**     | Error-prone regex patterns                                    | Direct field access: `log.user_id`                           |
+| **Querying in Loki/ELK** | Complex, fragile grep patterns                                | `{user_id="42"} \|= "error"`, trivial                        |
+| **Use in**               | Local development                                             | Staging & Production                                         |
+
+### What Structured Logs Look Like Side by Side
+
+```text
+// UNSTRUCTURED, development console (human-friendly)
+14:32:01 DEBUG  Connected to PostgreSQL on localhost:5432
+14:32:01 INFO   Started background job worker
+14:32:01 INFO   HTTP server listening on :8080
+14:32:14 WARN   Slow query detected: 520ms  query=SELECT * FROM todos WHERE user_id=$1
+14:32:15 ERROR  Failed to send email  user_id=usr_01J2K  error=connection refused
+Console (Dev)
+```
+
+```text
+// STRUCTURED, production JSON (machine-friendly)
+{"timestamp":"2024-01-15T14:32:14Z","level":"warn","msg":"slow query","duration_ms":520,"query":"SELECT * FROM todos WHERE user_id=$1","service":"todo-api","env":"production"}
+{"timestamp":"2024-01-15T14:32:15Z","level":"error","msg":"failed to send email","user_id":"usr_01J2K","error":"connection refused","trace_id":"abc123","span_id":"span_001","service":"todo-api","env":"production"}
+JSON (Production)
+```
+
+<Callout type="info" title="Why JSON in Production?">
+Log management systems (Loki, ELK, New Relic, Datadog) ingest thousands of log lines per second. If logs are plain text, these tools must use regex to extract fields like `user_id`, `error`, `duration_ms`, which is slow, error-prone, and fragile. JSON lets them parse fields natively in O(1). Always use JSON in production.
+</Callout>
+
+08
+
+## Metrics: Deep Dive
+
+Metrics are **numerical measurements of your system's behaviour**, aggregated over time. Unlike logs (one entry per event), a metric is a counter or gauge that summarises many events into a single number, e.g. "320 requests in the last 15 seconds". This makes them extremely efficient for dashboards and alerting.
+
+### The Four Core Metric Types (Prometheus Model)
+
+Counter
+
+A value that **only ever goes up** (and resets on restart). Used for: total requests served, total errors, total tasks processed. Query: `rate(http_requests_total[5m])` = requests/sec over last 5 min.
+
+Gauge
+
+A value that **can go up or down**. Used for: current queue depth, current active DB connections, current goroutine count, memory usage right now.
+
+Histogram
+
+Records **observations in configurable buckets**. Used for: request latency, response size. Lets you compute percentiles (p50, p95, p99), crucial for SLOs. "95% of requests complete under 200ms."
+
+Summary
+
+Similar to Histogram but calculates percentiles client-side. Less flexible for aggregation across multiple instances. Prefer Histograms in most cases.
+
+### Key Metrics Every Backend Should Expose
+
+| Metric                                            | Type      | Why It Matters                                                               |
+| ------------------------------------------------- | --------- | ---------------------------------------------------------------------------- |
+| `http_requests_total`                             | Counter   | Request throughput. Labels: method, path, status\_code.                      |
+| `http_request_duration_seconds`                   | Histogram | Latency distribution. p99 tells you worst-case user experience.              |
+| `http_errors_total`                               | Counter   | Count of 4xx / 5xx responses. Spike = something broken.                      |
+| `db_query_duration_seconds`                       | Histogram | Slow DB queries. Spikes indicate missing indexes or N+1 problems.            |
+| `db_connections_open`                             | Gauge     | Pool exhaustion risk. Near max = you need more connections or fewer queries. |
+| `task_queue_depth`                                | Gauge     | Backlog in your background task system. Rising = workers need scaling.       |
+| `task_processing_duration_seconds`                | Histogram | How long background tasks take. Useful for SLA tracking.                     |
+| `go_goroutines` / `process_resident_memory_bytes` | Gauge     | Runtime health. Goroutine leak = this keeps climbing.                        |
+
+### Scrape Interval & Delay
+
+Prometheus _scrapes_ your `/metrics` endpoint at a configured interval (typically 15 seconds). This means there is a built-in delay of \~10-15 seconds between reality and what you see on a dashboard. This is acceptable for most use cases. For near-real-time alerting, use sub-15-second scrape intervals, but be aware this increases load on both your service and Prometheus.
+
+09
+
+## Distributed Tracing
+
+A **trace** is the complete record of a single request's journey through your system. Each step of that journey is called a **span**. Spans are linked by a shared `trace_id` that is generated when the request first enters your system and propagated through every subsequent call.
+
+<Diagram>
+<svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg" width="640"><defs><marker id="t1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-warn-soft)"></path></marker><marker id="t2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-info-soft)"></path></marker><marker id="t3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-plum)"></path></marker><marker id="t4" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-ok-soft)"></path></marker></defs><text x="20" y="20" fill="var(--dg-ink-3)" font-family="var(--font-diagram-mono)" font-size="9">TRACE: abc123def456, total: 340ms</text><line x1="20" y1="28" x2="660" y2="28" stroke="var(--dg-line-2)" stroke-width="1"></line><text x="20" y="55" fill="var(--dg-warn-soft)" font-family="var(--font-diagram-mono)" font-size="10">HTTP Handler</text><rect x="180" y="42" width="460" height="20" rx="3" fill="var(--dg-warn-tint)"></rect><rect x="180" y="42" width="460" height="20" rx="3" fill="none" stroke="var(--dg-warn-soft)" stroke-width="1"></rect><text x="650" y="56" fill="var(--dg-warn-soft)" font-family="var(--font-diagram-mono)" font-size="9" text-anchor="end">340ms</text><text x="20" y="90" fill="var(--dg-info-soft)" font-family="var(--font-diagram-mono)" font-size="10">AuthMiddleware</text><rect x="180" y="77" width="40" height="20" rx="3" fill="var(--dg-info-tint)"></rect><rect x="180" y="77" width="40" height="20" rx="3" fill="none" stroke="var(--dg-info-soft)" stroke-width="1"></rect><text x="225" y="91" fill="var(--dg-info-soft)" font-family="var(--font-diagram-mono)" font-size="9">28ms</text><text x="20" y="125" fill="var(--dg-plum)" font-family="var(--font-diagram-mono)" font-size="10">TodoService</text><rect x="225" y="112" width="300" height="20" rx="3" fill="var(--dg-plum-tint)"></rect><rect x="225" y="112" width="300" height="20" rx="3" fill="none" stroke="var(--dg-plum)" stroke-width="1"></rect><text x="530" y="126" fill="var(--dg-plum)" font-family="var(--font-diagram-mono)" font-size="9">280ms</text><text x="20" y="160" fill="var(--dg-ok-soft)" font-family="var(--font-diagram-mono)" font-size="10">DB.GetTodos</text><rect x="230" y="147" width="250" height="20" rx="3" fill="var(--dg-ok-tint)"></rect><rect x="230" y="147" width="250" height="20" rx="3" fill="none" stroke="var(--dg-ok-soft)" stroke-width="1"></rect><text x="485" y="161" fill="var(--dg-ok-soft)" font-family="var(--font-diagram-mono)" font-size="9">240ms &#x3C;- slow!</text><text x="20" y="195" fill="var(--dg-warn-soft)" font-family="var(--font-diagram-mono)" font-size="10">JSONSerialise</text><rect x="485" y="182" width="30" height="20" rx="3" fill="var(--dg-warn-tint)"></rect><rect x="485" y="182" width="30" height="20" rx="3" fill="none" stroke="var(--dg-warn-soft)" stroke-width="1"></rect><text x="520" y="196" fill="var(--dg-warn-soft)" font-family="var(--font-diagram-mono)" font-size="9">22ms</text><text x="340" y="220" text-anchor="middle" fill="var(--dg-ink-3)" font-family="var(--font-diagram-mono)" font-size="9">&#x3C;- time ->  (each bar shows the span's start and duration relative to trace start)</text></svg>
+</Diagram>
+
+### Trace vs Span: Definitions
+
+Trace
+
+The entire end-to-end journey of a single request. Identified by a globally unique `trace_id`. Contains all spans for that request.
+
+Span
+
+A single unit of work within a trace, one function call, one DB query, one HTTP call. Has a start time, duration, parent span ID, and arbitrary attributes (user\_id, query, etc.).
+
+Root Span
+
+The first span in a trace. Typically the HTTP handler or the entry point of the request. Has no parent.
+
+Context Propagation
+
+The mechanism by which `trace_id` and `span_id` are passed from function to function (via Go's `context.Context`), and from service to service (via HTTP headers like `traceparent`).
+
+traceparent header
+
+W3C standard header: `traceparent: 00-abc123-span001-01`. When your service calls another service, it includes this header so the receiving service can join its spans to the same trace.
+
+<Callout type="info" title="Why Traces Are Different from Logs">
+A log entry says "this error happened". A trace says "this error happened _here_, at _this point_ in the request's journey, _after_ these preceding steps, and it caused the total request to take 4.2 seconds instead of 50ms." Traces provide causal context that isolated logs cannot.
+</Callout>
+
+10
+
+## Instrumentation & OpenTelemetry
+
+**Instrumentation** is the act of adding code to your application to measure its behaviour, recording spans, emitting metrics, enriching logs with context. You cannot observe what you haven't instrumented.
+
+**OpenTelemetry (OTel)** is an open-source, vendor-neutral standard for instrumentation. It provides APIs, SDKs, and an agent (the _Collector_) for all major languages. The key value: instrument once, send to any backend (Jaeger, Grafana Tempo, New Relic, Datadog, Honeycomb) just by changing configuration, no code changes.
+
+<Diagram>
+<svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" width="640"><defs><marker id="o1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-warn-soft)"></path></marker><marker id="o2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-info-soft)"></path></marker></defs><rect x="10" y="70" width="130" height="60" rx="5" fill="var(--dg-inverse)" stroke="var(--dg-warn-soft)" stroke-width="1.5"></rect><text x="75" y="96" text-anchor="middle" fill="var(--dg-on-inverse-warn)" font-family="var(--font-diagram-mono)" font-size="11">YOUR APP</text><text x="75" y="113" text-anchor="middle" fill="var(--dg-on-inverse-2)" font-family="var(--font-diagram-mono)" font-size="9">OTel SDK instrumented</text><rect x="220" y="70" width="150" height="60" rx="5" fill="var(--dg-inverse)" stroke="var(--dg-info-soft)" stroke-width="1.5"></rect><text x="295" y="96" text-anchor="middle" fill="var(--dg-on-inverse-info)" font-family="var(--font-diagram-mono)" font-size="11">OTEL COLLECTOR</text><text x="295" y="113" text-anchor="middle" fill="var(--dg-on-inverse-2)" font-family="var(--font-diagram-mono)" font-size="9">receives, processes, exports</text><rect x="460" y="20" width="100" height="36" rx="4" fill="var(--dg-inverse)" stroke="var(--dg-ok-soft)" stroke-width="1"></rect><text x="510" y="43" text-anchor="middle" fill="var(--dg-on-inverse-ok)" font-family="var(--font-diagram-mono)" font-size="10">Jaeger / Tempo</text><rect x="460" y="70" width="100" height="36" rx="4" fill="var(--dg-inverse)" stroke="var(--dg-ok-soft)" stroke-width="1"></rect><text x="510" y="93" text-anchor="middle" fill="var(--dg-on-inverse-ok)" font-family="var(--font-diagram-mono)" font-size="10">Prometheus</text><rect x="460" y="120" width="100" height="36" rx="4" fill="var(--dg-inverse)" stroke="var(--dg-ok-soft)" stroke-width="1"></rect><text x="510" y="143" text-anchor="middle" fill="var(--dg-on-inverse-ok)" font-family="var(--font-diagram-mono)" font-size="10">New Relic / DD</text><rect x="460" y="170" width="100" height="20" rx="4" fill="var(--dg-inverse)" stroke="var(--dg-line-2)" stroke-width="1"></rect><text x="510" y="184" text-anchor="middle" fill="var(--dg-on-inverse-3)" font-family="var(--font-diagram-mono)" font-size="9">Loki (logs)</text><line x1="142" y1="100" x2="218" y2="100" stroke="var(--dg-warn-soft)" stroke-width="1.5" marker-end="url(#o1)"></line><text x="180" y="93" text-anchor="middle" fill="var(--dg-ink-3)" font-family="var(--font-diagram-mono)" font-size="9">OTLP/gRPC</text><line x1="372" y1="90" x2="458" y2="40" stroke="var(--dg-info-soft)" stroke-width="1.2" marker-end="url(#o2)"></line><line x1="372" y1="100" x2="458" y2="88" stroke="var(--dg-info-soft)" stroke-width="1.2" marker-end="url(#o2)"></line><line x1="372" y1="110" x2="458" y2="136" stroke="var(--dg-info-soft)" stroke-width="1.2" marker-end="url(#o2)"></line><text x="340" y="170" text-anchor="middle" fill="var(--dg-ink-3)" font-family="var(--font-diagram-mono)" font-size="9">instrument once -> send anywhere</text></svg>
+</Diagram>
+
+### OTel Core Concepts
+
+Tracer
+
+The OTel object that creates spans. Each component (service, library) gets its own named tracer. `otel.Tracer("todo-service")`
+
+Span
+
+Created by the tracer. Has a name, start/end time, status, and key-value attributes. OTel spans automatically link to parent spans via context.
+
+Context Propagation
+
+OTel automatically injects/extracts `traceparent` headers in HTTP clients and servers (with the right libraries). Zero manual work for standard HTTP.
+
+OTel Collector
+
+A standalone agent/sidecar that receives telemetry from your app (via OTLP protocol), optionally processes/filters it, and exports to one or more backends. Decouples instrumentation from backend choice.
+
+Auto-instrumentation
+
+OTel provides libraries that auto-instrument popular frameworks (net/http, gin, gRPC, database/sql, redis, etc.) with zero code changes. You get traces for DB queries and HTTP calls for free.
+
+11
+
+## Code: Go: Full LMO Implementation
+
+A complete example showing logging (Zap), metrics (Prometheus), and tracing (OpenTelemetry) wired into a Go service handler. This is the pattern from the lecture's to-do application.
+
+### Logger Setup (Zap)
+
+```go
+// logger/logger.go
+package logger
+
+import (
+    "os"
+    "go.uber.org/zap"
+    "go.uber.org/zap/zapcore"
+)
+
+var Log *zap.Logger
+
+func Init() {
+    env := os.Getenv("APP_ENV")
+    var cfg zap.Config
+
+    if env == "production" {
+        cfg = zap.NewProductionConfig()          // JSON output
+        cfg.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
+    } else {
+        cfg = zap.NewDevelopmentConfig()         // coloured console
+        cfg.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
+        cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+    }
+
+    Log, _ = cfg.Build(
+        // Always include these fields in every log entry
+        zap.Fields(
+            zap.String("service", "todo-api"),
+            zap.String("env", env),
+        ),
+    )
+}
+Go / Zap
+```
+
+### Tracing Middleware (OpenTelemetry)
+
+```go
+// middleware/tracing.go, Creates a trace span per request
+package middleware
+
+import (
+    "github.com/gin-gonic/gin"
+    "go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/attribute"
+    "go.opentelemetry.io/otel/codes"
+    "go.uber.org/zap"
+    "myapp/logger"
+)
+
+func EnhancedTracing() gin.HandlerFunc {
+    tracer := otel.Tracer("todo-api")
+
+    return func(c *gin.Context) {
+        // Extract incoming trace context (from load balancer / front-end)
+        ctx := otel.GetTextMapPropagator().Extract(
+            c.Request.Context(),
+            propagation.HeaderCarrier(c.Request.Header),
+        )
+
+        // Start root span for this request
+        ctx, span := tracer.Start(ctx, c.FullPath())
+        defer span.End()
+
+        // Attach metadata to span (visible in trace UI)
+        span.SetAttributes(
+            attribute.String("http.method", c.Request.Method),
+            attribute.String("http.path", c.FullPath()),
+            attribute.String("http.user_agent", c.Request.UserAgent()),
+            attribute.String("user.id", getUserID(c)),
+        )
+
+        // Inject context so downstream handlers can create child spans
+        c.Request = c.Request.WithContext(ctx)
+        c.Next()
+
+        // After handler returns: record status code on span
+        statusCode := c.Writer.Status()
+        span.SetAttributes(attribute.Int("http.status_code", statusCode))
+        if statusCode >= 500 {
+            span.SetStatus(codes.Error, "server error")
+        }
+
+        // Structured log entry linking to this trace
+        logger.Log.Info("request completed",
+            zap.String("method", c.Request.Method),
+            zap.String("path", c.FullPath()),
+            zap.Int("status", statusCode),
+            zap.String("trace_id", span.SpanContext().TraceID().String()),
+        )
+    }
+}
+Go / Gin + OTel
+```
+
+### Service Layer: Logging + Tracing + Error Handling
+
+```go
+// services/todo_service.go, The full LMO pattern per function
+package services
+
+import (
+    "context"
+    "fmt"
+    "go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/attribute"
+    "go.opentelemetry.io/otel/codes"
+    "go.uber.org/zap"
+    "myapp/logger"
+    "myapp/models"
+)
+
+var tracer = otel.Tracer("todo-service")
+
+func CreateTodo(ctx context.Context, req models.CreateTodoRequest, userID string) (*models.Todo, error) {
+    // 1. Start a child span (parent span is in ctx from the middleware)
+    ctx, span := tracer.Start(ctx, "TodoService.CreateTodo")
+    defer span.End()
+
+    // 2. Add business context to the span, visible in trace UI
+    span.SetAttributes(
+        attribute.String("user.id", userID),
+        attribute.String("todo.title", req.Title),
+        attribute.String("todo.priority", req.Priority),
+    )
+
+    // 3. INFO log, record business event start
+    logger.Log.Info("creating todo",
+        zap.String("user_id", userID),
+        zap.String("title", req.Title),
+        zap.String("trace_id", span.SpanContext().TraceID().String()),
+    )
+
+    // 4. Execute DB operation (inside its own child span, auto via otelgorm)
+    todo, err := repo.CreateTodo(ctx, req, userID)
+    if err != nil {
+        // ERROR log with full context
+        logger.Log.Error("failed to create todo",
+            zap.String("user_id", userID),
+            zap.String("error", err.Error()),
+            zap.String("trace_id", span.SpanContext().TraceID().String()),
+        )
+        // Record error on span, shows as failed in Jaeger/Grafana Tempo
+        span.RecordError(err)
+        span.SetStatus(codes.Error, err.Error())
+        return nil, fmt.Errorf("repo.CreateTodo: %w", err)
+    }
+
+    // 5. DEBUG log, only visible in dev, suppressed in production
+    logger.Log.Debug("todo created",
+        zap.String("todo_id", todo.ID),
+    )
+
+    // 6. INFO, business event completion log (for audit trail)
+    logger.Log.Info("todo created successfully",
+        zap.String("todo_id", todo.ID),
+        zap.String("user_id", userID),
+        zap.String("title", todo.Title),
+        zap.String("priority", todo.Priority),
+        zap.String("category_id", todo.CategoryID),
+    )
+
+    return todo, nil
+}
+Go / Zap + OTel
+```
+
+### Prometheus Middleware (Metrics)
+
+```go
+// middleware/metrics.go, HTTP metrics instrumentation
+package middleware
+
+import (
+    "strconv"
+    "time"
+    "github.com/gin-gonic/gin"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+    httpRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+        Name: "http_requests_total",
+        Help: "Total HTTP requests",
+    }, []string{"method", "path", "status"})
+
+    httpDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+        Name:    "http_request_duration_seconds",
+        Help:    "HTTP request latency",
+        Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
+    }, []string{"method", "path"})
+)
+
+func PrometheusMetrics() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        start := time.Now()
+        c.Next()
+        duration := time.Since(start)
+
+        status := strconv.Itoa(c.Writer.Status())
+        httpRequestsTotal.WithLabelValues(c.Request.Method, c.FullPath(), status).Inc()
+        httpDuration.WithLabelValues(c.Request.Method, c.FullPath()).Observe(duration.Seconds())
+    }
+}
+Go / Gin + Prometheus
+```
+
+12
+
+## Code: Python: Full LMO Implementation
+
+### Structured Logging with structlog
+
+```python
+# logging_config.py, structlog setup for Python
+import logging
+import os
+import structlog
+
+def configure_logging():
+    env = os.getenv("APP_ENV", "development")
+
+    if env == "production":
+        # JSON renderer for production, parseable by Loki / ELK
+        renderer = structlog.processors.JSONRenderer()
+        level = logging.INFO
+    else:
+        # ColourfulConsole for local dev, human-readable
+        renderer = structlog.dev.ConsoleRenderer(colors=True)
+        level = logging.DEBUG
+
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,      # merge request-scoped context
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.add_logger_name,
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.ExceptionRenderer(),     # auto-renders exceptions
+            renderer,
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+
+    logging.basicConfig(level=level)
+
+log = structlog.get_logger()
+Python / structlog
+```
+
+### OpenTelemetry Tracing in FastAPI
+
+```python
+# tracing.py, OTel setup for FastAPI
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
+def setup_tracing(app):
+    # Tracer provider, sends spans to OTel Collector via gRPC
+    provider = TracerProvider()
+    exporter = OTLPSpanExporter(endpoint="http://otel-collector:4317")
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+
+    # Auto-instrument FastAPI, all routes get spans automatically
+    FastAPIInstrumentor.instrument_app(app)
+
+    # Auto-instrument SQLAlchemy, all DB queries get spans automatically
+    SQLAlchemyInstrumentor().instrument(engine=engine)
+
+# main.py, wire it all up
+from fastapi import FastAPI
+from tracing import setup_tracing
+from logging_config import configure_logging, log
+
+configure_logging()
+app = FastAPI()
+setup_tracing(app)
+Python / FastAPI + OTel
+```
+
+### Service Layer with Full LMO Pattern
+
+```python
+# services/todo_service.py
+from opentelemetry import trace
+import structlog
+
+tracer = trace.get_tracer("todo-service")
+log = structlog.get_logger()
+
+async def create_todo(user_id: str, req: CreateTodoRequest) -> Todo:
+    # 1. Start child span
+    with tracer.start_as_current_span("TodoService.create_todo") as span:
+        span.set_attribute("user.id", user_id)
+        span.set_attribute("todo.title", req.title)
+
+        # 2. INFO log, business event start
+        log.info("creating_todo", user_id=user_id, title=req.title)
+
+        try:
+            todo = await repo.create_todo(user_id, req)
+
+            # 3. Business event log, audit trail
+            log.info("todo_created",
+                todo_id=todo.id,
+                user_id=user_id,
+                title=todo.title,
+                priority=todo.priority,
+            )
+            return todo
+
+        except Exception as e:
+            # 4. ERROR log + span error recording
+            log.error("todo_creation_failed", user_id=user_id, error=str(e))
+            span.record_exception(e)
+            span.set_status(trace.StatusCode.ERROR, str(e))
+            raise
+Python / FastAPI + OTel + structlog
+```
+
+13
+
+## Tooling: The Open Source Stack
+
+The open-source observability stack is what most large enterprises run. More control, no vendor lock-in, no per-seat pricing, but requires operational expertise to maintain.
+
+| Tool               | Pillar       | Role                                                                                                                                                                    |
+| ------------------ | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Prometheus**     | Metrics      | Scrapes `/metrics` endpoints every 15s, stores time-series data, evaluates alert rules. The de facto standard metrics backend.                                          |
+| **Grafana**        | Dashboards   | Visualization layer. Queries Prometheus, Loki, Tempo, and others. Build dashboards, set alert thresholds, create on-call runbooks.                                      |
+| **Loki**           | Logs         | Log aggregation system by Grafana Labs. Unlike ELK, it indexes only metadata (labels), not full-text, much cheaper. Queryable via LogQL. Push-based via Promtail agent. |
+| **Promtail**       | Logs (agent) | Runs on each server, tails log files or Docker/Kubernetes log streams, and ships them to Loki. Zero-code change required.                                               |
+| **Grafana Tempo**  | Traces       | Distributed tracing backend. Receives OTel spans, stores them cheaply (object storage), queryable from Grafana. Replaces Jaeger for new setups.                         |
+| **Jaeger**         | Traces       | Older distributed tracing system (CNCF). Still widely used. UI for navigating traces, service dependency graphs. Now recommends migrating to OTel SDK.                  |
+| **Alertmanager**   | Alerting     | Routes Prometheus alerts to Slack, PagerDuty, email, etc. Handles deduplication, grouping, and silencing of alerts.                                                     |
+| **OTel Collector** | All three    | Receives all telemetry from apps, processes/enriches it, and fans out to Prometheus + Loki + Tempo. Central telemetry pipeline.                                         |
+
+### Full Stack Architecture
+
+<Diagram>
+<svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg" width="640"><defs><marker id="s1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-warn-soft)"></path></marker><marker id="s2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-info-soft)"></path></marker><marker id="s3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--dg-ok-soft)"></path></marker></defs><rect x="10" y="20" width="100" height="36" rx="4" fill="var(--dg-inverse)" stroke="var(--dg-warn-soft)" stroke-width="1.2"></rect><text x="60" y="43" text-anchor="middle" fill="var(--dg-on-inverse-warn)" font-family="var(--font-diagram-mono)" font-size="10">API Service</text><rect x="10" y="70" width="100" height="36" rx="4" fill="var(--dg-inverse)" stroke="var(--dg-warn-soft)" stroke-width="1.2"></rect><text x="60" y="93" text-anchor="middle" fill="var(--dg-on-inverse-warn)" font-family="var(--font-diagram-mono)" font-size="10">Worker</text><rect x="10" y="120" width="100" height="36" rx="4" fill="var(--dg-inverse)" stroke="var(--dg-warn-soft)" stroke-width="1.2"></rect><text x="60" y="143" text-anchor="middle" fill="var(--dg-on-inverse-warn)" font-family="var(--font-diagram-mono)" font-size="10">Auth Service</text><rect x="10" y="180" width="100" height="36" rx="4" fill="var(--dg-inverse)" stroke="var(--dg-ink-3)" stroke-width="1"></rect><text x="60" y="198" text-anchor="middle" fill="var(--dg-on-inverse-2)" font-family="var(--font-diagram-mono)" font-size="9">Promtail</text><text x="60" y="210" text-anchor="middle" fill="var(--dg-on-inverse-3)" font-family="var(--font-diagram-mono)" font-size="8">(log agent)</text><rect x="190" y="70" width="130" height="60" rx="5" fill="var(--dg-inverse)" stroke="var(--dg-info-soft)" stroke-width="1.5"></rect><text x="255" y="96" text-anchor="middle" fill="var(--dg-on-inverse-info)" font-family="var(--font-diagram-mono)" font-size="11">OTEL</text><text x="255" y="112" text-anchor="middle" fill="var(--dg-on-inverse-info)" font-family="var(--font-diagram-mono)" font-size="11">COLLECTOR</text><line x1="112" y1="38" x2="188" y2="88" stroke="var(--dg-warn-soft)" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#s1)"></line><line x1="112" y1="88" x2="188" y2="100" stroke="var(--dg-warn-soft)" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#s1)"></line><line x1="112" y1="138" x2="188" y2="112" stroke="var(--dg-warn-soft)" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#s1)"></line><line x1="112" y1="196" x2="188" y2="115" stroke="var(--dg-ink-3)" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#s1)"></line><rect x="410" y="20" width="110" height="36" rx="4" fill="var(--dg-inverse)" stroke="var(--dg-accent-soft)" stroke-width="1.2"></rect><text x="465" y="43" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-family="var(--font-diagram-mono)" font-size="10">Prometheus</text><rect x="410" y="75" width="110" height="36" rx="4" fill="var(--dg-inverse)" stroke="var(--dg-ok-soft)" stroke-width="1.2"></rect><text x="465" y="98" text-anchor="middle" fill="var(--dg-on-inverse-ok)" font-family="var(--font-diagram-mono)" font-size="10">Loki</text><rect x="410" y="130" width="110" height="36" rx="4" fill="var(--dg-inverse)" stroke="var(--dg-plum)" stroke-width="1.2"></rect><text x="465" y="153" text-anchor="middle" fill="var(--dg-on-inverse-accent)" font-family="var(--font-diagram-mono)" font-size="10">Grafana Tempo</text><rect x="580" y="75" width="90" height="90" rx="5" fill="var(--dg-inverse)" stroke="var(--dg-warn-soft)" stroke-width="2"></rect><text x="625" y="115" text-anchor="middle" fill="var(--dg-on-inverse-warn)" font-family="var(--font-diagram-mono)" font-size="11">GRAFANA</text><text x="625" y="132" text-anchor="middle" fill="var(--dg-on-inverse-2)" font-family="var(--font-diagram-mono)" font-size="9">dashboards</text><text x="625" y="148" text-anchor="middle" fill="var(--dg-on-inverse-2)" font-family="var(--font-diagram-mono)" font-size="9">alerts</text><line x1="322" y1="88" x2="408" y2="38" stroke="var(--dg-info-soft)" stroke-width="1" marker-end="url(#s2)"></line><line x1="322" y1="100" x2="408" y2="93" stroke="var(--dg-info-soft)" stroke-width="1" marker-end="url(#s2)"></line><line x1="322" y1="112" x2="408" y2="143" stroke="var(--dg-info-soft)" stroke-width="1" marker-end="url(#s2)"></line><line x1="522" y1="38" x2="578" y2="100" stroke="var(--dg-accent-soft)" stroke-width="1" marker-end="url(#s3)"></line><line x1="522" y1="93" x2="578" y2="120" stroke="var(--dg-ok-soft)" stroke-width="1" marker-end="url(#s3)"></line><line x1="522" y1="148" x2="578" y2="148" stroke="var(--dg-plum)" stroke-width="1" marker-end="url(#s3)"></line><text x="340" y="225" text-anchor="middle" fill="var(--dg-ink-3)" font-family="var(--font-diagram-mono)" font-size="9">The Grafana Stack: logs + metrics + traces in one unified dashboard</text></svg>
+</Diagram>
+
+14
+
+## Tooling: Proprietary Solutions
+
+If you don't have the team to manage the open-source stack, proprietary all-in-one solutions are the pragmatic choice. They bundle logging, metrics, tracing, and alerting into a single platform with managed storage and a polished UI.
+
+| Tool          | Strengths                                                                                                  | Best For                                                           | Pricing Model                                 |
+| ------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------- |
+| **New Relic** | Full-stack observability, Go/Python/Node agents, APM, browser monitoring, mobile. Easy 10-minute setup.    | Teams that want one tool with minimal ops overhead                 | Free tier (100GB/month), then per GB ingested |
+| **Datadog**   | Industry-leading dashboards, 500+ integrations, excellent APM, infra monitoring, security. Very powerful.  | Enterprises with complex infra, Kubernetes, multi-cloud            | Per host + per GB, can get expensive quickly  |
+| **Sentry**    | Best-in-class error tracking. Groups identical errors, shows stack traces, user context, release tracking. | Error monitoring specifically, pairs well with Grafana for metrics | Free tier (5k errors/month), then per event   |
+| **Honeycomb** | High-cardinality event querying. Built for observability-first teams. Native OTel support.                 | Teams doing advanced distributed tracing, many microservices       | Per event ingested                            |
+
+### New Relic Go Agent: Quick Integration
+
+```go
+// main.go, New Relic agent setup in Go
+import (
+    "github.com/newrelic/go-agent/v3/newrelic"
+    "github.com/newrelic/go-agent/v3/integrations/nrgin"
+)
+
+func main() {
+    // Initialize New Relic application agent
+    nrApp, _ := newrelic.NewApplication(
+        newrelic.ConfigAppName("todo-api"),
+        newrelic.ConfigLicense(os.Getenv("NEW_RELIC_LICENSE_KEY")),
+        newrelic.ConfigAppLogForwardingEnabled(true),  // forward logs to NR
+        newrelic.ConfigDistributedTracerEnabled(true), // enable distributed tracing
+    )
+
+    r := gin.New()
+    // nrgin middleware, auto-instruments every route with NR transactions
+    r.Use(nrgin.Middleware(nrApp))
+
+    r.Run(":8080")
+}
+Go / New Relic
+```
+
+<Callout type="info" title="What New Relic shows you">
+After adding the middleware, New Relic automatically captures: transaction time per route, error rate, throughput (req/sec), Apdex score, Go runtime metrics (GC pause, goroutine count, memory), and distributed traces. The dashboard shows all of this within minutes of deploying.
+</Callout>
+
+15
+
+## ELK Stack: Elasticsearch, Logstash, Kibana
+
+The **ELK Stack** (now called the **Elastic Stack**) is the classic enterprise logging platform. It provides full-text search across logs, powerful aggregations, and rich dashboards. It's heavier than Loki but offers more querying flexibility.
+
+Elasticsearch
+
+The storage and search engine. Indexes every field of every log document. Supports complex queries: full-text search, aggregations, range filters. Horizontally scalable.
+
+Logstash
+
+The log pipeline. Ingests logs from many sources (files, Kafka, Redis, Beats agents), transforms/filters them (parse JSON, add geo-IP, mask PII), and outputs to Elasticsearch. Powerful but resource-heavy.
+
+Kibana
+
+The visualization layer. Build dashboards, run queries against Elasticsearch (KQL language), create alerts. The UI equivalent of Grafana for Elastic data.
+
+Filebeat / Fluentd
+
+Lightweight log shipping agents that run on your servers and ship log files to Logstash or Elasticsearch directly. Lower resource overhead than Logstash as a local agent.
+
+### ELK vs Grafana Loki
+
+| Property         | ELK Stack                                            | Grafana Loki                                      |
+| ---------------- | ---------------------------------------------------- | ------------------------------------------------- |
+| **Indexing**     | Full-text indexes every field -> powerful queries    | Only indexes labels (metadata) -> cheaper storage |
+| **Storage cost** | High, indexing all fields is expensive               | Low, like Prometheus for logs                     |
+| **Query power**  | Very high, KQL, complex aggregations                 | Good for label-based queries (LogQL)              |
+| **Integration**  | Self-contained Kibana UI                             | Grafana, one UI for metrics + logs + traces       |
+| **Best for**     | High query complexity, security/compliance use cases | Cost-sensitive setups already using Grafana stack |
+
+16
+
+## Alert Design: What to Alert On
+
+Not every metric needs an alert. Alert fatigue is a real problem, if engineers receive too many notifications, they start ignoring them. Good alert design means alerting on **symptoms that impact users**, not internal implementation details.
+
+### The Four Golden Signals (Google SRE Book)
+
+Latency
+
+Time to serve a request. Distinguish between successful and failed requests, a fast error is not a good metric. Alert on p99 > threshold.
+
+Traffic
+
+Demand on your system, requests/sec. Sudden drops can indicate an outage just as much as sudden spikes. Alert on both extremes.
+
+Errors
+
+Rate of failed requests (5xx). Alert on error rate, not raw count, a spike in traffic will naturally cause more errors even if the error rate is stable.
+
+Saturation
+
+How "full" is your service, CPU, memory, DB connections, queue depth. Alerts before the system tips into failure. Alert at 80%, page at 95%.
+
+### Alert Rules (Grafana / Prometheus format)
+
+```text
+# alert_rules.yml, Production-grade alert rules
+groups:
+  - name: api_health
+    rules:
+
+      # P1, Error rate critical
+      - alert: HighErrorRate
+        expr: |
+          rate(http_requests_total{status=~"5.."}[5m])
+          / rate(http_requests_total[5m]) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HTTP error rate above 5% ({{ $value | printf \"%.1f\" }}%)"
+          runbook: "https://wiki.company.com/runbooks/high-error-rate"
+
+      # P2, High latency
+      - alert: HighP99Latency
+        expr: |
+          histogram_quantile(0.99,
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P99 latency above 2s ({{ $value | printf \"%.2f\" }}s)"
+
+      # P2, DB connection pool near exhaustion
+      - alert: DBConnectionPoolExhaustion
+        expr: db_connections_open / db_connections_max > 0.85
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DB connection pool at {{ $value | humanizePercentage }}"
+
+      # P1, Service is down
+      - alert: ServiceDown
+        expr: up{job="todo-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "todo-api service is unreachable"
+YAML / Prometheus Rules
+```
+
+<Callout type="info" title="Alert Severity Levels">
+Define at least two levels: **warning** (investigate when convenient, business hours) and **critical** (page on-call immediately, any hour). Waking engineers at 3 AM for a warning-level issue is how you burn out your team and teach them to ignore alerts.
+</Callout>
+
+17
+
+## Production Debugging Workflow: Full Example
+
+Here is what the complete workflow looks like end-to-end when an incident occurs in a system with full LMO in place.
+
+### Scenario: API Suddenly Slow + High Errors
+
+- 1
+
+  **Alert fires at 14:31 UTC**
+
+  Alertmanager sends Slack message: _"\[CRITICAL] HighErrorRate: HTTP error rate is 82.4% (was 0.3%). Service: todo-api. Runbook: wiki/..."_
+
+- 2
+
+  **Open Grafana -> Metrics dashboard**
+
+  P99 latency jumped from 120ms to 4.3s at 14:31. Requests/sec unchanged (not a traffic spike). DB connection pool at 97%. Error type: 100% are 500s, not 4xx. Indicates server-side DB problem.
+
+- 3
+
+  **Correlate to Logs in Loki / New Relic**
+
+  Query: `{service="todo-api", level="error"} |= "connection"`. Hundreds of entries: `ERROR: pq: remaining connection slots are reserved for non-replication superuser connections`. DB connection pool is exhausted.
+
+- 4
+
+  **Jump to Trace from log entry**
+
+  Click trace link in the log. Trace shows: HTTP Handler -> AuthMiddleware (3ms) -> TodoService (4290ms) -> DB.GetTodos (4285ms &lt;- STUCK). DB.GetTodos span has attribute: `query="SELECT * FROM todos WHERE user_id=$1"`.
+
+- 5
+
+  **Root cause identified**
+
+  A deployment 5 minutes ago added a `SELECT *` that performs a full table scan (missing index). Under load, queries pile up, connections are held longer, pool exhausts. Check `git log`, confirms deployment at 14:29 UTC.
+
+- 6
+
+  **Fix + verify**
+
+  Add missing index migration. Deploy. Grafana shows error rate drops to 0.1% within 2 minutes of deployment. DB connection pool back to 12%. Incident resolved. Total time: 11 minutes.
+
+<Callout type="ok" title="Without LMO">
+The same incident without observability: users complain on Twitter, you SSH into servers running `grep ERROR /var/log/app.log`, manually correlate timestamps, eventually realize something is wrong with the DB, spend 90 minutes narrowing down which query, then guess about the missing index. Total time: 2-3 hours minimum.
+</Callout>
+
+18
+
+## Best Practices
+
+### 1. Always Include a Request ID
+
+Generate a unique `request_id` (UUID or ULID) at the entry point of every request, either in your load balancer or in your first middleware. Inject it into the context and include it in _every_ log entry and span for that request. This is what lets you pull all logs for a single failing request out of millions of entries.
+
+### 2. Log at Boundaries, Not Inside Logic
+
+Log at the _entry_ and _exit_ of major components (handler, service, repository), not scattered throughout every loop and condition. This gives you a clean, readable trail without noise. Inside functions, use spans for granular timing, not log.Debug spam.
+
+### 3. Never Log Sensitive Data
+
+Passwords, credit card numbers, SSNs, auth tokens, and API keys must **never** appear in logs. Use structured logging libraries that let you mark fields as redacted. In your CI pipeline, consider a log scanning step that fails the build if certain patterns are found in log statements.
+
+### 4. Use Sampling for High-Volume Traces
+
+At high traffic (1000+ req/sec), recording every trace is expensive. Use **head-based sampling** (record 10% of all requests) or **tail-based sampling** (record 100% of error requests + 1% of success requests). The OTel Collector supports both. Never sample errors, always record traces for failures.
+
+### 5. Log Levels Discipline
+
+- Never use DEBUG in production, it generates enormous volume and costs storage
+- INFO should be your production default, meaningful events, not chatty
+- Treat every ERROR log as something that needs a ticket or an alert rule
+- FATAL should mean "I need someone paged right now"
+
+### 6. This is a Spectrum, Not a Checkbox
+
+Start with basic structured logging in JSON format + a simple Prometheus counter for error rate. That alone will save you hours when the first production incident happens. Then iteratively add: histogram metrics, basic tracing, Grafana dashboards, alert rules. You don't need the full ELK + Jaeger + OTel Collector stack on day one. Build it incrementally.
+
+---
+
+<Callout type="info" title="Recap">
+**Logs** tell you what happened. **Metrics** tell you patterns and trends. **Traces** tell you where exactly things went wrong and how long each step took. A system is _observable_ when all three are in place and correlated. This requires developer effort (instrument your code) and infrastructure effort (collect, store, display) working together. The tooling, whether Grafana stack or New Relic, is secondary to the practice of consistently instrumenting your code with the right context.
+</Callout>
+
+Backend from First Principles / Chapter 15 / Observability. Code targets Go 1.22+ and Python 3.11+.
