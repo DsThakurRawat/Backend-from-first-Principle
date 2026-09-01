@@ -23,11 +23,23 @@
   }
 
   /* ---------- Home Link & Sidebar Header Controls ---------- */
+  var header = document.createElement('div');
+  header.className = 'bfp-toc-header';
+
   var home = document.createElement('a');
   home.className = 'bfp-home-link';
   home.href = '../../index.html';
   home.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12.5" y1="8" x2="2.5" y2="8"/><polyline points="6.5,4 2.5,8 6.5,12"/></svg><span>Home</span>';
-  toc.insertBefore(home, toc.firstChild);
+
+  var collapseBtn = document.createElement('button');
+  collapseBtn.className = 'bfp-sidebar-collapse-btn';
+  collapseBtn.setAttribute('aria-label', 'Collapse Sidebar (Press [ or Ctrl+\\)');
+  collapseBtn.setAttribute('title', 'Collapse Sidebar ([)');
+  collapseBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg>';
+
+  header.appendChild(home);
+  header.appendChild(collapseBtn);
+  toc.insertBefore(header, toc.firstChild);
 
   var toggle = document.querySelector('.bfp-toc-toggle');
   var scrim = document.querySelector('.bfp-toc-scrim');
@@ -80,6 +92,11 @@
     }
   }
 
+  collapseBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleSidebar();
+  });
+
   if (toggle) {
     toggle.addEventListener('click', function (e) {
       e.stopPropagation();
@@ -94,7 +111,7 @@
   }
 
   document.addEventListener('keydown', function (e) {
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
     if (e.key === 'Escape' && toc.classList.contains('is-open')) {
       setOpen(false);
     } else if ((e.ctrlKey || e.metaKey) && e.key === '\\') {

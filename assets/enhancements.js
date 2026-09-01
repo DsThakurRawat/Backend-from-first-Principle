@@ -625,7 +625,6 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   }
-
   // --- Keyboard Shortcuts Help Modal ---
   function initShortcutsModal() {
     if (document.getElementById('bfpShortcutsModal')) return;
@@ -639,6 +638,7 @@
 
     var modal = document.createElement('div');
     modal.className = 'shortcuts-modal';
+    modal.setAttribute('tabindex', '-1');
 
     var html = '<div class="shortcuts-modal-header">' +
       '<div class="shortcuts-modal-title">' +
@@ -673,20 +673,47 @@
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
+    var previousFocusedElement = null;
+
     function closeModal() {
       overlay.classList.remove('is-open');
       document.body.classList.remove('shortcuts-modal-open');
       document.body.style.overflow = '';
+      if (previousFocusedElement && typeof previousFocusedElement.focus === 'function') {
+        try { previousFocusedElement.focus(); } catch (e) {}
+      }
     }
 
     function openModal() {
+      previousFocusedElement = document.activeElement;
       overlay.classList.add('is-open');
       document.body.classList.add('shortcuts-modal-open');
       document.body.style.overflow = 'hidden';
+      var closeBtn = document.getElementById('shortcutsCloseBtn');
+      if (closeBtn) {
+        setTimeout(function () { closeBtn.focus(); }, 50);
+      }
     }
 
     overlay.addEventListener('click', function (e) {
       if (e.target === overlay) closeModal();
+    });
+
+    overlay.addEventListener('keydown', function (e) {
+      if (e.key === 'Tab') {
+        var focusable = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (focusable.length) {
+          var first = focusable[0];
+          var last = focusable[focusable.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
     });
 
     var closeBtn = document.getElementById('shortcutsCloseBtn');
@@ -996,50 +1023,8 @@
     var activeLesson = getActiveLessonInfo();
     var currentChapter = activeLesson.isChapter ? activeLesson.title.toLowerCase() : '';
     var existingNotes = NotesStore.getAll();
-    var existingTexts = [];
 
-    existingNotes.forEach(function (n) {
-      if (n && n.text) existingTexts.push(n.text.trim().toLowerCase());
-    });
-
-    // 1. Auto-reconcile quotes from the active lesson's Notepad markdown doc if missing from NotesStore
-    if (activeLesson.isChapter) {
-      var doc = getLessonDoc(activeLesson.slug);
-      if (doc) {
-        var lines = doc.split('\n');
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i].trim();
-          if (line.startsWith('>')) {
-            var rawExcerpt = line.replace(/^>\s*/, '').trim();
-            if (rawExcerpt.length >= 10) {
-              var cleanExcerpt = rawExcerpt.replace(/\*\*/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').trim();
-              var excerptHead = cleanExcerpt.substring(0, 30).toLowerCase();
-              var isAlreadyStored = existingTexts.some(function (t) {
-                return t.indexOf(excerptHead) !== -1 || cleanExcerpt.toLowerCase().indexOf(t.substring(0, 30)) !== -1;
-              });
-
-              if (!isAlreadyStored) {
-                var newItem = {
-                  id: 'ann_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
-                  chapterTitle: activeLesson.title,
-                  url: window.location.href,
-                  type: 'text',
-                  text: cleanExcerpt,
-                  userNote: '',
-                  color: 'rust',
-                  createdAt: new Date().toISOString()
-                };
-                NotesStore.add(newItem);
-                existingNotes.push(newItem);
-                existingTexts.push(cleanExcerpt.toLowerCase());
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // 2. Restore all highlights onto the page using robust range wrapping
+    // 1. Restore all active highlights onto the page using robust range wrapping
     existingNotes.forEach(function (item) {
       if (!item || !item.id || !item.text) return;
       if (document.querySelector('.user-highlight[data-id="' + item.id + '"]')) return;
@@ -1185,6 +1170,10 @@
     document.getElementById('tooltipRemoveBtn').addEventListener('click', function () {
       if (currentTargetMark) {
         var id = currentTargetMark.getAttribute('data-id');
+        var noteObj = NotesStore.getAll().find(function (n) { return n.id === id; });
+        if (noteObj && noteObj.text) {
+          removeExcerptFromActiveLessonDoc(noteObj.text);
+        }
         NotesStore.remove(id);
         unwrapHighlight(id);
         tooltip.style.display = 'none';
@@ -2311,6 +2300,46 @@
       var preview = document.getElementById('lessonNotepadPreview');
       if (preview && preview.style.display !== 'none') {
         preview.innerHTML = renderObsidianMarkdown(curDoc);
+        attachPreviewTaskListeners();
+      }
+    }
+  }
+
+  function removeExcerptFromActiveLessonDoc(text) {
+    if (!text || !text.trim()) return;
+    var activeLesson = getActiveLessonInfo();
+    if (!activeLesson.isChapter) return;
+
+    var curDoc = getLessonDoc(activeLesson.slug);
+    if (!curDoc) return;
+
+    var clean = text.replace(/^\[DIAGRAM\]\s*/i, '').replace(/^\[CODE\]\s*/i, '').replace(/^>\s*/, '').trim();
+    var snippet = clean.substring(0, Math.min(25, clean.length)).toLowerCase();
+    if (!snippet) return;
+
+    var lines = curDoc.split('\n');
+    var filtered = [];
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i];
+      if (l.trim().toLowerCase().indexOf(snippet) !== -1) {
+        if (i + 1 < lines.length && lines[i + 1].trim().startsWith('> **Personal Note:**')) {
+          i++;
+        }
+        continue;
+      }
+      filtered.push(l);
+    }
+    var newDoc = filtered.join('\n');
+    if (newDoc !== curDoc) {
+      setLessonDoc(activeLesson.slug, newDoc);
+      var textarea = document.getElementById('lessonNotepadTextarea');
+      if (textarea) {
+        textarea.value = newDoc;
+        updateNotepadStats();
+      }
+      var preview = document.getElementById('lessonNotepadPreview');
+      if (preview && preview.style.display !== 'none') {
+        preview.innerHTML = renderObsidianMarkdown(newDoc);
         attachPreviewTaskListeners();
       }
     }
