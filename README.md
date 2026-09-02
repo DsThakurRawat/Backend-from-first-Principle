@@ -32,6 +32,7 @@ The documentation is organized into the following topics:
 22. **Automated Testing** - Writing effective Unit, Integration, and End-to-End (E2E) tests.
 23. **Message Brokers and Event Streaming** - Using tools like Kafka for event-driven architectures.
 24. **WebSockets and Real-Time Communication** - Building real-time features using WebSockets.
+26. **WebRTC and Real-Time Media** - Peer-to-peer audio and video from first principles: NAT traversal with STUN/TURN/ICE, DTLS-SRTP, congestion control, and the SFU infrastructure behind it.
 
 ## Getting Started
 
