@@ -62,6 +62,76 @@ const num = String(order).padStart(2, '0');
       </nav>
     </main>
   </div>
+
+  <noscript>
+    <style>
+      /* Switching needs JS, so show every language stacked rather than
+         stranding the reader on one panel with dead buttons. */
+      .prose .codeblock .code-bar { display: none; }
+      .prose .codeblock .code-panel { display: block; }
+    </style>
+  </noscript>
+
+  <!-- Runs where it sits, after the article markup and before paint, for
+       the same reason as the theme bootstrap in Base.astro: applying a
+       remembered language later swaps every code block at once and shoves
+       the page around. See rehype-code-tabs.mjs for the markup. -->
+  <script is:inline>
+    (function () {
+      var KEY = 'bfp-code-lang';
+      var blocks = document.querySelectorAll('.codeblock');
+      if (!blocks.length) return;
+
+      function activate(block, lang) {
+        var tab = block.querySelector('.code-tab[data-lang="' + lang + '"]');
+        if (!tab) return; // this block has no such language; leave it alone
+        block.querySelectorAll('.code-tab').forEach(function (b) {
+          var on = b === tab;
+          b.classList.toggle('on', on);
+          b.setAttribute('aria-pressed', String(on));
+        });
+        block.querySelectorAll('.code-panel').forEach(function (p) {
+          var on = p.getAttribute('data-panel') === lang;
+          p.classList.toggle('on', on);
+          if (on) p.removeAttribute('hidden');
+          else p.setAttribute('hidden', '');
+        });
+      }
+
+      var stored = null;
+      try { stored = localStorage.getItem(KEY); } catch (e) { /* storage blocked */ }
+      if (stored) {
+        blocks.forEach(function (b) { activate(b, stored); });
+      }
+
+      blocks.forEach(function (block) {
+        block.querySelectorAll('.code-tab').forEach(function (tab) {
+          tab.addEventListener('click', function () {
+            var lang = tab.getAttribute('data-lang');
+            // Every block on the page resizes at once (Go and Python
+            // snippets rarely have the same line count), which shifts
+            // everything below the blocks above this one. Re-anchor on the
+            // clicked button so the block being read stays put.
+            var anchor = tab.getBoundingClientRect().top;
+            try { localStorage.setItem(KEY, lang); } catch (e) { /* storage blocked */ }
+            blocks.forEach(function (b) { activate(b, lang); });
+
+            var delta = tab.getBoundingClientRect().top - anchor;
+            if (delta) {
+              // The document sets scroll-behavior: smooth, which animates
+              // this correction — the block lurches, then glides back, and
+              // reads as jitter. Re-anchoring has to be instant.
+              var root = document.documentElement;
+              var previous = root.style.scrollBehavior;
+              root.style.scrollBehavior = 'auto';
+              window.scrollBy(0, delta);
+              root.style.scrollBehavior = previous;
+            }
+          });
+        });
+      });
+    })();
+  </script>
 </Base>
 
 <style>
@@ -245,4 +315,5 @@ const num = String(order).padStart(2, '0');
     if (e.key === 'ArrowLeft') go('prev');
     if (e.key === 'ArrowRight') go('next');
   });
+
 </script>
