@@ -32,6 +32,7 @@ The documentation is organized into the following topics:
 22. **Automated Testing** - Writing effective Unit, Integration, and End-to-End (E2E) tests.
 23. **Message Brokers and Event Streaming** - Using tools like Kafka for event-driven architectures.
 24. **WebSockets and Real-Time Communication** - Building real-time features using WebSockets.
+25. **WebRTC and Real-Time Media** - Peer-to-peer media: SDP, NAT traversal with STUN/TURN/ICE, DTLS-SRTP, RTP, congestion control, and the infrastructure behind it (TURN fleets, SFUs, simulcast, scaling).
 
 ## Getting Started
 

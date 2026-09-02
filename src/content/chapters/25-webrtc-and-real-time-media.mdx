@@ -1,0 +1,1512 @@
+---
+order: 25
+title: "WebRTC & Real-Time Media"
+navTitle: "WebRTC & Real-Time Media"
+summary: "A first-principles walkthrough of the stack behind every video call, live-audio room and cloud-gaming stream, from why TCP is the wrong pipe for media, through SDP, NAT, STUN, TURN and ICE, into DTLS-SRTP, RTP, jitter buffers, congestion control and data channels, then out into the infrastructure: signaling servers, TURN fleets, SFUs, simulcast, media-plane scaling and the operational traps of running UDP in the cloud. Written to explain not just what each piece does but why it exists and how it works underneath. Signaling, peer and media-server code in both Go and Python."
+readingTime: "4-5 hours"
+keywords:
+  - "webrtc"
+  - "ice"
+  - "stun"
+  - "turn"
+  - "sdp"
+  - "sfu"
+  - "rtp"
+  - "srtp"
+  - "nat traversal"
+  - "signaling"
+  - "simulcast"
+  - "media server"
+  - "peer-to-peer"
+  - "video calling"
+---
+Part I / Why and What
+
+## The Problem WebRTC Solves
+
+The WebSockets chapter ended with a connection that can push a message the instant it exists. That solves chat, presence, cursors, tickers, anything made of _discrete events_. Now change the payload to a live camera feed and the whole design falls apart, because media is not events. Media is a **continuous stream with a deadline**: 50 audio packets and 30 video frames per second, each one useful only if it arrives before the moment it is meant to be played, and worthless afterwards.
+
+That deadline is what breaks TCP, and with it WebSockets, HTTP and every transport you have used so far. TCP guarantees that every byte arrives, in order. To keep that promise it retransmits anything lost and **holds back everything behind the gap** until the missing piece arrives, which is head-of-line blocking. For a JSON message that is exactly right; you want the message, and 200ms late is fine. For a video call it is exactly wrong: while TCP is busy re-fetching a lost packet from a frame that should have been shown a quarter of a second ago, the frames behind it pile up in a buffer, and the call visibly freezes and then lurches. The right behaviour for a late video packet is not to fetch it again, it is to **give up on it and move on**.
+
+So real-time media needs a transport that can lose data on purpose, a way to punch through the NATs that sit between almost every two computers on the internet, encryption that is not optional, and a control loop that continuously matches the sending bitrate to whatever the network can carry this second. **WebRTC is the name for all of that, packaged so a browser can do it.**
+
+<Callout type="info" title="The chapter in one breath">
+WebRTC is not one protocol. It is a bundle of existing IETF protocols (ICE, STUN, TURN, DTLS, SRTP, RTP, SCTP) wired together and exposed through one browser API, so two machines can set up an encrypted, congestion-controlled, loss-tolerant media path directly to each other. Everything hard about it comes from three facts: peers cannot address each other (sec 7), the network's capacity is unknown and changes (sec 15), and "peer to peer" stops scaling at about four people (sec 20).
+</Callout>
+
+## What WebRTC Actually Is
+
+**WebRTC is a stack of protocols with one API on top, whose job is to get media and data from one endpoint to another with the lowest latency the network allows.** The API is the small part: `RTCPeerConnection`, `getUserMedia`, `RTCDataChannel`. The stack underneath is where the engineering lives, and it is worth seeing it laid out once, because every later section is a floor of this building.
+
+<Diagram caption="What is inside a peer connection">
+<svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The WebRTC protocol stack: application API on top, then media and data paths, SRTP and SCTP over DTLS, all over ICE, UDP and IP">
+  <rect x="20" y="20" width="680" height="44" rx="9" fill="var(--dg-accent)" />
+  <text x="360" y="41" font-size="12" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Your application</text>
+  <text x="360" y="56" class="mono" font-size="8.5" fill="var(--dg-on-accent)" text-anchor="middle">RTCPeerConnection · getUserMedia · RTCDataChannel</text>
+
+  <rect x="20" y="76" width="330" height="52" rx="9" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)" />
+  <text x="185" y="97" font-size="11" font-weight="700" fill="var(--dg-info)" text-anchor="middle">Media path</text>
+  <text x="185" y="115" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">codecs -> RTP / RTCP (sec 12)</text>
+
+  <rect x="370" y="76" width="330" height="52" rx="9" fill="var(--dg-plum-surface)" stroke="var(--dg-line)" />
+  <text x="535" y="97" font-size="11" font-weight="700" fill="var(--dg-plum)" text-anchor="middle">Data path</text>
+  <text x="535" y="115" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">SCTP, ordered or not (sec 16)</text>
+
+  <rect x="20" y="140" width="330" height="44" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)" />
+  <text x="185" y="160" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">SRTP</text>
+  <text x="185" y="176" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">encrypted media, keys from DTLS</text>
+
+  <rect x="370" y="140" width="330" height="44" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)" />
+  <text x="535" y="160" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">DTLS</text>
+  <text x="535" y="176" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">handshake + key export (sec 11)</text>
+
+  <rect x="20" y="196" width="680" height="44" rx="9" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)" />
+  <text x="360" y="216" font-size="11" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">ICE</text>
+  <text x="360" y="232" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">STUN + TURN, finds a path that actually works (sec 8-10)</text>
+
+  <rect x="20" y="252" width="680" height="34" rx="9" fill="var(--dg-inverse)" />
+  <text x="360" y="274" class="mono" font-size="10" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">UDP (usually) over IP</text>
+</svg>
+</Diagram>
+
+Read that bottom-up and the design explains itself. **UDP** at the base, because UDP is the transport that does not retransmit and does not block: a packet either arrives or it does not, and the layer above decides what that means. **ICE** above it, because before you can send a single byte you must find a pair of addresses that can actually reach each other through the NATs on both sides. **DTLS** above that, because TLS assumes a reliable stream and UDP is not one, so WebRTC uses the datagram variant to do a handshake and, crucially, to derive the SRTP keys. **SRTP** for media and **SCTP** for data, because those two payloads want opposite things: media wants "drop it and keep going", application data usually wants "make sure it lands".
+
+There is one more component, and it is the one people are always surprised by: **WebRTC does not include signaling**. Nothing in the standard tells two browsers how to find each other or exchange their setup information. That is deliberate and it is your job (sec 5).
+
+## The Three Hard Problems
+
+Strip away the acronyms and WebRTC is three problems stacked on each other. Every section in this chapter is an answer to one of them, so it is worth naming them plainly before the detail arrives.
+
+**One: two peers cannot address each other.** Your laptop's IP is `192.168.1.34`, which means nothing outside your home. The other peer's is `10.0.0.7`. Neither can dial the other, and neither even knows its own public address. Fixing this needs an outside observer (STUN, sec 8), a fallback relay for when the network refuses to cooperate (TURN, sec 9), and an algorithm to try every possibility and pick the best one that works (ICE, sec 10).
+
+**Two: peers must agree on what they are sending.** Codecs, resolutions, encryption keys, stream identities, which port carries what. That agreement is written in SDP and exchanged as an offer and an answer (sec 6), over a channel WebRTC does not provide (sec 5).
+
+**Three: the network is unknown, hostile and changes by the second.** Capacity is not advertised anywhere; you have to discover it by sending and watching what happens. Packets are lost, reordered and delayed in bursts. Wi-Fi drops, a phone hands over to cellular, someone starts a download. So the media path is a permanent control loop: measure, estimate, adjust the encoder, repair what is worth repairing, discard what is not (sec 14-15).
+
+<Callout type="info" title="Mental model">
+Signaling is the phone book and the introduction. ICE is the two of you working out which door is actually unlocked. DTLS is the sealed envelope. RTP is the conveyor belt. Congestion control is the hand on the speed dial of that belt, adjusting it every few hundred milliseconds for the rest of the call.
+</Callout>
+
+## The Latency Budget
+
+"Real-time" is not a feeling, it is a number, and different applications sit at very different points. Knowing the budget tells you immediately whether you need WebRTC at all, which is the single most valuable decision in this chapter, because WebRTC is by a wide margin the most operationally demanding option (sec 28).
+
+<Diagram caption="Where the delivery technologies sit">
+<svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A latency scale from about 100 milliseconds for WebRTC through low-latency HLS at a few seconds to standard HLS at 15 to 30 seconds">
+  <defs>
+    <marker id="lat-a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ink-2)" /></marker>
+  </defs>
+  <line x1="30" y1="150" x2="690" y2="150" stroke="var(--dg-ink-2)" stroke-width="1.2" marker-end="url(#lat-a)" />
+  <text x="30" y="176" class="mono" font-size="9" fill="var(--dg-ink-2)">50ms</text>
+  <text x="230" y="176" class="mono" font-size="9" fill="var(--dg-ink-2)">500ms</text>
+  <text x="430" y="176" class="mono" font-size="9" fill="var(--dg-ink-2)">5s</text>
+  <text x="630" y="176" class="mono" font-size="9" fill="var(--dg-ink-2)">30s</text>
+
+  <rect x="24" y="40" width="190" height="86" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)" />
+  <text x="119" y="62" font-size="11.5" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">WebRTC</text>
+  <text x="119" y="82" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">100-300ms typical</text>
+  <text x="119" y="100" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">conversation, gaming,</text>
+  <text x="119" y="114" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">remote control, auctions</text>
+
+  <rect x="230" y="40" width="220" height="86" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)" />
+  <text x="340" y="62" font-size="11.5" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">LL-HLS / LL-DASH / MoQ</text>
+  <text x="340" y="82" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">1-5s</text>
+  <text x="340" y="100" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">one-to-many live, sport,</text>
+  <text x="340" y="114" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">chat that is not a call</text>
+
+  <rect x="466" y="40" width="230" height="86" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)" />
+  <text x="581" y="62" font-size="11.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">HLS / DASH</text>
+  <text x="581" y="82" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">15-30s</text>
+  <text x="581" y="100" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">broadcast, VOD, anything</text>
+  <text x="581" y="114" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">with no feedback loop</text>
+
+  <text x="360" y="200" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">The rule of thumb: if a human has to respond to what they just saw, you are under 500ms, and that means WebRTC.</text>
+</svg>
+</Diagram>
+
+The number that matters for conversation is about **150ms one way**. Below it, people talk over each other no more than they do in a room. Around 300ms, turn-taking gets awkward and both sides start saying "sorry, go ahead". Past 400ms the conversation degrades into walkie-talkie. That budget has to cover capture, encode, network, jitter buffer, decode and render, and the network is often the smallest part of it, which is why the buffer tuning in sec 14 matters as much as the routing in sec 24.
+
+<Callout type="warn" title="Do not reach for WebRTC by default">
+If nobody needs to respond within half a second, you almost certainly want HLS or LL-HLS instead: it rides ordinary CDNs, costs a fraction as much, scales to millions without you designing anything, and fails softly. WebRTC buys you sub-second interactivity and charges you in NAT traversal, TURN bandwidth, stateful media servers and UDP-hostile clouds. Pay that only for interactivity you actually need.
+</Callout>
+
+Part II / Finding Each Other
+
+## Signaling: the Part WebRTC Doesn't Give You
+
+Two browsers that have never met cannot exchange anything, because neither has an address the other can reach. Yet to start a call they must first swap a fairly large blob of setup information: codecs, encryption fingerprints, stream identities, candidate addresses. This is a bootstrapping problem, and WebRTC solves it by **refusing to solve it**. The specification defines the format of what you exchange (SDP, sec 6) and says nothing at all about how it travels.
+
+That looks like an omission until you notice it is the reason WebRTC fits everywhere. You already have a server your users are authenticated against. It already knows who is allowed to call whom, who is in which room, who is online. Forcing a standard signaling protocol on top of that would mean a second identity system in every product that uses it. So the standard leaves a hole exactly the shape of your existing backend, and you fill it.
+
+<Diagram caption="Two planes: signaling through your server, media around it">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two peers each connect to a signaling server over WebSocket to exchange offer, answer and candidates, while the media flows directly between them over an encrypted UDP path">
+  <defs>
+    <marker id="sig-a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-info)" /></marker>
+    <marker id="sig-b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)" /></marker>
+  </defs>
+  <rect x="270" y="20" width="180" height="52" rx="10" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)" />
+  <text x="360" y="42" font-size="11.5" font-weight="700" fill="var(--dg-info)" text-anchor="middle">Your signaling server</text>
+  <text x="360" y="60" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">WebSocket, auth, rooms</text>
+
+  <rect x="30" y="150" width="170" height="56" rx="10" fill="var(--dg-accent)" />
+  <text x="115" y="173" font-size="12" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Peer A</text>
+  <text x="115" y="190" class="mono" font-size="8.5" fill="var(--dg-on-accent)" text-anchor="middle">behind NAT</text>
+
+  <rect x="520" y="150" width="170" height="56" rx="10" fill="var(--dg-accent)" />
+  <text x="605" y="173" font-size="12" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Peer B</text>
+  <text x="605" y="190" class="mono" font-size="8.5" fill="var(--dg-on-accent)" text-anchor="middle">behind NAT</text>
+
+  <path d="M140 148 L300 76" stroke="var(--dg-info)" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#sig-a)" />
+  <path d="M580 148 L420 76" stroke="var(--dg-info)" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#sig-a)" />
+  <text x="150" y="112" class="mono" font-size="8.5" fill="var(--dg-info)">offer / answer</text>
+  <text x="470" y="112" class="mono" font-size="8.5" fill="var(--dg-info)">ice candidates</text>
+
+  <path d="M204 178 H516" stroke="var(--dg-ok)" stroke-width="2.4" marker-end="url(#sig-b)" />
+  <text x="360" y="170" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">SRTP media, direct</text>
+  <text x="360" y="200" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">never touches the signaling server</text>
+
+  <text x="360" y="234" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Signaling is small, bursty and reliable. Media is large, continuous and lossy. Different problems, different paths.</text>
+</svg>
+</Diagram>
+
+In practice signaling is a WebSocket connection to your own backend (the WebSockets chapter, in full), carrying four message types:
+
+| Message      | Direction        | Carries                                                             |
+| ------------ | ---------------- | ------------------------------------------------------------------- |
+| `offer`      | caller -> callee | The caller's SDP: what it wants to send and can receive              |
+| `answer`     | callee -> caller | The callee's SDP: what it accepts and will send back                 |
+| `candidate`  | both ways        | One network address to try, sent as it is discovered (sec 10)        |
+| `bye`        | both ways        | Hang up, so the other side tears down instead of waiting for timeout |
+
+The formal name for this dance is **JSEP**, the JavaScript Session Establishment Protocol (RFC 8829), which is the rulebook for what a peer connection does when you hand it an offer or an answer. You will never implement JSEP; you will just obey its one visible rule, which is that offers and answers must alternate and both sides must be in a matching state, or `setRemoteDescription` throws.
+
+<Callout type="warn" title="Signaling is where your security lives">
+Media is encrypted end to end by the protocol whether you do anything or not. Access control is not. The only thing standing between an attacker and joining a private call is your signaling server checking, before it forwards an offer, that this user is allowed in this room. Authenticate the WebSocket, authorize every room join, and never let a client tell you who it is (the auth chapter's rules apply unchanged). Treat SDP arriving from a client as untrusted input.
+</Callout>
+
+## SDP: the Session Contract
+
+The blob you pass through signaling is **SDP**, the Session Description Protocol. It is old, it is line-oriented, it looks like nothing else in modern engineering, and it is not going away, so it is worth ten minutes to be able to read one.
+
+An SDP is a list of `key=value` lines, grouped into a session-level block and then one **media section** (an `m=` line and everything after it, until the next `m=`) per track or data channel. Here is a trimmed offer for one audio and one video track, with the noise removed and the important lines kept.
+
+```text title="a trimmed SDP offer, one audio and one video track"
+v=0
+o=- 4611731400430051336 2 IN IP4 127.0.0.1     # origin: session id and version
+s=-                                            # session name, nobody uses it
+t=0 0                                          # timing, always 0 0 for WebRTC
+a=group:BUNDLE 0 1                             # run BOTH media sections over ONE transport
+a=fingerprint:sha-256 4A:AD:B9:B1:3F:...:C8    # hash of my DTLS certificate (sec 11)
+a=ice-ufrag:F7gI                               # ICE username fragment  \  credentials for
+a=ice-pwd:x9cvVN6Q2sX3n8Kk7Pq1L5aZ             # ICE password           /  connectivity checks
+
+m=audio 9 UDP/TLS/RTP/SAVPF 111 63 9 0 8       # audio, encrypted RTP, payload types offered
+c=IN IP4 0.0.0.0                               # port/address are placeholders: ICE decides
+a=mid:0                                        # media id, referenced by the BUNDLE group
+a=rtcp-mux                                     # RTP and RTCP share one port
+a=sendrecv                                     # I will send and receive audio
+a=rtpmap:111 opus/48000/2                      # payload type 111 means Opus, 48kHz, stereo
+a=fmtp:111 minptime=10;useinbandfec=1          # codec parameters: enable Opus in-band FEC
+a=ssrc:1234567890 cname:s9Hf2                  # the stream identifier I will send with
+
+m=video 9 UDP/TLS/RTP/SAVPF 96 97 98 39        # video section, four codecs offered
+a=mid:1
+a=sendrecv
+a=rtpmap:96 VP8/90000                          # VP8, 90kHz clock (always, for video)
+a=rtpmap:98 H264/90000
+a=fmtp:98 profile-level-id=42e01f              # H.264 profile: must match or no video
+a=rtcp-fb:96 nack                              # I support NACK retransmission (sec 14)
+a=rtcp-fb:96 nack pli                          # ...and picture-loss indication (keyframe req)
+a=rtcp-fb:96 transport-cc                      # ...and per-packet feedback for BWE (sec 15)
+```
+
+Four things in there deserve to be understood rather than skimmed.
+
+**The offer/answer model is a negotiation, not an announcement.** The offerer lists everything it supports, in preference order. The answerer replies with the subset it accepts, and _that subset is the contract_. If the caller offers VP8, VP9, H.264 and AV1 and the answer only contains H.264, the call runs on H.264. This is also how a codec mismatch turns into "audio works, video is black": the video section survived negotiation but no codec profile was common to both, or the profile matched but the hardware decoder refused it.
+
+**`a=group:BUNDLE` is why a modern call uses one port, not six.** The original design gave every media section its own transport, and separate RTP and RTCP ports on top, so a simple call needed four to six holes punched through NAT and four to six ICE negotiations. BUNDLE (RFC 9143) multiplexes every section onto a single transport, and `a=rtcp-mux` (RFC 5761) folds RTCP onto the same port as RTP. Modern WebRTC therefore does ICE **once**, gets **one** UDP flow, and demultiplexes audio, video and data inside it. Turning BUNDLE off is a reliable way to make a working call fail on a hotel network.
+
+**`c=IN IP4 0.0.0.0` and `m=... 9 ...` are placeholders.** The address and port in the SDP are meaningless in WebRTC; ICE picks the real ones later. This surprises people who know SDP from SIP, where those fields are the whole point.
+
+**The fingerprint binds the whole thing together.** `a=fingerprint` is a hash of the certificate the peer will present during the DTLS handshake. Because it travels inside the SDP, over your authenticated signaling channel, it is what stops a man in the middle from substituting its own certificate (sec 11). Signaling integrity is media integrity.
+
+<Callout type="info" title="Reference">
+SDP itself is RFC 8866, the offer/answer model is RFC 3264, and how WebRTC uses them is JSEP, RFC 8829. You will not write SDP by hand, but you will read it in a bug report roughly once a month, usually to find out which codec line went missing.
+</Callout>
+
+## NAT: Why Two Peers Can't Just Connect
+
+Here is the fact everything in the next three sections exists to work around: **your computer does not have an internet address.** It has a private one, from a range that is not routable across the internet, and a box between you and the world rewrites your packets on the way out. That box is a NAT, and there are billions of them.
+
+Outbound works because the NAT keeps a table. When you send a packet from `192.168.1.34:51000` to a server, the NAT allocates a public port, rewrites the source to `203.0.113.7:62145`, and remembers the pairing. Replies to that public port get rewritten back and delivered to you. Everything you do on the web works this way.
+
+Inbound is where it dies. A packet arriving at the NAT from an address that has no entry in the table has nowhere to go, so it is dropped. Two peers behind NATs are therefore in a stand-off: **each can only receive from someone it has already sent to.**
+
+<Diagram caption="The stand-off, and the trick that breaks it">
+<svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peer A and Peer B behind separate NATs. An unsolicited inbound packet is dropped, but if both peers send outward at the same time each NAT has an entry for the other and the packets get through">
+  <defs>
+    <marker id="nat-x" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)" /></marker>
+    <marker id="nat-o" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)" /></marker>
+  </defs>
+  <rect x="20" y="30" width="150" height="80" rx="9" fill="var(--dg-surface)" stroke="var(--dg-line)" />
+  <text x="95" y="55" font-size="11" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">Peer A</text>
+  <text x="95" y="74" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">192.168.1.34</text>
+  <text x="95" y="92" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">:51000</text>
+
+  <rect x="190" y="30" width="90" height="80" rx="9" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)" />
+  <text x="235" y="60" font-size="10.5" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">NAT A</text>
+  <text x="235" y="80" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">203.0.113.7</text>
+  <text x="235" y="95" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">:62145</text>
+
+  <rect x="440" y="30" width="90" height="80" rx="9" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)" />
+  <text x="485" y="60" font-size="10.5" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">NAT B</text>
+  <text x="485" y="80" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">198.51.100.4</text>
+  <text x="485" y="95" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">:41003</text>
+
+  <rect x="550" y="30" width="150" height="80" rx="9" fill="var(--dg-surface)" stroke="var(--dg-line)" />
+  <text x="625" y="55" font-size="11" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">Peer B</text>
+  <text x="625" y="74" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">10.0.0.7</text>
+  <text x="625" y="92" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">:49200</text>
+
+  <path d="M436 140 H286" stroke="var(--dg-accent-2)" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#nat-x)" />
+  <text x="360" y="133" class="mono" font-size="9" fill="var(--dg-accent-2)" text-anchor="middle">unsolicited inbound</text>
+  <text x="360" y="156" font-size="10" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">DROPPED: no table entry</text>
+
+  <path d="M286 196 H434" stroke="var(--dg-ok)" stroke-width="1.8" marker-end="url(#nat-o)" />
+  <path d="M434 214 H288" stroke="var(--dg-ok)" stroke-width="1.8" marker-end="url(#nat-o)" />
+  <text x="360" y="189" class="mono" font-size="9" fill="var(--dg-ok)" text-anchor="middle">both send outward, at the same time</text>
+  <text x="360" y="240" font-size="10" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">each NAT now has an entry for the other: the path is open</text>
+</svg>
+</Diagram>
+
+The escape is **hole punching**: if both peers send outward to the other's public address at roughly the same moment, each NAT creates a mapping for the other's traffic, and what would have been an unsolicited inbound packet is now a reply to something that was already sent. The stand-off breaks. This works only if both sides know where to aim, which is what STUN provides (sec 8), and only if the NATs behave predictably, which not all of them do.
+
+Two properties of a NAT decide whether hole punching works, and the vocabulary is worth knowing because it explains your failure rate:
+
+- **Mapping behaviour**: does the NAT reuse the same public port for every destination you contact from one local port (**endpoint-independent mapping**, the friendly case), or allocate a new one per destination (**address-dependent**, hostile)? Only the friendly case lets a public address learned from a STUN server be useful for talking to a peer.
+- **Filtering behaviour**: which inbound packets does the NAT let back in? Anything to that port (**endpoint-independent filtering**), only from the address you contacted (**address-dependent**), or only from the exact address and port (**address and port dependent**, the common default)?
+
+A **symmetric NAT** is one with address-dependent mapping: the port it shows the STUN server is not the port it will use for the peer, so the address you learned is a lie by the time you try to use it. Two symmetric NATs facing each other cannot hole-punch at all, and the only way through is a relay (sec 9). Carrier-grade NAT on mobile networks and hardened corporate firewalls are the usual offenders, which is why "it works at home, it fails in the office" is the single most common WebRTC bug report.
+
+## STUN: Learning Your Own Address
+
+**STUN answers one question: what does my traffic look like from the outside?** You send a small binding request to a STUN server, and it replies with the source address and port it saw on that packet. That pair, your **server-reflexive address**, is what a peer would have to aim at to reach you through your NAT.
+
+```text title="a STUN exchange, in full"
+client 192.168.1.34:51000  ->  stun.example.com:3478   Binding Request
+client 192.168.1.34:51000  <-  stun.example.com:3478   Binding Success Response
+                                                        XOR-MAPPED-ADDRESS 203.0.113.7:62145
+```
+
+That is the whole protocol as WebRTC uses it (RFC 8489). Two packets, a few hundred bytes, and it also has the side effect of creating the NAT mapping in the first place. STUN servers are therefore trivially cheap to run and there are free public ones, which is why every WebRTC tutorial hard-codes `stun:stun.l.google.com:19302` and nobody thinks about it again.
+
+STUN does more work later, though, and this is the part tutorials skip: **ICE's connectivity checks are STUN messages sent peer to peer** (sec 10). The same request/response, but between the two peers instead of to a server, is what proves a candidate pair actually works, and the same mechanism keeps proving it for the life of the call (consent freshness, RFC 7675, every 15 seconds or the path is abandoned).
+
+<Callout type="warn" title="Public STUN is a dependency you did not review">
+A free public STUN server is fine for a demo and questionable in production: it is an availability dependency you do not control, it sees the IP of every user who starts a call, and it can be rate-limited or withdrawn without notice. STUN is so cheap to self-host (coturn does STUN and TURN in one process, sec 23) that there is little reason not to. What you must never do is ship only STUN and assume connections will work: 10 to 20 percent of sessions, depending on your users' networks, need a relay.
+</Callout>
+
+## TURN: Relaying When Nothing Else Works
+
+When hole punching fails, there is exactly one remaining option: put a server in the middle that both peers _can_ reach, and have it forward packets. That server speaks **TURN** (RFC 8656), which is STUN with relaying bolted on.
+
+The mechanism is an **allocation**. The client asks a TURN server for a relayed transport address; the server allocates a public IP and port on itself, and tells the client "traffic sent to `turn.example.com:54001` will be forwarded to you, and anything you send through me will appear to come from there". The client then advertises that relayed address as one of its ICE candidates. To the far peer it looks like an ordinary public address, and it works, because the TURN server has a real public IP and no NAT problem.
+
+<Diagram caption="What each candidate type costs you">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three ways a packet can travel: host to host on the same network, server reflexive directly through both NATs, or relayed through a TURN server">
+  <rect x="20" y="24" width="680" height="62" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)" />
+  <text x="40" y="46" font-size="11" font-weight="700" fill="var(--dg-ok)">host</text>
+  <text x="120" y="46" class="mono" font-size="9" fill="var(--dg-ink-2)">192.168.1.34:51000</text>
+  <text x="300" y="46" font-size="10" fill="var(--dg-ink)">same LAN or VPN, no NAT in the way</text>
+  <text x="40" y="70" class="mono" font-size="9" fill="var(--dg-ok)">lowest latency · zero server cost · works for maybe 10% of sessions</text>
+
+  <rect x="20" y="96" width="680" height="62" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)" />
+  <text x="40" y="118" font-size="11" font-weight="700" fill="var(--dg-warn)">srflx</text>
+  <text x="120" y="118" class="mono" font-size="9" fill="var(--dg-ink-2)">203.0.113.7:62145</text>
+  <text x="300" y="118" font-size="10" fill="var(--dg-ink)">public face of your NAT, learned from STUN</text>
+  <text x="40" y="142" class="mono" font-size="9" fill="var(--dg-warn)">direct path · server cost is two packets · the case you want, ~70-80%</text>
+
+  <rect x="20" y="168" width="680" height="62" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)" />
+  <text x="40" y="190" font-size="11" font-weight="700" fill="var(--dg-accent-2)">relay</text>
+  <text x="120" y="190" class="mono" font-size="9" fill="var(--dg-ink-2)">turn.example.com:54001</text>
+  <text x="300" y="190" font-size="10" fill="var(--dg-ink)">a port on a TURN server that forwards to you</text>
+  <text x="40" y="214" class="mono" font-size="9" fill="var(--dg-accent-2)">always works · you pay for every byte, twice · adds a hop of latency</text>
+</svg>
+</Diagram>
+
+The economics are the whole story with TURN. A relayed 1080p call at 2.5 Mbps costs the relay 2.5 Mbps in and 2.5 Mbps out, per direction, for the entire call, which at cloud egress rates is real money and grows linearly with usage. A STUN server, by contrast, handles a few packets per session and can serve a million users from one small box. This asymmetry drives every operational decision in sec 23: place TURN servers close to users to keep the latency penalty small, size them by bandwidth rather than CPU, and above all keep the fraction of sessions that need relaying as low as you can, because that fraction _is_ your media bill.
+
+<Callout type="warn" title="An open TURN server will be found and abused">
+A TURN server that accepts unauthenticated allocations is an open proxy with good bandwidth, and scanners find them within days. It will be used to relay attack traffic, scrape sites, or hop into your own private network if it sits inside your VPC. TURN must require credentials, and those credentials must be short-lived, per-session ones minted by your backend, never a static username and password shipped in your JavaScript (sec 23 has the code).
+</Callout>
+
+## ICE: the Algorithm That Ties It Together
+
+You now have three kinds of address, and no idea which will work. **ICE, Interactive Connectivity Establishment (RFC 8445), is the algorithm that tries them all and keeps the best one that works.** It is the single most important thing to understand about WebRTC operationally, because when a call fails to connect, it failed here.
+
+ICE runs in four phases.
+
+**1. Gather candidates.** The peer enumerates every address it might be reachable at: each local interface (**host** candidates, including IPv6 and VPN interfaces), the public mapping learned from each STUN server (**srflx**), and an allocation on each TURN server (**relay**). A typical laptop produces six to twelve candidates.
+
+**2. Exchange them.** Candidates go to the other peer through signaling. They can be sent all at once after gathering finishes, or, far better, **trickled**: emitted one at a time as they are discovered (RFC 8838), so checking starts while the slow ones (TURN allocations) are still being set up. Trickle ICE typically cuts a second or more off call setup, and every serious implementation uses it.
+
+**3. Check pairs.** Each side forms the cross product of its own candidates with the remote ones, giving up to a few dozen **candidate pairs**, sorts them by a priority formula that prefers host over srflx over relay, and sends a STUN binding request on each. A pair where the request gets a response in both directions is **valid**: a real, working, bidirectional path.
+
+**4. Nominate.** The controlling side picks the best valid pair, flags it as nominated, and media starts flowing on it. The others are kept as spares.
+
+<Diagram caption="Candidate pairs, checked in priority order">
+<svg viewBox="0 0 720 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A table of candidate pairs: host to host fails, server reflexive to server reflexive succeeds and is nominated, relay pairs are kept as backup">
+  <text x="30" y="28" class="mono" font-size="9.5" font-weight="700" fill="var(--dg-ink-2)">LOCAL</text>
+  <text x="250" y="28" class="mono" font-size="9.5" font-weight="700" fill="var(--dg-ink-2)">REMOTE</text>
+  <text x="470" y="28" class="mono" font-size="9.5" font-weight="700" fill="var(--dg-ink-2)">PRIORITY</text>
+  <text x="580" y="28" class="mono" font-size="9.5" font-weight="700" fill="var(--dg-ink-2)">CHECK</text>
+  <line x1="24" y1="38" x2="696" y2="38" stroke="var(--dg-line)" stroke-width="1" />
+
+  <rect x="24" y="48" width="672" height="40" rx="7" fill="var(--dg-surface)" stroke="var(--dg-line)" />
+  <text x="34" y="73" class="mono" font-size="9" fill="var(--dg-ink-2)">host 192.168.1.34</text>
+  <text x="254" y="73" class="mono" font-size="9" fill="var(--dg-ink-2)">host 10.0.0.7</text>
+  <text x="474" y="73" class="mono" font-size="9" fill="var(--dg-ink-2)">highest</text>
+  <text x="584" y="73" font-size="10" font-weight="700" fill="var(--dg-accent-2)">timeout, different LANs</text>
+
+  <rect x="24" y="96" width="672" height="40" rx="7" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)" stroke-width="1.6" />
+  <text x="34" y="121" class="mono" font-size="9" fill="var(--dg-ink-2)">srflx 203.0.113.7</text>
+  <text x="254" y="121" class="mono" font-size="9" fill="var(--dg-ink-2)">srflx 198.51.100.4</text>
+  <text x="474" y="121" class="mono" font-size="9" fill="var(--dg-ink-2)">high</text>
+  <text x="584" y="121" font-size="10" font-weight="700" fill="var(--dg-ok)">valid -> NOMINATED</text>
+
+  <rect x="24" y="144" width="672" height="40" rx="7" fill="var(--dg-surface)" stroke="var(--dg-line)" />
+  <text x="34" y="169" class="mono" font-size="9" fill="var(--dg-ink-2)">relay turn:54001</text>
+  <text x="254" y="169" class="mono" font-size="9" fill="var(--dg-ink-2)">srflx 198.51.100.4</text>
+  <text x="474" y="169" class="mono" font-size="9" fill="var(--dg-ink-2)">low</text>
+  <text x="584" y="169" font-size="10" fill="var(--dg-ink-2)">valid, kept as backup</text>
+
+  <rect x="24" y="192" width="672" height="40" rx="7" fill="var(--dg-surface)" stroke="var(--dg-line)" />
+  <text x="34" y="217" class="mono" font-size="9" fill="var(--dg-ink-2)">relay turn:54001</text>
+  <text x="254" y="217" class="mono" font-size="9" fill="var(--dg-ink-2)">relay turn:54118</text>
+  <text x="474" y="217" class="mono" font-size="9" fill="var(--dg-ink-2)">lowest</text>
+  <text x="584" y="217" font-size="10" fill="var(--dg-ink-2)">valid, last resort</text>
+
+  <text x="360" y="262" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Checks are STUN requests sent peer to peer. A pair is valid only when it answers in both directions.</text>
+  <text x="360" y="280" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">If every pair fails, the connection state goes to "failed", and that is the bug you will actually see.</text>
+</svg>
+</Diagram>
+
+An individual candidate on the wire is one line, and you will read these in logs constantly:
+
+```text title="one ICE candidate, decoded"
+a=candidate:842163049 1 udp 1677729535 203.0.113.7 62145 typ srflx raddr 192.168.1.34 rport 51000
+                      |  |       |          |         |       |            |
+                      |  |       |          |         |       |            the local address behind it
+                      |  |       |          |         |       type: host / srflx / prflx / relay
+                      |  |       |          |         the port to aim at
+                      |  |       |          the address to aim at
+                      |  |       priority, higher is tried first
+                      |  transport
+                      component: 1 = RTP (2 = RTCP, unless rtcp-mux, which is always)
+```
+
+Two more ICE behaviours matter in production. **ICE restart** re-runs the whole gathering and checking process on an existing connection without tearing down the call, which is how a session survives a laptop moving from Wi-Fi to Ethernet or a phone switching to cellular: the old path dies, a new one is negotiated, and the media resumes on it. And **consent freshness** keeps sending STUN checks on the chosen pair for the life of the call; if they stop being answered for a few seconds, the connection is declared failed rather than sitting there silently dead, which is the same liveness principle as WebSocket heartbeats (the WebSockets chapter, sec 7) applied to a UDP path.
+
+<Callout type="info" title="Practical advice">
+When a call fails to connect, resist the urge to guess. Every browser exposes the ICE state machine and the full candidate list, and the answer is almost always visible there: no relay candidates gathered means your TURN credentials are wrong or expired; candidates gathered but every pair failing means UDP is blocked and you need TURN over TCP or TLS on port 443 (sec 23); connected then failed after a few seconds means consent checks stopped, so something in the middle dropped the mapping.
+</Callout>
+
+Part III / The Media Path
+
+## DTLS and SRTP: Encryption Is Not Optional
+
+Once ICE has a working path, nothing is sent in the clear, ever. **WebRTC has no unencrypted mode**, which is unusual among protocols and worth appreciating: there is no flag to turn it off, no plaintext fallback, no "just for local testing". Every implementation must encrypt, so every deployment does.
+
+The mechanism is two protocols cooperating. **DTLS** is TLS adapted to datagrams: the same handshake, the same certificates, the same cipher suites, but tolerant of packets arriving out of order or not at all. It runs over the ICE-selected path as soon as that path is valid. But DTLS is not used to carry the media, because wrapping every RTP packet in a TLS record would add overhead and break the header fields that middleboxes and the receiver need to read. Instead, the DTLS handshake's job is to **agree on keys and then get out of the way**: the keys are exported (DTLS-SRTP, RFC 5764) and handed to **SRTP** (RFC 3711), which encrypts the RTP payload while leaving the header readable, and appends an authentication tag.
+
+The clever part is how identity works without any public key infrastructure. WebRTC peers use **self-signed certificates**, which normally proves nothing. But remember the SDP: the offer contained `a=fingerprint`, a hash of the certificate the peer will present. So the receiver checks the certificate offered during the DTLS handshake against the fingerprint it received through signaling, and if they do not match, it aborts. **The trust comes from your signaling channel, not from a certificate authority.** This is why sec 5 insisted that signaling is where your security lives: an attacker who can rewrite SDP in flight can substitute its own fingerprint and read the media, and no amount of DTLS can save you.
+
+<Diagram caption="From click to first frame">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A timeline of connection setup: signaling exchange, ICE gathering and checks, DTLS handshake with key export, then SRTP media flowing">
+  <defs>
+    <marker id="tl-a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ink-2)" /></marker>
+  </defs>
+  <rect x="20" y="40" width="150" height="70" rx="10" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)" />
+  <text x="95" y="64" font-size="11" font-weight="700" fill="var(--dg-info)" text-anchor="middle">1 / Signaling</text>
+  <text x="95" y="82" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">offer, answer,</text>
+  <text x="95" y="96" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">fingerprints, ufrag</text>
+
+  <path d="M174 75 H196" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#tl-a)" />
+
+  <rect x="200" y="40" width="150" height="70" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)" />
+  <text x="275" y="64" font-size="11" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">2 / ICE</text>
+  <text x="275" y="82" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">gather, check pairs,</text>
+  <text x="275" y="96" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">nominate a path</text>
+
+  <path d="M354 75 H376" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#tl-a)" />
+
+  <rect x="380" y="40" width="150" height="70" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)" />
+  <text x="455" y="64" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">3 / DTLS</text>
+  <text x="455" y="82" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">handshake, verify</text>
+  <text x="455" y="96" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">fingerprint, export keys</text>
+
+  <path d="M534 75 H556" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#tl-a)" />
+
+  <rect x="560" y="40" width="140" height="70" rx="10" fill="var(--dg-accent)" />
+  <text x="630" y="64" font-size="11" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">4 / SRTP</text>
+  <text x="630" y="82" class="mono" font-size="8" fill="var(--dg-on-accent)" text-anchor="middle">media flows,</text>
+  <text x="630" y="96" class="mono" font-size="8" fill="var(--dg-on-accent)" text-anchor="middle">RTCP feeds back</text>
+
+  <rect x="20" y="140" width="680" height="40" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)" />
+  <text x="34" y="165" class="mono" font-size="9" fill="var(--dg-ink-2)">typical budget:  ~50-150ms signaling  ·  ~50-300ms ICE (trickle helps most here)  ·  ~2 RTT DTLS  ·  then continuous</text>
+
+  <text x="360" y="212" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Everything before step 4 is setup you pay once. Everything after is the control loop you pay forever (sec 15).</text>
+  <text x="360" y="234" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Slow call setup is nearly always ICE waiting on a TURN allocation that trickle would have overlapped.</text>
+</svg>
+</Diagram>
+
+## RTP and RTCP: How Media Actually Moves
+
+Media on the wire is **RTP** (RFC 3550), and RTP is deliberately thin: a 12-byte header on top of UDP that adds exactly the four things a receiver needs to turn a stream of packets back into playable media.
+
+<Diagram caption="The RTP header, and what each field is for">
+<svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RTP header fields: version, payload type, sequence number, timestamp, SSRC and then the encrypted payload">
+  <rect x="20" y="30" width="70" height="46" rx="6" fill="var(--dg-surface-2)" stroke="var(--dg-line)" />
+  <text x="55" y="50" font-size="9.5" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">V P X CC</text>
+  <text x="55" y="66" class="mono" font-size="7.5" fill="var(--dg-ink-2)" text-anchor="middle">flags</text>
+
+  <rect x="94" y="30" width="60" height="46" rx="6" fill="var(--dg-warn)" />
+  <text x="124" y="50" font-size="9.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">M</text>
+  <text x="124" y="66" class="mono" font-size="7.5" fill="var(--dg-on-accent)" text-anchor="middle">marker</text>
+
+  <rect x="158" y="30" width="90" height="46" rx="6" fill="var(--dg-info)" />
+  <text x="203" y="50" font-size="9.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">PT</text>
+  <text x="203" y="66" class="mono" font-size="7.5" fill="var(--dg-on-accent)" text-anchor="middle">which codec</text>
+
+  <rect x="252" y="30" width="130" height="46" rx="6" fill="var(--dg-ok)" />
+  <text x="317" y="50" font-size="9.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">sequence number</text>
+  <text x="317" y="66" class="mono" font-size="7.5" fill="var(--dg-on-accent)" text-anchor="middle">+1 per packet</text>
+
+  <rect x="386" y="30" width="140" height="46" rx="6" fill="var(--dg-plum)" />
+  <text x="456" y="50" font-size="9.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">timestamp</text>
+  <text x="456" y="66" class="mono" font-size="7.5" fill="var(--dg-on-accent)" text-anchor="middle">sampling clock</text>
+
+  <rect x="530" y="30" width="170" height="46" rx="6" fill="var(--dg-accent)" />
+  <text x="615" y="50" font-size="9.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">SSRC</text>
+  <text x="615" y="66" class="mono" font-size="7.5" fill="var(--dg-on-accent)" text-anchor="middle">which stream</text>
+
+  <rect x="20" y="88" width="680" height="42" rx="6" fill="var(--dg-inverse)" />
+  <text x="360" y="106" font-size="10.5" font-weight="700" fill="var(--dg-on-inverse-info)" text-anchor="middle">payload: encoded media, encrypted by SRTP</text>
+  <text x="360" y="122" class="mono" font-size="8" fill="var(--dg-on-inverse-3)" text-anchor="middle">header stays readable so routers, SFUs and the receiver can do their jobs</text>
+
+  <g class="mono" font-size="9" fill="var(--dg-ink)">
+    <text x="20" y="158">sequence number  -> detect loss and reordering; ask for a retransmission (sec 14)</text>
+    <text x="20" y="178">timestamp        -> when to PLAY this, not when it arrived; drives the jitter buffer</text>
+    <text x="20" y="198">SSRC             -> identifies one stream inside a bundled transport; how an SFU routes</text>
+    <text x="20" y="218">marker bit       -> for video, "this packet ends a frame"; for audio, "talk spurt starts"</text>
+  </g>
+</svg>
+</Diagram>
+
+The separation of **sequence number** from **timestamp** is the design insight. Sequence numbers count packets and exist to detect loss and reordering. Timestamps say when a sample should be played, and several packets can share one timestamp because a single video frame is split across many packets (a 1080p keyframe is tens of kilobytes and the network's practical packet size is about 1200 bytes). Together they let a receiver answer both questions it has: is anything missing, and when should this be shown?
+
+Alongside RTP runs **RTCP**, the control channel, on the same port thanks to `rtcp-mux`. RTCP carries no media, only feedback, and this feedback is what makes the whole system adaptive rather than blind:
+
+| RTCP message                | Sent by  | Means                                                          |
+| --------------------------- | -------- | -------------------------------------------------------------- |
+| **SR / RR** (sender/receiver report) | both | Periodic stats: packets sent, lost, jitter, round-trip time     |
+| **NACK**                    | receiver | "I never got sequence 1042, send it again" (sec 14)             |
+| **PLI / FIR**               | receiver | "I cannot decode, send a keyframe" (picture loss indication)     |
+| **REMB**                    | receiver | "Please cap your bitrate at N" (older bandwidth estimation)      |
+| **TWCC**                    | receiver | Arrival time of every packet, so the _sender_ estimates capacity (sec 15) |
+
+<Callout type="info" title="Why the header is not encrypted">
+SRTP encrypts the payload and authenticates the header, but leaves the header in the clear. That is what lets an SFU (sec 21) forward a packet to twelve people without decrypting the media: it reads the SSRC and sequence number, rewrites what it must, and passes the encrypted payload along untouched. It is also the reason a plain SFU cannot give you end-to-end encryption on its own, since it does terminate SRTP per hop; getting true E2EE through an SFU needs a second encryption layer inside the payload (sec 27).
+</Callout>
+
+## Codecs and What Negotiation Really Decides
+
+Codecs are where negotiation stops being bookkeeping and starts deciding what your users experience. WebRTC mandates a floor so that any two endpoints can always talk: **Opus and G.711 for audio** (RFC 7874), **VP8 and H.264 for video** (RFC 7742). Beyond the floor, browsers offer VP9 and AV1, and the negotiation picks the best both sides support.
+
+For audio, there is effectively one answer. **Opus** covers 6 kbps of intelligible speech through 128 kbps of stereo music in one codec, switches bitrate on the fly without renegotiating, and ships two features that matter enormously on bad networks: **in-band FEC**, which piggybacks a low-quality copy of the previous frame onto the next packet so a single loss is repaired without a retransmission, and **DTX**, discontinuous transmission, which stops sending during silence and cuts the bitrate of a quiet participant to near zero. Turn both on.
+
+For video the choice is a real trade-off:
+
+| Codec      | Efficiency        | Hardware support        | Choose it when                                           |
+| ---------- | ----------------- | ----------------------- | -------------------------------------------------------- |
+| **H.264**  | baseline          | near universal, hardware | Mobile fleets and battery life; interop with SIP and older devices |
+| **VP8**    | similar to H.264  | mostly software          | The safe default, no licensing questions, universal in browsers |
+| **VP9**    | ~30% better       | patchy                   | You want SVC (sec 22) and can afford the CPU              |
+| **AV1**    | ~30% better again | improving, newer devices | Low-bitrate quality matters most; screen sharing; SVC     |
+
+Two practical facts about codecs cost people days. First, **profiles must match, not just names**: two endpoints can both "support H.264" and still fail, because one offers constrained baseline and the other only high profile. Second, **keyframes are expensive and load-bearing**. Video is mostly delta frames that describe changes from the previous one, so a decoder that loses a frame is stuck until the next keyframe arrives, and a keyframe can be ten times the size of a delta frame. This is why a PLI is not free, why a participant joining a 50-person call causes a visible bitrate spike (they need a keyframe from whoever they subscribe to), and why an SFU is careful about how many keyframe requests it forwards (sec 21).
+
+## Loss, Jitter and the Repair Toolbox
+
+The network delivers packets late, out of order, and not at all. A receiver that played whatever arrived, the moment it arrived, would produce unwatchable video and unlistenable audio. Every WebRTC endpoint therefore runs a set of repair mechanisms whose entire purpose is to trade a little latency for a lot of quality, and knowing which knob does what is what lets you tune a call for your use case.
+
+The centrepiece is the **jitter buffer**. Packets arrive with varying delay (that variance _is_ jitter); the buffer holds them briefly, reorders them by sequence number, and releases them on a smooth clock. Its depth is the tuning knob: deeper absorbs more jitter and hides more loss, but every millisecond of buffer is a millisecond of latency added to the call. Modern implementations adapt the depth continuously to measured jitter, which is why a call gets subtly laggier when your Wi-Fi degrades and tightens up again when it recovers.
+
+<Diagram caption="The repair toolbox, from cheapest to most expensive">
+<svg viewBox="0 0 720 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Four repair mechanisms ordered by cost: forward error correction, retransmission, concealment, and keyframe request">
+  <rect x="20" y="26" width="330" height="70" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)" />
+  <text x="36" y="48" font-size="11" font-weight="700" fill="var(--dg-ok)">FEC · send redundancy up front</text>
+  <text x="36" y="68" font-size="9.5" fill="var(--dg-ink-2)">Opus in-band FEC, flexfec for video.</text>
+  <text x="36" y="84" class="mono" font-size="8.5" fill="var(--dg-ink-2)">costs bandwidth always · repairs instantly · no RTT</text>
+
+  <rect x="370" y="26" width="330" height="70" rx="10" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)" />
+  <text x="386" y="48" font-size="11" font-weight="700" fill="var(--dg-info)">NACK + RTX · ask for it again</text>
+  <text x="386" y="68" font-size="9.5" fill="var(--dg-ink-2)">Receiver names the missing sequence number.</text>
+  <text x="386" y="84" class="mono" font-size="8.5" fill="var(--dg-ink-2)">costs one RTT · only worth it if RTT fits in the buffer</text>
+
+  <rect x="20" y="110" width="330" height="70" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)" />
+  <text x="36" y="132" font-size="11" font-weight="700" fill="var(--dg-warn)">Concealment · fake it</text>
+  <text x="36" y="152" font-size="9.5" fill="var(--dg-ink-2)">Audio PLC invents a plausible 20ms; video freezes.</text>
+  <text x="36" y="168" class="mono" font-size="8.5" fill="var(--dg-ink-2)">free · always available · quality degrades gracefully</text>
+
+  <rect x="370" y="110" width="330" height="70" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)" />
+  <text x="386" y="132" font-size="11" font-weight="700" fill="var(--dg-accent-2)">PLI · start over with a keyframe</text>
+  <text x="386" y="152" font-size="9.5" fill="var(--dg-ink-2)">The decoder gives up and asks for a fresh reference.</text>
+  <text x="386" y="168" class="mono" font-size="8.5" fill="var(--dg-accent-2)">costs a bitrate spike · visible stutter · last resort</text>
+
+  <rect x="20" y="196" width="680" height="52" rx="10" fill="var(--dg-inverse)" />
+  <text x="360" y="218" font-size="11" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">The jitter buffer is what buys time for all of them</text>
+  <text x="360" y="238" class="mono" font-size="8.5" fill="var(--dg-on-inverse-2)" text-anchor="middle">deeper buffer = more repair possible = more latency. That single trade-off defines your product.</text>
+</svg>
+</Diagram>
+
+That trade-off is a product decision, not a technical one. A conversational call keeps the buffer tight and accepts occasional artifacts, because being 400ms behind is worse than a blip. A live-stream viewer with no talkback can afford a second of buffer and near-perfect quality, since nobody notices latency they cannot compare against. **Retransmission is only useful when the round trip fits inside the buffer**: on a 30ms link, a NACK repairs the loss long before playout; on a 250ms satellite link the replacement arrives after the moment has passed, so bandwidth spent on FEC is bandwidth better spent.
+
+## Congestion Control: the Bitrate Negotiation You Never See
+
+Nothing tells you how much bandwidth is available. There is no field for it, no API, no advertisement, and the answer changes every few seconds as other traffic comes and goes. So WebRTC does the only thing possible: it **probes**, watches what happens, and adjusts continuously. This loop is the most sophisticated part of the stack and the one you interact with least directly, but understanding it explains most "why did the video go blurry" questions you will ever be asked.
+
+The dominant algorithm is **GCC**, Google Congestion Control, and its core insight is that **loss is a late signal, delay is an early one**. By the time routers are dropping packets, the queues have already been full for a while and your call has been degraded for hundreds of milliseconds. But when a queue starts to build, packets begin arriving slightly further apart than they were sent, and that _change in inter-arrival time_ shows up before any loss does. So GCC runs two estimators: a delay-based one watching the trend of arrival times, and a loss-based one as a backstop, and takes the lower answer.
+
+<Diagram caption="The control loop that runs for the whole call">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A loop: sender paces packets, receiver reports arrival times via transport-wide congestion control feedback, sender estimates available bandwidth and sets the encoder target bitrate">
+  <defs>
+    <marker id="cc-a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)" /></marker>
+  </defs>
+  <rect x="30" y="40" width="160" height="60" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent-border)" />
+  <text x="110" y="64" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">Encoder</text>
+  <text x="110" y="84" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">target bitrate</text>
+
+  <path d="M194 70 H266" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#cc-a)" />
+  <text x="230" y="62" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">frames</text>
+
+  <rect x="270" y="40" width="160" height="60" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)" />
+  <text x="350" y="64" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Pacer</text>
+  <text x="350" y="84" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">smooths the bursts</text>
+
+  <path d="M434 70 H506" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#cc-a)" />
+  <text x="470" y="62" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">RTP</text>
+
+  <rect x="510" y="40" width="180" height="60" rx="10" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)" />
+  <text x="600" y="64" font-size="11" font-weight="700" fill="var(--dg-info)" text-anchor="middle">Receiver</text>
+  <text x="600" y="84" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">notes arrival times</text>
+
+  <path d="M600 104 V140 H110 V104" stroke="var(--dg-accent-2)" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#cc-a)" />
+  <text x="355" y="134" class="mono" font-size="9" fill="var(--dg-accent-2)" text-anchor="middle">RTCP transport-cc feedback: "packet 1042 arrived at T, 1043 at T+7ms..."</text>
+
+  <rect x="30" y="164" width="660" height="62" rx="10" fill="var(--dg-surface)" stroke="var(--dg-line)" />
+  <text x="46" y="186" font-size="10.5" font-weight="700" fill="var(--dg-ink)">Estimator, every ~100ms:</text>
+  <text x="46" y="206" font-size="10" fill="var(--dg-ink-2)">inter-arrival delay trending UP -> queues building -> back off multiplicatively, fast</text>
+  <text x="46" y="220" font-size="10" fill="var(--dg-ink-2)">delay flat and no loss -> headroom may exist -> increase gently, probe upward</text>
+</svg>
+</Diagram>
+
+The feedback that makes this work is **transport-wide congestion control** (`a=rtcp-fb:96 transport-cc` in the SDP): the receiver reports the arrival time of _every_ packet, and the sender does all the estimating. Putting the intelligence at the sender is what allows one estimate across audio, video and data on a bundled transport, and lets the algorithm improve without changing receivers.
+
+The output is a single number, the **target bitrate**, and it is spent by an allocator with priorities: audio first, because 32 kbps of intelligible speech is worth more than any amount of video; then video, which absorbs the rest by reducing quality, then frame rate, then resolution, in that order. This is exactly what a user sees when their connection degrades: audio keeps working while the picture softens, then goes choppy, then drops to a small blurry rectangle. That sequence is not a failure, it is the allocator doing its job.
+
+<Callout type="warn" title="Do not fight the bandwidth estimator">
+The instinct on seeing poor video is to raise a minimum bitrate or cap the resolution higher. Almost always this makes it worse: you are overriding an estimate that was correct, forcing packets into a queue that is already full, and turning "slightly soft video" into "delay that grows without bound and then collapses". If quality is bad, look first at the estimate and at loss and RTT (sec 26). Change the encoder's ceiling only when you have evidence the estimate is wrong.
+</Callout>
+
+## Data Channels: SCTP Where You Expected TCP
+
+Not everything in a real-time session is media. Game state, cursor positions, chat, control commands, file transfers and telemetry all want to ride the same connection, and WebRTC provides `RTCDataChannel` for exactly that. Underneath it is **SCTP tunnelled over DTLS** (RFC 8831), which is a surprising choice until you see what it buys.
+
+SCTP gives you something neither TCP nor UDP does: **reliability as a per-channel setting.** Each data channel picks its own point on the spectrum.
+
+| Configuration                      | Behaves like              | Use it for                                   |
+| ---------------------------------- | ------------------------- | --------------------------------------------- |
+| ordered + reliable (default)       | TCP                       | Chat, file transfer, anything that must arrive |
+| unordered + reliable               | TCP without head-of-line  | Independent events where order does not matter |
+| `maxRetransmits: 0`, unordered     | UDP                       | Player position, cursor: the next one supersedes it |
+| `maxPacketLifetime: 100`           | UDP with a deadline       | Anything worth retrying briefly, then dropping |
+
+Channels are also **multiplexed**: many channels share one SCTP association, so a stalled file transfer does not block cursor updates. And because it all rides the peer connection, a data channel goes **directly peer to peer**, with none of the server round trip a WebSocket has, which for two players on the same continent is often the difference between 20ms and 90ms.
+
+Here is a data channel on the server side of a peer connection, in Go with Pion and in Python with aiortc. Both do the same thing: accept a channel the browser opened, echo messages, and send periodic state.
+
+```go
+// github.com/pion/webrtc/v4
+pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
+    ICEServers: []webrtc.ICEServer{
+        {URLs: []string{"stun:stun.example.com:3478"}},
+        {   // relay credentials are per-session and short-lived (sec 23)
+            URLs:       []string{"turn:turn.example.com:3478?transport=udp"},
+            Username:   turnUser,
+            Credential: turnPass,
+        },
+    },
+})
+if err != nil {
+    return err
+}
+
+pc.OnDataChannel(func(dc *webrtc.DataChannel) {
+    log.Printf("channel %q open, id=%d", dc.Label(), *dc.ID())
+
+    dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+        // msg.Data is bytes; msg.IsString says how the peer sent it.
+        _ = dc.SendText("echo: " + string(msg.Data))
+    })
+
+    // Push state on a timer, independent of what the peer sends.
+    go func() {
+        tick := time.NewTicker(50 * time.Millisecond)
+        defer tick.Stop()
+        for range tick.C {
+            if dc.ReadyState() != webrtc.DataChannelStateOpen {
+                return // peer went away, stop the goroutine (leaks otherwise)
+            }
+            _ = dc.SendText(worldState())
+        }
+    }()
+})
+
+// Connection state is your liveness signal: ICE can fail at any time (sec 10).
+pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+    if s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed {
+        _ = pc.Close() // frees the transports, the DTLS session and the ICE agent
+    }
+})
+```
+
+```python
+# aiortc
+from aiortc import RTCPeerConnection, RTCConfiguration, RTCIceServer
+
+pc = RTCPeerConnection(RTCConfiguration(iceServers=[
+    RTCIceServer(urls=["stun:stun.example.com:3478"]),
+    RTCIceServer(                                  # per-session credentials (sec 23)
+        urls=["turn:turn.example.com:3478?transport=udp"],
+        username=turn_user,
+        credential=turn_pass,
+    ),
+]))
+
+@pc.on("datachannel")
+def on_datachannel(channel):
+    log.info("channel %s open", channel.label)
+
+    @channel.on("message")
+    def on_message(message):
+        channel.send(f"echo: {message}")
+
+    async def push_state():
+        while channel.readyState == "open":
+            channel.send(world_state())
+            await asyncio.sleep(0.05)
+
+    asyncio.ensure_future(push_state())   # cancelled implicitly when the channel closes
+
+@pc.on("connectionstatechange")
+async def on_state():
+    if pc.connectionState in ("failed", "closed"):
+        await pc.close()                  # release ICE, DTLS and SCTP resources
+```
+
+<Callout type="info" title="Data channel or WebSocket?">
+Use a WebSocket when the server is a participant in the conversation: it needs to see, store, authorize or fan out the messages. Use a data channel when the server is not needed and latency matters: peer-to-peer game state, cursors, or a side channel next to media you are already sending. Note the asymmetry in setup cost, too: a WebSocket is one HTTP upgrade, while a data channel needs the entire signaling, ICE and DTLS sequence first. If you are not already establishing a peer connection for media, a data channel is rarely worth it on its own.
+</Callout>
+
+Part IV / Building It
+
+## A Peer Connection, End to End
+
+Enough theory to build one. The smallest useful system is three pieces: a browser that captures media and makes an offer, a signaling server that carries the offer to the other side (sec 18), and a peer that answers. That third peer can be another browser, but for a backend chapter the interesting case is a **server-side peer**, because that is the foundation of recording, transcription, bridging to SIP, and every SFU (sec 21).
+
+The browser side is unavoidably JavaScript, and it is short. Note the order of operations, because it is fixed and the API will throw if you break it.
+
+```javascript title="the browser side, in full"
+const pc = new RTCPeerConnection({
+  iceServers: await fetchIceServers(),   // per-session TURN credentials from your API (sec 23)
+});
+
+// 1. Capture. This prompts the user; nothing works until they allow it.
+const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+for (const track of stream.getTracks()) pc.addTrack(track, stream);
+
+// 2. Trickle: send each candidate the instant it is found, do not wait (sec 10).
+pc.onicecandidate = (e) => {
+  if (e.candidate) signal.send({ type: 'candidate', candidate: e.candidate });
+};
+
+// 3. Remote media arrives here, once DTLS is up and SRTP is flowing (sec 11).
+pc.ontrack = (e) => { remoteVideo.srcObject = e.streams[0]; };
+
+// 4. Watch the state machine. This is your connection health (sec 26).
+pc.onconnectionstatechange = () => {
+  if (pc.connectionState === 'failed') pc.restartIce();   // path died, renegotiate (sec 10)
+};
+
+// 5. Offer / answer. createOffer describes what we just set up; the local
+//    description must be set BEFORE candidates can be gathered.
+const offer = await pc.createOffer();
+await pc.setLocalDescription(offer);
+signal.send({ type: 'offer', sdp: offer.sdp });
+
+signal.on('answer', async (msg) => {
+  await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+});
+signal.on('candidate', (msg) => pc.addIceCandidate(msg.candidate));
+```
+
+The server-side peer answers that offer. In Go this is Pion, a pure-Go implementation of the whole stack; in Python it is aiortc, built on asyncio. Both examples below accept the offer, receive the browser's video, and echo it straight back, which is the "hello world" of server-side WebRTC and a useful smoke test: if you see yourself with a round-trip delay, every layer in this chapter is working.
+
+```go
+// github.com/pion/webrtc/v4
+func answer(offerSDP string) (string, error) {
+    pc, err := webrtc.NewPeerConnection(iceConfig())
+    if err != nil {
+        return "", err
+    }
+
+    // Declare up front that we will both receive and send video, otherwise the
+    // answer has no place to put the track we add below.
+    if _, err = pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo,
+        webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv}); err != nil {
+        return "", err
+    }
+
+    pc.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+        // A local track carrying the SAME codec: we forward packets, we do not
+        // decode or re-encode. That is the whole trick an SFU uses (sec 21).
+        local, err := webrtc.NewTrackLocalStaticRTP(
+            remote.Codec().RTPCodecCapability, "echo", "server")
+        if err != nil {
+            return
+        }
+        if _, err := pc.AddTrack(local); err != nil {
+            return
+        }
+
+        // Video is delta frames: a new receiver is blind until a keyframe (sec 13).
+        go func() {
+            t := time.NewTicker(3 * time.Second)
+            defer t.Stop()
+            for range t.C {
+                _ = pc.WriteRTCP([]rtcp.Packet{
+                    &rtcp.PictureLossIndication{MediaSSRC: uint32(remote.SSRC())},
+                })
+            }
+        }()
+
+        for { // the forwarding loop, one goroutine per inbound track
+            pkt, _, err := remote.ReadRTP()
+            if err != nil {
+                return // track ended or connection died
+            }
+            if err := local.WriteRTP(pkt); err != nil {
+                return
+            }
+        }
+    })
+
+    if err = pc.SetRemoteDescription(webrtc.SessionDescription{
+        Type: webrtc.SDPTypeOffer, SDP: offerSDP,
+    }); err != nil {
+        return "", err
+    }
+
+    ans, err := pc.CreateAnswer(nil)
+    if err != nil {
+        return "", err
+    }
+    // Without trickle on this side, wait for gathering so the answer carries
+    // every candidate. With trickle, send the answer immediately instead.
+    gathered := webrtc.GatheringCompletePromise(pc)
+    if err = pc.SetLocalDescription(ans); err != nil {
+        return "", err
+    }
+    <-gathered
+
+    return pc.LocalDescription().SDP, nil
+}
+```
+
+```python
+# aiortc
+from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc.contrib.media import MediaRelay
+
+relay = MediaRelay()   # lets one inbound track be consumed by many subscribers
+
+async def answer(offer_sdp: str) -> str:
+    pc = RTCPeerConnection(ice_config())
+
+    @pc.on("track")
+    def on_track(track):
+        if track.kind == "video":
+            # relay.subscribe forwards the same encoded frames; no re-encoding,
+            # which is exactly what keeps an SFU cheap (sec 21).
+            pc.addTrack(relay.subscribe(track))
+
+        @track.on("ended")
+        async def on_ended():
+            log.info("track %s ended", track.kind)
+
+    await pc.setRemoteDescription(RTCSessionDescription(sdp=offer_sdp, type="offer"))
+
+    answer = await pc.createAnswer()
+    # aiortc completes ICE gathering inside setLocalDescription, so the SDP you
+    # read afterwards already contains every candidate.
+    await pc.setLocalDescription(answer)
+
+    return pc.localDescription.sdp
+```
+
+Go gives each inbound track a goroutine running a blocking read loop; Python gives it a coroutine and a relay object. Same structure as the WebSocket server in the previous chapter, applied to media: accept, loop reading, forward.
+
+<Callout type="warn" title="Renegotiation is a state machine, and it will bite you">
+Adding a track, removing one, or restarting ICE all require a fresh offer/answer round trip on a connection that is already live. Two peers that both decide to renegotiate at the same moment collide, and one must back off, which is the "glare" problem. Browsers give you `onnegotiationneeded` and the perfect-negotiation pattern (a polite peer that rolls back its own offer when it receives one) precisely so you do not hand-roll this. Use it; a hand-rolled version works in testing and deadlocks in production.
+</Callout>
+
+## The Signaling Server
+
+The signaling server is an ordinary WebSocket application, and everything from the previous chapter applies unchanged: authenticate on connect, one goroutine or coroutine per connection, heartbeats, a registry of who is where. The WebRTC-specific part is only that it relays three message types between members of a room and never inspects the media.
+
+```go
+// A room-based signaling relay. gorilla/websocket, one hub, no media anywhere.
+type Room struct {
+    mu    sync.RWMutex
+    peers map[string]*Peer // peerID -> connection
+}
+
+type Envelope struct {
+    Type   string          `json:"type"`   // offer | answer | candidate | bye
+    To     string          `json:"to"`     // target peer, empty means everyone
+    From   string          `json:"from"`   // set by the SERVER, never trusted from the client
+    Payload json.RawMessage `json:"payload"`
+}
+
+func (r *Room) handle(p *Peer, raw []byte) {
+    var env Envelope
+    if err := json.Unmarshal(raw, &env); err != nil {
+        return // malformed: drop it, do not disconnect (the validation chapter)
+    }
+
+    // The server stamps identity. A client that sets `from` itself can
+    // impersonate anyone in the room, which is the classic signaling hole.
+    env.From = p.ID
+
+    switch env.Type {
+    case "offer", "answer", "candidate":
+        r.forward(env) // pure relay: we never parse the SDP
+    case "bye":
+        r.remove(p.ID)
+        r.broadcast(Envelope{Type: "bye", From: p.ID})
+    }
+}
+
+func (r *Room) forward(env Envelope) {
+    r.mu.RLock()
+    defer r.mu.RUnlock()
+    if target, ok := r.peers[env.To]; ok {
+        target.send(env) // send() writes to a buffered channel, never to the socket
+    }                    // directly: concurrent writes corrupt frames (WebSockets sec 8)
+}
+```
+
+```python
+# FastAPI signaling relay. The same shape: rooms, identity, forward.
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+app = FastAPI()
+rooms: dict[str, dict[str, WebSocket]] = {}
+
+@app.websocket("/rtc/{room_id}")
+async def signaling(ws: WebSocket, room_id: str):
+    peer_id = await authenticate(ws)      # verify the token BEFORE accept (sec 27)
+    if peer_id is None:
+        await ws.close(code=4401)
+        return
+    await ws.accept()
+
+    peers = rooms.setdefault(room_id, {})
+    peers[peer_id] = ws
+    await fanout(peers, {"type": "peer-joined", "from": peer_id}, skip=peer_id)
+
+    try:
+        while True:
+            env = await ws.receive_json()
+            if env.get("type") not in ("offer", "answer", "candidate", "bye"):
+                continue                   # ignore anything we did not define
+            env["from"] = peer_id          # server-stamped identity, always
+            target = peers.get(env.get("to"))
+            if target is not None:
+                await target.send_json(env)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        peers.pop(peer_id, None)
+        if not peers:
+            rooms.pop(room_id, None)       # rooms are ephemeral; do not leak them
+        await fanout(peers, {"type": "bye", "from": peer_id})
+```
+
+Note what is _not_ here. No SDP parsing: the server is a courier, and parsing SDP on the server is a large attack surface for no benefit. No media: not one byte of audio or video passes through this process, which is why a single modest instance can signal for tens of thousands of concurrent calls even though it could never carry their media.
+
+<Callout type="info" title="Scaling signaling is the easy half">
+Signaling has the same shape as any WebSocket service: stateful connections, so you need sticky routing or a pub/sub backplane to fan a message out to a peer connected to a different instance (the WebSockets chapter, sec 15, and Redis pub/sub from the caching chapter). It is a solved problem and it is cheap. The hard scaling problem is the media plane (sec 24), where state is not a map entry but a live encrypted transport with a bitrate.
+</Callout>
+
+## Server-Side Media: Recording and Bridging
+
+A server that can terminate a peer connection can do things no browser can. Recording is the common one, and it splits into two designs with very different costs.
+
+**Recording the raw tracks** means writing the RTP payloads to disk as they arrive, one file per track, with no decoding: Opus into an Ogg container, VP8 into IVF, H.264 into MP4. It is nearly free in CPU terms, it preserves exactly what was sent, and it leaves you with N separate files that are not synchronized to each other and that no ordinary player will show side by side. It is the right choice when you will process the media later anyway (transcription, archival, compliance).
+
+**Recording a composed view** means decoding every participant, laying them out in a grid, mixing the audio and encoding one output file. It produces something a human can watch immediately, and it costs an entire transcode pipeline per room: this is by far the most expensive thing in a WebRTC deployment, and it is why composed recording is usually a separate autoscaled service, not something bolted onto the media server.
+
+```go
+// Recording an inbound track to disk, no transcoding (github.com/pion/webrtc/v4).
+pc.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+    var writer media.Writer
+    var err error
+
+    switch remote.Codec().MimeType {
+    case webrtc.MimeTypeOpus:
+        writer, err = oggwriter.New("audio.ogg", 48000, 2)
+    case webrtc.MimeTypeVP8:
+        writer, err = ivfwriter.New("video.ivf")
+    default:
+        return // an unhandled codec is a bug in negotiation (sec 13), not here
+    }
+    if err != nil {
+        return
+    }
+    defer writer.Close() // the container needs its trailer written, or the file is corrupt
+
+    for {
+        pkt, _, err := remote.ReadRTP()
+        if err != nil {
+            return // EOF: peer left. defer closes the file cleanly.
+        }
+        if err := writer.WriteRTP(pkt); err != nil {
+            return
+        }
+    }
+})
+```
+
+```python
+# aiortc ships a MediaRecorder that muxes with ffmpeg under the hood.
+from aiortc.contrib.media import MediaRecorder
+
+recorder = MediaRecorder(f"/recordings/{session_id}.mp4")   # decodes and re-encodes
+
+@pc.on("track")
+async def on_track(track):
+    recorder.addTrack(track)
+    await recorder.start()
+
+    @track.on("ended")
+    async def on_ended():
+        await recorder.stop()       # flushes and finalizes the container
+
+# Note the cost difference: this path DECODES every frame. For pure archival,
+# write the RTP payloads directly instead and pay nothing for CPU.
+```
+
+The same server-side peer is the foundation for live transcription (feed the decoded audio to a speech model), for bridging into telephony (transcode Opus to G.711 and hand it to SIP), and for ingest: **WHIP** (RFC 9725, published March 2025) is simply "POST an SDP offer over HTTP, get an answer back", which turns starting a WebRTC broadcast into one HTTP request with no custom signaling at all. Its playback counterpart, WHEP, is still an IETF draft but widely implemented.
+
+Part V / The Infrastructure
+
+## Topologies: Mesh, MCU, SFU
+
+Everything so far has been two peers. Add a third and the architecture question arrives, because there are only three ways to connect N participants and they have wildly different costs.
+
+<Diagram caption="Three topologies for a four-person call">
+<svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mesh with every peer connected to every other peer, MCU with a mixing server sending one stream to each, and SFU with a routing server forwarding streams">
+  <text x="120" y="26" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">Mesh</text>
+  <text x="360" y="26" font-size="12" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">MCU</text>
+  <text x="600" y="26" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">SFU</text>
+
+  <g stroke="var(--dg-accent-border)" stroke-width="1.3">
+    <line x1="60" y1="70" x2="180" y2="70" /><line x1="60" y1="70" x2="60" y2="170" />
+    <line x1="60" y1="70" x2="180" y2="170" /><line x1="180" y1="70" x2="60" y2="170" />
+    <line x1="180" y1="70" x2="180" y2="170" /><line x1="60" y1="170" x2="180" y2="170" />
+  </g>
+  <circle cx="60" cy="70" r="16" fill="var(--dg-accent)" /><circle cx="180" cy="70" r="16" fill="var(--dg-accent)" />
+  <circle cx="60" cy="170" r="16" fill="var(--dg-accent)" /><circle cx="180" cy="170" r="16" fill="var(--dg-accent)" />
+  <text x="120" y="212" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">uplink: N-1 encodes</text>
+  <text x="120" y="228" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">no server at all</text>
+  <text x="120" y="250" font-size="10" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">dies past 4 people</text>
+
+  <g stroke="var(--dg-warn-border)" stroke-width="1.3">
+    <line x1="300" y1="70" x2="360" y2="120" /><line x1="420" y1="70" x2="360" y2="120" />
+    <line x1="300" y1="170" x2="360" y2="120" /><line x1="420" y1="170" x2="360" y2="120" />
+  </g>
+  <rect x="330" y="104" width="60" height="34" rx="8" fill="var(--dg-warn)" />
+  <text x="360" y="126" font-size="9.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">mix</text>
+  <circle cx="300" cy="70" r="14" fill="var(--dg-warn-soft)" /><circle cx="420" cy="70" r="14" fill="var(--dg-warn-soft)" />
+  <circle cx="300" cy="170" r="14" fill="var(--dg-warn-soft)" /><circle cx="420" cy="170" r="14" fill="var(--dg-warn-soft)" />
+  <text x="360" y="212" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">uplink 1, downlink 1</text>
+  <text x="360" y="228" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">server decodes + re-encodes</text>
+  <text x="360" y="250" font-size="10" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">cheap clients, expensive server</text>
+
+  <g stroke="var(--dg-ok-border)" stroke-width="1.3">
+    <line x1="540" y1="70" x2="600" y2="120" /><line x1="660" y1="70" x2="600" y2="120" />
+    <line x1="540" y1="170" x2="600" y2="120" /><line x1="660" y1="170" x2="600" y2="120" />
+  </g>
+  <rect x="570" y="104" width="60" height="34" rx="8" fill="var(--dg-ok)" />
+  <text x="600" y="126" font-size="9.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">route</text>
+  <circle cx="540" cy="70" r="14" fill="var(--dg-ok-soft)" /><circle cx="660" cy="70" r="14" fill="var(--dg-ok-soft)" />
+  <circle cx="540" cy="170" r="14" fill="var(--dg-ok-soft)" /><circle cx="660" cy="170" r="14" fill="var(--dg-ok-soft)" />
+  <text x="600" y="212" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">uplink 1, downlink N-1</text>
+  <text x="600" y="228" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">server forwards, never decodes</text>
+  <text x="600" y="250" font-size="10" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">the production answer</text>
+
+  <text x="360" y="284" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">The SFU wins because forwarding an encrypted packet is cheap and encoding video is not.</text>
+</svg>
+</Diagram>
+
+**Mesh** connects everyone to everyone, with no server in the media path at all. It is beautiful for two people and untenable beyond four, because each participant must _encode and upload their own video N-1 times_. Encoding is the expensive operation on a client: at five participants a laptop is running four video encoders and its fan tells you about it, while a phone throttles and then overheats. Uplink is also the scarce direction on most consumer connections. Mesh is the right answer for one-to-one and the wrong answer for anything else.
+
+**MCU**, a multipoint control unit, has the server decode everyone, compose one grid, and send a single stream to each participant. Clients become trivially cheap, which is why this design owned the conference-room era and still matters for telephony bridges and for very weak endpoints. The cost is brutal and it lands on you: decoding and re-encoding every stream is orders of magnitude more CPU than forwarding, and it adds a full encode/decode cycle of latency. It also destroys flexibility, since every participant gets the same layout.
+
+**SFU**, a selective forwarding unit, is the design essentially every product uses today. Each participant uploads **once**; the server forwards those encrypted packets to whoever is subscribed. No decoding, no re-encoding, no transcoding, so the server's cost per stream is small and mostly bandwidth. It combines the cheap uplink of the MCU with the low latency and per-participant flexibility of the mesh.
+
+| Participants | Mesh uplink / downlink | SFU uplink / downlink | MCU uplink / downlink |
+| ------------ | ---------------------- | --------------------- | --------------------- |
+| 2            | 1 / 1                  | 1 / 1                 | 1 / 1                 |
+| 4            | 3 / 3                  | 1 / 3                 | 1 / 1                 |
+| 10           | 9 / 9                  | 1 / 9                 | 1 / 1                 |
+| 50           | 49 / 49 (impossible)   | 1 / 49 (needs sec 22) | 1 / 1 (huge CPU bill) |
+
+That table also shows where the SFU's own limit is: **downlink grows with N**. A 50-person grid means fifty inbound streams on every client, which no phone will decode. That is why large calls do not actually send everything to everyone; they send only what is visible and only at the resolution it is displayed at, which is what simulcast (sec 22) makes possible.
+
+## Inside an SFU
+
+An SFU sounds simple, "forward packets", and the simplicity is real: it never decodes media, so most of its work is bookkeeping. But the bookkeeping is subtle, and knowing what it does explains the failure modes you will actually meet.
+
+A packet's journey through an SFU is: arrive on a peer connection, be decrypted from SRTP (the server is a DTLS endpoint for each participant, so it holds their keys), be matched to a track by SSRC, be looked up against the subscription table to find who wants this track, have its sequence numbers and timestamps **rewritten** per subscriber, then be re-encrypted with that subscriber's SRTP keys and sent.
+
+The rewriting is the part people miss and it is why an SFU cannot be a dumb UDP proxy. Each subscriber sees one continuous stream with monotonic sequence numbers, but the SFU may switch which simulcast layer it is forwarding mid-call (sec 22), or drop packets it decides not to forward. The subscriber must never see the seam, so the SFU maintains per-subscriber counters and translates on the fly.
+
+Three more jobs sit on top:
+
+- **Per-subscriber congestion control.** Each downstream connection has its own bandwidth estimate (sec 15), so the SFU decides independently for each subscriber which quality to send. One participant on hotel Wi-Fi does not degrade the call for everyone, which is precisely what a mesh cannot do.
+- **Keyframe management.** When a subscriber joins or switches layers it needs a keyframe. The SFU sends a PLI upstream to the publisher, and must **coalesce** these: a hundred people joining at once must not become a hundred keyframe requests, or the publisher's bitrate spikes into a wall.
+- **Subscription policy.** Who receives whose stream is your product logic: the active speaker at full resolution, the last few speakers as thumbnails, screen share pinned. This is where an SFU stops being infrastructure and starts being your application.
+
+<Callout type="info" title="You will not be writing an SFU">
+The open-source options are mature and each has a personality: **mediasoup** (Node control plane, C++ workers) for embedding into your own service; **LiveKit** (Go, built on Pion) for a batteries-included server with SDKs and clustering; **Janus** (C, plugin-based) for gateway work and SIP bridging; **Jitsi Videobridge** for large conferences; **Pion** itself if you want to build something specific yourself in Go. Managed services (LiveKit Cloud, Daily, Twilio, Cloudflare Realtime, Amazon Kinesis Video Streams WebRTC) take the whole media plane off you and charge per participant-minute or per gigabyte. Building your own SFU is a multi-year project; choose it deliberately, not by default.
+</Callout>
+
+## Simulcast and SVC
+
+Here is the problem the SFU cannot solve by routing alone. One publisher, ten subscribers: one on fibre with a 27-inch monitor, one on a phone on a train, one with the video in a thumbnail. A single encoded stream cannot suit all of them. Send at the fibre user's quality and the phone drowns; send at the phone's quality and the monitor gets a blurry mess.
+
+**Simulcast** is the direct answer: the publisher encodes and sends **several versions of the same video at once**, typically three, at different resolutions and bitrates. The SFU then forwards, to each subscriber independently, whichever layer fits that subscriber's estimated bandwidth and display size.
+
+<Diagram caption="One publisher, three layers, per-subscriber selection">
+<svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A publisher sends high medium and low quality layers to an SFU, which forwards the high layer to a desktop, medium to a laptop and low to a phone on a weak network">
+  <defs>
+    <marker id="sc-a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ink-2)" /></marker>
+  </defs>
+  <rect x="20" y="90" width="130" height="80" rx="10" fill="var(--dg-accent)" />
+  <text x="85" y="120" font-size="11.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Publisher</text>
+  <text x="85" y="140" class="mono" font-size="8" fill="var(--dg-on-accent)" text-anchor="middle">encodes 3x,</text>
+  <text x="85" y="154" class="mono" font-size="8" fill="var(--dg-on-accent)" text-anchor="middle">uploads ~3.1 Mbps</text>
+
+  <g class="mono" font-size="8.5">
+    <path d="M154 108 H246" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#sc-a)" />
+    <text x="200" y="102" fill="var(--dg-ok)" text-anchor="middle">720p 2.5M</text>
+    <path d="M154 130 H246" stroke="var(--dg-warn)" stroke-width="1.6" marker-end="url(#sc-a)" />
+    <text x="200" y="124" fill="var(--dg-warn)" text-anchor="middle">360p 500k</text>
+    <path d="M154 152 H246" stroke="var(--dg-info)" stroke-width="1.6" marker-end="url(#sc-a)" />
+    <text x="200" y="146" fill="var(--dg-info)" text-anchor="middle">180p 150k</text>
+  </g>
+
+  <rect x="250" y="86" width="150" height="88" rx="10" fill="var(--dg-inverse)" />
+  <text x="325" y="118" font-size="12" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">SFU</text>
+  <text x="325" y="138" class="mono" font-size="8" fill="var(--dg-on-inverse-2)" text-anchor="middle">picks a layer per</text>
+  <text x="325" y="152" class="mono" font-size="8" fill="var(--dg-on-inverse-2)" text-anchor="middle">subscriber, no decode</text>
+
+  <path d="M404 106 H556" stroke="var(--dg-ok)" stroke-width="1.6" marker-end="url(#sc-a)" />
+  <rect x="560" y="82" width="140" height="46" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok-border)" />
+  <text x="630" y="100" font-size="10" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Desktop, fibre</text>
+  <text x="630" y="117" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">gets 720p</text>
+
+  <path d="M404 138 H556" stroke="var(--dg-warn)" stroke-width="1.6" marker-end="url(#sc-a)" />
+  <rect x="560" y="136" width="140" height="46" rx="9" fill="var(--dg-warn-surface)" stroke="var(--dg-warn-border)" />
+  <text x="630" y="154" font-size="10" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">Laptop, in a grid</text>
+  <text x="630" y="171" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">gets 360p</text>
+
+  <path d="M404 170 H556" stroke="var(--dg-info)" stroke-width="1.6" marker-end="url(#sc-a)" />
+  <rect x="560" y="190" width="140" height="46" rx="9" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)" />
+  <text x="630" y="208" font-size="10" font-weight="700" fill="var(--dg-info)" text-anchor="middle">Phone, 3 bars</text>
+  <text x="630" y="225" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">gets 180p</text>
+
+  <text x="360" y="264" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">The publisher pays ~25% extra uplink so that every subscriber gets a stream matched to their link.</text>
+</svg>
+</Diagram>
+
+The cost is on the publisher: three encodes instead of one, and roughly 20 to 30 percent more uplink than the top layer alone (the lower layers are small). In exchange, the SFU gains the ability to adapt per subscriber without ever decoding, which is the property the entire architecture depends on.
+
+**SVC**, scalable video coding, does the same job more elegantly. Instead of independent streams, one bitstream is encoded in **layers that build on each other**: a base layer that stands alone, plus enhancement layers that add resolution or frame rate. The SFU forwards a prefix of the layers, so dropping quality is a matter of not forwarding some packets, with no switch point and no keyframe needed. VP9 and AV1 support SVC well, and it is the better mechanism where the codec is available: lower publisher cost than simulcast and instant, seamless adaptation. Temporal layers alone (same resolution, half the frame rate) are the cheapest useful form and are widely supported.
+
+<Callout type="warn" title="Simulcast interacts badly with things you might turn on">
+Simulcast needs the publisher to actually be sending all its layers, and several common conditions silently kill the top ones: a CPU-constrained laptop drops the high layer to protect the encoder, a bandwidth estimate below the sum of layers causes the publisher to stop sending the high layer, and some codec/hardware combinations only produce one layer at all. The symptom is "everyone sees this person in low quality even on a fast network". Check the publisher's outbound stats for the layers before you look anywhere else (sec 26).
+</Callout>
+
+## Running TURN in Production
+
+TURN is the piece of infrastructure you cannot avoid and the one most teams get wrong, so it is worth being concrete. **coturn** is the standard open-source server and handles both STUN and TURN in one process.
+
+```text title="turnserver.conf / the parts that matter"
+listening-port=3478                 # plain STUN/TURN
+tls-listening-port=5349             # TURN over TLS
+# Also run a listener on 443: a restrictive firewall that blocks everything
+# else almost always allows outbound TCP 443, which is your last-resort path.
+
+fingerprint
+use-auth-secret                     # ephemeral credentials, NOT a user database
+static-auth-secret=<long-random-secret-shared-with-your-api>
+realm=turn.example.com
+
+# The relay port range. Each allocation takes one; size it for peak concurrency
+# and open exactly this range in the firewall, nothing wider.
+min-port=49160
+max-port=49500
+
+# On a cloud VM the NIC has a private IP and the world sees an elastic IP.
+# Without this mapping, coturn advertises the private address and every
+# relay candidate is unreachable. This is the single most common TURN bug.
+external-ip=203.0.113.9/10.0.0.9
+
+# An open relay gets abused within days. Deny the RFC1918 space so a
+# stranger cannot use your TURN server to reach into your own VPC.
+no-multicast-peers
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+user-quota=12
+total-quota=1200
+```
+
+The credential model deserves the most attention. coturn's `use-auth-secret` mode implements the **REST API for TURN credentials**: your backend and the TURN server share one secret, and your backend mints a username that is an expiry timestamp and a password that is an HMAC of it. The TURN server validates the HMAC itself, so it needs no database, no synchronization and no user list, and a leaked credential is worthless within minutes.
+
+```go
+// Mint short-lived TURN credentials. Your API returns these to an authenticated
+// client just before it starts a call; they expire on their own.
+func turnCredentials(userID string, ttl time.Duration) (user, pass string) {
+    // coturn's contract: username = "<unix expiry>:<anything>"
+    user = fmt.Sprintf("%d:%s", time.Now().Add(ttl).Unix(), userID)
+
+    mac := hmac.New(sha1.New, []byte(os.Getenv("TURN_STATIC_AUTH_SECRET")))
+    mac.Write([]byte(user))
+    pass = base64.StdEncoding.EncodeToString(mac.Sum(nil))
+    return user, pass
+}
+
+// GET /api/ice-servers  (authenticated: this is the endpoint attackers want)
+func iceServersHandler(w http.ResponseWriter, r *http.Request) {
+    uid := auth.UserFromContext(r.Context()).ID
+    user, pass := turnCredentials(uid, 10*time.Minute) // long enough to connect, not to abuse
+
+    respondJSON(w, map[string]any{
+        "iceServers": []map[string]any{
+            {"urls": []string{"stun:turn.example.com:3478"}},
+            {
+                "urls": []string{
+                    "turn:turn.example.com:3478?transport=udp",
+                    "turn:turn.example.com:443?transport=tcp", // firewall fallback
+                    "turns:turn.example.com:5349?transport=tcp",
+                },
+                "username":   user,
+                "credential": pass,
+            },
+        },
+    })
+}
+```
+
+```python
+import base64, hashlib, hmac, os, time
+
+def turn_credentials(user_id: str, ttl: int = 600) -> tuple[str, str]:
+    """coturn use-auth-secret: username is '<expiry>:<id>', password is its HMAC."""
+    username = f"{int(time.time()) + ttl}:{user_id}"
+    digest = hmac.new(
+        os.environ["TURN_STATIC_AUTH_SECRET"].encode(),
+        username.encode(),
+        hashlib.sha1,
+    ).digest()
+    return username, base64.b64encode(digest).decode()
+
+@app.get("/api/ice-servers")
+async def ice_servers(user=Depends(current_user)):     # authenticated, always
+    username, credential = turn_credentials(user.id)
+    return {"iceServers": [
+        {"urls": "stun:turn.example.com:3478"},
+        {
+            "urls": [
+                "turn:turn.example.com:3478?transport=udp",
+                "turn:turn.example.com:443?transport=tcp",   # gets through hostile firewalls
+                "turns:turn.example.com:5349?transport=tcp",
+            ],
+            "username": username,
+            "credential": credential,
+        },
+    ]}
+```
+
+Sizing TURN is arithmetic, not guesswork. A relayed session costs the server the stream's bitrate **twice**, once in and once out, in each direction. For a two-party 1 Mbps call that is roughly 4 Mbps of server traffic. If 15 percent of your sessions relay and you expect a thousand concurrent calls, that is 150 relayed calls times 4 Mbps, about 600 Mbps sustained, and at typical cloud egress prices the bandwidth bill dwarfs the instances. Two consequences follow: put TURN servers in every region where you have users, because a relay on the wrong continent adds a hundred milliseconds and doubles the distance the media travels, and treat "percentage of sessions relayed" as a first-class metric, because it is the dial your costs hang from.
+
+## Scaling the Media Plane
+
+Signaling scales like any web service. The media plane does not, and the reason is worth stating precisely: **a media server holds live, encrypted, per-participant state that cannot be moved.** A peer connection is an ICE agent with a nominated path, a DTLS session with negotiated keys, SRTP counters and a bandwidth estimate. None of that can be serialized and handed to another instance the way a session cookie can. You cannot drain a media server the way you drain an HTTP one; you can only stop sending it new rooms and wait for the current ones to end.
+
+That single fact drives the architecture.
+
+**Rooms are the unit of placement, not participants.** Everyone in a room must be on the same media server, or the server cannot forward between them. So allocation happens once, when the room is created: a service picks the least-loaded server in the right region, records the choice in a registry (Redis is the usual home), and every later joiner is routed there.
+
+**Load is bandwidth and packet rate, not CPU.** An SFU forwarding a thousand streams may sit at 30 percent CPU while saturating its NIC. Autoscaling on CPU will therefore scale far too late. Track concurrent streams, egress bitrate and packets per second, and set your ceiling per instance well below the hardware limit, because the last 20 percent of a NIC is where jitter and loss appear.
+
+**Scaling out is slow, so scale early.** A new media instance needs to boot, warm up and be registered before it can take rooms, and rooms already in progress cannot be moved to it. Provision headroom ahead of your daily peak rather than reacting to it.
+
+<Diagram caption="Room placement, and cascading between regions">
+<svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A room allocator backed by Redis assigns rooms to regional SFUs, and two SFUs in different regions are linked so participants on each continent connect locally">
+  <defs>
+    <marker id="sf-a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ink-2)" /></marker>
+  </defs>
+  <rect x="250" y="16" width="220" height="46" rx="9" fill="var(--dg-info-surface)" stroke="var(--dg-info-border)" />
+  <text x="360" y="36" font-size="11" font-weight="700" fill="var(--dg-info)" text-anchor="middle">Room allocator + registry</text>
+  <text x="360" y="53" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">room -> server, in Redis</text>
+
+  <path d="M300 66 L170 108" stroke="var(--dg-ink-2)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#sf-a)" />
+  <path d="M420 66 L550 108" stroke="var(--dg-ink-2)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#sf-a)" />
+
+  <rect x="60" y="112" width="220" height="60" rx="10" fill="var(--dg-inverse)" />
+  <text x="170" y="136" font-size="11.5" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">SFU · eu-west</text>
+  <text x="170" y="156" class="mono" font-size="8.5" fill="var(--dg-on-inverse-2)" text-anchor="middle">rooms: 34 · egress 2.1 Gbps</text>
+
+  <rect x="440" y="112" width="220" height="60" rx="10" fill="var(--dg-inverse)" />
+  <text x="550" y="136" font-size="11.5" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">SFU · ap-south</text>
+  <text x="550" y="156" class="mono" font-size="8.5" fill="var(--dg-on-inverse-2)" text-anchor="middle">rooms: 29 · egress 1.8 Gbps</text>
+
+  <path d="M284 142 H436" stroke="var(--dg-ok)" stroke-width="2.2" stroke-dasharray="7 4" />
+  <text x="360" y="134" class="mono" font-size="9" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">cascade link</text>
+  <text x="360" y="164" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">one copy per stream, not per user</text>
+
+  <g fill="var(--dg-accent)">
+    <circle cx="90" cy="216" r="13" /><circle cx="130" cy="216" r="13" /><circle cx="170" cy="216" r="13" />
+    <circle cx="510" cy="216" r="13" /><circle cx="550" cy="216" r="13" /><circle cx="590" cy="216" r="13" />
+  </g>
+  <g stroke="var(--dg-accent-border)" stroke-width="1.2">
+    <line x1="90" y1="203" x2="150" y2="174" /><line x1="130" y1="203" x2="160" y2="174" /><line x1="170" y1="203" x2="175" y2="174" />
+    <line x1="510" y1="203" x2="540" y2="174" /><line x1="550" y1="203" x2="550" y2="174" /><line x1="590" y1="203" x2="565" y2="174" />
+  </g>
+  <text x="130" y="248" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">European participants</text>
+  <text x="550" y="248" font-size="10" fill="var(--dg-ink-2)" text-anchor="middle">Indian participants</text>
+  <text x="360" y="272" font-size="11" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Everyone connects to a nearby server; the long haul happens once, between servers, on good networks.</text>
+</svg>
+</Diagram>
+
+**Cascading** is how a single room outgrows a single server or spans continents. Two or more SFUs join the same room and forward between themselves, so a participant in Mumbai connects to the Mumbai server and a participant in Dublin to the Dublin one, and each stream crosses the ocean exactly once rather than once per viewer. It also raises the ceiling on room size: a broadcast to fifty thousand viewers becomes a tree of forwarding servers, each fanning out to a manageable number. The costs are inter-server bandwidth, extra latency on the cascade hop, and considerably more complex failure handling, so it is a scaling tool you reach for when geography or size demands it, not a default.
+
+## Deploying Media Servers: the UDP Problem
+
+Everything you know about deploying HTTP services is close to useless here, and this section exists because that surprise costs teams weeks.
+
+**Your load balancer cannot help you.** An application load balancer terminates TCP and speaks HTTP. Media is UDP carrying DTLS and SRTP; there is nothing to terminate, no path to route on, and no way to move a connection between backends. So media servers are addressed **directly**, by public IP, and the "load balancing" is the room allocator from sec 24 handing out an address at join time.
+
+**The container must not be NATed.** ICE works by advertising addresses that the far peer will send to. A media server inside a container with a bridge network advertises the container's private IP, which is unreachable, and every relay-free connection fails. The fixes are `hostNetwork: true` on Kubernetes, or `--network host` on Docker, or explicitly configuring the server with its public address so it advertises that instead. This is the same class of bug as coturn's `external-ip` (sec 23) and it appears the moment you containerize something that worked on a VM.
+
+**Ports are a range, and it must be open.** Each connection takes a UDP port from a configured range, and both the cloud security group and any host firewall must allow the whole range. Some servers can multiplex every connection onto a single port, which makes firewall rules trivial and is worth choosing when available.
+
+```yaml title="sfu.yaml / the parts that differ from a normal Deployment"
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      hostNetwork: true          # no CNI NAT: the pod must see and advertise the node IP
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: sfu
+          ports:
+            - containerPort: 7880          # signaling, ordinary HTTP/WebSocket
+            - containerPort: 7881          # TCP fallback for ICE
+          env:
+            - name: NODE_IP                # advertise the PUBLIC address, or ICE fails
+              valueFrom:
+                fieldRef: { fieldPath: status.hostIP }
+          # UDP media uses a host port range opened in the security group,
+          # e.g. 50000-60000/udp. Never route it through a Service or Ingress.
+      terminationGracePeriodSeconds: 1800  # you cannot drain a call; you wait for it to end
+```
+
+That last line is the deployment model in one field. **A media server cannot be rolled like a stateless service.** The pattern that works is to stop assigning new rooms to an instance, let its existing calls finish naturally, and only then terminate it, which means your grace period is measured in the length of your longest call, not in seconds. Plan releases around that, or accept that every deploy drops calls.
+
+## Observability for Real-Time Media
+
+A media call has no status code. It fails by getting worse, and "worse" is a distribution across users you cannot see from the server alone, so observability here means collecting client-side quality signals as diligently as server metrics (the logging and observability chapter's principles, applied to a stream).
+
+The browser exposes everything through `getStats()`, and a small number of fields carry most of the signal.
+
+```javascript title="the client-side stats worth shipping, once every few seconds"
+const stats = await pc.getStats();
+for (const r of stats.values()) {
+  if (r.type === 'inbound-rtp' && r.kind === 'video') {
+    report({
+      // The single best proxy for "is this call good": time spent frozen.
+      freezeMs: r.totalFreezesDuration, freezeCount: r.freezeCount,
+      // Loss and jitter explain WHY it froze.
+      lost: r.packetsLost, jitter: r.jitter,
+      // What the user is actually seeing, versus what was published (sec 22).
+      width: r.frameWidth, height: r.frameHeight, fps: r.framesPerSecond,
+      nacks: r.nackCount, plis: r.pliCount,
+    });
+  }
+  if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
+    report({ rtt: r.currentRoundTripTime, availableOutgoing: r.availableOutgoingBitrate });
+  }
+}
+```
+
+| Signal                          | Healthy            | What it means when it is not                       |
+| ------------------------------- | ------------------ | --------------------------------------------------- |
+| Round-trip time                 | under 150ms        | Wrong region, or a relay on the wrong continent (sec 23) |
+| Packet loss                     | under 1%           | Above 5% and video degrades visibly whatever you do  |
+| Jitter                          | under 30ms         | Buffer deepens, latency grows (sec 14)               |
+| Freeze duration                 | near zero          | The user-visible symptom; alert on this, not on loss |
+| Available outgoing bitrate      | stable             | Collapsing means congestion control is backing off (sec 15) |
+| ICE connection failure rate     | under 1% of joins  | TURN misconfigured, credentials expiring, UDP blocked |
+| **Relay rate**                  | 10-20% of sessions | Rising means networks got worse or STUN is failing; your bill follows it |
+
+Two service-level indicators are worth defining up front, because they are what users actually experience: **join success rate** (of attempted joins, how many reached the connected state within, say, five seconds) and **good-minutes ratio** (of all media minutes delivered, how many had freeze time and loss below your thresholds). Both are computed from client reports, both catch regressions that server dashboards will happily show as green.
+
+## Security Specific to WebRTC
+
+The general rules from the security chapter all apply. What follows is what is different when media is involved.
+
+**Media encryption is handled; access control is not.** DTLS-SRTP is mandatory and automatic, so nobody sniffs your call off the wire. But the question "may this person join this room" is answered entirely by your signaling server (sec 5). Sign short-lived, room-scoped join tokens, verify them before accepting the WebSocket, and re-check on every action; never accept a room identity the client asserts.
+
+**TURN credentials are a bandwidth wallet.** Static TURN credentials in client code will be extracted and used to relay someone else's traffic on your bill. Mint ephemeral, HMAC-derived credentials per session (sec 23), keep the TTL short, and deny private address ranges so your relay cannot be used to reach into your own network.
+
+**The SFU sees the media.** An SFU terminates SRTP on each hop, so it decrypts and re-encrypts. That is fine for most products and unacceptable for some. **Insertable streams** and **SFrame** add a second encryption layer applied to the payload before it reaches the transport, so the SFU can still route packets by their headers while the media stays opaque to it. This is how end-to-end encrypted group calls work, and it costs you: server-side recording and transcription become impossible without a client that shares keys, and it is genuinely hard to get right.
+
+**IP addresses leak by design.** ICE candidates contain local and public addresses, which is why a peer-to-peer call reveals each participant's IP to the other. Browsers mitigate the local-address part with **mDNS candidates** (a random `.local` name instead of the real private IP), but the public address is inherent to a direct connection. If your product connects strangers, forcing all media through TURN with `iceTransportPolicy: 'relay'` hides both peers' addresses, at the cost of every session paying relay bandwidth.
+
+**Media ports are an attack surface.** They accept UDP from anywhere, so rate-limit allocations, cap per-user quotas in coturn, and keep media servers out of the network path to anything else you care about.
+
+<Callout type="warn" title="Recording is a legal surface, not just a technical one">
+Recording consent rules differ by jurisdiction and several require every participant to be informed. Make recording state visible in the UI, log who started it and when, encrypt the artifacts at rest, and set a retention policy. This is one of the few places where an engineering shortcut turns directly into legal exposure.
+</Callout>
+
+Part VI / Practice and Comparison
+
+## WebRTC vs WebSockets vs HLS vs MoQ
+
+The previous chapter's spectrum had four points and all of them carried events. Add media and the spectrum extends, with WebRTC at one end and CDN streaming at the other.
+
+| Technology            | Latency     | Direction             | Scales to               | Reach for it when                                              |
+| --------------------- | ----------- | --------------------- | ----------------------- | --------------------------------------------------------------- |
+| **WebSocket**         | 20-100ms    | bidirectional, events | 100k+ per cluster       | Events, state, chat, cursors. No media.                          |
+| **WebRTC, mesh**      | 50-150ms    | bidirectional, media  | 2-4 people              | One-to-one calls. No server in the media path at all.            |
+| **WebRTC, SFU**       | 100-300ms   | bidirectional, media  | 50-1000 per room, more with cascading | Group calls, interactive rooms, anything conversational |
+| **LL-HLS / LL-DASH**  | 1-5s        | one-way               | millions, on any CDN    | Live broadcast with a chat, sport, events                        |
+| **HLS / DASH**        | 15-30s      | one-way               | millions, cheaply       | Anything with no feedback loop at all                            |
+| **MoQ** (draft)       | sub-second  | one-way, evolving     | CDN-shaped              | Watch this space: QUIC-based, aims at CDN scale with WebRTC-ish latency |
+
+The decision is genuinely simple once framed correctly: **does a human need to react to what they just saw, within their own reaction time?** If yes, you need WebRTC and you accept the infrastructure. If no, use HTTP streaming, ride a CDN, and spend the saved months on your product. The middle ground, "sub-second but one-way at CDN scale", is exactly the gap **Media over QUIC** is being designed to fill; as of 2026 its transport draft is still in progress at the IETF, so it belongs on your roadmap, not in production.
+
+One combination is worth naming because it is what most real products actually build: **WebSocket for signaling and application state, WebRTC for media, HLS for the audience.** A live show has presenters on an SFU, chat and reactions over WebSockets, and ten thousand viewers on LL-HLS, with the SFU output re-published into the streaming pipeline. Each layer does the job it is cheapest at.
+
+## Common Pitfalls
+
+Most WebRTC production failures are not exotic. They are the same dozen mistakes, and nearly all of them live in ICE, TURN and deployment rather than in media.
+
+| Pitfall                            | What happens                                                                                      | Fix                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **STUN only, no TURN**             | Works everywhere you tested, fails for 10-20% of real users, mostly corporate and mobile           | Always ship TURN with UDP, TCP and TLS-on-443 URLs (sec 9, sec 23)                          |
+| **`external-ip` not set**          | Relay candidates advertise a private cloud IP; every relayed connection fails                      | Map public to private in coturn; same for any media server behind NAT (sec 23, sec 25)      |
+| **Static TURN credentials**        | Extracted from your JS within days, relay bandwidth billed to you                                  | Ephemeral HMAC credentials, short TTL, minted by an authenticated endpoint (sec 23)         |
+| **No trickle ICE**                 | Call setup waits for the slowest TURN allocation; seconds of dead air                              | Trickle candidates as they are gathered (sec 10)                                            |
+| **Container NAT on a media server**| ICE advertises the pod IP, connections fail with no obvious error                                  | `hostNetwork`, or explicitly configure the public address (sec 25)                          |
+| **Media through a load balancer**  | UDP is not routable by an L7 LB; connections never establish                                       | Address media servers directly; balance at room-allocation time (sec 24, sec 25)            |
+| **Rolling deploys on the SFU**     | Every release drops every live call                                                                | Stop assigning new rooms, drain by waiting, long grace period (sec 25)                      |
+| **Autoscaling on CPU**             | The NIC saturates at 30% CPU; quality collapses before anything scales                             | Scale on streams, egress bitrate and packets per second (sec 24)                            |
+| **Overriding the bitrate estimate**| Forcing a floor turns soft video into unbounded delay, then collapse                               | Trust the estimator; fix loss and RTT instead (sec 15)                                      |
+| **Ignoring simulcast layer health**| Everyone sees one participant in low quality, on a fast network                                    | Check the publisher's outbound layers before anything else (sec 22)                         |
+| **Alerting on loss, not freezes**  | Dashboards green while users stare at frozen video                                                 | Freeze duration and join success are the user-visible SLIs (sec 26)                         |
+| **Composed recording on the SFU**  | One transcode pipeline per room starves the forwarding path                                        | Recording is a separate, separately scaled service (sec 19)                                 |
+
+<Callout type="warn" title="The pattern: connectivity and placement, not media">
+Look down that list. Almost none of these are about codecs, jitter or encryption, the parts of WebRTC that feel hardest to learn. They are about _getting a path_ and _putting servers in the right place with the right addresses_. Budget your engineering attention accordingly: the media stack mostly works if you leave it alone, while ICE, TURN and deployment topology are where your users' failures actually come from.
+</Callout>
+
+## Designing a Real-Time Media System
+
+Pulling the manual into design judgment.
+
+#### Design principles
+
+- **Prove you need sub-second latency.** If nobody has to react, use HTTP streaming and skip this entire chapter's operational burden (sec 4, sec 28).
+- **Start with a managed SFU.** Building a media plane is a multi-year commitment; renting one is a config file. Move in-house when your unit economics or your data requirements demand it, not before (sec 21).
+- **Own your TURN.** Even on a managed SFU, relay behaviour and its cost are yours to understand. Ephemeral credentials, regional placement, a TLS-on-443 fallback, and relay rate as a tracked metric (sec 23).
+- **Design signaling as an ordinary authenticated service.** It is a WebSocket app with rooms, and every rule from the previous chapter applies. It is also the only thing standing between an attacker and your calls (sec 5, sec 27).
+- **Place rooms, do not balance connections.** Media state cannot move, so decide once, at room creation, in the right region, and record it (sec 24).
+- **Treat capacity as bandwidth.** Size by egress and stream count, keep headroom below the NIC limit, and provision ahead of peak because scaling out cannot rescue calls already in progress (sec 24).
+- **Adapt, do not force.** Simulcast or SVC so each subscriber gets a stream matched to their link, and let congestion control set the bitrate (sec 15, sec 22).
+- **Measure what the user sees.** Freeze time, join success rate, relay rate. Server CPU tells you almost nothing about call quality (sec 26).
+- **Plan the deploy story before the launch story.** Long grace periods, room draining, and a client that reconnects and renegotiates cleanly (sec 25).
+
+<Callout type="ok" title="A worked sizing example">
+A thousand concurrent 4-person calls, 720p simulcast, on an SFU. Each participant publishes about 1.7 Mbps across three layers and subscribes to three others at roughly 1 Mbps each, so per participant the server receives 1.7 Mbps and sends about 3 Mbps. Times four thousand participants, that is about 7 Gbps in and 12 Gbps out. At a conservative 3 Gbps of usable egress per instance you need five or six SFU instances plus headroom, spread across your user regions, and your dominant cost line is egress, not compute. Now add TURN: at a 15 percent relay rate, 150 of those calls also pay relay bandwidth twice. Run this arithmetic before you choose an architecture, because it is what actually decides between self-hosting and a managed service.
+</Callout>
+
+## Cheat-Sheet
+
+The whole manual compressed to what you reach for under pressure.
+
+| Concept             | One-liner                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------ |
+| Why WebRTC          | TCP retransmits and blocks; media needs to drop late packets and keep going (sec 1).                   |
+| What it is          | ICE + STUN/TURN + DTLS + SRTP + RTP + SCTP behind one browser API. Not one protocol (sec 2).            |
+| Not included        | Signaling. You build it, usually a WebSocket to your own backend (sec 5).                              |
+| SDP                 | Line-oriented session contract; offer lists options, answer picks the subset (sec 6).                  |
+| BUNDLE + rtcp-mux   | Everything on one transport, one port. Do not turn these off (sec 6).                                  |
+| Candidate types     | host (same LAN) / srflx (through NAT, via STUN) / relay (via TURN) (sec 8-10).                          |
+| STUN                | Two packets: "what is my public address". Cheap, self-host it (sec 8).                                 |
+| TURN                | A relay for when hole punching fails. Always ship it. 10-20% of sessions need it (sec 9).               |
+| ICE                 | Gather, exchange, check pairs with STUN, nominate the best working pair (sec 10).                       |
+| Trickle ICE         | Send candidates as found instead of waiting. Saves a second of setup (sec 10).                          |
+| ICE restart         | Renegotiate the path without dropping the call, for network changes (sec 10).                           |
+| Encryption          | DTLS-SRTP, mandatory, no plaintext mode. Trust comes from the SDP fingerprint (sec 11).                 |
+| RTP header          | seq (loss), timestamp (playout), SSRC (which stream), marker (frame end) (sec 12).                      |
+| RTCP feedback       | SR/RR stats, NACK (resend), PLI (keyframe), TWCC (per-packet arrival times) (sec 12).                   |
+| Codecs              | Opus for audio, always with FEC and DTX. VP8 safe, H.264 for hardware, AV1/VP9 for SVC (sec 13).         |
+| Repair order        | FEC (cheapest) -> NACK (one RTT) -> concealment -> PLI (most expensive) (sec 14).                        |
+| Jitter buffer       | Trades latency for smoothness. Its depth is your product decision (sec 14).                             |
+| Congestion control  | GCC: delay trend first, loss as backstop; output is one target bitrate (sec 15).                        |
+| Bitrate allocation  | Audio first, then video quality, then frame rate, then resolution (sec 15).                             |
+| Data channels       | SCTP over DTLS; per-channel ordering and reliability, from TCP-like to UDP-like (sec 16).                |
+| Topologies          | Mesh under 4 people, SFU for everything else, MCU only for weak endpoints (sec 20).                     |
+| SFU                 | Forwards encrypted packets, rewrites sequence numbers, never decodes (sec 21).                          |
+| Simulcast / SVC     | Publish several qualities; the SFU picks one per subscriber (sec 22).                                   |
+| TURN config         | `use-auth-secret`, `external-ip`, port range, deny RFC1918, 443 fallback (sec 23).                       |
+| Media scaling       | Rooms are the placement unit; state cannot move; scale on bandwidth (sec 24).                            |
+| Deployment          | No LB for UDP, no container NAT, host networking, drain by waiting (sec 25).                             |
+| Metrics that matter | Freeze duration, join success rate, RTT, relay rate. Not CPU (sec 26).                                   |
+| E2EE                | Insertable streams / SFrame; costs you server-side recording (sec 27).                                   |
+| Decision rule       | Human has to react in under 500ms -> WebRTC. Otherwise HLS, and save yourself the year (sec 28).          |
+
+**The whole topic in one breath:** Media has a deadline, so TCP's retransmit-and-block behaviour is exactly wrong and WebRTC runs over UDP instead, giving up on late packets on purpose (sec 1). It is not one protocol but a stack, ICE and STUN and TURN and DTLS and SRTP and RTP and SCTP, wired together behind one API (sec 2), solving three problems: peers cannot address each other, they must agree on media, and the network's capacity is unknown (sec 3). It is worth the trouble only under about half a second of latency (sec 4). You supply the signaling yourself, usually a WebSocket to your own backend (sec 5), carrying SDP offers and answers that name codecs, fingerprints and transport options (sec 6). Because almost everyone is behind a NAT that drops unsolicited inbound packets (sec 7), each peer learns its public address from STUN (sec 8), keeps a relayed address from TURN as a fallback (sec 9), and ICE tries every pair until one answers in both directions (sec 10). DTLS then verifies the fingerprint from the SDP and exports keys to SRTP, which encrypts every packet with no opt-out (sec 11). Media rides RTP, whose sequence numbers detect loss and whose timestamps drive playout, with RTCP carrying the feedback (sec 12); codecs are negotiated with Opus and VP8/H.264 as the floor (sec 13); and a jitter buffer plus FEC, NACK, concealment and keyframe requests trade latency for quality (sec 14) while congestion control continuously sets the bitrate from delay trends (sec 15). Data rides SCTP with per-channel reliability (sec 16), and a server-side peer built with Pion or aiortc (sec 17) behind a room-based signaling relay (sec 18) is the foundation for recording and bridging (sec 19). Past two participants, mesh collapses and an SFU forwards without decoding (sec 20-21), with simulcast or SVC letting each subscriber get a stream matched to their link (sec 22). In production, TURN needs ephemeral credentials, a public-address mapping and a 443 fallback (sec 23), rooms are placed once because media state cannot move (sec 24), media servers refuse load balancers and container NAT and cannot be rolled like stateless services (sec 25), quality is measured in freeze time and join success rather than CPU (sec 26), and the security work is access control, credentials and, if you need it, a second encryption layer through the SFU (sec 27). And the first decision is still the biggest: if nobody has to react in under half a second, do not use any of this (sec 28).
+
+Grounded in the W3C WebRTC 1.0 specification and MDN (developer.mozilla.org/en-US/docs/Web/API/WebRTC\_API) & RFC 8445 (ICE), 8489 (STUN), 8656 (TURN), 8829 (JSEP), 8866 (SDP), 3550 (RTP), 3711 (SRTP), 5764 (DTLS-SRTP), 8831 (data channels), 9725 (WHIP) / pion/webrtc v4 & aiortc / coturn / Go 1.22+ and Python 3.11+ examples.
+
+Backend from First Principles / Chapter 25 / WebRTC. Code targets Go 1.22+ and Python 3.11+.
