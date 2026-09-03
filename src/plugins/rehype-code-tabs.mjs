@@ -15,6 +15,7 @@ const LANG_LABELS = new Map([
   ['go', 'Go'],
   ['python', 'Python'],
   ['sql', 'SQL'],
+  ['js', 'JavaScript'],
 ]);
 
 // Sorted longest-first so "SQL" is tried before anything that could be a

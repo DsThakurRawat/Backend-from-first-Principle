@@ -2,7 +2,7 @@
 order: 1
 title: "HTTP & CORS"
 navTitle: "HTTP & CORS"
-summary: "A first-principles walkthrough of the application-layer protocol every backend touches, from statelessness and method semantics to caching, conditional requests, proxies, and TLS. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in both Go and Python, grounded in MDN and RFC 9110."
+summary: "A first-principles walkthrough of the application-layer protocol every backend touches, from statelessness and method semantics to caching, conditional requests, proxies, and TLS. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in Go, Python and JavaScript, grounded in MDN and RFC 9110."
 readingTime: "3-4 hours"
 keywords:
   - "http"
@@ -161,7 +161,7 @@ Headers go on the wire **before** the status line and body, the receiver reads t
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 package main
@@ -218,6 +218,25 @@ def create_note(note: Note, response: Response):
 # run: uvicorn main:app --port 8080
 ```
 
+```js
+import express from 'express'
+
+const app = express()
+app.use(express.json())            // parses the body; malformed JSON -> 400 automatically
+
+app.post('/api/v1/notes', (req, res) => {
+  const { title, done = false } = req.body ?? {}
+  if (typeof title !== 'string') {
+    return res.status(400).json({ error: 'invalid JSON' })
+  }
+  res.set('Content-Type', 'application/json')  // 1. headers FIRST
+  res.status(201)                              // 2. status
+  res.json({ id: 42, title, done })            // 3. body LAST
+})
+
+app.listen(8080)
+```
+
 ## Why Headers Exist
 
 Headers are **key-value pairs of metadata** attached to a request or response, sitting between the start line and the body. The natural question is: why a separate section at all? Why not put this information in the URL, or inside the body?
@@ -264,7 +283,7 @@ Because these should apply to _every_ response, you set them once in middleware 
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 func securityHeaders(next http.Handler) http.Handler {
@@ -293,6 +312,19 @@ class SecurityHeaders(BaseHTTPMiddleware):
         return resp
 
 app.add_middleware(SecurityHeaders)
+```
+
+```js
+function securityHeaders(req, res, next) {
+  res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  res.set('Content-Security-Policy', "default-src 'self'")
+  res.set('X-Frame-Options', 'DENY')
+  res.set('X-Content-Type-Options', 'nosniff')
+  next() // headers MUST be set before the handler writes the body (see sec 3)
+}
+
+app.use(securityHeaders)
+// In production `helmet()` sets these, and more, for you.
 ```
 
 Part II / Methods & Semantics
@@ -410,7 +442,7 @@ TRACE asks the server to echo the request it received, so the client can see exa
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 mux := http.NewServeMux()
@@ -460,6 +492,27 @@ def patch_note(id: int, patch: dict): ...
 def delete_note(id: int): ...
 ```
 
+```js
+const app = express()
+
+// Express matches method + path. An unmatched method falls through to the 404
+// handler; add an `app.all` catch-all per route to answer 405 Method Not Allowed.
+app.get('/notes', listNotes)          // safe, cacheable read
+app.get('/notes/:id', getNote)        // GET also serves HEAD automatically
+app.post('/notes', createNote)        // create (server assigns id)
+app.put('/notes/:id', putNote)        // full replace (idempotent)
+app.patch('/notes/:id', patchNote)    // partial update
+app.delete('/notes/:id', deleteNote)  // remove (idempotent)
+
+function getNote(req, res) {
+  const { id } = req.params           // built-in path params
+  const note = db.find(id)
+  if (!note) return res.status(404).json({ error: 'not found' }) // 404
+  res.set('Content-Type', 'application/json')
+  res.json(note)                                                 // 200
+}
+```
+
 ## Idempotency in Practice
 
 Idempotency is the property that makes a request **safe to retry**: and retries are not optional in a distributed system, they're inevitable. Networks drop packets, a client times out without knowing whether the request reached the server, a user impatiently double-clicks, a mobile app re-sends when the radio reconnects. GET, PUT, and DELETE are idempotent by design, so retrying them is harmless. POST is not, which is the root cause of duplicate-record and double-charge bugs.
@@ -504,7 +557,7 @@ Server sees the key already exists -> returns the stored result. **No second cha
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 var seen sync.Map // key -> []byte result. Use Redis with a TTL in production.
@@ -539,6 +592,23 @@ def create_payment(payload: dict, idempotency_key: str = Header(...)):
     result = charge(payload)             # the real, non-idempotent work
     seen[idempotency_key] = result       # remember it BEFORE responding
     return result
+```
+
+```js
+const seen = new Map() // key -> stored result. Use Redis with a TTL in production.
+
+app.post('/payments', async (req, res) => {
+  const key = req.get('Idempotency-Key')
+  if (!key) {
+    return res.status(400).json({ error: 'missing Idempotency-Key' })
+  }
+  if (seen.has(key)) {                     // replay: return the stored result
+    return res.status(200).json(seen.get(key))
+  }
+  const result = await charge(req.body)    // the real, non-idempotent work
+  seen.set(key, result)                    // remember it BEFORE responding
+  res.status(201).json(result)
+})
 ```
 
 Idempotency keys protect against _duplicate execution_. A different but related hazard, two clients overwriting each other's edits (the "lost update"), needs a complementary tool: optimistic concurrency with `If-Match` and ETags, covered in sec 13.
@@ -600,7 +670,7 @@ On the protocol side, the `WWW-Authenticate` response header (paired with a 401)
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 // Set a secure session cookie after login (stateful)
@@ -660,6 +730,38 @@ def require_token(cred: HTTPAuthorizationCredentials = Depends(bearer)):
 @app.get("/me")
 def me(_=Depends(require_token)):
     return {"ok": True}
+```
+
+```js
+import cookieParser from 'cookie-parser'
+
+app.use(cookieParser())
+
+// Set a secure session cookie after login (stateful)
+app.post('/login', (req, res) => {
+  const sid = newSessionID()
+  sessions.set(sid, userId)          // server-side session store (use Redis)
+  res.cookie('session', sid, {
+    httpOnly: true,                  // JS can't read it
+    secure: true,                    // HTTPS only
+    sameSite: 'strict',              // CSRF defense
+    maxAge: 3600 * 1000,             // Express takes milliseconds
+    path: '/',
+  })
+  res.sendStatus(204)
+})
+
+// Bearer-token auth middleware (stateless)
+function requireToken(req, res, next) {
+  const auth = req.get('Authorization') ?? ''
+  if (!auth.startsWith('Bearer ') || !validJWT(auth.slice(7))) {
+    res.set('WWW-Authenticate', 'Bearer')
+    return res.status(401).json({ error: 'unauthorized' }) // 401
+  }
+  next()
+}
+
+app.get('/me', requireToken, (req, res) => res.json({ ok: true }))
 ```
 
 ## CORS & the Preflight Workflow
@@ -726,7 +828,7 @@ One extra wrinkle for **credentialed** requests (those carrying cookies): the se
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 func cors(next http.Handler) http.Handler {
@@ -758,6 +860,19 @@ app.add_middleware(
     allow_credentials=True,
     max_age=86400,                           # cache the approval for 24h
 )
+```
+
+```js
+import cors from 'cors'
+
+// Handles the OPTIONS preflight and all the headers for you.
+app.use(cors({
+  origin: 'https://example.com',   // exact origin, not *, when credentials are on
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400,                   // cache the approval for 24h
+}))
 ```
 
 ### Common misconception: does CORS protect the server?
@@ -839,7 +954,7 @@ A three-digit status code is a **standardized, machine-readable verdict** on a r
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 func getUser(w http.ResponseWriter, r *http.Request) {
@@ -875,6 +990,22 @@ def get_user(id: int, authorization: str = Header(default="")):
     return user                                         # 200
 ```
 
+```js
+app.get('/users/:id', (req, res) => {
+  if (!req.get('Authorization')) {
+    return res.status(401).json({ error: 'login required' })  // 401: who are you?
+  }
+  const user = db.find(req.params.id)
+  if (!user) {
+    return res.status(404).json({ error: 'no such user' })     // 404
+  }
+  if (!user.visibleTo(req)) {
+    return res.status(403).json({ error: 'forbidden' })         // 403: not allowed
+  }
+  res.json(user)                                                // 200
+})
+```
+
 ## Redirections
 
 A redirect lets one resource live at more than one URL: the server responds with a `3xx` status and a `Location` header naming where to go, and the client (a browser following automatically, or your HTTP library) re-issues the request to that new URL. Redirects power URL migrations, canonical-URL enforcement, HTTP->HTTPS upgrades, and the Post/Redirect/Get pattern. The detail that trips up backends is **whether the original method and body survive the redirect**: because historically they often didn't.
@@ -897,7 +1028,7 @@ Early clients, faced with a 301 or 302 on a POST, would silently re-issue it as 
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 // Permanent move that must keep the method/body -> 308
@@ -925,6 +1056,19 @@ def old_route(id: int):
 def submit_form():
     rid = save()
     return RedirectResponse(f"/results/{rid}", status_code=303)  # forces GET
+```
+
+```js
+// Permanent move that must keep the method/body -> 308
+app.all('/user/:id', (req, res) => {
+  res.redirect(308, `/person/${req.params.id}`)
+})
+
+// Post/Redirect/Get -> 303 so a browser refresh won't re-POST the form
+app.post('/submit', (req, res) => {
+  const id = save(req.body)
+  res.redirect(303, `/results/${id}`)  // 303 forces the follow-up to be a GET
+})
 ```
 
 ## HTTP Caching
@@ -978,7 +1122,7 @@ ETags come in two flavors: a **strong** ETag (`"abc"`) guarantees byte-for-byte 
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 func getResource(w http.ResponseWriter, r *http.Request) {
@@ -1010,6 +1154,22 @@ def get_resource(request: Request):
 
     return Response(content=body, status_code=200,
                     headers={"ETag": etag, "Cache-Control": "max-age=10"})
+```
+
+```js
+import { createHash } from 'node:crypto'
+
+app.get('/resource', (req, res) => {
+  const body = loadResource()
+  const etag = `"${createHash('sha256').update(body).digest('hex').slice(0, 16)}"`
+
+  if (req.get('If-None-Match') === etag) {  // client already has this exact version
+    return res.status(304).end()            // 304, no body, payload saved
+  }
+  res.set('ETag', etag)
+  res.set('Cache-Control', 'max-age=10')
+  res.send(body)                            // 200 + body
+})
 ```
 
 <Callout type="info" title="In practice + the Vary trap">
@@ -1064,7 +1224,7 @@ A pessimistic lock would hold a row locked the entire time a user stares at an e
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 func updateDoc(w http.ResponseWriter, r *http.Request) {
@@ -1102,6 +1262,24 @@ def update_doc(id: int, request: Request, if_match: str = Header(default="")):
     return Response(status_code=200, headers={"ETag": doc.etag})
 ```
 
+```js
+app.put('/doc/:id', (req, res) => {
+  const doc = db.get(req.params.id)
+  const want = req.get('If-Match')       // the ETag the client last saw
+  if (!want) {
+    return res.status(400).json({ error: 'If-Match required' })
+  }
+  if (want !== doc.etag) {               // someone changed it first -> conflict
+    return res.status(412).json({ error: 'version conflict' })  // 412
+  }
+  doc.apply(req.body)
+  doc.etag = newETag()                   // bump the version
+  db.save(doc)
+  res.set('ETag', doc.etag)
+  res.sendStatus(200)
+})
+```
+
 Part V / Data Transfer & Connections
 
 ## Content Negotiation & Compression
@@ -1126,7 +1304,7 @@ Compression is just encoding negotiation. When the client advertises `Accept-Enc
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -1156,6 +1334,20 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 def greeting(accept_language: str = Header(default="en")):
     lang = "es" if accept_language.startswith("es") else "en"
     return {"en": "Hello", "es": "Hola"}[lang]
+```
+
+```js
+import compression from 'compression'
+
+// gzip responses for capable clients, but only above a size threshold
+// (compressing tiny payloads costs more CPU than it saves bytes).
+// The middleware negotiates Accept-Encoding and sets Vary: Accept-Encoding for you.
+app.use(compression({ threshold: 1000 }))
+
+app.get('/greeting', (req, res) => {
+  const lang = (req.get('Accept-Language') ?? 'en').startsWith('es') ? 'es' : 'en'
+  res.json({ en: 'Hello', es: 'Hola' }[lang])
+})
 ```
 
 ## Range Requests
@@ -1190,7 +1382,7 @@ The good news for implementers: the standard file-serving helpers in both ecosys
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 // http.ServeContent handles Range, 206, 416 and If-Range for you,
@@ -1210,6 +1402,17 @@ from fastapi.responses import FileResponse
 @app.get("/big.zip")
 def download():
     return FileResponse("big.zip", media_type="application/zip")
+```
+
+```js
+// res.sendFile handles Range, 206, 416 and If-Range for you,
+// driven by the file's modtime and a generated ETag.
+app.get('/big.zip', (req, res) => {
+  res.sendFile('/srv/files/big.zip', {
+    acceptRanges: true,
+    headers: { 'Content-Type': 'application/zip' },
+  })
+})
 ```
 
 ## Persistent Connections & Keep-Alive
@@ -1233,7 +1436,7 @@ You rarely set these headers by hand, the defaults are right for almost everythi
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 srv := &http.Server{
@@ -1248,12 +1451,25 @@ srv.ListenAndServe()
 // srv.SetKeepAlivesEnabled(false) // force Connection: close if ever needed
 ```
 
-```text
+```python
 # Keep-alive is owned by the ASGI server (uvicorn), not your app code:
 #   uvicorn main:app --timeout-keep-alive 60 --workers 4
 import uvicorn
 uvicorn.run("main:app", host="0.0.0.0", port=8080,
             timeout_keep_alive=60, workers=4)
+```
+
+```js
+import http from 'node:http'
+
+const server = http.createServer(app)
+
+server.headersTimeout = 2_000       // mitigates Slowloris (slow-header attacks)
+server.requestTimeout = 5_000       // whole request must arrive within this
+server.keepAliveTimeout = 60_000    // how long to hold an idle keep-alive conn
+server.listen(8080)
+
+// server.closeIdleConnections() // drop idle keep-alives, e.g. during shutdown
 ```
 
 ## Multipart Uploads & Streamed Responses
@@ -1286,7 +1502,7 @@ To send a large or open-ended response without buffering it all in memory (or ti
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 // 1. Receive a multipart upload
@@ -1333,6 +1549,32 @@ async def stream():
             yield f"data: chunk {i}\n\n"
             await asyncio.sleep(1)
     return StreamingResponse(gen(), media_type="text/event-stream")
+```
+
+```js
+import multer from 'multer'
+import { setTimeout as sleep } from 'node:timers/promises'
+
+// 1. Receive a multipart upload
+const upload = multer({ limits: { fileSize: 32 * 1024 * 1024 } }) // 32 MB cap
+
+app.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'no file' })
+  }
+  res.json({ received: req.file.originalname, size: req.file.size })
+})
+
+// 2. Stream a response in chunks (Server-Sent Events)
+app.get('/stream', async (req, res) => {
+  res.set('Content-Type', 'text/event-stream')
+  res.set('Connection', 'keep-alive')
+  for (let i = 0; i < 5; i++) {
+    res.write(`data: chunk ${i}\n\n`) // each write is flushed to the client
+    await sleep(1000)
+  }
+  res.end()
+})
 ```
 
 Direction -> tool
@@ -1438,7 +1680,7 @@ You almost never implement TLS in application code. It's _terminated_ at the edg
 
 ______
 
-Go Python
+Go Python JavaScript
 
 ```go
 // Serve HTTPS directly with a certificate + private-key pair.
@@ -1449,13 +1691,26 @@ if err != nil {
 // Production note: usually you terminate TLS at a proxy/LB and run plain HTTP behind it.
 ```
 
-```text
+```python
 # uvicorn can serve TLS directly with a cert + key pair:
 #   uvicorn main:app --port 443 --ssl-certfile server.crt --ssl-keyfile server.key
 import uvicorn
 uvicorn.run("main:app", host="0.0.0.0", port=443,
             ssl_certfile="server.crt", ssl_keyfile="server.key")
 # Production note: usually terminate TLS at a proxy/LB and run plain HTTP behind it.
+```
+
+```js
+import https from 'node:https'
+import { readFileSync } from 'node:fs'
+
+// Serve HTTPS directly with a certificate + private-key pair.
+https.createServer({
+  cert: readFileSync('server.crt'),
+  key: readFileSync('server.key'),
+}, app).listen(443)
+
+// Production note: usually you terminate TLS at a proxy/LB and run plain HTTP behind it.
 ```
 
 ## Debugging Cheat-Sheet
