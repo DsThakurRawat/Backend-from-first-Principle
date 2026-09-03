@@ -2,7 +2,7 @@
 order: 3
 title: "Serialization, the shared language of machines."
 navTitle: "Serialization & Deserialization"
-summary: "A JavaScript client and a Rust server have nothing in common at the level of data types. Serialization is how they talk anyway: both convert their native data to and from one agreed format for the trip across the network. This manual covers the whole idea, the language barrier, the common standard, text vs binary formats, JSON in depth, the OSI mental model, and the full client<->server round-trip, with worked code in Go and Python."
+summary: "A JavaScript client and a Rust server have nothing in common at the level of data types. Serialization is how they talk anyway: both convert their native data to and from one agreed format for the trip across the network. This manual covers the whole idea, the language barrier, the common standard, text vs binary formats, JSON in depth, the OSI mental model, and the full client<->server round-trip, with worked code in Go, Python and JavaScript."
 readingTime: "2-3 hours"
 keywords:
   - "serialization"
@@ -313,11 +313,94 @@ if __name__ == "__main__":
     print(data["name"], data["address"]["country"])  # Lin IN
 ```
 
-<Callout type="info" title="Same shape, two languages">
-Both define a **Serializer** contract (abstraction), implement it for JSON (polymorphism), share fields through a base model (inheritance / composition), and keep secrets out of the wire format (encapsulation). The verbs are universal: **serialize** = native -> JSON (Go `Marshal`, Python `dumps`); **deserialize** = JSON -> native (Go `Unmarshal`, Python `loads`).
+11
+
+## Serialization in JavaScript
+
+JavaScript uses the built-in `JSON` object: `JSON.stringify` = serialize, `JSON.parse` = deserialize. The same OOP architecture, with one twist worth noticing: a `#private` field is invisible to `JSON.stringify`, so the language itself keeps the secret off the wire, and `toJSON()` is the hook that decides which keys leave the object, JavaScript's answer to Go's struct tags.
+
+```js title="Node 20+ serialize.js"
+// ABSTRACTION: JavaScript has no interface keyword, so the contract is a base
+// class whose methods refuse to run. Callers depend only on this shape, so
+// JSON could be swapped for another format without touching them.
+class Serializer {
+  serialize(value) { throw new Error("serialize() must be implemented"); }    // native -> common
+  deserialize(data) { throw new Error("deserialize() must be implemented"); } // common -> native
+}
+
+// POLYMORPHISM: JsonSerializer implements the contract. Any other format
+// (YAML, Protobuf) can extend the same base and be swapped in unchanged.
+class JsonSerializer extends Serializer {
+  serialize(value) {
+    return JSON.stringify(value);  // SERIALIZE: object -> JSON text
+  }
+  deserialize(data) {
+    return JSON.parse(data);       // DESERIALIZE: JSON text -> object
+  }
+}
+
+// "INHERITANCE": BaseModel holds the shared fields; User extends it and
+// reuses them, the counterpart of Go's struct embedding.
+class BaseModel {
+  constructor(id = 0, createdAt = new Date()) {
+    this.id = id;
+    this.createdAt = createdAt;
+  }
+}
+
+class Address {
+  constructor(country, phone) {
+    this.country = country;
+    this.phone = phone; // nested object
+  }
+}
+
+// ENCAPSULATION: #password is private at RUNTIME, so it is both unreachable
+// from outside AND invisible to JSON.stringify, the secret never reaches the
+// wire. toJSON() is the hook stringify calls: it is JavaScript's answer to
+// Go's struct tags, deciding exactly which keys leave the object.
+class User extends BaseModel {
+  #password;
+
+  constructor({ id, name, active = true, address = null, password = "" }) {
+    super(id);
+    this.name = name;
+    this.active = active;
+    this.address = address;
+    this.#password = password;
+  }
+
+  toJSON() {
+    return {
+      id: this.id,
+      created_at: this.createdAt, // rename on the way out, like a json tag
+      name: this.name,
+      active: this.active,
+      address: this.address,
+    };
+  }
+}
+
+const codec = new JsonSerializer(); // program to the contract
+
+const user = new User({ id: 1, name: "Ada", address: new Address("India", 123456) });
+
+// SERIALIZE, native object into the common JSON format
+const payload = codec.serialize(user);
+console.log(payload);
+// {"id":1,"created_at":"...","name":"Ada","active":true,
+//  "address":{"country":"India","phone":123456}}
+
+// DESERIALIZE, JSON received over HTTP back into native data
+const incoming = '{"name":"Lin","address":{"country":"IN","phone":42}}';
+const data = codec.deserialize(incoming);
+console.log(data.name, data.address.country); // Lin IN
+```
+<Callout type="info" title="Same shape, three languages">
+All three define a **Serializer** contract (abstraction), implement it for JSON (polymorphism), share fields through a base model (inheritance / composition), and keep secrets out of the wire format (encapsulation). The verbs are universal: **serialize** = native -> JSON (Go `Marshal`, Python `dumps`, JavaScript `JSON.stringify`); **deserialize** = JSON -> native (Go `Unmarshal`, Python `loads`, JavaScript `JSON.parse`).
 </Callout>
 
-11
+12
 
 ## Glossary
 
