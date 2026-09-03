@@ -312,12 +312,122 @@ if __name__ == "__main__":
     data = codec.deserialize(incoming)
     print(data["name"], data["address"]["country"])  # Lin IN
 ```
+11
 
-<Callout type="info" title="Same shape, two languages">
-Both define a **Serializer** contract (abstraction), implement it for JSON (polymorphism), share fields through a base model (inheritance / composition), and keep secrets out of the wire format (encapsulation). The verbs are universal: **serialize** = native -> JSON (Go `Marshal`, Python `dumps`); **deserialize** = JSON -> native (Go `Unmarshal`, Python `loads`).
+## Serialization in JavaScript
+
+Node.js uses the built-in JSON object: JSON.stringify() = serialize (convert to JSON string), JSON.parse() = deserialize (convert from JSON string). The same OOP architecture: a base class contract, inheritance, polymorphism, and a private field.
+
+```javascript title="Node js 20+serialization.js"
+// ABSTRACTION: Serializer is a base class that defines a
+// contract. Subclasses must implement both directions.
+// JavaScript does not have abstract methods built in,
+// so we throw an error if they are not overridden.
+class Serializer {
+    serialize(obj) {
+        throw new Error("serialize() must be implemented");
+    }
+
+    deserialize(data) {
+        throw new Error("deserialize() must be implemented");
+    }
+}
+
+
+// INHERITANCE + POLYMORPHISM: JSONSerializer IS-A Serializer
+// and overrides both methods. A YamlSerializer could extend
+// the same base class and be used wherever Serializer is expected.
+class JSONSerializer extends Serializer {
+    serialize(obj) {
+        return JSON.stringify(obj);          // SERIALIZE: object -> JSON text
+    }
+
+    deserialize(data) {
+        return JSON.parse(data);             // DESERIALIZE: JSON text -> object
+    }
+}
+
+
+// INHERITANCE: BaseModel is a shared parent (id).
+class BaseModel {
+    constructor(id = 0) {
+        this.id = id;
+    }
+}
+
+
+class Address {
+    constructor(country, phone) {
+        this.country = country;
+        this.phone = phone;                  // nested object
+    }
+}
+
+
+// ENCAPSULATION: #password is a private field,
+// and toJSON() chooses what leaves the object,
+// so the secret never appears in the serialized output.
+class User extends BaseModel {                // IS-A BaseModel
+
+    #password;
+
+    constructor(
+        id = 0,
+        name = "",
+        active = true,
+        address = null,
+        password = ""
+    ) {
+        super(id);
+
+        this.name = name;
+        this.active = active;
+        this.address = address;
+        this.#password = password;
+    }
+
+    toJSON() {
+        return {
+            id: this.id,
+            name: this.name,
+            active: this.active,
+            address: this.address
+        };
+    }
+}
+
+
+    const codec = new JSONSerializer();       // program to the contract
+
+    const user = new User(
+        1,
+        "Ada",
+        true,
+        new Address("India", 123456)
+    );
+
+    // SERIALIZE, native object into the common JSON format
+    const payload = codec.serialize(user);
+
+    console.log(payload);
+
+    // {"id":1,"name":"Ada","active":true,
+    //  "address":{"country":"India","phone":123456}}
+
+    // DESERIALIZE, JSON received over HTTP back into native data
+    const incoming =
+        '{"name":"Lin","address":{"country":"IN","phone":42}}';
+
+    const data = codec.deserialize(incoming);
+
+    console.log(data.name, data.address.country);  // Lin IN
+```
+
+<Callout type="info" title="Same shape, three languages">
+All three define a **Serializer** contract (abstraction), implement it for JSON (polymorphism), share fields through a base model (inheritance / composition), and keep secrets out of the wire format (encapsulation). The verbs are universal: **serialize** = native → JSON (Go `Marshal`, Python `dumps`, Node.js `JSON.stringify()`); **deserialize** = JSON → native (Go `Unmarshal`, Python `loads`, Node.js `JSON.parse()`).
 </Callout>
 
-11
+12
 
 ## Glossary
 
@@ -348,4 +458,4 @@ Every term from the source, in one place.
 Two machines with incompatible native data types agree on a **common format** (usually **JSON**). Each **serializes** its data into that format before sending and **deserializes** it back after receiving, so communication is **language- and domain-agnostic**. The network turns JSON into bits and back; at the **application layer** you only ever deal with the JSON.
 </Callout>
 
-Backend from First Principles / Chapter 03 / Serialization. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 03 / Serialization. Code targets Go 1.22+, Python 3.11+ and Node js 20+.
