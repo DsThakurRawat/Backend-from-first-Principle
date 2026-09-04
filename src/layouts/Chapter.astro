@@ -343,13 +343,22 @@ const num = String(order).padStart(2, '0');
   const completeToggle = document.querySelector<HTMLInputElement>('[data-complete-toggle]');
   if (completeToggle) {
     const id = completeToggle.dataset.chapterId!;
-    completeToggle.checked = readProgress().includes(id);
+    const sync = () => { completeToggle.checked = readProgress().includes(id); };
+    sync();
+
     completeToggle.addEventListener('change', () => {
       const ids = readProgress();
       const next = completeToggle.checked
         ? [...ids.filter((x) => x !== id), id]
         : ids.filter((x) => x !== id);
       writeProgress(next);
+    });
+
+    // Re-sync on bfcache restore (this script won't re-run) and when
+    // another tab changes the same key.
+    addEventListener('pageshow', sync);
+    addEventListener('storage', (e) => {
+      if (e.key === PROGRESS_KEY) sync();
     });
   }
 

@@ -352,35 +352,50 @@ const grouped = PARTS.map((p) => ({
 
 <script>
   const PROGRESS_KEY = 'bfp-progress';
-  let done = new Set<string>();
-  try {
-    const raw = JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? '[]');
-    if (Array.isArray(raw)) done = new Set<string>(raw);
-  } catch { /* storage blocked or value corrupt */ }
+  const readProgress = (): Set<string> => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? '[]');
+      return new Set<string>(Array.isArray(raw) ? raw : []);
+    } catch { return new Set(); }
+  };
 
-  // Every count is derived from the cards actually rendered, never from the
-  // size of the stored list: a renamed or retired chapter leaves a stale id
-  // behind, and a stale id must not show up as 25 / 24.
-  let doneCount = 0;
-  let cardCount = 0;
+  // Re-run on pageshow (bfcache restores the DOM without re-executing this
+  // script, so a completion made on another page and then reached via the
+  // back button would otherwise render stale) and on storage (another tab
+  // changing the same key).
+  const render = () => {
+    const done = readProgress();
 
-  document.querySelectorAll<HTMLElement>('.part').forEach((part) => {
-    const cards = part.querySelectorAll<HTMLAnchorElement>('[data-chapter-id]');
-    let completed = 0;
+    // Every count is derived from the cards actually rendered, never from
+    // the size of the stored list: a renamed or retired chapter leaves a
+    // stale id behind, and a stale id must not show up as 25 / 24.
+    let doneCount = 0;
+    let cardCount = 0;
 
-    cards.forEach((card) => {
-      const isDone = done.has(card.dataset.chapterId!);
-      card.classList.toggle('is-done', isDone);
-      if (isDone) completed += 1;
+    document.querySelectorAll<HTMLElement>('.part').forEach((part) => {
+      const cards = part.querySelectorAll<HTMLAnchorElement>('[data-chapter-id]');
+      let completed = 0;
+
+      cards.forEach((card) => {
+        const isDone = done.has(card.dataset.chapterId!);
+        card.classList.toggle('is-done', isDone);
+        if (isDone) completed += 1;
+      });
+
+      const label = part.querySelector<HTMLElement>('[data-part-progress]');
+      if (label) label.textContent = `${completed} / ${cards.length}`;
+
+      doneCount += completed;
+      cardCount += cards.length;
     });
 
-    const label = part.querySelector<HTMLElement>('[data-part-progress]');
-    if (label) label.textContent = `${completed} / ${cards.length}`;
+    const progressFact = document.querySelector<HTMLElement>('[data-progress-fact]');
+    if (progressFact) progressFact.textContent = `${doneCount} / ${cardCount}`;
+  };
 
-    doneCount += completed;
-    cardCount += cards.length;
+  render();
+  addEventListener('pageshow', render);
+  addEventListener('storage', (e) => {
+    if (e.key === PROGRESS_KEY) render();
   });
-
-  const progressFact = document.querySelector<HTMLElement>('[data-progress-fact]');
-  if (progressFact) progressFact.textContent = `${doneCount} / ${cardCount}`;
 </script>
