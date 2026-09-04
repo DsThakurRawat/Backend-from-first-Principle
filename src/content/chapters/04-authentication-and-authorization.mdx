@@ -254,27 +254,29 @@ function newSessionId() {
 }
 
 async function login(res, user) {
-  const sid = newSessionId();
-
-  const data = JSON.stringify(user);
-
-  // Store {sessionID -> userData} with a 15-minute TTL.
-  await rdb.set(
-    `sess:${sid}`,
-    data,
-    "EX",
-    TTL
-  );
-
-  // Store the session ID in a secure cookie.
-  res.cookie("sid", sid, {
-    httpOnly: true,       // JS cannot read it
-    secure: true,         // HTTPS only
-    sameSite: "lax",
-    path: "/",
-    maxAge: TTL * 1000,   // milliseconds
-  });
+if (!user || typeof user !== 'object') {
+throw new Error('Invalid user object');
 }
+const sid = newSessionId();
+const data = JSON.stringify(user);
+try {
+await rdb.set(
+`sess:${sid}`,
+data,
+"EX",
+TTL
+);
+res.cookie("sid", sid, {
+httpOnly: true,
+secure: true,
+sameSite: "lax",
+path: "/",
+maxAge: TTL * 1000,
+});
+} catch (error) {
+throw new Error(`Failed to create session: ${error.message}`);
+}
+
 ```
 
 ### Deep dive: how to actually store a password
