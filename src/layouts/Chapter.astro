@@ -45,6 +45,11 @@ const num = String(order).padStart(2, '0');
         <slot />
       </article>
 
+      <label class="complete-toggle">
+        <input type="checkbox" data-complete-toggle data-chapter-id={chapter.id} />
+        <span>Mark this chapter complete</span>
+      </label>
+
       <nav class="chapter-nav" aria-label="Chapter navigation">
         {prev ? (
           <a class="nav-card is-prev" href={`/${prev.id}/`} rel="prev">
@@ -202,6 +207,25 @@ const num = String(order).padStart(2, '0');
     text-wrap: pretty;
   }
 
+  /* --- mark complete ----------------------------------------------------- */
+  .complete-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-8);
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 120ms ease, background-color 120ms ease;
+  }
+  .complete-toggle:hover { border-color: var(--line-2); }
+  .complete-toggle:has(input:checked) { border-color: var(--accent); background: var(--accent-bg); }
+  .complete-toggle input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+
   /* --- prev / next ------------------------------------------------------ */
   .chapter-nav {
     display: grid;
@@ -299,6 +323,33 @@ const num = String(order).padStart(2, '0');
     links.forEach((_, id) => {
       const el = document.getElementById(id);
       if (el) io.observe(el);
+    });
+  }
+
+  // --- mark chapter complete --------------------------------------------
+  const PROGRESS_KEY = 'bfp-progress';
+  const readProgress = (): string[] => {
+    // A hand-edited or half-written value would otherwise throw on .includes
+    // below and take the keyboard nav down with it.
+    try {
+      const raw = JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? '[]');
+      return Array.isArray(raw) ? raw : [];
+    } catch { return []; }
+  };
+  const writeProgress = (ids: string[]) => {
+    try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(ids)); } catch { /* storage blocked */ }
+  };
+
+  const completeToggle = document.querySelector<HTMLInputElement>('[data-complete-toggle]');
+  if (completeToggle) {
+    const id = completeToggle.dataset.chapterId!;
+    completeToggle.checked = readProgress().includes(id);
+    completeToggle.addEventListener('change', () => {
+      const ids = readProgress();
+      const next = completeToggle.checked
+        ? [...ids.filter((x) => x !== id), id]
+        : ids.filter((x) => x !== id);
+      writeProgress(next);
     });
   }
 
