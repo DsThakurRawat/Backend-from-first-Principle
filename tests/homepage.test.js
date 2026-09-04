@@ -1,8 +1,8 @@
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(import.meta.dirname, '..');
 const homepage = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const enhancements = fs.readFileSync(path.join(root, 'assets/enhancements.css'), 'utf8');
 

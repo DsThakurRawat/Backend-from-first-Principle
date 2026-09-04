@@ -59,10 +59,14 @@
     if (current) current.classList.remove('is-active');
     if (link) link.classList.add('is-active');
     current = link;
-    if (link && toc.scrollHeight > toc.clientHeight) {
-      var top = link.offsetTop - toc.clientHeight / 2;
-      if (Math.abs(toc.scrollTop - top) > toc.clientHeight / 3) {
-        toc.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
+    if (link && toc.scrollHeight > toc.clientHeight && !toc.matches(':hover')) {
+      var tocRect = toc.getBoundingClientRect();
+      var linkRect = link.getBoundingClientRect();
+      var buffer = 48;
+      if (linkRect.top < tocRect.top + buffer || linkRect.bottom > tocRect.bottom - buffer) {
+        var top = toc.scrollTop + (linkRect.top - tocRect.top) - (tocRect.height / 2 - linkRect.height / 2);
+        var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        toc.scrollTo({ top: Math.max(0, top), behavior: prefersReducedMotion ? 'auto' : 'smooth' });
       }
     }
   }
