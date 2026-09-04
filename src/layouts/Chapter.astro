@@ -276,6 +276,28 @@ const num = String(order).padStart(2, '0');
     const rail = document.querySelector<HTMLElement>('.rail-inner');
     let currentActive: string | null = null;
 
+    const scrollToActive = () => {
+      if (!rail || !currentActive || rail.scrollHeight <= rail.clientHeight || rail.matches(':hover')) return;
+      const activeLink = links.get(currentActive);
+      if (!activeLink) return;
+
+      const railRect = rail.getBoundingClientRect();
+      const linkRect = activeLink.getBoundingClientRect();
+      const buffer = 48;
+
+      if (linkRect.top < railRect.top + buffer || linkRect.bottom > railRect.bottom - buffer) {
+        const targetScrollTop =
+          rail.scrollTop +
+          (linkRect.top - railRect.top) -
+          (railRect.height / 2 - linkRect.height / 2);
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        rail.scrollTo({
+          top: Math.max(0, targetScrollTop),
+          behavior: prefersReducedMotion ? 'auto' : 'smooth',
+        });
+      }
+    };
+
     const paint = () => {
       // The topmost visible heading wins; if none is on screen (mid-section
       // scroll) keep the last one we set rather than clearing the rail.
@@ -288,25 +310,12 @@ const num = String(order).padStart(2, '0');
         else a.removeAttribute('aria-current');
       });
 
-      const activeLink = links.get(active);
-      if (rail && activeLink && rail.scrollHeight > rail.clientHeight && !rail.matches(':hover')) {
-        const railRect = rail.getBoundingClientRect();
-        const linkRect = activeLink.getBoundingClientRect();
-        const buffer = 48;
-
-        if (linkRect.top < railRect.top + buffer || linkRect.bottom > railRect.bottom - buffer) {
-          const targetScrollTop =
-            rail.scrollTop +
-            (linkRect.top - railRect.top) -
-            (railRect.height / 2 - linkRect.height / 2);
-          const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-          rail.scrollTo({
-            top: Math.max(0, targetScrollTop),
-            behavior: prefersReducedMotion ? 'auto' : 'smooth',
-          });
-        }
-      }
+      scrollToActive();
     };
+
+    if (rail) {
+      rail.addEventListener('mouseleave', scrollToActive);
+    }
 
     const io = new IntersectionObserver(
       (entries) => {

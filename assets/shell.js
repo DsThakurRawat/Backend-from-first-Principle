@@ -54,22 +54,27 @@
   if (!targets.length) return;
 
   var current = null;
+  function scrollToCurrent() {
+    if (!current || toc.scrollHeight <= toc.clientHeight || toc.matches(':hover')) return;
+    var tocRect = toc.getBoundingClientRect();
+    var linkRect = current.getBoundingClientRect();
+    var buffer = 48;
+    if (linkRect.top < tocRect.top + buffer || linkRect.bottom > tocRect.bottom - buffer) {
+      var top = toc.scrollTop + (linkRect.top - tocRect.top) - (tocRect.height / 2 - linkRect.height / 2);
+      var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      toc.scrollTo({ top: Math.max(0, top), behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    }
+  }
+
   function activate(link) {
     if (link === current) return;
     if (current) current.classList.remove('is-active');
     if (link) link.classList.add('is-active');
     current = link;
-    if (link && toc.scrollHeight > toc.clientHeight && !toc.matches(':hover')) {
-      var tocRect = toc.getBoundingClientRect();
-      var linkRect = link.getBoundingClientRect();
-      var buffer = 48;
-      if (linkRect.top < tocRect.top + buffer || linkRect.bottom > tocRect.bottom - buffer) {
-        var top = toc.scrollTop + (linkRect.top - tocRect.top) - (tocRect.height / 2 - linkRect.height / 2);
-        var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        toc.scrollTo({ top: Math.max(0, top), behavior: prefersReducedMotion ? 'auto' : 'smooth' });
-      }
-    }
+    scrollToCurrent();
   }
+
+  toc.addEventListener('mouseleave', scrollToCurrent);
 
   function pick() {
     var line = window.scrollY + window.innerHeight * 0.22;

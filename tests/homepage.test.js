@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(import.meta.dirname, '..');
+const root = fileURLToPath(new URL('..', import.meta.url));
 const homepage = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const enhancements = fs.readFileSync(path.join(root, 'assets/enhancements.css'), 'utf8');
 
