@@ -1,5 +1,5 @@
-const http = require("http");
-const { URL } = require("url");
+import http from "node:http";
+import { URL } from "node:url";
 
 // ABSTRACTION: Handler defines the common handler contract.
 // Concrete handlers implement handle().
