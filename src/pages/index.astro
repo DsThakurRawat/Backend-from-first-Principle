@@ -49,6 +49,7 @@ const grouped = PARTS.map((p) => ({
         <div class="fact"><dt>Chapters</dt><dd>{chapters.length}</dd></div>
         <div class="fact"><dt>Languages</dt><dd>Go · Python</dd></div>
         <div class="fact"><dt>Format</dt><dd>Theory + code</dd></div>
+        <div class="fact"><dt>Progress</dt><dd data-progress-fact>0 / {chapters.length}</dd></div>
       </dl>
     </section>
 
@@ -61,18 +62,24 @@ const grouped = PARTS.map((p) => ({
             <p class="part-range">
               {String(part.from).padStart(2, '0')}–{String(part.to).padStart(2, '0')}
             </p>
+            <p class="part-progress" data-part-progress>0 / {part.chapters.length}</p>
           </header>
 
           <ul class="grid">
             {part.chapters.map((c) => (
               <li>
-                <a class="card" href={`/${c.id}/`}>
+                <a class="card" href={`/${c.id}/`} data-chapter-id={c.id}>
                   <span class="card-num">{String(c.data.order).padStart(2, '0')}</span>
                   <span class="card-body">
                     <span class="card-title">{c.data.navTitle ?? c.data.title}</span>
                     <span class="card-summary">{c.data.summary}</span>
                   </span>
-                  <span class="card-time">{c.data.readingTime}</span>
+                  <span class="card-foot">
+                    <span class="card-time">{c.data.readingTime}</span>
+                    <span class="card-check">
+                      <span aria-hidden="true">✓</span><span class="sr-only">Completed</span>
+                    </span>
+                  </span>
                 </a>
               </li>
             ))}
@@ -216,6 +223,14 @@ const grouped = PARTS.map((p) => ({
     font-size: var(--text-sm);
     color: var(--ink-3);
   }
+  .part-progress {
+    grid-row: 3;
+    grid-column: 2;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+    letter-spacing: var(--tracking-wide);
+  }
 
   .grid {
     display: grid;
@@ -244,6 +259,16 @@ const grouped = PARTS.map((p) => ({
     background: var(--accent-bg);
     transform: translateY(-2px);
   }
+  .card.is-done { border-color: var(--accent); }
+
+  .card-check {
+    display: none;
+    color: var(--accent);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    line-height: 1;
+  }
+  .card.is-done .card-check { display: block; }
 
   .card-num {
     font-family: var(--font-mono);
@@ -265,8 +290,14 @@ const grouped = PARTS.map((p) => ({
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .card-time {
+  .card-foot {
     grid-column: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+  .card-time {
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
     letter-spacing: var(--tracking-wide);
@@ -315,5 +346,57 @@ const grouped = PARTS.map((p) => ({
   @media (max-width: 560px) {
     .part-head { grid-template-columns: 1fr; }
     .part-range { grid-row: auto; grid-column: 1; }
+    .part-progress { grid-row: auto; grid-column: 1; }
   }
 </style>
+
+<script>
+  const PROGRESS_KEY = 'bfp-progress';
+  const readProgress = (): Set<string> => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? '[]');
+      return new Set<string>(Array.isArray(raw) ? raw : []);
+    } catch { return new Set(); }
+  };
+
+  // Re-run on pageshow (bfcache restores the DOM without re-executing this
+  // script, so a completion made on another page and then reached via the
+  // back button would otherwise render stale) and on storage (another tab
+  // changing the same key).
+  const render = () => {
+    const done = readProgress();
+
+    // Every count is derived from the cards actually rendered, never from
+    // the size of the stored list: a renamed or retired chapter leaves a
+    // stale id behind, and a stale id must not show up as 25 / 24.
+    let doneCount = 0;
+    let cardCount = 0;
+
+    document.querySelectorAll<HTMLElement>('.part').forEach((part) => {
+      const cards = part.querySelectorAll<HTMLAnchorElement>('[data-chapter-id]');
+      let completed = 0;
+
+      cards.forEach((card) => {
+        const isDone = done.has(card.dataset.chapterId!);
+        card.classList.toggle('is-done', isDone);
+        if (isDone) completed += 1;
+      });
+
+      const label = part.querySelector<HTMLElement>('[data-part-progress]');
+      if (label) label.textContent = `${completed} / ${cards.length}`;
+
+      doneCount += completed;
+      cardCount += cards.length;
+    });
+
+    const progressFact = document.querySelector<HTMLElement>('[data-progress-fact]');
+    if (progressFact) progressFact.textContent = `${doneCount} / ${cardCount}`;
+  };
+
+  render();
+  addEventListener('pageshow', render);
+  addEventListener('storage', (e) => {
+    // e.key is null when another tab calls localStorage.clear().
+    if (e.key === PROGRESS_KEY || e.key === null) render();
+  });
+</script>
