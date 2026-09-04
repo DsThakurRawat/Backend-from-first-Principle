@@ -120,14 +120,20 @@ r.register("GET", "/api/books", new ListBooks("books"));
 
 // HTTP SERVER
 const server = http.createServer((req, res) => {
-  const response = r.dispatch(req.method, req.url);
-
-  res.writeHead(response.status, {
-    "Content-Type": "text/plain",
-  });
-
-  res.end(response.body);
+try {
+const response = r.dispatch(req.method, req.url);
+res.writeHead(response.status, {
+"Content-Type": "text/plain",
 });
+res.end(response.body);
+} catch (error) {
+res.writeHead(500, {
+"Content-Type": "text/plain",
+});
+res.end("Internal Server Error");
+}
+});
+
 
 server.listen(3000, () => {
   console.log("Server running on http://localhost:3000");
