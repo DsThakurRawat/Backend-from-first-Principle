@@ -1,14 +1,99 @@
 ---
+import { getCollection } from 'astro:content';
 import ThemeToggle from './ThemeToggle.astro';
 
 interface Props {
   /** Rendered as a breadcrumb next to the wordmark on chapter pages. */
   crumb?: string;
 }
+
 const { crumb } = Astro.props;
+const chapters = (await getCollection('chapters'))
+  .filter((chapter) => !chapter.data.draft)
+  .sort((a, b) => a.data.order - b.data.order);
+const currentId = Astro.url.pathname.split('/').filter(Boolean)[0] ?? null;
+
+const PARTS = [
+  { from: 1, to: 7, label: 'The Request Path' },
+  { from: 8, to: 14, label: 'State & Machinery' },
+  { from: 15, to: 20, label: 'Running in Production' },
+  { from: 21, to: 24, label: 'Distribution & Scale' },
+];
+
+const groups = PARTS.map((part) => ({
+  ...part,
+  chapters: chapters.filter(
+    (chapter) => chapter.data.order >= part.from && chapter.data.order <= part.to,
+  ),
+})).filter((part) => part.chapters.length > 0);
 ---
 <header class="site-header">
   <div class="left">
+    <div class="mobile-nav" data-mobile-nav>
+      <button
+        class="nav-toggle"
+        type="button"
+        data-nav-toggle
+        aria-expanded="false"
+        aria-controls="site-contents"
+        aria-label="Open chapter contents"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
+
+      <button class="contents-scrim" type="button" data-nav-close aria-label="Close chapter contents"></button>
+
+      <aside class="contents-drawer" id="site-contents" aria-label="Chapter contents">
+        <div class="contents-head">
+          <span>Contents</span>
+          <button class="contents-close" type="button" data-nav-close aria-label="Close chapter contents">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <nav class="chapter-contents" aria-label="All chapters">
+          <a class:list={['overview-link', { active: currentId === null }]} href="/" aria-current={currentId === null ? 'page' : undefined}>
+            <span>Overview</span>
+          </a>
+
+          {groups.map((group) => {
+            const containsCurrent = group.chapters.some((chapter) => chapter.id === currentId);
+            return (
+              <details class="chapter-group" open={containsCurrent}>
+                <summary>
+                  <span class="group-label">{group.label}</span>
+                  <span class="group-range">
+                    {String(group.from).padStart(2, '0')}–{String(group.to).padStart(2, '0')}
+                  </span>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m5 6 3 3 3-3" />
+                  </svg>
+                </summary>
+                <ol>
+                  {group.chapters.map((chapter) => (
+                    <li>
+                      <a
+                        class:list={['chapter-link', { active: chapter.id === currentId }]}
+                        href={`/${chapter.id}/`}
+                        aria-current={chapter.id === currentId ? 'page' : undefined}
+                      >
+                        <span class="chapter-num">{String(chapter.data.order).padStart(2, '0')}</span>
+                        <span>{chapter.data.navTitle ?? chapter.data.title}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            );
+          })}
+        </nav>
+      </aside>
+    </div>
+
     <a class="wordmark" href="/">
       <span class="mark" aria-hidden="true">B</span>
       <span class="name">Backend from First Principles</span>
@@ -17,41 +102,18 @@ const { crumb } = Astro.props;
     {crumb && <><span class="sep" aria-hidden="true">/</span><span class="crumb">{crumb}</span></>}
   </div>
 
-  <div class="right" data-mobile-menu>
-    <button
-      class="menu-toggle"
-      type="button"
-      data-menu-toggle
-      aria-expanded="false"
-      aria-controls="header-actions"
-      aria-haspopup="true"
-      aria-label="Open menu"
-    >
-      <svg class="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-        <path d="M4 7h16M4 12h16M4 17h16" />
+  <div class="right">
+    <button class="search-open" type="button" data-search-open aria-label="Search the series">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="10.5" cy="10.5" r="7" /><line x1="15.6" y1="15.6" x2="21" y2="21" />
       </svg>
-      <svg class="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-        <path d="m6 6 12 12M18 6 6 18" />
-      </svg>
+      <span class="label">Search</span>
+      <kbd>/</kbd>
     </button>
-
-    <div class="actions" id="header-actions" data-menu-actions>
-      <button class="search-open" type="button" data-search-open aria-label="Search the series">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-          <circle cx="10.5" cy="10.5" r="7" /><line x1="15.6" y1="15.6" x2="21" y2="21" />
-        </svg>
-        <span class="label">Search</span>
-        <kbd>/</kbd>
-      </button>
-      <a class="gh" href="https://github.com/DsThakurRawat/Backend-from-first-Principle" target="_blank" rel="noopener noreferrer" aria-label="View on GitHub">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-        <span class="gh-label">GitHub</span>
-      </a>
-      <div class="theme-row">
-        <span class="theme-label">Theme</span>
-        <ThemeToggle />
-      </div>
-    </div>
+    <a class="gh" href="https://github.com/DsThakurRawat/Backend-from-first-Principle" target="_blank" rel="noopener noreferrer" aria-label="View on GitHub">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+    </a>
+    <ThemeToggle />
   </div>
 </header>
 
@@ -59,7 +121,7 @@ const { crumb } = Astro.props;
   .site-header {
     position: sticky;
     top: 0;
-    z-index: 40;
+    z-index: 50;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -71,8 +133,9 @@ const { crumb } = Astro.props;
     border-bottom: 1px solid var(--line);
   }
 
-  .left, .right, .actions { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
-  .right { position: relative; }
+  .left, .right { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+
+  .mobile-nav { display: none; }
 
   .wordmark {
     display: flex;
@@ -139,102 +202,183 @@ const { crumb } = Astro.props;
   }
   .gh:hover { color: var(--ink); }
   .gh svg { width: 17px; height: 17px; }
-  .gh-label, .theme-label { display: none; }
-  .theme-row { display: contents; }
-
-  .menu-toggle {
-    display: none;
-    place-items: center;
-    width: 34px;
-    height: 34px;
-    padding: 0;
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    background: var(--surface);
-    color: var(--ink-2);
-    transition: color 120ms ease, border-color 120ms ease;
-  }
-  .menu-toggle:hover { color: var(--ink); border-color: var(--line-2); }
-  .menu-toggle svg { width: 17px; height: 17px; }
-  .menu-toggle .i-close { display: none; }
 
   @media (max-width: 760px) {
+    .left { gap: var(--space-2); }
+    .right { gap: var(--space-2); }
+    .mobile-nav { display: block; }
     .name { display: none; }
     .name-short { display: inline; }
-    .menu-toggle { display: grid; }
-    .actions {
-      display: none;
-      position: absolute;
-      top: calc(100% + var(--space-3));
-      right: 0;
-      width: min(14rem, calc(100vw - 2rem));
-      padding: var(--space-2);
-      flex-direction: column;
-      align-items: stretch;
-      gap: var(--space-1);
-      border: 1px solid var(--line);
-      border-radius: var(--radius-lg);
-      background: var(--surface);
-      box-shadow: var(--shadow-lg);
-    }
-    .right.is-open .actions { display: flex; }
-    .right.is-open .menu-toggle .i-menu { display: none; }
-    .right.is-open .menu-toggle .i-close { display: block; }
+    .wordmark { gap: var(--space-2); }
 
-    .search-open, .gh {
-      width: 100%;
-      height: 40px;
-      justify-content: flex-start;
-      gap: var(--space-3);
-      padding-inline: var(--space-3);
-      border: 0;
-      background: transparent;
+    .nav-toggle, .contents-close {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
       color: var(--ink-2);
+      transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
     }
-    .gh { display: flex; }
-    .search-open .label, .gh-label, .theme-label { display: inline; }
-    .search-open kbd { display: none; }
-    .search-open:hover, .gh:hover { background: var(--accent-bg); color: var(--ink); }
-    .theme-row {
+    .nav-toggle:hover, .contents-close:hover { color: var(--ink); border-color: var(--line-2); }
+    .nav-toggle svg, .contents-close svg { width: 17px; height: 17px; }
+
+    .contents-scrim {
+      display: none;
+      position: fixed;
+      inset: 56px 0 0;
+      z-index: 51;
+      border: 0;
+      background: color-mix(in oklab, var(--bg) 52%, #000);
+      backdrop-filter: blur(2px);
+    }
+
+    .contents-drawer {
+      position: fixed;
+      top: 56px;
+      bottom: 0;
+      left: 0;
+      z-index: 52;
+      width: min(22rem, calc(100vw - 2.5rem));
+      padding: var(--space-4);
+      overflow-y: auto;
+      background: var(--bg);
+      border-right: 1px solid var(--line);
+      box-shadow: var(--shadow-lg);
+      transform: translateX(-100%);
+      visibility: hidden;
+      transition: transform 180ms ease, visibility 180ms step-end;
+    }
+
+    .mobile-nav.is-open .contents-scrim { display: block; }
+    .mobile-nav.is-open .contents-drawer {
+      transform: translateX(0);
+      visibility: visible;
+      transition: transform 180ms ease, visibility 0s;
+    }
+
+    .contents-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      min-height: 40px;
-      padding-left: var(--space-3);
-      color: var(--ink-2);
+      min-height: 36px;
+      margin-bottom: var(--space-3);
+      font-size: var(--text-xs);
+      font-weight: 650;
+      letter-spacing: var(--tracking-caps);
+      text-transform: uppercase;
+      color: var(--ink-3);
     }
+
+    .contents-close { width: 30px; height: 30px; border: 0; background: transparent; }
+
+    .chapter-contents { display: flex; flex-direction: column; gap: var(--space-2); }
+
+    .overview-link {
+      display: flex;
+      align-items: center;
+      min-height: 42px;
+      padding-inline: var(--space-3);
+      border-radius: var(--radius);
+      color: var(--ink-2);
+      font-size: var(--text-sm);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .overview-link:hover, .overview-link.active { background: var(--accent-bg); color: var(--ink); }
+    .overview-link.active { color: var(--accent); }
+
+    .chapter-group { border-top: 1px solid var(--line); }
+    .chapter-group:last-child { border-bottom: 1px solid var(--line); }
+    .chapter-group summary {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: var(--space-2);
+      min-height: 48px;
+      padding-inline: var(--space-3) var(--space-2);
+      cursor: pointer;
+      list-style: none;
+      color: var(--ink-2);
+      user-select: none;
+    }
+    .chapter-group summary::-webkit-details-marker { display: none; }
+    .chapter-group summary:hover { color: var(--ink); }
+    .group-label { font-size: var(--text-sm); font-weight: 600; }
+    .group-range {
+      font-family: var(--font-mono);
+      font-size: var(--text-2xs);
+      color: var(--ink-3);
+      letter-spacing: var(--tracking-wide);
+    }
+    .chapter-group summary svg { width: 14px; height: 14px; color: var(--ink-3); transition: transform 120ms ease; }
+    .chapter-group[open] summary svg { transform: rotate(180deg); }
+
+    .chapter-group ol {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin: 0 0 var(--space-3);
+      padding: 0;
+      list-style: none;
+    }
+    .chapter-link {
+      display: grid;
+      grid-template-columns: 2rem 1fr;
+      align-items: baseline;
+      gap: var(--space-2);
+      padding: 8px var(--space-3);
+      border-radius: var(--radius);
+      color: var(--ink-2);
+      font-size: var(--text-sm);
+      line-height: 1.35;
+      text-decoration: none;
+    }
+    .chapter-link:hover { background: var(--surface); color: var(--ink); }
+    .chapter-link.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+    .chapter-num { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-3); }
+    .chapter-link.active .chapter-num { color: var(--accent); }
+
+    .search-open .label, .search-open kbd { display: none; }
+    .search-open { width: 34px; padding: 0; justify-content: center; }
   }
+
   @media (max-width: 560px) {
     .sep, .crumb { display: none; }
   }
+
+  :global(:root.mobile-nav-open) { overflow: hidden; }
 </style>
 
 <script>
-  document.querySelectorAll<HTMLElement>('[data-mobile-menu]').forEach((menu) => {
-    const toggle = menu.querySelector<HTMLButtonElement>('[data-menu-toggle]');
+  document.querySelectorAll<HTMLElement>('[data-mobile-nav]').forEach((nav) => {
+    const toggle = nav.querySelector<HTMLButtonElement>('[data-nav-toggle]');
     if (!toggle) return;
 
-    const menuToggle = toggle;
-
     function setOpen(isOpen: boolean) {
-      menu.classList.toggle('is-open', isOpen);
-      menuToggle.setAttribute('aria-expanded', String(isOpen));
-      menuToggle.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
+      nav.classList.toggle('is-open', isOpen);
+      toggle.setAttribute('aria-expanded', String(isOpen));
+      toggle.setAttribute('aria-label', isOpen ? 'Close chapter contents' : 'Open chapter contents');
+      document.documentElement.classList.toggle('mobile-nav-open', isOpen);
     }
 
-    menuToggle.addEventListener('click', () => setOpen(!menu.classList.contains('is-open')));
-    menu.querySelectorAll('a, [data-search-open]').forEach((item) => {
+    toggle.addEventListener('click', () => setOpen(!nav.classList.contains('is-open')));
+    nav.querySelectorAll('[data-nav-close], a').forEach((item) => {
       item.addEventListener('click', () => setOpen(false));
     });
 
-    document.addEventListener('click', (event) => {
-      if (event.target instanceof Node && !menu.contains(event.target)) setOpen(false);
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !nav.classList.contains('is-open')) return;
+      setOpen(false);
+      toggle.focus();
     });
 
-    document.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape' || !menu.classList.contains('is-open')) return;
-      setOpen(false);
-      menuToggle.focus();
+    const desktop = window.matchMedia('(min-width: 761px)');
+    desktop.addEventListener('change', (event) => {
+      if (event.matches) setOpen(false);
     });
   });
 </script>
