@@ -69,28 +69,25 @@ class Router {
 
   // POLYMORPHISM: dispatch calls handler.handle()
   // without knowing which concrete handler it is.
-  dispatch(method, url) {
-    const parsed = new URL(url, "http://localhost");
+dispatch(method, url) {
+try {
+const parsed = new URL(url, "http://localhost");
+for (const [key, handler] of this.routes) {
+const [routeMethod, pattern] = key.split(" ");
+if (routeMethod !== method) continue;
+const params = this.match(pattern, parsed.pathname);
+if (params !== null) {
+const query = Object.fromEntries(parsed.searchParams);
+return handler.handle(
+new Request(method, parsed.pathname, params, query),
+);
+}
+// catch-all fallback
+return new Response(404, "route not found");
+} catch (error) {
+return new Response(400, "bad request");
+}
 
-    for (const [key, handler] of this.routes) {
-      const [routeMethod, pattern] = key.split(" ");
-
-      if (routeMethod !== method) continue;
-
-      const params = this.match(pattern, parsed.pathname);
-
-      if (params !== null) {
-        const query = Object.fromEntries(parsed.searchParams);
-
-        return handler.handle(
-          new Request(method, parsed.pathname, params, query),
-        );
-      }
-    }
-
-    // catch-all fallback
-    return new Response(404, "route not found");
-  }
 
   // match compares "/users/:id" against "/users/123",
   // filling params.
