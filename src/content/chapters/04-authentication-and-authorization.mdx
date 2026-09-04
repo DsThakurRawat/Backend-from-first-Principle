@@ -227,6 +227,58 @@ def login():
     return resp
 ```
 
+JavaScript
+
+```js
+import crypto from "crypto";
+import Redis from "ioredis";
+import bcrypt from "bcrypt";
+
+const rdb = new Redis("redis://localhost:6379");
+
+const TTL = 15 * 60; // 15 minutes
+
+// Hash once at signup; store hash, never the password.
+async function hashPassword(pw) {
+  return bcrypt.hash(pw, 10); // bcrypt default cost equivalent
+}
+
+// bcrypt.compare is designed for secure password verification.
+async function checkPassword(hash, pw) {
+  return bcrypt.compare(pw, hash);
+}
+
+// Generate a cryptographically random session ID.
+function newSessionId() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+async function login(res, user) {
+if (!user || typeof user !== 'object') {
+throw new Error('Invalid user object');
+}
+const sid = newSessionId();
+const data = JSON.stringify(user);
+try {
+await rdb.set(
+`sess:${sid}`,
+data,
+"EX",
+TTL
+);
+res.cookie("sid", sid, {
+httpOnly: true,
+secure: true,
+sameSite: "lax",
+path: "/",
+maxAge: TTL * 1000,
+});
+} catch (error) {
+throw new Error(`Failed to create session: ${error.message}`);
+}
+
+```
+
 ### Deep dive: how to actually store a password
 
 "Store the hash, not the password" is only half the rule. _Which_ hash, and what you mix into it, decides whether a leaked database is a minor incident or a catastrophe.
@@ -347,6 +399,52 @@ def verify_argon(encoded: str, pw: str) -> bool:
     if ph.check_needs_rehash(encoded):
         rehash_and_store(hash_argon(pw))
     return True
+```
+
+JavaScript
+
+```js 
+import crypto from "crypto";
+import argon2 from "argon2";
+
+const PEPPER = process.env.PASSWORD_PEPPER;
+if (!PEPPER) {
+throw new Error('PASSWORD_PEPPER environment variable is required');
+}
+
+
+// Argon2id configuration
+const ARGON2_OPTIONS = {
+    type: argon2.argon2id,
+    timeCost: 3,            // iterations
+    memoryCost: 64 * 1024,  // 64 MB
+    parallelism: 4,         // threads
+    hashLength: 32,         // 32-byte output
+    saltLength: 16,         // 16-byte random salt
+};
+
+// Add a server-side secret pepper.
+// The pepper must NOT be stored in the database.
+function pepperPassword(password) {
+    return crypto
+        .createHmac("sha256", PEPPER)
+        .update(password, "utf8")
+        .digest();
+}
+
+// Argon2 automatically generates and embeds the random salt and parameters.
+async function hashArgon(password) {
+    return argon2.hash(pepperPassword(password), ARGON2_OPTIONS);
+}
+
+// Argon2 extracts the salt and parameters from the encoded hash.
+async function verifyArgon(encoded, password) {
+    try {
+        return await argon2.verify(encoded, pepperPassword(password));
+    } catch {
+        return false;
+    }
+}
 ```
 
 ## 05 JSON Web Tokens (JWT)
@@ -470,6 +568,49 @@ def is_revoked(rdb, jti_or_token: str) -> bool:
     return rdb.sismember("jwt:blacklist", jti_or_token)
 ```
 
+JavaScript
+
+```js
+import jwt from "jsonwebtoken";
+import Redis from "ioredis";
+
+const SECRET = process.env.JWT_SECRET || "keep-this-very-secret";
+const rdb = new Redis("redis://localhost:6379");
+
+// Mint a self-contained token carrying the claims.
+function sign(userId, role) {
+  return jwt.sign(
+    {
+      sub: userId,                    // user id
+      role: role,                     // for authorization
+    },
+    SECRET,
+    {
+      algorithm: "HS256",             // pin signing algorithm
+      expiresIn: "1h",                // token expiry
+      // iat is added automatically
+    }
+  );
+}
+
+// Verify signature + expiry; returns the claims if valid.
+function verify(token) {
+  try {
+    // algorithms is a whitelist -> stops "alg: none" attacks.
+    return jwt.verify(token, SECRET, {
+      algorithms: ["HS256"],
+    });
+  } catch {
+    return null;
+  }
+}
+
+// Hybrid: after verify(), also check a revocation blacklist.
+async function isRevoked(jtiOrToken) {
+  return (await rdb.sismember("jwt:blacklist", jtiOrToken)) === 1;
+}
+```
+
 ### Deep dive: signing, attacks, and refresh tokens
 
 #### HS256 vs RS256: symmetric vs asymmetric signing
@@ -560,6 +701,71 @@ def refresh(rdb, presented: str) -> str:
     new_refresh = secrets.token_hex(32)
     rdb.setex(f"rt:{new_refresh}", 14 * 24 * 3600, family)
     return new_refresh
+```
+
+JavaScript
+
+```js
+import jwt from "jsonwebtoken";
+import crypto from "crypto";
+
+// Verify with a PUBLIC key, pinning RS256.
+// This blocks alg:none and key-confusion attacks.
+function verifyRS256(token, publicKey) {
+  return jwt.verify(token, publicKey, {
+    algorithms: ["RS256"], // whitelist only RS256
+  });
+}
+
+// Generate a cryptographically random refresh token.
+function newRefreshToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+// Rotate a refresh token; detect reuse of an already-spent one.
+async function refresh(rdb, presented) {
+  const liveKey = `rt:${presented}`;
+
+  const family = await rdb.get(liveKey);
+
+  if (family === null) {
+    // Not a live token. Was it previously spent? -> possible theft.
+    const spentFamily = await rdb.get(`spent:${presented}`);
+
+    if (spentFamily !== null) {
+      // Reuse detected -> revoke the whole token family.
+      await rdb.del(`family:${spentFamily}`);
+
+      throw new Error("refresh reuse detected");
+    }
+
+    throw new Error("invalid refresh token");
+  }
+
+  // Consume the current live refresh token.
+  await rdb.del(liveKey);
+
+  // Remember the spent token for 14 days.
+  await rdb.set(
+    `spent:${presented}`,
+    family,
+    "EX",
+    14 * 24 * 60 * 60
+  );
+
+  // Generate a new refresh token in the same family.
+  const newRefresh = newRefreshToken();
+
+  // Store the new refresh token for 14 days.
+  await rdb.set(
+    `rt:${newRefresh}`,
+    family,
+    "EX",
+    14 * 24 * 60 * 60
+  );
+
+  return newRefresh;
+}
 ```
 
 ## 06 Cookies
@@ -656,6 +862,63 @@ def regenerate_session(old_sid: str) -> str:
     return new_sid
 ```
 
+JavaScript
+
+```js
+import crypto from "crypto";
+
+// Double-submit: compare the CSRF cookie against the header.
+function checkCSRF(handler) {
+  return async (req, res, next) => {
+    if (req.method === "GET" || req.method === "HEAD") {
+      return handler(req, res, next);
+    }
+
+    const cookie = req.cookies?.csrf || "";
+    const header = req.get("X-CSRF-Token") || "";
+
+    if (
+      !cookie ||
+      !header ||
+      cookie.length !== header.length ||
+      !crypto.timingSafeEqual(
+        Buffer.from(cookie),
+        Buffer.from(header)
+      )
+    ) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
+    return handler(req, res, next);
+  };
+}
+
+// Regenerate the session ID right after a successful login.
+async function regenerateSession(rdb, oldSID) {
+  const raw = await rdb.get(`sess:${oldSID}`);
+
+  if (raw === null) {
+    throw new Error("session not found");
+  }
+
+  // Kill the pre-login session ID.
+  await rdb.del(`sess:${oldSID}`);
+
+  // Generate a brand-new session ID.
+  const newSID = crypto.randomBytes(32).toString("hex");
+
+  // Store the session under the new ID for 15 minutes.
+  await rdb.set(
+    `sess:${newSID}`,
+    raw,
+    "EX",
+    15 * 60
+  );
+
+  return newSID;
+}
+```
+
 Part III / Types of Authentication
 
 ## 07 Stateful Authentication
@@ -720,6 +983,56 @@ def notes():
     return jsonify(owner=g.user["id"])
 ```
 
+JavaScript
+
+```js
+import express from "express";
+
+const app = express();
+
+// RequireSession reads the sid cookie and looks it up in Redis.
+function requireSession(rdb) {
+  return async (req, res, next) => {
+    const sid = req.cookies?.sid;
+
+    if (!sid) {
+      return res
+        .status(401)
+        .json({ error: "authentication failed" });
+    }
+
+    // None if the session is missing or expired.
+    const raw = await rdb.get(`sess:${sid}`);
+
+    if (raw === null) {
+      return res
+        .status(401)
+        .json({ error: "authentication failed" });
+    }
+
+    try {
+      // Attach the user to the request for later handlers.
+      req.user = JSON.parse(raw);
+      next();
+    } catch {
+      return res
+        .status(401)
+        .json({ error: "authentication failed" });
+    }
+  };
+}
+
+app.get(
+  "/notes",
+  requireSession(rdb),
+  (req, res) => {
+    res.json({
+      owner: req.user.id,
+    });
+  }
+);
+```
+
 ## 08 Stateless Authentication
 
 The client sends email/username and password on the login request. The server checks authenticity; if correct, it generates a **signed JWT** using its own **secret key** (stored securely so it can both sign and verify). The token embeds the user's info, user ID, role, etc., and is returned to the client. On all later requests, the client identifies itself by sending the JWT, by convention in the `Authorization` header. The server extracts the token, verifies it with the secret, recovers the user ID, and on success completes the request; otherwise it returns **401 Unauthorized** or **403 Forbidden**.
@@ -775,6 +1088,42 @@ def require_jwt(view):
         g.user = {"id": claims["sub"], "role": claims["role"]}
         return view(*args, **kwargs)
     return wrapper
+```
+
+JavaScript
+
+```js
+import jwt from "jsonwebtoken";
+
+// Require a valid JWT from the Authorization header.
+function requireJWT(verify) {
+  return (req, res, next) => {
+    const h = req.get("Authorization") || "";
+
+    if (!h.startsWith("Bearer ")) {
+      return res
+        .status(401)
+        .json({ error: "authentication failed" });
+    }
+
+    try {
+      // Verify signature + expiry.
+      const claims = verify(h.slice(7));
+
+      // No store lookup; identity comes from the verified token.
+      req.user = {
+        id: claims.sub,
+        role: claims.role,
+      };
+
+      next();
+    } catch {
+      return res
+        .status(401)
+        .json({ error: "authentication failed" });
+    }
+  };
+}
 ```
 
 ## 09 Stateful vs Stateless: Choosing
@@ -873,6 +1222,56 @@ def require_api_key(view):
         g.client = client
         return view(*args, **kwargs)
     return wrapper
+```
+
+JavaScript
+
+```js
+import crypto from "crypto";
+
+// Store only the HASH of issued keys (like passwords).
+// On each call, hash the presented key and constant-time compare.
+function hashKey(key) {
+  return crypto
+    .createHash("sha256")
+    .update(key, "utf8")
+    .digest("hex");
+}
+
+function requireAPIKey(lookupClient) {
+  return async (req, res, next) => {
+    const key = req.get("X-API-Key") || "";
+
+    const keyHash = hashKey(key);
+    const client = await lookupClient(keyHash);
+
+    if (!client) {
+      return res
+        .status(401)
+        .json({ error: "authentication failed" });
+    }
+
+    // Constant-time comparison avoids timing leaks.
+    const storedHash = client.keyHash;
+
+    const a = Buffer.from(keyHash);
+    const b = Buffer.from(storedHash);
+
+    if (
+      a.length !== b.length ||
+      !crypto.timingSafeEqual(a, b)
+    ) {
+      return res
+        .status(401)
+        .json({ error: "authentication failed" });
+    }
+
+    // Check scopes, quota, expiry here.
+    req.client = client;
+
+    next();
+  };
+}
 ```
 
 Part IV / OAuth & OpenID Connect
@@ -1049,6 +1448,65 @@ def exchange(code: str, verifier: str) -> dict:
     return resp.json()   # access_token, refresh_token, id_token, ...
 ```
 
+JavaScript
+
+```js
+import crypto from "crypto";
+
+// Build the PKCE pair before redirecting the user.
+function newPKCE() {
+  const verifier = crypto
+    .randomBytes(32)
+    .toString("base64url");
+
+  const digest = crypto
+    .createHash("sha256")
+    .update(verifier)
+    .digest();
+
+  const challenge = digest.toString("base64url");
+
+  return { verifier, challenge };
+}
+
+// Leg 2: exchange the code.
+// Send code_verifier, not the secret.
+async function exchange(code, verifier) {
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+async function exchange(code, verifier, redirectUri = process.env.OAUTH_REDIRECT_URI) {
+if (!redirectUri) {
+throw new Error('OAUTH_REDIRECT_URI is required');
+}
+const body = new URLSearchParams({
+grant_type: "authorization_code",
+code,
+redirect_uri: redirectUri,
+client_id: "note_app",
+code_verifier: verifier,
+});
+
+    client_id: "note_app",
+    code_verifier: verifier,
+  });
+
+  const resp = await fetch("https://auth.example/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Token exchange failed: ${resp.status}`);
+  }
+
+  return resp.json(); // access_token, refresh_token, id_token, ...
+}
+```
+
 <Callout type="info" title="The gap OAuth left open">
 OAuth is excellent for **authorization** (delegating _what_ a client may do) but it did **not** solve **authentication** (proving _who_ the user is). Recall: authentication = identity (who are you, your name, your ID); authorization = permissions (what can you do). OAuth solved the latter via delegation, but not the former. That gap is what OpenID Connect fills.
 </Callout>
@@ -1165,6 +1623,39 @@ def dead_zone():
     return jsonify(notes=[...])
 ```
 
+JavaScript
+
+```js
+import express from "express";
+
+// RequireRole runs AFTER an auth middleware that set req.user.
+function requireRole(...roles) {
+  const allowed = new Set(roles);
+
+  return (req, res, next) => {
+    if (!req.user || !allowed.has(req.user.role)) {
+      return res
+        .status(403)
+        .json({ error: "forbidden" }); // 403
+    }
+
+    next();
+  };
+}
+
+// Usage: only admins reach the dead-zone handler.
+app.get(
+  "/admin/deadzone",
+  requireJWT(verify),
+  requireRole("admin"),
+  (req, res) => {
+    res.json({
+      notes: [...],
+    });
+  }
+);
+```
+
 ### Deep dive: role hierarchy, ABAC, and beyond
 
 #### Where plain RBAC strains: role explosion
@@ -1237,6 +1728,50 @@ def can_edit(s: Subject, r: Resource, hour: int) -> bool:
 # usage inside a view, after auth populated the subject:
 # if not can_edit(subj, doc, datetime.now().hour):
 #     return jsonify(error="forbidden"), 403
+```
+
+JavaScript
+
+```js
+class Subject {
+  constructor(id, dept, role) {
+    this.id = id;
+    this.dept = dept;
+    this.role = role;
+  }
+}
+
+class Resource {
+  constructor(ownerId, dept, archived) {
+    this.ownerId = ownerId;
+    this.dept = dept;
+    this.archived = archived;
+  }
+}
+
+// Policy: can `s` perform the action on `r`, given the environment?
+function canEdit(s, r, hour) {
+  if (r.archived) {
+    return false;
+  }
+
+  const owns = s.id === r.ownerId;
+  const sameDept = s.dept === r.dept;
+  const businessHours = hour >= 9 && hour < 18;
+
+  // Owner OR same-department editor, only in business hours.
+  return (
+    (owns || (sameDept && s.role === "editor")) &&
+    businessHours
+  );
+}
+
+// Usage inside a handler, after auth has populated the subject:
+if (!canEdit(subj, doc, new Date().getHours())) {
+  return res
+    .status(403)
+    .json({ error: "forbidden" });
+}
 ```
 
 ## 17 Error Messages & Timing Attacks
@@ -1325,6 +1860,53 @@ def authenticate(email: str, pw: str):
             time.sleep(FLOOR - elapsed)
 ```
 
+JavaScript
+
+```js
+import bcrypt from "bcrypt";
+
+// Dummy hash used when the user does not exist.
+// Generate this once with the same bcrypt cost as real passwords.
+const DUMMY_HASH = "$2b$12$abcdefghijklmnopqrstuv0000000000000000000000000000000000";
+
+const FLOOR = 250; // milliseconds, equalize every path
+
+async function authenticate(email, pw) {
+  const start = performance.now();
+
+  try {
+    const user = await lookupByEmail(email);
+
+    if (!user) {
+      // Run a dummy hash so the missing-user path
+      // still pays the password verification cost.
+      await bcrypt.compare(pw, DUMMY_HASH);
+
+      return [null, "authentication failed"];
+    }
+
+    // bcrypt.compare performs secure password verification.
+    const valid = await bcrypt.compare(pw, user.hash);
+
+    if (!valid) {
+      return [null, "authentication failed"];
+    }
+
+    // Success: issue session / JWT.
+    return [user, null];
+  } finally {
+    // Pad so all outcomes take approximately the same time.
+    const elapsed = performance.now() - start;
+
+    if (elapsed < FLOOR) {
+      await new Promise(resolve =>
+        setTimeout(resolve, FLOOR - elapsed)
+      );
+    }
+  }
+}
+```
+
 ## 18 Debug Cheat-Sheet
 
 The whole manual, compressed to what you reach for under pressure.
@@ -1348,4 +1930,4 @@ The whole manual, compressed to what you reach for under pressure.
 | Timing         | Constant-time compare + equalize response time.                                      |
 | Production tip | Roll your own to learn; use an auth provider to ship.                                |
 
-Backend from First Principles / Chapter 04 / Auth. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 04 / Auth. Code targets Go 1.22+, Python 3.11+ and Node js 20+.

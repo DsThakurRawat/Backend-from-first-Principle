@@ -218,6 +218,7 @@ The `*` wildcard matches anything, which is exactly why the catch-all must be re
 
 11
 
+
 ## A Router in Go
 
 A router is, at bottom, a small object-oriented dispatch problem: a table from "method + route" to a handler. Go expresses the four OOP pillars through interfaces (abstraction + polymorphism), unexported fields (encapsulation), and struct embedding (composition, Go's form of inheritance). The comments tagged OOP point out each one.
@@ -409,11 +410,152 @@ if __name__ == "__main__":
     print(r.dispatch("GET", "/api/books?page=2").body) # books page 2
 ```
 
-<Callout type="info" title="Same architecture, two languages">
-Go reaches it through interfaces + embedding; Python through ABCs + class inheritance. Both are a private dispatch table keyed on **method + route**, an abstract **handler** contract, polymorphic dispatch, and a catch-all fallback, the whole routing model from this manual, in code.
+13
+
+## A Router in JavaScript
+
+A router is, at bottom, a small object-oriented dispatch problem: a table from “method + route” to a handler. JavaScript expresses the OOP pillars through classes (abstraction), class inheritance (inheritance), method overriding (polymorphism), and object properties (encapsulation). The comments tagged OOP point out each one.
+
+```js title="Node.js 20+router.js"
+const http = require("http");
+const { URL } = require("url");
+
+// ABSTRACTION: Handler defines the common handler contract.
+// Concrete handlers implement handle().
+class Handler {
+  handle(req) {
+    throw new Error("handle() must be implemented");
+  }
+}
+
+class Request {
+  constructor(method, path, params = {}, query = {}) {
+    this.method = method;
+    this.path = path;
+    this.params = params; // extracted path params (:id)
+    this.query = query; // query params (?page=2)
+  }
+}
+
+class Response {
+  constructor(status, body) {
+    this.status = status;
+    this.body = body;
+  }
+}
+
+// INHERITANCE: BaseHandler contains shared behaviour.
+class BaseHandler extends Handler {
+  constructor(name) {
+    super();
+    this.name = name;
+  }
+
+  log(req) {
+    console.log(`[${this.name}] ${req.method} ${req.path}`);
+  }
+}
+
+// POLYMORPHISM: GetUser overrides handle() differently.
+class GetUser extends BaseHandler {
+  handle(req) {
+    this.log(req);
+    return new Response(200, `user id = ${req.params.id}`);
+  }
+}
+
+class ListBooks extends BaseHandler {
+  handle(req) {
+    this.log(req);
+    const page = req.query.page || "1";
+    return new Response(200, `books page ${page}`);
+  }
+}
+
+// ENCAPSULATION: routes stores the dispatch table.
+// Public surface is register() and dispatch().
+class Router {
+  constructor() {
+    this.routes = new Map();
+  }
+
+  // Register binds method + route -> handler.
+  register(method, pattern, handler) {
+    this.routes.set(`${method} ${pattern}`, handler);
+  }
+
+  // POLYMORPHISM: dispatch calls handler.handle()
+  // without knowing which concrete handler it is.
+  dispatch(method, url) {
+    const parsed = new URL(url, "http://localhost");
+
+    for (const [key, handler] of this.routes) {
+      const [routeMethod, pattern] = key.split(" ");
+
+      if (routeMethod !== method) continue;
+
+      const params = this.match(pattern, parsed.pathname);
+
+      if (params !== null) {
+        const query = Object.fromEntries(parsed.searchParams);
+
+        return handler.handle(
+          new Request(method, parsed.pathname, params, query),
+        );
+      }
+    }
+    // catch-all fallback
+    return new Response(404, "route not found");
+  }
+
+  // match compares "/users/:id" against "/users/123",
+  // filling params.
+  match(pattern, path) {
+    const p = pattern.split("/").filter(Boolean);
+    const q = path.split("/").filter(Boolean);
+
+    if (p.length !== q.length) return null;
+
+    const params = {};
+
+    for (let i = 0; i < p.length; i++) {
+      if (p[i].startsWith(":")) {
+        params[p[i].slice(1)] = q[i];
+      } else if (p[i] !== q[i]) {
+        return null;
+      }
+    }
+    return params;
+  }
+}
+
+// MAIN
+const r = new Router();
+
+r.register("GET", "/api/users/:id", new GetUser("users"));
+
+r.register("GET", "/api/books", new ListBooks("books"));
+
+// HTTP SERVER
+const server = http.createServer((req, res) => {
+  const response = r.dispatch(req.method, req.url);
+
+  res.writeHead(response.status, {
+    "Content-Type": "text/plain",
+  });
+
+  res.end(response.body);
+});
+
+server.listen(3000, () => {
+  console.log("Server running on http://localhost:3000");
+});
+```
+<Callout type="info" title="Same architecture, three languages">
+Go reaches it through interfaces + embedding; Python through ABCs + class inheritance; Node.js through classes + inheritance. All three use an encapsulated dispatch table keyed by **method + route**, an abstract **handler** contract, polymorphic dispatch, and a catch-all fallback—the complete routing model from this manual.
 </Callout>
 
-13
+14
 
 ## Routing Glossary
 
@@ -443,4 +585,4 @@ Every routing term used above, in one place.
 A request bundles a **method** (the what) and a **route** (the where). The server joins them into a unique key, matches it against its table, static routes first, dynamic next, catch-all last, extracts any **path params** from the route and **query params** from the query string, then calls the matched **handler**. Version the route to evolve, deprecate to retire, and catch-all to fail gracefully.
 </Callout>
 
-Backend from First Principles / Chapter 02 / Routing. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 02 / Routing. Code targets Go 1.22+, Python 3.11+ and Node js 20+.
