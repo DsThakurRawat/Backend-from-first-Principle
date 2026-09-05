@@ -2,7 +2,7 @@
 order: 2
 title: "Routing, the where of every request."
 navTitle: "Routing in Backend"
-summary: "HTTP methods describe the what of a request, your intent. Routing describes the where : which resource on the server your intent is aimed at. This manual covers routing end to end, static and dynamic routes, path and query parameters, nesting, versioning, and catch-alls, with worked routers in Go and Python."
+summary: "HTTP methods describe the what of a request, your intent. Routing describes the where : which resource on the server your intent is aimed at. This manual covers routing end to end, static and dynamic routes, path and query parameters, nesting, versioning, and catch-alls, with worked routers in Go, Python and JavaScript."
 readingTime: "2-3 hours"
 keywords:
   - "routing"
@@ -409,11 +409,125 @@ if __name__ == "__main__":
     print(r.dispatch("GET", "/api/books?page=2").body) # books page 2
 ```
 
-<Callout type="info" title="Same architecture, two languages">
-Go reaches it through interfaces + embedding; Python through ABCs + class inheritance. Both are a private dispatch table keyed on **method + route**, an abstract **handler** contract, polymorphic dispatch, and a catch-all fallback, the whole routing model from this manual, in code.
+13
+
+## A Router in JavaScript
+
+The same architecture once more, this time with no `interface` keyword to lean on: the contract is a base class whose `handle()` throws until a subclass overrides it (abstraction + polymorphism), `extends` gives real inheritance, and a `#` field is private at runtime rather than by convention (encapsulation).
+
+```js title="Node 20+ router.js"
+// ABSTRACTION: JavaScript has no `interface` keyword, so the contract is a
+// base class whose handle() refuses to run. Anything that extends Handler
+// and overrides handle() IS-A Handler. The router depends only on that
+// contract, never on a concrete type.
+class Handler {
+  handle(req) {
+    throw new Error("handle() must be implemented");
+  }
+}
+
+class Request {
+  constructor(method, path, params = {}, query = {}) {
+    this.method = method;
+    this.path = path;
+    this.params = params; // extracted path params (:id)
+    this.query = query;   // query params (?page=2)
+  }
+}
+
+class Response {
+  constructor(status, body) {
+    this.status = status;
+    this.body = body;
+  }
+}
+
+// INHERITANCE: BaseHandler is a concrete parent holding shared behaviour
+// (logging). Subclasses inherit and reuse log().
+class BaseHandler extends Handler {
+  #name; // ENCAPSULATION: a # field is truly private, not a convention
+
+  constructor(name) {
+    super();
+    this.#name = name;
+  }
+
+  log(req) {
+    console.log(`[${this.#name}] ${req.method} ${req.path}`);
+  }
+}
+
+// POLYMORPHISM: each subclass OVERRIDES handle() differently, yet the
+// router calls them all identically, handler.handle(req).
+class GetUser extends BaseHandler {   // IS-A BaseHandler IS-A Handler
+  handle(req) {
+    this.log(req);                    // inherited from the parent
+    return new Response(200, `user id = ${req.params.id}`);
+  }
+}
+
+class ListBooks extends BaseHandler {
+  handle(req) {
+    this.log(req);
+    const page = req.query.page ?? "1"; // query param drives pagination
+    return new Response(200, `books page ${page}`);
+  }
+}
+
+// ENCAPSULATION: #routes is unreachable from outside the class, so the
+// table stays hidden. The public surface is register() and dispatch().
+class Router {
+  #routes = new Map(); // key = "METHOD /route"
+
+  register(method, pattern, handler) {
+    this.#routes.set(`${method} ${pattern}`, handler); // method + path = the key
+  }
+
+  dispatch(method, url) {
+    const { pathname, searchParams } = new URL(url, "http://localhost");
+    const query = Object.fromEntries(searchParams.entries()); // ?a=1&b=2 -> object
+
+    for (const [key, handler] of this.#routes) {
+      const [m, pattern] = key.split(" ");
+      const params = Router.#match(pattern, pathname);
+      if (m === method && params !== null) {
+        // polymorphic dispatch: the router never asks which class this is
+        return handler.handle(new Request(method, pathname, params, query));
+      }
+    }
+    return new Response(404, "route not found"); // catch-all fallback
+  }
+
+  // #match compares "/users/:id" against "/users/123", returning the params.
+  static #match(pattern, path) {
+    const p = pattern.replace(/^\/|\/$/g, "").split("/");
+    const q = path.replace(/^\/|\/$/g, "").split("/");
+    if (p.length !== q.length) return null;
+
+    const params = {};
+    for (const [i, seg] of p.entries()) {
+      if (seg.startsWith(":")) {   // dynamic segment
+        params[seg.slice(1)] = q[i]; // bind :id -> "123"
+      } else if (seg !== q[i]) {   // static segment must match exactly
+        return null;
+      }
+    }
+    return params;
+  }
+}
+
+const r = new Router();
+r.register("GET", "/api/users/:id", new GetUser("users"));
+r.register("GET", "/api/books",     new ListBooks("books"));
+
+console.log(r.dispatch("GET", "/api/users/123").body);    // user id = 123
+console.log(r.dispatch("GET", "/api/books?page=2").body); // books page 2
+```
+<Callout type="info" title="Same architecture, three languages">
+Go reaches it through interfaces + embedding; Python through ABCs + class inheritance; JavaScript through a base class whose method throws and `#private` fields. All three are a private dispatch table keyed on **method + route**, an abstract **handler** contract, polymorphic dispatch, and a catch-all fallback, the whole routing model from this manual, in code.
 </Callout>
 
-13
+14
 
 ## Routing Glossary
 
@@ -443,4 +557,4 @@ Every routing term used above, in one place.
 A request bundles a **method** (the what) and a **route** (the where). The server joins them into a unique key, matches it against its table, static routes first, dynamic next, catch-all last, extracts any **path params** from the route and **query params** from the query string, then calls the matched **handler**. Version the route to evolve, deprecate to retire, and catch-all to fail gracefully.
 </Callout>
 
-Backend from First Principles / Chapter 02 / Routing. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 02 / Routing. Code targets Go 1.22+, Python 3.11+ and Node.js 20+.
