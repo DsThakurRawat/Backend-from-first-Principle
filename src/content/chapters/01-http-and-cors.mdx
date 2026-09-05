@@ -2,7 +2,7 @@
 order: 1
 title: "HTTP & CORS"
 navTitle: "HTTP & CORS"
-summary: "A first-principles walkthrough of the application-layer protocol every backend touches, from statelessness and method semantics to caching, conditional requests, proxies, and TLS. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in Go, Python and JavaScript, grounded in MDN and RFC 9110."
+summary: "A first-principles walkthrough of the application-layer protocol every backend touches, from statelessness and method semantics to caching, conditional requests, proxies, and TLS. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in Go, Python, JavaScript and Java, grounded in MDN and RFC 9110."
 readingTime: "3-4 hours"
 keywords:
   - "http"
@@ -16,6 +16,8 @@ keywords:
   - "preflight"
   - "request"
   - "response"
+  - "java"
+  - "spring boot"
 ---
 Part I / Foundations
 
@@ -161,7 +163,7 @@ Headers go on the wire **before** the status line and body, the receiver reads t
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 package main
@@ -237,6 +239,30 @@ app.post('/api/v1/notes', (req, res) => {
 app.listen(8080)
 ```
 
+```java
+@RestController
+@RequestMapping("/api/v1/notes")
+class NoteController {
+
+    record Note(Integer id, String title, boolean done) {}
+
+    // @RequestBody parses + validates the JSON; a malformed body -> 400 automatically.
+    @PostMapping
+    ResponseEntity<Note> createNote(@RequestBody Note in) {
+        Note saved = new Note(42, in.title(), in.done());
+        return ResponseEntity
+                .status(HttpStatus.CREATED)                  // 1. status
+                .contentType(MediaType.APPLICATION_JSON)     // 2. headers
+                .body(saved);                                // 3. body LAST
+    }
+}
+
+// ResponseEntity is a builder: nothing reaches the socket until the handler
+// returns, so the ordering rule cannot be violated by accident here. Write to
+// HttpServletResponse directly and it can -- once response.getWriter() has
+// flushed, a later setHeader() is silently dropped, exactly as in Go.
+```
+
 ## Why Headers Exist
 
 Headers are **key-value pairs of metadata** attached to a request or response, sitting between the start line and the body. The natural question is: why a separate section at all? Why not put this information in the URL, or inside the body?
@@ -283,7 +309,7 @@ Because these should apply to _every_ response, you set them once in middleware 
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 func securityHeaders(next http.Handler) http.Handler {
@@ -325,6 +351,24 @@ function securityHeaders(req, res, next) {
 
 app.use(securityHeaders)
 // In production `helmet()` sets these, and more, for you.
+```
+
+```java
+@Component
+class SecurityHeaders extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
+                                    FilterChain chain) throws ServletException, IOException {
+        res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+        res.setHeader("Content-Security-Policy", "default-src 'self'");
+        res.setHeader("X-Frame-Options", "DENY");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        chain.doFilter(req, res); // headers MUST be set before this call (see sec 3)
+    }
+}
+// A filter registered as a @Component wraps every request, the same single
+// chokepoint as Go's middleware. Spring Security sets most of these for you.
 ```
 
 Part II / Methods & Semantics
@@ -442,7 +486,7 @@ TRACE asks the server to echo the request it received, so the client can see exa
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 mux := http.NewServeMux()
@@ -513,6 +557,40 @@ function getNote(req, res) {
 }
 ```
 
+```java
+@RestController
+@RequestMapping("/notes")
+class NoteController {
+
+    // Spring matches method + path. An unmatched method auto-returns
+    // 405 Method Not Allowed with a correct Allow header.
+
+    @GetMapping                               // safe, cacheable read (list)
+    List<Note> listNotes(@RequestParam(required = false) Boolean done,
+                         @RequestParam(defaultValue = "20") int limit) { /* ... */ }
+
+    @GetMapping("/{id}")                      // GET also serves HEAD automatically
+    Note getNote(@PathVariable String id) {   // built-in path params
+        return db.find(id)
+                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "not found"));
+    }                                         // 404 on miss, 200 otherwise
+
+    @PostMapping                              // create (server assigns id)
+    @ResponseStatus(HttpStatus.CREATED)
+    Note createNote(@RequestBody Note note) { /* ... */ }
+
+    @PutMapping("/{id}")                      // full replace (idempotent)
+    Note putNote(@PathVariable String id, @RequestBody Note note) { /* ... */ }
+
+    @PatchMapping("/{id}")                    // partial update
+    Note patchNote(@PathVariable String id, @RequestBody Map<String, Object> patch) { /* ... */ }
+
+    @DeleteMapping("/{id}")                   // remove (idempotent)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deleteNote(@PathVariable String id) { /* ... */ }
+}
+```
+
 ## Idempotency in Practice
 
 Idempotency is the property that makes a request **safe to retry**: and retries are not optional in a distributed system, they're inevitable. Networks drop packets, a client times out without knowing whether the request reached the server, a user impatiently double-clicks, a mobile app re-sends when the radio reconnects. GET, PUT, and DELETE are idempotent by design, so retrying them is harmless. POST is not, which is the root cause of duplicate-record and double-charge bugs.
@@ -557,7 +635,7 @@ Server sees the key already exists -> returns the stored result. **No second cha
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 var seen sync.Map // key -> []byte result. Use Redis with a TTL in production.
@@ -609,6 +687,32 @@ app.post('/payments', async (req, res) => {
   seen.set(key, result)                    // remember it BEFORE responding
   res.status(201).json(result)
 })
+```
+
+```java
+// key -> stored result. Use Redis with a TTL in production.
+private final Map<String, PaymentResult> seen = new ConcurrentHashMap<>();
+
+@PostMapping("/payments")
+ResponseEntity<PaymentResult> createPayment(
+        @RequestBody PaymentRequest body,
+        @RequestHeader(name = "Idempotency-Key", required = false) String key) {
+
+    if (key == null || key.isBlank()) {
+        throw new ResponseStatusException(BAD_REQUEST, "missing Idempotency-Key");
+    }
+    PaymentResult cached = seen.get(key);
+    if (cached != null) {                       // replay: return the stored result
+        return ResponseEntity.ok(cached);
+    }
+    PaymentResult result = charge(body);        // the real, non-idempotent work
+    seen.put(key, result);                      // remember it BEFORE responding
+    return ResponseEntity.status(CREATED).body(result);
+}
+
+// computeIfAbsent() would also collapse two concurrent requests carrying the
+// same key onto one charge -- worth doing, since a double-click is exactly the
+// case this defends against.
 ```
 
 Idempotency keys protect against _duplicate execution_. A different but related hazard, two clients overwriting each other's edits (the "lost update"), needs a complementary tool: optimistic concurrency with `If-Match` and ETags, covered in sec 13.
@@ -670,7 +774,7 @@ On the protocol side, the `WWW-Authenticate` response header (paired with a 401)
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 // Set a secure session cookie after login (stateful)
@@ -764,6 +868,42 @@ function requireToken(req, res, next) {
 app.get('/me', requireToken, (req, res) => res.json({ ok: true }))
 ```
 
+```java
+// Set a secure session cookie after login (stateful)
+@PostMapping("/login")
+ResponseEntity<Void> login() {
+    String sid = newSessionId();
+    sessions.put(sid, userId);                   // server-side session store (use Redis)
+    ResponseCookie cookie = ResponseCookie.from("session", sid)
+            .httpOnly(true)                      // JS can't read it
+            .secure(true)                        // HTTPS only
+            .sameSite("Strict")                  // CSRF defense
+            .maxAge(Duration.ofHours(1))
+            .path("/")
+            .build();
+    return ResponseEntity.noContent()
+            .header(HttpHeaders.SET_COOKIE, cookie.toString())
+            .build();
+}
+
+// Bearer-token auth filter (stateless)
+@Component
+class RequireToken extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
+                                    FilterChain chain) throws ServletException, IOException {
+        String auth = Objects.requireNonNullElse(req.getHeader(HttpHeaders.AUTHORIZATION), "");
+        if (!auth.startsWith("Bearer ") || !validJwt(auth.substring(7))) {
+            res.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+            res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "unauthorized"); // 401
+            return;
+        }
+        chain.doFilter(req, res);
+    }
+}
+```
+
 ## CORS & the Preflight Workflow
 
 To understand CORS you first have to understand the rule it relaxes. Browsers enforce the **Same-Origin Policy**: JavaScript on a page from one origin may not read responses from a _different_ origin. An "origin" is the triple of **scheme + host + port**: `https://example.com` and `https://example.com:8443` and `http://example.com` are all different origins. This policy exists because browsers automatically attach your cookies to requests (sec 8); without it, a malicious site you visit could silently fire authenticated requests at your bank's API and read the responses. **CORS** (Cross-Origin Resource Sharing) is the controlled mechanism by which a server _opts in_ to letting specific other origins read its responses.
@@ -828,7 +968,7 @@ One extra wrinkle for **credentialed** requests (those carrying cookies): the se
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 func cors(next http.Handler) http.Handler {
@@ -873,6 +1013,28 @@ app.use(cors({
   credentials: true,
   maxAge: 86400,                   // cache the approval for 24h
 }))
+```
+
+```java
+@Configuration
+class CorsConfig implements WebMvcConfigurer {
+
+    // Spring answers the OPTIONS preflight and sets all the headers for you.
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/**")
+                .allowedOrigins("https://example.com")  // exact origin, not *, with credentials
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE")
+                .allowedHeaders("Content-Type", "Authorization")
+                .allowCredentials(true)
+                .maxAge(86400);                         // cache the approval for 24h
+    }
+}
+
+// allowedOriginPatterns("*") exists for convenience, but combined with
+// allowCredentials(true) Spring rejects it at startup -- the spec forbids
+// exactly that pairing, and the framework enforces it rather than letting you
+// ship an open, credentialed API.
 ```
 
 ### Common misconception: does CORS protect the server?
@@ -954,7 +1116,7 @@ A three-digit status code is a **standardized, machine-readable verdict** on a r
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 func getUser(w http.ResponseWriter, r *http.Request) {
@@ -1006,6 +1168,25 @@ app.get('/users/:id', (req, res) => {
 })
 ```
 
+```java
+@GetMapping("/users/{id}")
+User getUser(@PathVariable String id,
+             @RequestHeader(name = "Authorization", required = false) String auth,
+             Principal caller) {
+
+    if (auth == null || auth.isBlank()) {
+        throw new ResponseStatusException(UNAUTHORIZED, "login required"); // 401: who are you?
+    }
+    User user = db.find(id)
+            .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "no such user")); // 404
+
+    if (!user.visibleTo(caller)) {
+        throw new ResponseStatusException(FORBIDDEN, "forbidden");         // 403: not allowed
+    }
+    return user;                                                           // 200
+}
+```
+
 ## Redirections
 
 A redirect lets one resource live at more than one URL: the server responds with a `3xx` status and a `Location` header naming where to go, and the client (a browser following automatically, or your HTTP library) re-issues the request to that new URL. Redirects power URL migrations, canonical-URL enforcement, HTTP->HTTPS upgrades, and the Post/Redirect/Get pattern. The detail that trips up backends is **whether the original method and body survive the redirect**: because historically they often didn't.
@@ -1028,7 +1209,7 @@ Early clients, faced with a 301 or 302 on a POST, would silently re-issue it as 
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 // Permanent move that must keep the method/body -> 308
@@ -1069,6 +1250,29 @@ app.post('/submit', (req, res) => {
   const id = save(req.body)
   res.redirect(303, `/results/${id}`)  // 303 forces the follow-up to be a GET
 })
+```
+
+```java
+// Permanent move that must keep the method/body -> 308
+@RequestMapping("/user/{id}")
+ResponseEntity<Void> oldRoute(@PathVariable String id) {
+    return ResponseEntity.status(HttpStatus.PERMANENT_REDIRECT)  // 308
+            .location(URI.create("/person/" + id))
+            .build();
+}
+
+// Post/Redirect/Get -> 303 so a browser refresh won't re-POST the form
+@PostMapping("/submit")
+ResponseEntity<Void> submitForm(@RequestBody Form form) {
+    String id = save(form);
+    return ResponseEntity.status(HttpStatus.SEE_OTHER)           // 303 (forces GET)
+            .location(URI.create("/results/" + id))
+            .build();
+}
+
+// Beware the MVC shorthand "redirect:/person/" + id -- it sends 302, which is
+// the very status the 307/308 pair exists to replace. Spell the status out
+// whenever the method and body have to survive.
 ```
 
 ## HTTP Caching
@@ -1122,7 +1326,7 @@ ETags come in two flavors: a **strong** ETag (`"abc"`) guarantees byte-for-byte 
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 func getResource(w http.ResponseWriter, r *http.Request) {
@@ -1170,6 +1374,26 @@ app.get('/resource', (req, res) => {
   res.set('Cache-Control', 'max-age=10')
   res.send(body)                            // 200 + body
 })
+```
+
+```java
+@GetMapping("/resource")
+ResponseEntity<byte[]> getResource(@RequestHeader(name = "If-None-Match", required = false) String ifNoneMatch) {
+    byte[] body = loadResource();
+    String etag = "\"" + DigestUtils.sha256Hex(body).substring(0, 16) + "\""; // fingerprint
+
+    if (etag.equals(ifNoneMatch)) {          // client already has this exact version
+        return ResponseEntity.status(NOT_MODIFIED).build(); // 304, no body, payload saved
+    }
+    return ResponseEntity.ok()
+            .eTag(etag)
+            .cacheControl(CacheControl.maxAge(Duration.ofSeconds(10)))
+            .body(body);                     // 200 + body
+}
+
+// ShallowEtagHeaderFilter will hash the rendered body and do the 304 for you,
+// but it only saves bandwidth, not work: the handler has already run. Compute
+// the tag from a cheap version column when the goal is to skip the work too.
 ```
 
 <Callout type="info" title="In practice + the Vary trap">
@@ -1224,7 +1448,7 @@ A pessimistic lock would hold a row locked the entire time a user stares at an e
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 func updateDoc(w http.ResponseWriter, r *http.Request) {
@@ -1280,6 +1504,29 @@ app.put('/doc/:id', (req, res) => {
 })
 ```
 
+```java
+@PutMapping("/doc/{id}")
+ResponseEntity<Void> updateDoc(@PathVariable String id,
+                               @RequestBody JsonNode patch,
+                               @RequestHeader(name = "If-Match", required = false) String want) {
+    Doc doc = db.get(id);
+    if (want == null || want.isBlank()) {
+        throw new ResponseStatusException(BAD_REQUEST, "If-Match required");
+    }
+    if (!want.equals(doc.getEtag())) {       // someone changed it first -> conflict
+        throw new ResponseStatusException(PRECONDITION_FAILED, "version conflict"); // 412
+    }
+    doc.apply(patch);
+    doc.setEtag(newEtag());                  // bump the version
+    db.save(doc);
+    return ResponseEntity.ok().eTag(doc.getEtag()).build();
+}
+
+// With JPA, a @Version column gives you the same check one layer down: the
+// UPDATE carries the version in its WHERE clause and a zero-row result raises
+// OptimisticLockException. Map that to a 412 and the two lines up.
+```
+
 Part V / Data Transfer & Connections
 
 ## Content Negotiation & Compression
@@ -1304,7 +1551,7 @@ Compression is just encoding negotiation. When the client advertises `Accept-Enc
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -1350,6 +1597,29 @@ app.get('/greeting', (req, res) => {
 })
 ```
 
+```java
+// gzip responses for capable clients, but only above a size threshold
+// (compressing tiny payloads costs more CPU than it saves bytes).
+// Tomcat negotiates Accept-Encoding and sets Vary: Accept-Encoding for you.
+@Bean
+WebServerFactoryCustomizer<TomcatServletWebServerFactory> gzip() {
+    return factory -> {
+        Compression c = new Compression();
+        c.setEnabled(true);
+        c.setMinResponseSize(DataSize.ofBytes(1000));
+        c.setMimeTypes(new String[] { "application/json", "text/html", "text/plain" });
+        factory.setCompression(c);
+    };
+}
+// Or, without the Java: server.compression.enabled=true in application.properties.
+
+@GetMapping("/greeting")
+Map<String, String> greeting(@RequestHeader(name = "Accept-Language", defaultValue = "en") String acceptLanguage) {
+    String lang = acceptLanguage.startsWith("es") ? "es" : "en";
+    return Map.of("greeting", Map.of("en", "Hello", "es", "Hola").get(lang));
+}
+```
+
 ## Range Requests
 
 A **range request** asks for only a slice of a resource rather than the whole thing. This solves three real problems: **resuming a download** that failed at 80% without restarting from zero, **seeking** in audio/video (jumping to the 3-minute mark fetches only the bytes around it), and **parallelizing** a large download into chunks fetched simultaneously. Without ranges, every interruption means starting over and every seek means downloading everything before the target.
@@ -1382,7 +1652,7 @@ The good news for implementers: the standard file-serving helpers in both ecosys
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 // http.ServeContent handles Range, 206, 416 and If-Range for you,
@@ -1415,6 +1685,19 @@ app.get('/big.zip', (req, res) => {
 })
 ```
 
+```java
+// A Resource return value goes through ResourceHttpMessageConverter, which
+// handles Range, 206, 416 and If-Range for you, driven by the file's
+// modtime and a generated ETag.
+@GetMapping("/big.zip")
+ResponseEntity<Resource> download() {
+    Resource file = new FileSystemResource("/srv/files/big.zip");
+    return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_OCTET_STREAM)
+            .body(file);
+}
+```
+
 ## Persistent Connections & Keep-Alive
 
 Establishing a TCP connection isn't free, it costs a full round trip for the handshake (and more if TLS is involved). HTTP/1.0 paid that toll on every single request, opening and tearing down a connection per resource, which made loading a page of dozens of assets painfully slow. HTTP/1.1 fixed this with **persistent connections**: one TCP connection is held open and reused for many request/response cycles, so the handshake cost is paid once and amortized across everything that follows.
@@ -1436,7 +1719,7 @@ You rarely set these headers by hand, the defaults are right for almost everythi
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 srv := &http.Server{
@@ -1472,6 +1755,24 @@ server.listen(8080)
 // server.closeIdleConnections() // drop idle keep-alives, e.g. during shutdown
 ```
 
+```java
+// Tomcat's connection tuning lives on the protocol handler, so reach it
+// through a connector customizer rather than a properties file when you want
+// all four knobs in one place.
+@Bean
+WebServerFactoryCustomizer<TomcatServletWebServerFactory> connections() {
+    return factory -> factory.addConnectorCustomizers(connector -> {
+        var protocol = (AbstractHttp11Protocol<?>) connector.getProtocolHandler();
+        protocol.setKeepAliveTimeout(60_000);      // how long to hold an idle keep-alive conn
+        protocol.setMaxKeepAliveRequests(100);     // then close and make the client reconnect
+        protocol.setConnectionTimeout(2_000);      // mitigates Slowloris (slow-header attacks)
+        protocol.setMaxSwallowSize(2 * 1024 * 1024);
+    });
+}
+// spring.mvc.async.request-timeout caps async handlers; it is a different
+// clock from the connector's, and long-poll endpoints need both raised.
+```
+
 ## Multipart Uploads & Streamed Responses
 
 JSON is a poor fit for binary data, you'd have to base64-encode it, inflating size by \~33% and forcing the whole thing into memory. Large transfers therefore use purpose-built mechanisms, and which one you reach for depends on the **direction** of the large data.
@@ -1502,7 +1803,7 @@ To send a large or open-ended response without buffering it all in memory (or ti
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 // 1. Receive a multipart upload
@@ -1575,6 +1876,37 @@ app.get('/stream', async (req, res) => {
   }
   res.end()
 })
+```
+
+```java
+// 1. Receive a multipart upload
+@PostMapping("/upload")
+Map<String, Object> upload(@RequestParam("file") MultipartFile file) {
+    if (file.isEmpty()) {
+        throw new ResponseStatusException(BAD_REQUEST, "no file");
+    }
+    // Spring spills anything over spring.servlet.multipart.file-size-threshold
+    // to disk, so a large upload never sits in the heap in one piece.
+    return Map.of("received", file.getOriginalFilename(), "size", file.getSize());
+}
+
+// 2. Stream a response in chunks (Server-Sent Events)
+@GetMapping("/stream")
+SseEmitter stream() {
+    SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
+    Executors.newSingleThreadExecutor().execute(() -> {
+        try {
+            for (int i = 0; i < 5; i++) {
+                emitter.send(SseEmitter.event().data("chunk " + i)); // flushed per send
+                Thread.sleep(1000);
+            }
+            emitter.complete();
+        } catch (Exception e) {
+            emitter.completeWithError(e);
+        }
+    });
+    return emitter;   // the request thread is released immediately
+}
 ```
 
 Direction -> tool
@@ -1680,7 +2012,7 @@ You almost never implement TLS in application code. It's _terminated_ at the edg
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript Java
 
 ```go
 // Serve HTTPS directly with a certificate + private-key pair.
@@ -1711,6 +2043,25 @@ https.createServer({
 }, app).listen(443)
 
 // Production note: usually you terminate TLS at a proxy/LB and run plain HTTP behind it.
+```
+
+```java
+// Serve HTTPS directly with a certificate + private-key pair. The keystore
+// form is the usual one; PEM files work too via server.ssl.certificate.
+@Bean
+WebServerFactoryCustomizer<TomcatServletWebServerFactory> tls() {
+    return factory -> {
+        Ssl ssl = new Ssl();
+        ssl.setEnabled(true);
+        ssl.setCertificate("classpath:server.crt");
+        ssl.setCertificatePrivateKey("classpath:server.key");
+        factory.setSsl(ssl);
+        factory.setPort(443);
+    };
+}
+// Production note: usually you terminate TLS at a proxy/LB and run plain HTTP
+// behind it -- then set server.forward-headers-strategy=framework so Spring
+// reads X-Forwarded-Proto and stops generating http:// links (see sec 18).
 ```
 
 ## Debugging Cheat-Sheet
@@ -1750,6 +2101,6 @@ The payoff of understanding the machinery is fast triage: map a symptom straight
 
 **The whole flow in one breath:** a client opens a connection, reusable (sec 16), usually TLS-encrypted (sec 20), often through a reverse proxy (sec 18), and sends a self-contained request (sec 1): a method with safe/idempotent/cacheable semantics (sec 6), a URL, headers (sec 4-5), and an optional body (sec 3). The stateless server re-establishes identity (sec 8), checks authorization and preconditions (sec 10, sec 13), negotiates the best representation (sec 14), consults caches (sec 12), performs the work, and returns a status-coded response (sec 10), possibly a redirect (sec 11), a partial range (sec 15), or a stream (sec 17). Internalize that loop and the headers that steer each step, and you can reason about and debug the overwhelming majority of backend HTTP you'll ever meet.
 
-Grounded in MDN (developer.mozilla.org/en-US/docs/Web/HTTP) & RFC 9110 / Go 1.22+ / Python 3.11+ examples.
+Grounded in MDN (developer.mozilla.org/en-US/docs/Web/HTTP) & RFC 9110 / Go 1.22+ / Python 3.11+ / Java 17+ examples.
 
-Backend from First Principles / Chapter 01 / HTTP. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 01 / HTTP. Code targets Go 1.22+, Python 3.11+ and Java 17+ (Spring Boot 3).
