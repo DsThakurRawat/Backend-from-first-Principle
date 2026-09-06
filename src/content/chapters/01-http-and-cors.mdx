@@ -527,27 +527,20 @@ The fix: idempotency keys
 
 The client generates a unique key (typically a UUID) for the _logical operation_ and sends it as an `Idempotency-Key` header. The server stores the key alongside the result of the first successful execution. If the same key ever arrives again, because the client retried, the server recognizes it and returns the **stored result** without re-running the work. The operation thus executes _at most once_ regardless of how many times it's submitted. (MDN now documents `Idempotency-Key` as a standardizing header, and payment APIs like Stripe popularized the pattern.)
 
-1
-
+<Steps>
+<Step>
 Client sends `POST /payments` with `Idempotency-Key: 9f8c-...`.
-
-v
-
-2
-
+</Step>
+<Step>
 Server checks its key store. Key unseen -> run the charge, persist `key -> result`, return 201.
-
-v
-
-3
-
+</Step>
+<Step>
 The network drops the response. The client, unsure, retries with the _same_ key.
-
-v
-
-4
-
+</Step>
+<Step>
 Server sees the key already exists -> returns the stored result. **No second charge.**
+</Step>
+</Steps>
 
 #### Implementation considerations
 
@@ -780,21 +773,17 @@ CORS is enforced entirely by the **browser**, not the server. The server only _a
 
 For requests the spec deems "simple", GET, POST, or HEAD using only standard headers and a common content type, the browser doesn't bother asking permission in advance. It just sends the request (with an `Origin` header) and checks the response afterward.
 
-1
-
+<Steps>
+<Step>
 Browser automatically adds `Origin: https://example.com` and sends the request.
-
-v
-
-2
-
+</Step>
+<Step>
 Server checks the origin against its policy; if allowed, it includes `Access-Control-Allow-Origin` echoing that origin (or `*`) in the response.
-
-v
-
-3
-
+</Step>
+<Step>
 Browser sees a matching header -> hands the response to the page. Header missing -> browser **blocks the response** and logs a CORS error, even though the server processed the request.
+</Step>
+</Steps>
 
 ### Flow 2: the preflighted request
 
@@ -808,21 +797,17 @@ Why you see OPTIONS everywhere
 
 Since a typical authenticated JSON API request hits _all three_ triggers (JSON body, Authorization header, often a non-GET method), **nearly every real API call is preflighted**. That's why your Network tab shows a paired `OPTIONS` request immediately before each actual call, it's not a bug, it's the browser asking permission.
 
-1
-
+<Steps>
+<Step>
 Browser sends `OPTIONS /resource` with `Access-Control-Request-Method` and `-Request-Headers`, asking "may I send this method with these headers from my origin?", no body.
-
-v
-
-2
-
+</Step>
+<Step>
 Server replies 204 No Content with `Access-Control-Allow-Origin / -Methods / -Headers`, plus `-Max-Age` telling the browser how long it may cache this approval (e.g. 24h) so it can skip the preflight on future identical calls.
-
-v
-
-3
-
+</Step>
+<Step>
 Approval granted -> the browser sends the actual request and returns the real response to the page.
+</Step>
+</Steps>
 
 One extra wrinkle for **credentialed** requests (those carrying cookies): the server must also send `Access-Control-Allow-Credentials: true`, and in that mode it may _not_ use the `*` wildcard for the origin, it has to name the exact origin. This prevents a server from accidentally exposing authenticated data to any site.
 
@@ -1098,25 +1083,22 @@ The server stamps a response with how long it stays usable, so the client can re
 
 When freshness lapses, the client doesn't blindly re-download, it revalidates. The original response carried an `ETag` (a fingerprint/hash of the content) and/or a `Last-Modified` timestamp. The client sends these back as _conditional_ headers, and if nothing changed the server returns a tiny 304 with no body, saving the entire payload.
 
-1
-
+<Steps>
+<Step>
 First GET -> 200 + body + `ETag: "abc"` + `Cache-Control: max-age=10`.
-
-v
-
-2
-
+</Step>
+<Step>
 After freshness expires, the next GET sends `If-None-Match: "abc"` (and/or `If-Modified-Since`).
-
-v
-
-3a
-
+</Step>
+</Steps>
+<StepBranch labelA="3a" labelB="3b">
+<Fragment slot="a">
 Unchanged -> 304 Not Modified with an empty body. The client reuses its copy; the payload bytes are saved.
-
-3b
-
+</Fragment>
+<Fragment slot="b">
 Changed -> 200 with the new body and a fresh ETag.
+</Fragment>
+</StepBranch>
 
 ETags come in two flavors: a **strong** ETag (`"abc"`) guarantees byte-for-byte identity, while a **weak** one (`W/"abc"`) only promises semantic equivalence, useful when, say, a timestamp in the response differs but the meaningful content doesn't.
 
@@ -1198,25 +1180,22 @@ Each says "proceed only if a condition about the resource's current version hold
 
 ### The optimistic-locking flow
 
-1
-
+<Steps>
+<Step>
 Client GETs `/doc/7` -> receives the body plus `ETag: "v1"`.
-
-v
-
-2
-
+</Step>
+<Step>
 After editing, client sends `PUT /doc/7` with `If-Match: "v1"`, "only save if it's _still_ v1, i.e. nobody changed it under me."
-
-v
-
-3a
-
+</Step>
+</Steps>
+<StepBranch labelA="3a" labelB="3b">
+<Fragment slot="a">
 Still v1 -> apply the update, return 200 + the new `ETag: "v2"`.
-
-3b
-
+</Fragment>
+<Fragment slot="b">
 Someone already bumped it to v2 -> reject with 412 Precondition Failed. No lost update, the client refetches v2, reapplies its change, and retries.
+</Fragment>
+</StepBranch>
 
 Why this beats a database lock
 
