@@ -99,7 +99,45 @@ const groups = PARTS.map((part) => ({
       <span class="name">Backend from First Principles</span>
       <span class="name-short">BFP</span>
     </a>
-    {crumb && <><span class="sep" aria-hidden="true">/</span><span class="crumb">{crumb}</span></>}
+    {crumb && (
+      <>
+        <span class="sep" aria-hidden="true">/</span>
+        <div class="chapter-switch" data-chapter-switch>
+          <button
+            class="crumb-button"
+            type="button"
+            data-switch-toggle
+            aria-expanded="false"
+            aria-controls="chapter-switch-panel"
+          >
+            <span class="crumb-label">{crumb}</span>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m4 6.5 4 4 4-4" />
+            </svg>
+          </button>
+
+          <div class="switch-panel" id="chapter-switch-panel" hidden>
+            <p class="switch-head" id="chapter-switch-head">Switch chapter</p>
+            <nav aria-labelledby="chapter-switch-head">
+              <ol class="switch-list">
+                {chapters.map((chapter) => (
+                  <li>
+                    <a
+                      class:list={['switch-link', { active: chapter.id === currentId }]}
+                      href={`/${chapter.id}/`}
+                      aria-current={chapter.id === currentId ? 'page' : undefined}
+                    >
+                      <span class="switch-num">{String(chapter.data.order).padStart(2, '0')}</span>
+                      <span class="switch-title">{chapter.data.navTitle ?? chapter.data.title}</span>
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          </div>
+        </div>
+      </>
+    )}
   </div>
 
   <div class="right">
@@ -161,13 +199,113 @@ const groups = PARTS.map((part) => ({
   .name-short { display: none; }
 
   .sep { color: var(--ink-3); }
-  .crumb {
+
+  /* The breadcrumb doubles as the chapter switcher.
+
+     A disclosure, not an ARIA menu: `role="menu"` promises the arrow-key
+     model, and announcing that without implementing it is worse than leaving
+     these as the links they are. `aria-expanded` carries the state, and Tab
+     and Enter work for free. Same reasoning as the code tabs. */
+  .chapter-switch { position: relative; min-width: 0; }
+
+  .crumb-button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 28px;
+    padding-inline: var(--space-2);
+    /* Pulled back by its own padding so the label stays optically aligned
+       with the separator, as the plain text crumb was. */
+    margin-left: calc(-1 * var(--space-2));
+    border-radius: var(--radius-sm);
     font-size: var(--text-sm);
     color: var(--ink-2);
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
+    transition: color 120ms ease, background-color 120ms ease;
   }
+  .crumb-button:hover,
+  .crumb-button[aria-expanded='true'] { color: var(--ink); background: var(--surface); }
+  .crumb-button svg {
+    width: 13px;
+    height: 13px;
+    flex: none;
+    color: var(--ink-3);
+    transition: transform 160ms ease;
+  }
+  .crumb-button[aria-expanded='true'] svg { transform: rotate(180deg); }
+
+  .switch-panel {
+    position: absolute;
+    top: calc(100% + var(--space-3));
+    left: calc(-1 * var(--space-2));
+    z-index: 60;
+    width: min(23rem, calc(100vw - 2rem));
+    /* 24 chapters will not fit; the panel scrolls, the page must not. */
+    max-height: min(60vh, 27rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* No top padding: the sticky heading below supplies its own, so it can
+       sit flush against the scrollport edge and the list scrolls under it. */
+    padding: 0 var(--space-3) var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--bg);
+    box-shadow: var(--shadow-lg);
+    animation: switch-in 120ms ease;
+  }
+  /* Beats the display rule above, which would otherwise defeat [hidden]. */
+  .switch-panel[hidden] { display: none; }
+
+  @keyframes switch-in {
+    from { opacity: 0; transform: translateY(-4px); }
+  }
+
+  /* Opening on chapter 20 scrolls the list to the middle, which would carry
+     the label away with it and leave an unlabelled list of numbers. Pinned,
+     so the panel still says what it is. Bled to the full panel width so the
+     list passes underneath it rather than beside it. */
+  .switch-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin-inline: calc(-1 * var(--space-3));
+    padding: var(--space-3) var(--space-3) var(--space-2);
+    background: var(--bg);
+    font-size: var(--text-2xs);
+    font-weight: 650;
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .switch-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Same visual language as the mobile drawer's chapter list, so the two
+     ways into a chapter do not look like two different components. */
+  .switch-link {
+    display: grid;
+    grid-template-columns: 2rem 1fr;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: 8px var(--space-3);
+    border-radius: var(--radius);
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    line-height: 1.35;
+    text-decoration: none;
+  }
+  .switch-link:hover { background: var(--surface); color: var(--ink); }
+  .switch-link.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+  .switch-num { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-3); }
+  .switch-link.active .switch-num { color: var(--accent); }
+  .switch-title { text-wrap: pretty; }
 
   .search-open {
     display: flex;
@@ -351,14 +489,60 @@ const groups = PARTS.map((part) => ({
     .search-open { width: 34px; padding: 0; justify-content: center; }
   }
 
+  /* Below this the wordmark alone fills the bar. Nothing is lost: the
+     hamburger drawer lists every chapter on exactly these widths. */
   @media (max-width: 560px) {
-    .sep, .crumb { display: none; }
+    .sep, .chapter-switch { display: none; }
   }
 
   :global(:root.mobile-nav-open) { overflow: hidden; }
 </style>
 
 <script>
+  // Chapter switcher. Closes on Escape, on an outside click, and on picking a
+  // chapter -- the last one matters because a same-page anchor would navigate
+  // without unmounting the panel.
+  document.querySelectorAll<HTMLElement>('[data-chapter-switch]').forEach((root) => {
+    const toggle = root.querySelector<HTMLButtonElement>('[data-switch-toggle]');
+    const panel = root.querySelector<HTMLElement>('.switch-panel');
+    if (!toggle || !panel) return;
+
+    function setOpen(isOpen: boolean) {
+      toggle!.setAttribute('aria-expanded', String(isOpen));
+      panel!.hidden = !isOpen;
+      if (!isOpen) return;
+
+      // The list is longer than the panel, so opening it on chapter 20 would
+      // otherwise show chapter 01. Set scrollTop directly rather than calling
+      // scrollIntoView, which would also scroll the document behind it.
+      const active = panel!.querySelector<HTMLAnchorElement>('.switch-link.active');
+      if (active) {
+        panel!.scrollTop = active.offsetTop - panel!.clientHeight / 2 + active.offsetHeight / 2;
+      }
+    }
+
+    toggle.addEventListener('click', (event) => {
+      // Without this the document listener below sees the same click and
+      // closes the panel in the same tick it was opened.
+      event.stopPropagation();
+      setOpen(panel.hidden);
+    });
+
+    panel.querySelectorAll('a').forEach((link) => {
+      link.addEventListener('click', () => setOpen(false));
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!panel.hidden && !root.contains(event.target as Node)) setOpen(false);
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || panel.hidden) return;
+      setOpen(false);
+      toggle.focus();
+    });
+  });
+
   document.querySelectorAll<HTMLElement>('[data-mobile-nav]').forEach((nav) => {
     const toggle = nav.querySelector<HTMLButtonElement>('[data-nav-toggle]');
     if (!toggle) return;
