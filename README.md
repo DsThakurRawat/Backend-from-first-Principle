@@ -37,6 +37,19 @@ The documentation is organized into the following topics:
 
 Feel free to browse through the directories to explore specific topics. Each directory contains detailed markdown notes, code examples, and practical implementations.
 
+## Reading It Offline
+
+Prefer a window to a browser tab? The site can open as an app of its own - no address bar, no tabs, its own icon in the taskbar.
+
+```bash
+npm install
+npm run desktop
+```
+
+That builds the site, serves it locally, and opens it in app mode using the first Chromium browser it finds - Chrome, then Brave, then Edge. There is nothing extra to install. The terminal is handed straight back, and closing the window is what stops it. To pick a browser yourself, pass it: `npm run desktop --edge`. On a machine with only Firefox or Safari it opens in an ordinary tab instead, since neither has an app mode to borrow.
+
+Your theme and chapter progress are kept in the app's own profile, so they start fresh rather than carrying over from the website.
+
 ## Contributing & Community
 
 **Backend from First Principles** is created and maintained by **[@DsThakurRawat](https://github.com/DsThakurRawat)** as an open engineering reference for everyone.
