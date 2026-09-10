@@ -2,7 +2,7 @@
 order: 2
 title: "Routing, the where of every request."
 navTitle: "Routing in Backend"
-summary: "HTTP methods describe the what of a request, your intent. Routing describes the where : which resource on the server your intent is aimed at. This manual covers routing end to end, static and dynamic routes, path and query parameters, nesting, versioning, and catch-alls, with worked routers in Go, Python and JavaScript."
+summary: "HTTP methods describe the what of a request, your intent. Routing describes the where : which resource on the server your intent is aimed at. This manual covers routing end to end, static and dynamic routes, path and query parameters, nesting, versioning, and catch-alls, with worked routers in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "routing"
@@ -218,11 +218,19 @@ The `*` wildcard matches anything, which is exactly why the catch-all must be re
 
 11
 
-## A Router in Go
+## Building a Router
 
-A router is, at bottom, a small object-oriented dispatch problem: a table from "method + route" to a handler. Go expresses the four OOP pillars through interfaces (abstraction + polymorphism), unexported fields (encapsulation), and struct embedding (composition, Go's form of inheritance). The comments tagged OOP point out each one.
+A router is, at bottom, a small object-oriented dispatch problem: a table from "method + route" to a handler. Below is the same router in five languages, pick a tab. Each one expresses the four OOP pillars in its own way, and the comments tagged OOP point out each one:
 
-```go title="Go 1.22+router.go"
+- **Go**: interfaces (abstraction + polymorphism), unexported fields (encapsulation), and struct embedding (composition, Go's form of inheritance).
+- **Python**: classic class syntax, an abstract base class for the contract (abstraction), real subclassing (inheritance), overridden methods (polymorphism), and a name-mangled private attribute (encapsulation).
+- **JavaScript**: no `interface` keyword to lean on, so the contract is a base class whose `handle()` throws until a subclass overrides it (abstraction + polymorphism), `extends` gives real inheritance, and a `#` field is private at runtime rather than by convention (encapsulation).
+- **TypeScript**: the JavaScript design with the compiler enforcing it, a real `interface` for the contract, an `abstract` base class so a missing `handle()` fails to compile, and a `Method` union type that rejects a misspelled verb before the code ever runs.
+- **Java**: a real `interface` for the contract (abstraction), an `abstract` base class that handlers `extend` (inheritance), `@Override` methods (polymorphism), and `private` fields enforced by both the compiler and the JVM (encapsulation).
+
+Go Python JavaScript TypeScript Java
+
+```go title="Go 1.22+ router.go"
 package main
 
 import ("fmt"; "strings")
@@ -319,13 +327,7 @@ func main() {
 }
 ```
 
-12
-
-## A Router in Python
-
-The same architecture in classic class syntax: an abstract base class for the contract (abstraction), real subclassing (inheritance), overridden methods (polymorphism), and a name-mangled private attribute (encapsulation).
-
-```python title="Python 3.11+router.py"
+```python title="Python 3.11+ router.py"
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit, parse_qs
@@ -408,12 +410,6 @@ if __name__ == "__main__":
     print(r.dispatch("GET", "/api/users/123").body)   # user id = 123
     print(r.dispatch("GET", "/api/books?page=2").body) # books page 2
 ```
-
-13
-
-## A Router in JavaScript
-
-The same architecture once more, this time with no `interface` keyword to lean on: the contract is a base class whose `handle()` throws until a subclass overrides it (abstraction + polymorphism), `extends` gives real inheritance, and a `#` field is private at runtime rather than by convention (encapsulation).
 
 ```js title="Node 20+ router.js"
 // ABSTRACTION: JavaScript has no `interface` keyword, so the contract is a
@@ -523,11 +519,264 @@ r.register("GET", "/api/books",     new ListBooks("books"));
 console.log(r.dispatch("GET", "/api/users/123").body);    // user id = 123
 console.log(r.dispatch("GET", "/api/books?page=2").body); // books page 2
 ```
-<Callout type="info" title="Same architecture, three languages">
-Go reaches it through interfaces + embedding; Python through ABCs + class inheritance; JavaScript through a base class whose method throws and `#private` fields. All three are a private dispatch table keyed on **method + route**, an abstract **handler** contract, polymorphic dispatch, and a catch-all fallback, the whole routing model from this manual, in code.
+
+```ts title="TypeScript 5+ router.ts"
+// ABSTRACTION: TypeScript has a real `interface` keyword, so the contract is
+// a type the compiler checks, not a base class that throws at runtime.
+// Anything with a matching handle() IS-A Handler. The router depends only on
+// that contract, never on a concrete type.
+interface Handler {
+  handle(req: Request): Response;
+}
+
+type Params = Record<string, string>;
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; // a typo like "GTE" won't compile
+
+class Request {
+  readonly method: Method;
+  readonly path: string;
+  readonly params: Params; // extracted path params (:id)
+  readonly query: Params;  // query params (?page=2)
+
+  constructor(method: Method, path: string, params: Params = {}, query: Params = {}) {
+    this.method = method;
+    this.path = path;
+    this.params = params;
+    this.query = query;
+  }
+}
+
+class Response {
+  readonly status: number;
+  readonly body: string;
+
+  constructor(status: number, body: string) {
+    this.status = status;
+    this.body = body;
+  }
+}
+
+// INHERITANCE: BaseHandler is an abstract parent holding shared behaviour
+// (logging). It can't be instantiated on its own, and `abstract handle()`
+// turns a forgotten override into a compile error instead of a runtime throw.
+abstract class BaseHandler implements Handler {
+  #name: string; // ENCAPSULATION: a # field is private at runtime, not just to the compiler
+
+  constructor(name: string) {
+    this.#name = name;
+  }
+
+  protected log(req: Request): void { // subclasses may call it, outside code may not
+    console.log(`[${this.#name}] ${req.method} ${req.path}`);
+  }
+
+  abstract handle(req: Request): Response;
+}
+
+// POLYMORPHISM: each subclass OVERRIDES handle() differently, yet the
+// router calls them all identically, handler.handle(req).
+class GetUser extends BaseHandler {   // IS-A BaseHandler IS-A Handler
+  handle(req: Request): Response {
+    this.log(req);                    // inherited from the parent
+    return new Response(200, `user id = ${req.params.id}`);
+  }
+}
+
+class ListBooks extends BaseHandler {
+  handle(req: Request): Response {
+    this.log(req);
+    const page = req.query.page ?? "1"; // query param drives pagination
+    return new Response(200, `books page ${page}`);
+  }
+}
+
+// ENCAPSULATION: #routes is unreachable from outside the class, so the
+// table stays hidden. The public surface is register() and dispatch().
+class Router {
+  #routes = new Map<string, Handler>(); // key = "METHOD /route"
+
+  register(method: Method, pattern: string, handler: Handler): void {
+    this.#routes.set(`${method} ${pattern}`, handler); // method + path = the key
+  }
+
+  dispatch(method: Method, url: string): Response {
+    const { pathname, searchParams } = new URL(url, "http://localhost");
+    const query: Params = Object.fromEntries(searchParams.entries()); // ?a=1&b=2 -> object
+
+    for (const [key, handler] of this.#routes) {
+      const [m, pattern] = key.split(" ");
+      const params = Router.#match(pattern, pathname);
+      if (m === method && params !== null) {
+        // polymorphic dispatch: the router never asks which class this is
+        return handler.handle(new Request(method, pathname, params, query));
+      }
+    }
+    return new Response(404, "route not found"); // catch-all fallback
+  }
+
+  // #match compares "/users/:id" against "/users/123", returning the params.
+  static #match(pattern: string, path: string): Params | null {
+    const p = pattern.replace(/^\/|\/$/g, "").split("/");
+    const q = path.replace(/^\/|\/$/g, "").split("/");
+    if (p.length !== q.length) return null;
+
+    const params: Params = {};
+    for (const [i, seg] of p.entries()) {
+      if (seg.startsWith(":")) {   // dynamic segment
+        params[seg.slice(1)] = q[i]; // bind :id -> "123"
+      } else if (seg !== q[i]) {   // static segment must match exactly
+        return null;
+      }
+    }
+    return params;
+  }
+}
+
+const r = new Router();
+r.register("GET", "/api/users/:id", new GetUser("users"));
+r.register("GET", "/api/books",     new ListBooks("books"));
+
+console.log(r.dispatch("GET", "/api/users/123").body);    // user id = 123
+console.log(r.dispatch("GET", "/api/books?page=2").body); // books page 2
+
+// Exporting makes this file a module, so the local Request/Response classes
+// shadow the global fetch types instead of clashing with them.
+export { Router, type Handler };
+```
+
+```java title="Java 17+ Router.java"
+// run: javac Router.java && java Router
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+// ABSTRACTION: Handler is a real Java interface, a pure contract. Anything
+// that implements handle() IS-A Handler. The router depends only on that
+// contract, never on a concrete type.
+interface Handler {
+    Response handle(Request req);
+}
+
+// Records are immutable data carriers: Java generates the constructor,
+// accessors (req.path()), equals, hashCode and toString.
+record Request(String method, String path, Map<String, String> params, Map<String, String> query) {}
+
+record Response(int status, String body) {}
+
+// INHERITANCE: BaseHandler is an abstract parent holding shared behaviour
+// (logging). It can't be instantiated on its own, and any concrete subclass
+// that forgets to implement handle() fails to compile.
+abstract class BaseHandler implements Handler {
+    private final String name; // ENCAPSULATION: private is enforced by the compiler and the JVM
+
+    protected BaseHandler(String name) {
+        this.name = name;
+    }
+
+    protected void log(Request req) { // subclasses may call it, outside code may not
+        System.out.printf("[%s] %s %s%n", name, req.method(), req.path());
+    }
+}
+
+// POLYMORPHISM: each subclass OVERRIDES handle() differently, yet the
+// router calls them all identically, handler.handle(req).
+class GetUser extends BaseHandler {   // IS-A BaseHandler IS-A Handler
+    GetUser(String name) {
+        super(name);
+    }
+
+    @Override
+    public Response handle(Request req) {
+        log(req);                     // inherited from the parent
+        return new Response(200, "user id = " + req.params().get("id"));
+    }
+}
+
+class ListBooks extends BaseHandler {
+    ListBooks(String name) {
+        super(name);
+    }
+
+    @Override
+    public Response handle(Request req) {
+        log(req);
+        String page = req.query().getOrDefault("page", "1"); // query param drives pagination
+        return new Response(200, "books page " + page);
+    }
+}
+
+// ENCAPSULATION: routes is private, so the table stays hidden.
+// The public surface is register() and dispatch().
+public class Router {
+    private final Map<String, Handler> routes = new LinkedHashMap<>(); // key = "METHOD /route"
+
+    public void register(String method, String pattern, Handler handler) {
+        routes.put(method + " " + pattern, handler); // method + path = the key
+    }
+
+    public Response dispatch(String method, String url) {
+        URI uri = URI.create(url);
+        String path = uri.getPath();
+        Map<String, String> query = parseQuery(uri.getRawQuery()); // ?a=1&b=2 -> map
+
+        for (Map.Entry<String, Handler> route : routes.entrySet()) {
+            String[] key = route.getKey().split(" ", 2);
+            Map<String, String> params = match(key[1], path);
+            if (key[0].equals(method) && params != null) {
+                // polymorphic dispatch: the router never asks which class this is
+                return route.getValue().handle(new Request(method, path, params, query));
+            }
+        }
+        return new Response(404, "route not found"); // catch-all fallback
+    }
+
+    // match compares "/users/:id" against "/users/123", returning the params.
+    private static Map<String, String> match(String pattern, String path) {
+        String[] p = pattern.replaceAll("^/|/$", "").split("/");
+        String[] q = path.replaceAll("^/|/$", "").split("/");
+        if (p.length != q.length) return null;
+
+        Map<String, String> params = new HashMap<>();
+        for (int i = 0; i < p.length; i++) {
+            if (p[i].startsWith(":")) {              // dynamic segment
+                params.put(p[i].substring(1), q[i]); // bind :id -> "123"
+            } else if (!p[i].equals(q[i])) {         // static segment must match exactly
+                return null;
+            }
+        }
+        return params;
+    }
+
+    private static Map<String, String> parseQuery(String raw) {
+        Map<String, String> query = new HashMap<>();
+        if (raw == null) return query;
+        for (String pair : raw.split("&")) {
+            String[] kv = pair.split("=", 2);
+            String value = kv.length > 1 ? kv[1] : "";
+            query.put(URLDecoder.decode(kv[0], StandardCharsets.UTF_8),
+                      URLDecoder.decode(value, StandardCharsets.UTF_8));
+        }
+        return query;
+    }
+
+    public static void main(String[] args) {
+        Router r = new Router();
+        r.register("GET", "/api/users/:id", new GetUser("users"));
+        r.register("GET", "/api/books",     new ListBooks("books"));
+
+        System.out.println(r.dispatch("GET", "/api/users/123").body());    // user id = 123
+        System.out.println(r.dispatch("GET", "/api/books?page=2").body()); // books page 2
+    }
+}
+```
+<Callout type="info" title="Same architecture, five languages">
+Go reaches it through interfaces + embedding; Python through ABCs + class inheritance; JavaScript through a base class whose method throws and `#private` fields; TypeScript through a real `interface`, an `abstract` base class and the same `#private` fields; Java through an `interface`, an `abstract` base class and `private` fields. All five are a private dispatch table keyed on **method + route**, an abstract **handler** contract, polymorphic dispatch, and a catch-all fallback, the whole routing model from this manual, in code.
 </Callout>
 
-14
+12
 
 ## Routing Glossary
 
@@ -557,4 +806,4 @@ Every routing term used above, in one place.
 A request bundles a **method** (the what) and a **route** (the where). The server joins them into a unique key, matches it against its table, static routes first, dynamic next, catch-all last, extracts any **path params** from the route and **query params** from the query string, then calls the matched **handler**. Version the route to evolve, deprecate to retire, and catch-all to fail gracefully.
 </Callout>
 
-Backend from First Principles / Chapter 02 / Routing. Code targets Go 1.22+, Python 3.11+ and Node.js 20+.
+Backend from First Principles / Chapter 02 / Routing. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+.

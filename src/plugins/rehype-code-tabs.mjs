@@ -16,6 +16,8 @@ const LANG_LABELS = new Map([
   ['python', 'Python'],
   ['sql', 'SQL'],
   ['js', 'JavaScript'],
+  ['ts', 'TypeScript'],
+  ['java', 'Java'],
 ]);
 
 // Sorted longest-first so "SQL" is tried before anything that could be a

@@ -2,7 +2,7 @@
 order: 1
 title: "HTTP & CORS"
 navTitle: "HTTP & CORS"
-summary: "A first-principles walkthrough of the application-layer protocol every backend touches, from statelessness and method semantics to caching, conditional requests, proxies, and TLS. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in Go, Python and JavaScript, grounded in MDN and RFC 9110."
+summary: "A first-principles walkthrough of the application-layer protocol every backend touches, from statelessness and method semantics to caching, conditional requests, proxies, and TLS. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in Go, Python, JavaScript, TypeScript and Java, grounded in MDN and RFC 9110."
 readingTime: "3-4 hours"
 keywords:
   - "http"
@@ -161,7 +161,7 @@ Headers go on the wire **before** the status line and body, the receiver reads t
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 package main
@@ -237,6 +237,67 @@ app.post('/api/v1/notes', (req, res) => {
 app.listen(8080)
 ```
 
+```ts
+import express from 'express'
+
+interface Note {
+  id: number
+  title: string
+  done: boolean
+}
+
+const app = express()
+app.use(express.json())            // parses the body; malformed JSON -> 400 automatically
+
+app.post('/api/v1/notes', (req, res) => {
+  // req.body is `any`: the annotation is only a claim, the typeof check proves it
+  const { title, done = false }: Partial<Note> = req.body ?? {}
+  if (typeof title !== 'string') {
+    return res.status(400).json({ error: 'invalid JSON' })
+  }
+  const note: Note = { id: 42, title, done }
+  res.set('Content-Type', 'application/json')  // 1. headers FIRST
+  res.status(201)                              // 2. status
+  res.json(note)                               // 3. body LAST
+})
+
+app.listen(8080)
+```
+
+```java
+import java.util.Map;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+
+record NoteInput(String title, Boolean done) {}
+record Note(long id, String title, boolean done) {}
+
+@SpringBootApplication
+@RestController
+class NotesApp {
+
+    // Spring parses the JSON body into NoteInput; malformed JSON -> 400 automatically.
+    @PostMapping("/api/v1/notes")
+    ResponseEntity<?> createNote(@RequestBody NoteInput in) {
+        if (in.title() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "invalid JSON"));
+        }
+        Note note = new Note(42, in.title(), Boolean.TRUE.equals(in.done()));
+        // ResponseEntity collects headers, status and body up front, so Spring
+        // can put them on the wire in the right order for you.
+        return ResponseEntity.status(HttpStatus.CREATED)      // status
+                .contentType(MediaType.APPLICATION_JSON)      // headers
+                .body(note);                                  // body
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(NotesApp.class, args);          // listens on :8080 by default
+    }
+}
+```
+
 ## Why Headers Exist
 
 Headers are **key-value pairs of metadata** attached to a request or response, sitting between the start line and the body. The natural question is: why a separate section at all? Why not put this information in the URL, or inside the body?
@@ -283,7 +344,7 @@ Because these should apply to _every_ response, you set them once in middleware 
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 func securityHeaders(next http.Handler) http.Handler {
@@ -325,6 +386,44 @@ function securityHeaders(req, res, next) {
 
 app.use(securityHeaders)
 // In production `helmet()` sets these, and more, for you.
+```
+
+```ts
+import type { NextFunction, Request, Response } from 'express'
+
+function securityHeaders(req: Request, res: Response, next: NextFunction): void {
+  res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  res.set('Content-Security-Policy', "default-src 'self'")
+  res.set('X-Frame-Options', 'DENY')
+  res.set('X-Content-Type-Options', 'nosniff')
+  next() // headers MUST be set before the handler writes the body (see sec 3)
+}
+
+app.use(securityHeaders)
+// In production `helmet()` sets these, and more, for you.
+```
+
+```java
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.*;
+import java.io.IOException;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+@Component // Spring Boot registers every Filter bean for all requests
+class SecurityHeadersFilter extends OncePerRequestFilter {
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
+            throws ServletException, IOException {
+        res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+        res.setHeader("Content-Security-Policy", "default-src 'self'");
+        res.setHeader("X-Frame-Options", "DENY");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        chain.doFilter(req, res); // headers MUST be set before this call (see sec 3)
+    }
+}
+// In production Spring Security's http.headers(...) sets these, and more, for you.
 ```
 
 Part II / Methods & Semantics
@@ -442,7 +541,7 @@ TRACE asks the server to echo the request it received, so the client can see exa
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 mux := http.NewServeMux()
@@ -513,6 +612,82 @@ function getNote(req, res) {
 }
 ```
 
+```ts
+import express, { type Request, type Response } from 'express'
+
+const app = express()
+
+// Express matches method + path. An unmatched method falls through to the 404
+// handler; add an `app.all` catch-all per route to answer 405 Method Not Allowed.
+app.get('/notes', listNotes)          // safe, cacheable read
+app.get('/notes/:id', getNote)        // GET also serves HEAD automatically
+app.post('/notes', createNote)        // create (server assigns id)
+app.put('/notes/:id', putNote)        // full replace (idempotent)
+app.patch('/notes/:id', patchNote)    // partial update
+app.delete('/notes/:id', deleteNote)  // remove (idempotent)
+
+function getNote(req: Request<{ id: string }>, res: Response) {
+  const { id } = req.params           // typed path params: { id: string }
+  const note = db.find(id)            // Note | undefined, so the 404 check can't be skipped
+  if (!note) return res.status(404).json({ error: 'not found' }) // 404
+  res.set('Content-Type', 'application/json')
+  res.json(note)                                                 // 200
+}
+```
+
+```java
+import java.util.*;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/notes")
+class NotesController {
+    private final NoteRepository notes;
+
+    NotesController(NoteRepository notes) {
+        this.notes = notes;
+    }
+
+    // Spring matches method + path. The right path with the wrong method gets
+    // 405 Method Not Allowed (plus an Allow header) automatically.
+    @GetMapping                      // safe, cacheable read (list)
+    List<Note> list(@RequestParam(required = false) Boolean done,
+                    @RequestParam(defaultValue = "20") int limit) {
+        return notes.list(done, limit);
+    }
+
+    @GetMapping("/{id}")             // GET also serves HEAD automatically
+    ResponseEntity<Note> get(@PathVariable long id) {
+        return notes.findById(id)
+                .map(ResponseEntity::ok)                    // 200
+                .orElse(ResponseEntity.notFound().build()); // 404
+    }
+
+    @PostMapping                     // create (server assigns id)
+    @ResponseStatus(HttpStatus.CREATED)
+    Note create(@RequestBody Note note) {
+        return notes.insert(note);
+    }
+
+    @PutMapping("/{id}")             // full replace (idempotent)
+    Note put(@PathVariable long id, @RequestBody Note note) {
+        return notes.replace(id, note);
+    }
+
+    @PatchMapping("/{id}")           // partial update
+    Note patch(@PathVariable long id, @RequestBody Map<String, Object> changes) {
+        return notes.update(id, changes);
+    }
+
+    @DeleteMapping("/{id}")          // remove (idempotent)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void delete(@PathVariable long id) {
+        notes.delete(id);
+    }
+}
+```
+
 ## Idempotency in Practice
 
 Idempotency is the property that makes a request **safe to retry**: and retries are not optional in a distributed system, they're inevitable. Networks drop packets, a client times out without knowing whether the request reached the server, a user impatiently double-clicks, a mobile app re-sends when the radio reconnects. GET, PUT, and DELETE are idempotent by design, so retrying them is harmless. POST is not, which is the root cause of duplicate-record and double-charge bugs.
@@ -550,7 +725,7 @@ Server sees the key already exists -> returns the stored result. **No second cha
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 var seen sync.Map // key -> []byte result. Use Redis with a TTL in production.
@@ -602,6 +777,62 @@ app.post('/payments', async (req, res) => {
   seen.set(key, result)                    // remember it BEFORE responding
   res.status(201).json(result)
 })
+```
+
+```ts
+interface PaymentResult {
+  id: string
+  status: 'succeeded' | 'failed'
+}
+
+const seen = new Map<string, PaymentResult>() // key -> stored result. Use Redis with a TTL in production.
+
+app.post('/payments', async (req, res) => {
+  const key = req.get('Idempotency-Key')   // string | undefined
+  if (!key) {
+    return res.status(400).json({ error: 'missing Idempotency-Key' })
+  }
+  const stored = seen.get(key)             // one lookup that narrows; has() + get() wouldn't
+  if (stored) {                            // replay: return the stored result
+    return res.status(200).json(stored)
+  }
+  const result = await charge(req.body)    // the real, non-idempotent work
+  seen.set(key, result)                    // remember it BEFORE responding
+  res.status(201).json(result)
+})
+```
+
+```java
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+class PaymentsController {
+    // key -> stored result. Use Redis with a TTL in production.
+    private final Map<String, PaymentResult> seen = new ConcurrentHashMap<>();
+    private final PaymentGateway gateway;
+
+    PaymentsController(PaymentGateway gateway) {
+        this.gateway = gateway;
+    }
+
+    @PostMapping("/payments")
+    ResponseEntity<?> pay(@RequestHeader(name = "Idempotency-Key", required = false) String key,
+                          @RequestBody PaymentRequest body) {
+        if (key == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "missing Idempotency-Key"));
+        }
+        PaymentResult stored = seen.get(key);
+        if (stored != null) {                         // replay: return the stored result
+            return ResponseEntity.ok(stored);
+        }
+        PaymentResult result = gateway.charge(body);  // the real, non-idempotent work
+        seen.put(key, result);                        // remember it BEFORE responding
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
+    }
+}
 ```
 
 Idempotency keys protect against _duplicate execution_. A different but related hazard, two clients overwriting each other's edits (the "lost update"), needs a complementary tool: optimistic concurrency with `If-Match` and ETags, covered in sec 13.
@@ -663,7 +894,7 @@ On the protocol side, the `WWW-Authenticate` response header (paired with a 401)
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 // Set a secure session cookie after login (stateful)
@@ -757,6 +988,106 @@ function requireToken(req, res, next) {
 app.get('/me', requireToken, (req, res) => res.json({ ok: true }))
 ```
 
+```ts
+import cookieParser from 'cookie-parser'
+import type { NextFunction, Request, Response } from 'express'
+
+app.use(cookieParser())
+
+// Set a secure session cookie after login (stateful)
+app.post('/login', (req, res) => {
+  const sid = newSessionID()
+  sessions.set(sid, userId)          // server-side session store (use Redis)
+  res.cookie('session', sid, {
+    httpOnly: true,                  // JS can't read it
+    secure: true,                    // HTTPS only
+    sameSite: 'strict',              // CSRF defense, typed: 'strict' | 'lax' | 'none'
+    maxAge: 3600 * 1000,             // Express takes milliseconds
+    path: '/',
+  })
+  res.sendStatus(204)
+})
+
+// Bearer-token auth middleware (stateless)
+function requireToken(req: Request, res: Response, next: NextFunction) {
+  const auth = req.get('Authorization') ?? ''
+  if (!auth.startsWith('Bearer ') || !validJWT(auth.slice(7))) {
+    res.set('WWW-Authenticate', 'Bearer')
+    return res.status(401).json({ error: 'unauthorized' }) // 401
+  }
+  next()
+}
+
+app.get('/me', requireToken, (req, res) => res.json({ ok: true }))
+```
+
+```java
+import jakarta.servlet.http.*;
+import java.io.IOException;
+import java.time.Duration;
+import java.util.*;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.config.annotation.*;
+
+@RestController
+class AuthController {
+    private final UserService users;
+    private final SessionStore sessions;
+
+    AuthController(UserService users, SessionStore sessions) {
+        this.users = users;
+        this.sessions = sessions;
+    }
+
+    // Set a secure session cookie after login (stateful)
+    @PostMapping("/login")
+    ResponseEntity<Void> login(@RequestBody Credentials creds) {
+        String userId = users.authenticate(creds);
+        String sid = UUID.randomUUID().toString();
+        sessions.put(sid, userId);               // server-side session store (use Redis)
+        ResponseCookie cookie = ResponseCookie.from("session", sid)
+                .httpOnly(true)                  // JS can't read it
+                .secure(true)                    // HTTPS only
+                .sameSite("Strict")              // CSRF defense
+                .maxAge(Duration.ofHours(1))
+                .path("/")
+                .build();
+        return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, cookie.toString()).build();
+    }
+
+    @GetMapping("/me")
+    Map<String, Boolean> me() {
+        return Map.of("ok", true);
+    }
+}
+
+// Bearer-token auth (stateless): an interceptor runs before the handler
+class RequireToken implements HandlerInterceptor {
+    @Override
+    public boolean preHandle(HttpServletRequest req, HttpServletResponse res, Object handler)
+            throws IOException {
+        String auth = Objects.requireNonNullElse(req.getHeader("Authorization"), "");
+        if (!auth.startsWith("Bearer ") || !Jwt.isValid(auth.substring(7))) {
+            res.setHeader("WWW-Authenticate", "Bearer");
+            res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "unauthorized"); // 401
+            return false;                        // the handler never runs
+        }
+        return true;
+    }
+}
+
+@Configuration
+class WebConfig implements WebMvcConfigurer {
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(new RequireToken()).addPathPatterns("/me");
+    }
+}
+```
+
 ## CORS & the Preflight Workflow
 
 To understand CORS you first have to understand the rule it relaxes. Browsers enforce the **Same-Origin Policy**: JavaScript on a page from one origin may not read responses from a _different_ origin. An "origin" is the triple of **scheme + host + port**: `https://example.com` and `https://example.com:8443` and `http://example.com` are all different origins. This policy exists because browsers automatically attach your cookies to requests (sec 8); without it, a malicious site you visit could silently fire authenticated requests at your bank's API and read the responses. **CORS** (Cross-Origin Resource Sharing) is the controlled mechanism by which a server _opts in_ to letting specific other origins read its responses.
@@ -813,7 +1144,7 @@ One extra wrinkle for **credentialed** requests (those carrying cookies): the se
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 func cors(next http.Handler) http.Handler {
@@ -858,6 +1189,43 @@ app.use(cors({
   credentials: true,
   maxAge: 86400,                   // cache the approval for 24h
 }))
+```
+
+```ts
+import cors, { type CorsOptions } from 'cors'
+
+// Typed options: a misspelled key like `allowHeaders` fails to compile
+// instead of silently doing nothing.
+const corsOptions: CorsOptions = {
+  origin: 'https://example.com',   // exact origin, not *, when credentials are on
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400,                   // cache the approval for 24h
+}
+
+// Handles the OPTIONS preflight and all the headers for you.
+app.use(cors(corsOptions))
+```
+
+```java
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+@Configuration
+class CorsConfig implements WebMvcConfigurer {
+    // Handles the OPTIONS preflight and all the headers for you.
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/**")
+                .allowedOrigins("https://example.com")  // exact origin; Spring rejects * with credentials
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE")
+                .allowedHeaders("Content-Type", "Authorization")
+                .allowCredentials(true)
+                .maxAge(86400);                         // cache the approval for 24h
+    }
+}
 ```
 
 ### Common misconception: does CORS protect the server?
@@ -939,7 +1307,7 @@ A three-digit status code is a **standardized, machine-readable verdict** on a r
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 func getUser(w http.ResponseWriter, r *http.Request) {
@@ -991,6 +1359,57 @@ app.get('/users/:id', (req, res) => {
 })
 ```
 
+```ts
+app.get('/users/:id', (req, res) => {
+  if (!req.get('Authorization')) {
+    return res.status(401).json({ error: 'login required' })  // 401: who are you?
+  }
+  const user = db.find(req.params.id)  // User | undefined, so the 404 branch is enforced
+  if (!user) {
+    return res.status(404).json({ error: 'no such user' })     // 404
+  }
+  if (!user.visibleTo(req)) {
+    return res.status(403).json({ error: 'forbidden' })         // 403: not allowed
+  }
+  res.json(user)                                                // 200
+})
+```
+
+```java
+import java.util.Map;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+class UsersController {
+    private final UserRepository users;
+
+    UsersController(UserRepository users) {
+        this.users = users;
+    }
+
+    @GetMapping("/users/{id}")
+    ResponseEntity<?> getUser(@PathVariable long id,
+                              @RequestHeader(name = "Authorization", required = false) String auth) {
+        if (auth == null) {
+            return error(HttpStatus.UNAUTHORIZED, "login required"); // 401: who are you?
+        }
+        User user = users.findById(id).orElse(null);
+        if (user == null) {
+            return error(HttpStatus.NOT_FOUND, "no such user");      // 404
+        }
+        if (!user.visibleTo(auth)) {
+            return error(HttpStatus.FORBIDDEN, "forbidden");         // 403: not allowed
+        }
+        return ResponseEntity.ok(user);                              // 200
+    }
+
+    private static ResponseEntity<Map<String, String>> error(HttpStatus status, String message) {
+        return ResponseEntity.status(status).body(Map.of("error", message));
+    }
+}
+```
+
 ## Redirections
 
 A redirect lets one resource live at more than one URL: the server responds with a `3xx` status and a `Location` header naming where to go, and the client (a browser following automatically, or your HTTP library) re-issues the request to that new URL. Redirects power URL migrations, canonical-URL enforcement, HTTP->HTTPS upgrades, and the Post/Redirect/Get pattern. The detail that trips up backends is **whether the original method and body survive the redirect**: because historically they often didn't.
@@ -1013,7 +1432,7 @@ Early clients, faced with a 301 or 302 on a POST, would silently re-issue it as 
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 // Permanent move that must keep the method/body -> 308
@@ -1054,6 +1473,53 @@ app.post('/submit', (req, res) => {
   const id = save(req.body)
   res.redirect(303, `/results/${id}`)  // 303 forces the follow-up to be a GET
 })
+```
+
+```ts
+// Permanent move that must keep the method/body -> 308
+app.all('/user/:id', (req, res) => {
+  // req.params.id is typed as string, inferred from the '/user/:id' literal
+  res.redirect(308, `/person/${req.params.id}`)
+})
+
+// Post/Redirect/Get -> 303 so a browser refresh won't re-POST the form
+app.post('/submit', (req, res) => {
+  const id: string = save(req.body)
+  res.redirect(303, `/results/${id}`)  // 303 forces the follow-up to be a GET
+})
+```
+
+```java
+import java.net.URI;
+import java.util.Map;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+class RedirectsController {
+    private final ResultStore results;
+
+    RedirectsController(ResultStore results) {
+        this.results = results;
+    }
+
+    // Permanent move that must keep the method/body -> 308
+    @RequestMapping("/user/{id}")            // no method listed = every method
+    ResponseEntity<Void> moved(@PathVariable String id) {
+        return redirect(HttpStatus.PERMANENT_REDIRECT, "/person/" + id);
+    }
+
+    // Post/Redirect/Get -> 303 so a browser refresh won't re-POST the form
+    @PostMapping("/submit")
+    ResponseEntity<Void> submit(@RequestBody Map<String, Object> form) {
+        String id = results.save(form);
+        return redirect(HttpStatus.SEE_OTHER, "/results/" + id); // 303 forces the follow-up to be a GET
+    }
+
+    private static ResponseEntity<Void> redirect(HttpStatus status, String location) {
+        return ResponseEntity.status(status).location(URI.create(location)).build();
+    }
+}
 ```
 
 ## HTTP Caching
@@ -1104,7 +1570,7 @@ ETags come in two flavors: a **strong** ETag (`"abc"`) guarantees byte-for-byte 
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 func getResource(w http.ResponseWriter, r *http.Request) {
@@ -1152,6 +1618,58 @@ app.get('/resource', (req, res) => {
   res.set('Cache-Control', 'max-age=10')
   res.send(body)                            // 200 + body
 })
+```
+
+```ts
+import { createHash } from 'node:crypto'
+
+app.get('/resource', (req, res) => {
+  const body: string = loadResource()
+  const etag = `"${createHash('sha256').update(body).digest('hex').slice(0, 16)}"`
+
+  if (req.get('If-None-Match') === etag) {  // client already has this exact version
+    return res.status(304).end()            // 304, no body, payload saved
+  }
+  res.set('ETag', etag)
+  res.set('Cache-Control', 'max-age=10')
+  res.send(body)                            // 200 + body
+})
+```
+
+```java
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.util.HexFormat;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+class ResourceController {
+    private final ContentService content;
+
+    ResourceController(ContentService content) {
+        this.content = content;
+    }
+
+    @GetMapping("/resource")
+    ResponseEntity<String> resource(@RequestHeader(name = "If-None-Match", required = false) String ifNoneMatch)
+            throws NoSuchAlgorithmException {
+        String body = content.load();
+        byte[] hash = MessageDigest.getInstance("SHA-256").digest(body.getBytes(StandardCharsets.UTF_8));
+        String etag = "\"" + HexFormat.of().formatHex(hash).substring(0, 16) + "\"";
+
+        if (etag.equals(ifNoneMatch)) {              // client already has this exact version
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED).eTag(etag).build(); // 304, no body
+        }
+        return ResponseEntity.ok()
+                .eTag(etag)
+                .cacheControl(CacheControl.maxAge(Duration.ofSeconds(10)))
+                .body(body);                         // 200 + body
+    }
+}
+// Spring's ShallowEtagHeaderFilter can do this for every response automatically.
 ```
 
 <Callout type="info" title="In practice + the Vary trap">
@@ -1203,7 +1721,7 @@ A pessimistic lock would hold a row locked the entire time a user stares at an e
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 func updateDoc(w http.ResponseWriter, r *http.Request) {
@@ -1259,6 +1777,68 @@ app.put('/doc/:id', (req, res) => {
 })
 ```
 
+```ts
+interface Doc {
+  etag: string
+  apply(changes: unknown): void
+}
+
+app.put('/doc/:id', (req, res) => {
+  const doc: Doc | undefined = db.get(req.params.id)
+  if (!doc) {                            // strict null checks make this branch mandatory
+    return res.status(404).json({ error: 'not found' })
+  }
+  const want = req.get('If-Match')       // the ETag the client last saw
+  if (!want) {
+    return res.status(400).json({ error: 'If-Match required' })
+  }
+  if (want !== doc.etag) {               // someone changed it first -> conflict
+    return res.status(412).json({ error: 'version conflict' })  // 412
+  }
+  doc.apply(req.body)
+  doc.etag = newETag()                   // bump the version
+  db.save(doc)
+  res.set('ETag', doc.etag)
+  res.sendStatus(200)
+})
+```
+
+```java
+import java.util.Map;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+class DocsController {
+    private final DocRepository docs;
+
+    DocsController(DocRepository docs) {
+        this.docs = docs;
+    }
+
+    @PutMapping("/doc/{id}")
+    ResponseEntity<?> update(@PathVariable String id,
+                             @RequestHeader(name = "If-Match", required = false) String want, // the ETag the client last saw
+                             @RequestBody Map<String, Object> changes) {
+        if (want == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "If-Match required"));
+        }
+        Doc doc = docs.findById(id).orElse(null);
+        if (doc == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!want.equals(doc.getEtag())) {           // someone changed it first -> conflict
+            return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED)
+                    .body(Map.of("error", "version conflict")); // 412
+        }
+        doc.apply(changes);
+        doc.setEtag(Etags.next());                   // bump the version
+        docs.save(doc);
+        return ResponseEntity.ok().eTag(doc.getEtag()).build();
+    }
+}
+```
+
 Part V / Data Transfer & Connections
 
 ## Content Negotiation & Compression
@@ -1283,7 +1863,7 @@ Compression is just encoding negotiation. When the client advertises `Accept-Enc
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -1329,6 +1909,44 @@ app.get('/greeting', (req, res) => {
 })
 ```
 
+```ts
+import compression from 'compression'
+
+// gzip responses for capable clients, but only above a size threshold
+// (compressing tiny payloads costs more CPU than it saves bytes).
+// The middleware negotiates Accept-Encoding and sets Vary: Accept-Encoding for you.
+app.use(compression({ threshold: 1000 }))
+
+type Lang = 'en' | 'es'
+const greetings: Record<Lang, string> = { en: 'Hello', es: 'Hola' } // every Lang must have one
+
+app.get('/greeting', (req, res) => {
+  const lang: Lang = (req.get('Accept-Language') ?? 'en').startsWith('es') ? 'es' : 'en'
+  res.json(greetings[lang])
+})
+```
+
+```java
+import java.util.Map;
+import org.springframework.web.bind.annotation.*;
+
+// In Spring Boot, gzip is configuration rather than code (application.properties):
+//   server.compression.enabled=true
+//   server.compression.min-response-size=1KB   # tiny payloads cost more CPU than they save
+// The embedded server negotiates Accept-Encoding and sets Vary: Accept-Encoding for you.
+
+@RestController
+class GreetingController {
+    private static final Map<String, String> GREETINGS = Map.of("en", "Hello", "es", "Hola");
+
+    @GetMapping("/greeting")
+    String greeting(@RequestHeader(name = "Accept-Language", defaultValue = "en") String acceptLanguage) {
+        String lang = acceptLanguage.startsWith("es") ? "es" : "en";
+        return GREETINGS.get(lang);
+    }
+}
+```
+
 ## Range Requests
 
 A **range request** asks for only a slice of a resource rather than the whole thing. This solves three real problems: **resuming a download** that failed at 80% without restarting from zero, **seeking** in audio/video (jumping to the 3-minute mark fetches only the bytes around it), and **parallelizing** a large download into chunks fetched simultaneously. Without ranges, every interruption means starting over and every seek means downloading everything before the target.
@@ -1361,7 +1979,7 @@ The good news for implementers: the standard file-serving helpers in both ecosys
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 // http.ServeContent handles Range, 206, 416 and If-Range for you,
@@ -1394,6 +2012,36 @@ app.get('/big.zip', (req, res) => {
 })
 ```
 
+```ts
+// res.sendFile handles Range, 206, 416 and If-Range for you,
+// driven by the file's modtime and a generated ETag.
+app.get('/big.zip', (req, res) => {
+  res.sendFile('/srv/files/big.zip', {
+    acceptRanges: true,                              // options are type-checked in place
+    headers: { 'Content-Type': 'application/zip' },
+  })
+})
+```
+
+```java
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+class DownloadController {
+    // Returning a Resource lets Spring MVC answer Range requests for you:
+    // Accept-Ranges on every response, 206 for a satisfiable range, 416 otherwise.
+    @GetMapping("/big.zip")
+    ResponseEntity<Resource> download() {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .body(new FileSystemResource("/srv/files/big.zip"));
+    }
+}
+```
+
 ## Persistent Connections & Keep-Alive
 
 Establishing a TCP connection isn't free, it costs a full round trip for the handshake (and more if TLS is involved). HTTP/1.0 paid that toll on every single request, opening and tearing down a connection per resource, which made loading a page of dozens of assets painfully slow. HTTP/1.1 fixed this with **persistent connections**: one TCP connection is held open and reused for many request/response cycles, so the handshake cost is paid once and amortized across everything that follows.
@@ -1415,7 +2063,7 @@ You rarely set these headers by hand, the defaults are right for almost everythi
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 srv := &http.Server{
@@ -1451,6 +2099,39 @@ server.listen(8080)
 // server.closeIdleConnections() // drop idle keep-alives, e.g. during shutdown
 ```
 
+```ts
+import http from 'node:http'
+
+const server: http.Server = http.createServer(app)
+
+server.headersTimeout = 2_000       // mitigates Slowloris (slow-header attacks)
+server.requestTimeout = 5_000       // whole request must arrive within this
+server.keepAliveTimeout = 60_000    // how long to hold an idle keep-alive conn
+server.listen(8080)
+
+// server.closeIdleConnections() // drop idle keep-alives, e.g. during shutdown
+```
+
+```java
+import org.springframework.boot.tomcat.servlet.TomcatServletWebServerFactory;
+import org.springframework.boot.web.server.WebServerFactoryCustomizer;
+import org.springframework.stereotype.Component;
+
+// Tunes the embedded Tomcat server that Spring Boot starts for you.
+@Component
+class ServerTimeouts implements WebServerFactoryCustomizer<TomcatServletWebServerFactory> {
+    @Override
+    public void customize(TomcatServletWebServerFactory factory) {
+        factory.setPort(8080);
+        factory.addConnectorCustomizers(connector -> {
+            connector.setProperty("connectionTimeout", "2000"); // max wait for request bytes (slow-client defense)
+            connector.setProperty("keepAliveTimeout", "60000"); // how long to hold an idle keep-alive conn
+        });
+    }
+}
+// Same settings as config: server.tomcat.connection-timeout=2s, server.tomcat.keep-alive-timeout=60s
+```
+
 ## Multipart Uploads & Streamed Responses
 
 JSON is a poor fit for binary data, you'd have to base64-encode it, inflating size by \~33% and forcing the whole thing into memory. Large transfers therefore use purpose-built mechanisms, and which one you reach for depends on the **direction** of the large data.
@@ -1481,7 +2162,7 @@ To send a large or open-ended response without buffering it all in memory (or ti
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 // 1. Receive a multipart upload
@@ -1554,6 +2235,78 @@ app.get('/stream', async (req, res) => {
   }
   res.end()
 })
+```
+
+```ts
+import multer from 'multer'
+import { setTimeout as sleep } from 'node:timers/promises'
+
+// 1. Receive a multipart upload
+const upload = multer({ limits: { fileSize: 32 * 1024 * 1024 } }) // 32 MB cap
+
+app.post('/upload', upload.single('file'), (req, res) => {
+  // req.file is Express.Multer.File | undefined, so this check is required, not optional
+  if (!req.file) {
+    return res.status(400).json({ error: 'no file' })
+  }
+  res.json({ received: req.file.originalname, size: req.file.size })
+})
+
+// 2. Stream a response in chunks (Server-Sent Events)
+app.get('/stream', async (req, res) => {
+  res.set('Content-Type', 'text/event-stream')
+  res.set('Connection', 'keep-alive')
+  for (let i = 0; i < 5; i++) {
+    res.write(`data: chunk ${i}\n\n`) // each write is flushed to the client
+    await sleep(1000)
+  }
+  res.end()
+})
+```
+
+```java
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+@RestController
+class StreamingController {
+    private final ExecutorService executor = Executors.newCachedThreadPool();
+
+    // 1. Receive a multipart upload
+    //    (cap it in application.properties: spring.servlet.multipart.max-file-size=32MB)
+    @PostMapping("/upload")
+    ResponseEntity<?> upload(@RequestParam(name = "file", required = false) MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "no file"));
+        }
+        String name = Objects.requireNonNullElse(file.getOriginalFilename(), "");
+        return ResponseEntity.ok(Map.of("received", name, "size", file.getSize()));
+    }
+
+    // 2. Stream a response in chunks (Server-Sent Events)
+    @GetMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    SseEmitter stream() {
+        SseEmitter emitter = new SseEmitter();  // returned right away; the request thread is freed
+        executor.execute(() -> {
+            try {
+                for (int i = 0; i < 5; i++) {
+                    emitter.send("chunk " + i); // sent as "data: chunk i", flushed to the client
+                    Thread.sleep(1000);
+                }
+                emitter.complete();
+            } catch (Exception e) {
+                emitter.completeWithError(e);
+            }
+        });
+        return emitter;
+    }
+}
 ```
 
 Direction -> tool
@@ -1659,7 +2412,7 @@ You almost never implement TLS in application code. It's _terminated_ at the edg
 
 ______
 
-Go Python JavaScript
+Go Python JavaScript TypeScript Java
 
 ```go
 // Serve HTTPS directly with a certificate + private-key pair.
@@ -1688,6 +2441,45 @@ https.createServer({
   cert: readFileSync('server.crt'),
   key: readFileSync('server.key'),
 }, app).listen(443)
+
+// Production note: usually you terminate TLS at a proxy/LB and run plain HTTP behind it.
+```
+
+```ts
+import https from 'node:https'
+import { readFileSync } from 'node:fs'
+
+// Serve HTTPS directly with a certificate + private-key pair.
+const tlsOptions: https.ServerOptions = {
+  cert: readFileSync('server.crt'),
+  key: readFileSync('server.key'),
+}
+
+https.createServer(tlsOptions, app).listen(443)
+
+// Production note: usually you terminate TLS at a proxy/LB and run plain HTTP behind it.
+```
+
+```java
+import org.springframework.boot.web.server.ConfigurableWebServerFactory;
+import org.springframework.boot.web.server.Ssl;
+import org.springframework.boot.web.server.WebServerFactoryCustomizer;
+import org.springframework.stereotype.Component;
+
+// Serve HTTPS directly with a certificate + private-key pair (PEM files).
+@Component
+class HttpsSetup implements WebServerFactoryCustomizer<ConfigurableWebServerFactory> {
+    @Override
+    public void customize(ConfigurableWebServerFactory factory) {
+        Ssl ssl = new Ssl();
+        ssl.setCertificate("file:server.crt");
+        ssl.setCertificatePrivateKey("file:server.key");
+        factory.setSsl(ssl);
+        factory.setPort(443);
+    }
+}
+// Same as config: server.port=443, server.ssl.certificate=file:server.crt,
+// server.ssl.certificate-private-key=file:server.key
 
 // Production note: usually you terminate TLS at a proxy/LB and run plain HTTP behind it.
 ```
@@ -1731,4 +2523,4 @@ The payoff of understanding the machinery is fast triage: map a symptom straight
 
 Grounded in MDN (developer.mozilla.org/en-US/docs/Web/HTTP) & RFC 9110 / Go 1.22+ / Python 3.11+ examples.
 
-Backend from First Principles / Chapter 01 / HTTP. Code targets Go 1.22+, Python 3.11+ and Node.js 20+.
+Backend from First Principles / Chapter 01 / HTTP. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).
