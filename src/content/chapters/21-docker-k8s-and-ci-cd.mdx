@@ -481,7 +481,7 @@ kubectl rollout undo  deployment/api          # roll back to the previous versio
 Deployment is for _stateless_ apps (the common case). Siblings exist for other shapes: **StatefulSet** for stateful apps needing stable identity/storage (databases), **DaemonSet** to run one pod per node (log/metrics agents), and **Job**/**CronJob** for run-to-completion and scheduled tasks (the batch side of the task-queue chapter). Same reconciliation idea, different guarantees.
 </Callout>
 
-## Services & Ingress
+## Services, Gateway API & Ingress
 
 Pods are mortal and their IPs churn (sec 13), so you can't point traffic at a pod. A **Service** is the fix: a _stable_ virtual IP and DNS name in front of a dynamic set of pods, with built-in load balancing. It uses a **label selector** to track "all pods with `app: api`", as pods come and go, the Service's set of healthy endpoints updates automatically, and callers never notice. This is Kubernetes' service discovery, and it's why one service addresses another by name (`http://api`), exactly as Compose did on one host (sec 9).
 
@@ -499,6 +499,7 @@ A `ClusterIP` Service (the default) is reachable only inside the cluster, perfec
 | `NodePort`     | A port on every node       | Basic/dev external access                                              |
 | `LoadBalancer` | The internet (cloud LB)    | One TCP/UDP service exposed directly                                   |
 | **Ingress**    | The internet, via L7 rules | HTTP host/path routing + TLS for many services through one entry point |
+| **Gateway API** | The internet, via listeners and routes | Role-oriented HTTP/TCP routing with a reusable Gateway and separate route resources |
 
 ```yaml title="service.yaml + ingress.yaml"
 apiVersion: v1
@@ -528,9 +529,73 @@ spec:
                 port: { number: 80 }
 ```
 
-<Callout type="info" title="The full path of a request">
-External client -> **Ingress** (TLS, host/path routing) -> **Service** (stable IP, load-balance) -> a healthy **Pod** -> your container. Each hop adds one concern, routing, discovery, the actual work, and together they're how a packet from the internet reaches one replica of your app.
-</Callout>
+### Gateway API: GatewayClass, Gateway & HTTPRoute
+
+**Gateway API** is the newer alternative to **Ingress**. You will still encounter Ingress in production systems: its API is stable, but Kubernetes has frozen it and recommends Gateway instead for new designs.
+
+The Ingress above puts the hostname, path, and destination Service in one resource. Gateway API separates the entry point from those routing rules, so several applications can share a Gateway while defining their own routes.
+
+See the [Gateway API documentation](https://kubernetes.io/docs/concepts/services-networking/gateway/) and the [Ingress documentation](https://kubernetes.io/docs/concepts/services-networking/ingress/).
+
+The three resources divide that work:
+
+- **GatewayClass** is a cluster-scoped blueprint shared by many Gateways. Its `controllerName` selects the implementation, such as Envoy Gateway, that will set up and manage their proxies or load balancers.
+- **Gateway** is an individual entry point created using that class. It references the blueprint through `gatewayClassName: envoy` and defines listeners: the protocols and ports that accept traffic, such as HTTP on port 80.
+- **HTTPRoute** contains the familiar Ingress rules: match a hostname and path, then send the request to a Service. `parentRefs` attaches it to a Gateway; `backendRefs` identifies the destination Service and port.
+
+Think of the image-to-container relationship from earlier: one reusable definition, many instances. One GatewayClass can serve many Gateways, and each Gateway can have several HTTPRoutes attached to it.
+
+<Diagram caption="Gateway API request flow">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One GatewayClass can be referenced by many Gateways while client traffic passes through a Gateway and HTTPRoute to a Service and healthy pods"><defs><marker id="gwa" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker><marker id="gwc" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><rect x="150" y="18" width="140" height="44" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="220" y="45" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">GatewayClass</text><path d="M220 64 V105" stroke="var(--dg-accent-2)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#gwc)"></path><text x="235" y="87" class="mono" font-size="8.5" fill="var(--dg-accent-2)">gatewayClassName: envoy</text><rect x="18" y="112" width="96" height="52" rx="9" fill="var(--dg-accent)"></rect><text x="66" y="143" font-size="11.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">client</text><rect x="150" y="106" width="140" height="64" rx="10" fill="var(--dg-inverse)"></rect><text x="220" y="132" font-size="12" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">Gateway</text><text x="220" y="151" class="mono" font-size="8.5" fill="var(--dg-on-inverse-info)" text-anchor="middle">one of many :80</text><rect x="326" y="106" width="140" height="64" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="396" y="132" font-size="12" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">HTTPRoute</text><text x="396" y="151" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">host + path rules</text><rect x="502" y="106" width="100" height="64" rx="10" fill="var(--dg-ok)"></rect><text x="552" y="132" font-size="12" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Service</text><text x="552" y="151" class="mono" font-size="8.5" fill="var(--dg-on-accent)" text-anchor="middle">stable endpoint</text><rect x="646" y="92" width="58" height="40" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="675" y="116" font-size="10" fill="var(--dg-ok)" text-anchor="middle">Pod</text><rect x="646" y="146" width="58" height="40" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="675" y="170" font-size="10" fill="var(--dg-ok)" text-anchor="middle">Pod</text><g stroke="var(--dg-ok)" stroke-width="1.8" fill="none"><path d="M116 138 H148" marker-end="url(#gwa)"></path><path d="M292 138 H324" marker-end="url(#gwa)"></path><path d="M468 138 H500" marker-end="url(#gwa)"></path><path d="M604 127 C620 116 630 112 644 112" marker-end="url(#gwa)"></path><path d="M604 149 C620 160 630 166 644 166" marker-end="url(#gwa)"></path></g><text x="360" y="222" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">One GatewayClass can be referenced by many Gateways; each Gateway can route traffic to Services.</text></svg>
+</Diagram>
+
+Like Ingress, Gateway API needs a controller to turn configuration into working networking. The controller named by `controllerName` must be installed and running; writing its name does not install it.
+
+This YAML uses Envoy Gateway as one example implementation. Other Gateway API implementations can be used with their own documented controller name.
+
+The controller reads the listeners and routes and configures the proxies that handle requests. The diagram shows how the configuration fits together; Gateway and HTTPRoute are API objects, not separate servers.
+
+```yaml title="gatewayclass.yaml"
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: envoy
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+```
+
+```yaml title="gateway.yaml"
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: api-gateway
+spec:
+  gatewayClassName: envoy
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+```
+
+```yaml title="api-httproute.yaml"
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: api-httproute
+spec:
+  parentRefs:
+    - name: api-gateway
+  hostnames:
+    - "api.example.com"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: api
+          port: 80
+```
 
 ## Config, Secrets & Environment
 
@@ -729,6 +794,7 @@ The whole manual compressed to what you reach for under pressure.
 | Deployment         | Keeps N replicas of a pod running; self-heals; does rolling updates.                               |
 | Service            | Stable IP/DNS load-balancing across matching pods, service discovery.                              |
 | Ingress            | One L7 entry point: host/path routing + TLS to many Services.                                      |
+| Gateway API        | Newer, role-oriented networking API: GatewayClass selects a controller; Gateway listens; HTTPRoute routes to Services. |
 | Config/Secrets     | Inject at run time (ConfigMap/Secret); same image everywhere. Secrets aren't encrypted by default. |
 | Probes             | Liveness -> restart; readiness -> in/out of rotation; startup -> guard slow boots.                 |
 | Requests/limits    | Request = reserved (scheduling); limit = cgroup ceiling. Over memory -> OOMKilled.                 |
@@ -738,7 +804,7 @@ The whole manual compressed to what you reach for under pressure.
 | Strategies         | Rolling (default), blue-green (instant flip), canary (trickle & watch).                            |
 | GitOps             | Git is desired state; an agent pulls & reconciles. Deploy by PR, roll back by revert.              |
 
-**The whole topic in one breath:** a container packages your app with its entire environment so "what runs in prod" equals "what you tested" (sec 1), achieved with Linux namespaces and cgroups, not a heavy VM (sec 2-3). You build an image as cached, shareable layers (sec 4) from a Dockerfile (sec 5), shrink and harden it with multi-stage builds and good cache ordering (sec 6-7), then push a SHA-tagged image to a registry (sec 8). Locally you wire several containers with networks, volumes, and Compose (sec 9-10). At fleet scale, Kubernetes reconciles declared desired state onto nodes (sec 11-12): Deployments keep replicas of pods alive and self-healing (sec 13-14), Services and Ingress give stable addressing and routing (sec 15), ConfigMaps/Secrets inject per-environment config (sec 16), probes and resource requests/limits drive health and scheduling (sec 17), and HPA plus rolling updates deliver scaling and zero-downtime releases (sec 18). CI/CD automates commit->build->test-> scan->push->deploy (sec 19), and blue-green/canary/GitOps make releases safe and auditable (sec 20). One idea recurs at every layer: declare the desired state and let a loop keep reality matching it.
+**The whole topic in one breath:** a container packages your app with its entire environment so "what runs in prod" equals "what you tested" (sec 1), achieved with Linux namespaces and cgroups, not a heavy VM (sec 2-3). You build an image as cached, shareable layers (sec 4) from a Dockerfile (sec 5), shrink and harden it with multi-stage builds and good cache ordering (sec 6-7), then push a SHA-tagged image to a registry (sec 8). Locally you wire several containers with networks, volumes, and Compose (sec 9-10). At fleet scale, Kubernetes reconciles declared desired state onto nodes (sec 11-12): Deployments keep replicas of pods alive and self-healing (sec 13-14), Services and Gateway API or Ingress give stable addressing and routing (sec 15), ConfigMaps/Secrets inject per-environment config (sec 16), probes and resource requests/limits drive health and scheduling (sec 17), and HPA plus rolling updates deliver scaling and zero-downtime releases (sec 18). CI/CD automates commit->build->test-> scan->push->deploy (sec 19), and blue-green/canary/GitOps make releases safe and auditable (sec 20). One idea recurs at every layer: declare the desired state and let a loop keep reality matching it.
 
 Grounded in the Docker & Kubernetes docs / OCI image-spec / the Twelve-Factor App / Go 1.22+ / Python 3.11+ application examples.
 
