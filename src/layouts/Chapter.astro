@@ -32,7 +32,9 @@ const num = String(order).padStart(2, '0');
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="13.5" y1="8" x2="3.5" y2="8" /><polyline points="7.5,4 3.5,8 7.5,12" /></svg>
           <span>Back</span>
         </a>
-        <Toc headings={headings} />
+        <div class="rail-scroll">
+          <Toc headings={headings} />
+        </div>
       </div>
     </aside>
 
@@ -171,13 +173,28 @@ const num = String(order).padStart(2, '0');
   }
 
   .rail { position: relative; }
+  /* The rail is a fixed-height column: Back stays pinned at the top and only
+     the outline below it scrolls. When Back lived inside the scrolling box,
+     the scroll spy's follow-the-active-link scrolling carried it out of view
+     on long chapters, exactly when a reader deep in one wants a way out. */
   .rail-inner {
     position: sticky;
-    top: calc(56px + var(--space-6));
-    max-height: calc(100vh - 56px - var(--space-8));
+    top: calc(56px + var(--space-5));
+    max-height: calc(100vh - 56px - var(--space-5) - var(--space-6));
+    display: flex;
+    flex-direction: column;
+    padding-bottom: var(--space-6);
+  }
+  /* min-height: 0 lets the flex item shrink below its content so it can
+     scroll. The negative margin + padding gives the outline's hover
+     backgrounds (which reach left past the text) room inside the clip. */
+  .rail-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding-block: var(--space-6);
+    margin-left: calc(-1 * var(--space-3));
+    padding-left: var(--space-3);
     padding-right: var(--space-3);
   }
 
@@ -187,6 +204,8 @@ const num = String(order).padStart(2, '0');
      .toc-link idiom -- it buys a hover target wider than the text while
      keeping the label flush with "On this page" below it. */
   .rail-back {
+    flex: none;
+    align-self: flex-start;
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
@@ -332,7 +351,7 @@ const num = String(order).padStart(2, '0');
   if (links.size) {
     const visible = new Set<string>();
     const order = [...links.keys()];
-    const rail = document.querySelector<HTMLElement>('.rail-inner');
+    const rail = document.querySelector<HTMLElement>('.rail-scroll');
     let currentActive: string | null = null;
 
     const scrollToActive = () => {
