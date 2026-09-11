@@ -1,0 +1,218 @@
+---
+// Captures beforeinstallprompt and offers a one-click Install CTA.
+// Hidden when already installed, dismissed recently, or the browser
+// never fires the event (Firefox / most Safari builds).
+---
+<div
+  class="pwa-prompt"
+  data-pwa-prompt
+  hidden
+  role="dialog"
+  aria-labelledby="pwa-prompt-title"
+  aria-describedby="pwa-prompt-desc"
+>
+  <div class="pwa-prompt__mark" aria-hidden="true">
+    <img src="/icons/icon-192.png" alt="" width="40" height="40" />
+  </div>
+  <div class="pwa-prompt__copy">
+    <p id="pwa-prompt-title" class="pwa-prompt__title">Install this series</p>
+    <p id="pwa-prompt-desc" class="pwa-prompt__desc">
+      Open it like an app — faster launches, and chapters you’ve read stay offline.
+    </p>
+  </div>
+  <div class="pwa-prompt__actions">
+    <button type="button" class="pwa-prompt__dismiss" data-pwa-dismiss>Not now</button>
+    <button type="button" class="pwa-prompt__install" data-pwa-install>Install</button>
+  </div>
+</div>
+
+<style>
+  .pwa-prompt {
+    position: fixed;
+    z-index: 90;
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: var(--space-4);
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      'mark copy'
+      'actions actions';
+    gap: var(--space-3) var(--space-4);
+    align-items: center;
+    max-width: 26rem;
+    margin-inline: auto;
+    padding: var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--bg);
+    color: var(--ink);
+    box-shadow: var(--shadow-lg);
+    font-family: var(--font-ui);
+    transform: translateY(0);
+    opacity: 1;
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+  .pwa-prompt[hidden] {
+    display: none;
+  }
+  .pwa-prompt.is-leaving {
+    opacity: 0;
+    transform: translateY(0.5rem);
+    pointer-events: none;
+  }
+
+  .pwa-prompt__mark {
+    grid-area: mark;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius);
+    overflow: hidden;
+    flex: none;
+  }
+  .pwa-prompt__mark img {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .pwa-prompt__copy { grid-area: copy; min-width: 0; }
+  .pwa-prompt__title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .pwa-prompt__desc {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-xs);
+    line-height: 1.45;
+    color: var(--ink-2);
+  }
+
+  .pwa-prompt__actions {
+    grid-area: actions;
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+
+  .pwa-prompt__dismiss,
+  .pwa-prompt__install {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    border-radius: var(--radius);
+    padding: var(--space-2) var(--space-3);
+    line-height: 1.2;
+  }
+  .pwa-prompt__dismiss {
+    color: var(--ink-2);
+  }
+  .pwa-prompt__dismiss:hover { color: var(--ink); }
+  .pwa-prompt__install {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .pwa-prompt__install:hover {
+    filter: brightness(1.05);
+  }
+
+  @media (min-width: 480px) {
+    .pwa-prompt {
+      left: auto;
+      right: var(--space-5);
+      bottom: var(--space-5);
+      margin-inline: 0;
+      grid-template-columns: auto 1fr auto;
+      grid-template-areas: 'mark copy actions';
+      align-items: center;
+    }
+    .pwa-prompt__actions { justify-content: flex-end; }
+  }
+</style>
+
+<script>
+  const DISMISS_KEY = 'bfp-pwa-dismiss';
+  const DISMISS_MS = 14 * 24 * 60 * 60 * 1000; // two weeks
+
+  const promptEl = document.querySelector<HTMLElement>('[data-pwa-prompt]');
+  const installBtn = document.querySelector<HTMLButtonElement>('[data-pwa-install]');
+  const dismissBtn = document.querySelector<HTMLButtonElement>('[data-pwa-dismiss]');
+
+  if (promptEl && installBtn && dismissBtn) {
+    let deferred: any = null;
+
+    function isStandalone(): boolean {
+      const mq = window.matchMedia('(display-mode: standalone)').matches;
+      const ios = 'standalone' in navigator && Boolean((navigator as any).standalone);
+      return mq || ios;
+    }
+
+    function wasDismissed(): boolean {
+      try {
+        const raw = localStorage.getItem(DISMISS_KEY);
+        if (!raw) return false;
+        const at = Number(raw);
+        if (!Number.isFinite(at)) return false;
+        return Date.now() - at < DISMISS_MS;
+      } catch {
+        return false;
+      }
+    }
+
+    function hide(animate = true) {
+      if (!promptEl || promptEl.hidden) return;
+      if (!animate) {
+        promptEl.hidden = true;
+        return;
+      }
+      promptEl.classList.add('is-leaving');
+      window.setTimeout(() => {
+        promptEl.hidden = true;
+        promptEl.classList.remove('is-leaving');
+      }, 180);
+    }
+
+    function show() {
+      if (!promptEl || isStandalone() || wasDismissed() || !deferred) return;
+      promptEl.hidden = false;
+    }
+
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      deferred = event;
+      // Small delay so it doesn't fight first paint / search focus.
+      window.setTimeout(show, 1800);
+    });
+
+    window.addEventListener('appinstalled', () => {
+      deferred = null;
+      try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch { /* blocked */ }
+      hide();
+    });
+
+    dismissBtn.addEventListener('click', () => {
+      try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch { /* blocked */ }
+      hide();
+    });
+
+    installBtn.addEventListener('click', async () => {
+      if (!deferred) return;
+      installBtn.disabled = true;
+      try {
+        await deferred.prompt();
+        await deferred.userChoice;
+      } catch {
+        /* user closed the browser sheet */
+      } finally {
+        deferred = null;
+        installBtn.disabled = false;
+        hide();
+      }
+    });
+
+    if (isStandalone()) hide(false);
+  }
+</script>
