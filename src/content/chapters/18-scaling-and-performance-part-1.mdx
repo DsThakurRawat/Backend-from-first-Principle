@@ -2,7 +2,7 @@
 order: 18
 title: "Mastering Scaling & Performance"
 navTitle: "Scaling & Performance (Part 1)"
-summary: "Chapter 18 of Backend from First Principles: Scaling & Performance (Part 1)."
+summary: "What \"fast\" actually means and how to make it so: latency percentiles, throughput and queuing, finding the real bottleneck with profilers and traces, then the four fixes that account for most wins, N+1 queries, indexes, connection pooling and caching. Worked implementations in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "scaling"
@@ -63,12 +63,15 @@ A percentile tells you the latency threshold below which a certain percentage of
 
 Backend engineers focus on tail latencies (P95/P99) for two reasons. First, the requests that land in the tail are typically the most _complex_, they involve the heaviest business logic, the most joins, or the most service-to-service calls. Second, these requests often represent your most _valuable_ users: someone making a purchase, generating a report, or completing a checkout flow, exactly the workflows where a 5-second hang loses revenue and trust.
 
-### Measuring percentiles in Go
+### Measuring percentiles
 
-The Go standard library doesn't ship a percentile calculator, but you can compute them from sorted slices or use a library. Here's a simple implementation from scratch:
+Some languages ship a percentile function and some do not, but the algorithm is three lines either way: sort the samples, compute the index, read it off. What matters far more than the implementation is that you record the **whole distribution**, not an average, because an average hides exactly the tail you care about.
+
+Go Python JavaScript TypeScript Java
+
+sort, index, read off: P50, P90, P99
 
 ```go
-Go
 package main
 
 import (
@@ -111,10 +114,7 @@ func main() {
 }
 ```
 
-### Measuring percentiles in Python
-
-```text
-Python
+```python
 import numpy as np
 
 # Simulated latency samples (in milliseconds)
@@ -124,6 +124,72 @@ print(f"P50:  {np.percentile(samples, 50):.0f}ms")
 print(f"P90:  {np.percentile(samples, 90):.0f}ms")
 print(f"P99:  {np.percentile(samples, 99):.0f}ms")
 print(f"P99.9:{np.percentile(samples, 99.9):.0f}ms")
+
+# Without numpy, the standard library has had it since 3.8:
+#   from statistics import quantiles
+#   quantiles(samples, n=100)[98]   # P99
+```
+
+```js
+// Simulated latency samples (in milliseconds)
+const samples = [12, 15, 22, 48, 95, 110, 340, 890, 1200, 4800]
+
+function percentile(values, p) {
+  const sorted = [...values].sort((a, b) => a - b) // NOT .sort(): that is
+  //                                                  lexicographic, so
+  //                                                  1200 would sort
+  //                                                  before 48
+  const index = Math.ceil((p / 100) * sorted.length) - 1
+  return sorted[Math.max(0, index)]
+}
+
+console.log(`P50:  ${percentile(samples, 50)}ms`)
+console.log(`P90:  ${percentile(samples, 90)}ms`)
+console.log(`P99:  ${percentile(samples, 99)}ms`)
+```
+
+```ts
+// The signature is the teaching point: a percentile needs the WHOLE
+// sample set, and taking `number[]` rather than a running average makes
+// that structural. You cannot compute a P99 from a mean, ever, and an
+// API that accepts one is an API that will be asked to.
+function percentile(values: readonly number[], p: number): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  const index = Math.ceil((p / 100) * sorted.length) - 1
+  return sorted[Math.max(0, index)]
+}
+
+const samples: readonly number[] = [12, 15, 22, 48, 95, 110, 340, 890, 1200, 4800]
+
+for (const p of [50, 90, 99] as const) {
+  console.log(`P${p}:  ${percentile(samples, p)}ms`)
+}
+
+// In production you do not hold every sample in memory: Prometheus
+// histograms and t-digest / HDRHistogram compute approximate quantiles
+// in fixed space. The maths below is for understanding, not for scale.
+```
+
+```java
+// Simulated latency samples (in milliseconds)
+long[] samples = {12, 15, 22, 48, 95, 110, 340, 890, 1200, 4800};
+
+static long percentile(long[] values, double p) {
+    long[] sorted = values.clone(); // sort a COPY; Arrays.sort mutates
+    Arrays.sort(sorted);
+    int index = (int) Math.ceil(p / 100.0 * sorted.length) - 1;
+    return sorted[Math.max(0, index)];
+}
+
+System.out.printf("P50:  %dms%n", percentile(samples, 50));
+System.out.printf("P90:  %dms%n", percentile(samples, 90));
+System.out.printf("P99:  %dms%n", percentile(samples, 99));
+
+// In production, Micrometer's Timer does this for you and exports the
+// buckets to Prometheus:
+//   Timer.builder("http.server.requests")
+//        .publishPercentiles(0.5, 0.9, 0.99)
+//        .register(registry);
 ```
 
 <Callout type="info">
@@ -194,12 +260,15 @@ Now you add timing measurements throughout the code and discover: the database q
 **Never guess. Always measure.** Common hidden bottlenecks include: synchronous logging to remote services, JSON/XML serialization of large payloads, external API calls in loops, large response payloads causing slow network transmission, and middleware that runs on every request.
 </Callout>
 
-### Timing middleware in Go
+### Timing middleware
 
 Here's a practical middleware that logs per-request timing, so you can start identifying slow endpoints:
 
+Go Python JavaScript TypeScript Java
+
+wrap every request, log method, path, status and duration
+
 ```go
-Go
 package middleware
 
 import (
@@ -236,10 +305,7 @@ func (w *statusWriter) WriteHeader(code int) {
 }
 ```
 
-### Timing decorator in Python (FastAPI)
-
 ```python
-Python
 import time
 import logging
 from fastapi import Request
@@ -260,6 +326,80 @@ class TimingMiddleware(BaseHTTPMiddleware):
         return response
 ```
 
+```js
+// TimingMiddleware logs the duration of every HTTP request.
+export function timingMiddleware(req, res, next) {
+  const start = process.hrtime.bigint() // monotonic; Date.now() can jump
+                                        // backwards when NTP corrects
+
+  // No wrapper needed: 'finish' fires after the response is written, and
+  // res.statusCode is final by then.
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6
+    console.log(
+      `method=${req.method} path=${req.route?.path ?? req.path} ` +
+      `status=${res.statusCode} duration=${durationMs.toFixed(1)}ms`,
+    )
+  })
+
+  next()
+}
+```
+
+```ts
+import type { NextFunction, Request, Response } from 'express'
+
+export function timingMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const start = process.hrtime.bigint()
+
+  // Listen for BOTH: 'finish' means the response was sent, 'close' means
+  // the client hung up first. Timing only 'finish' silently drops every
+  // abandoned request, which is exactly the slow tail you are hunting.
+  const record = (outcome: 'finish' | 'close'): void => {
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6
+    console.log(
+      `method=${req.method} path=${req.route?.path ?? req.path} ` +
+      `status=${res.statusCode} outcome=${outcome} duration=${durationMs.toFixed(1)}ms`,
+    )
+  }
+
+  res.once('finish', () => record('finish'))
+  res.once('close', () => { if (!res.writableEnded) record('close') })
+
+  next()
+}
+```
+
+```java
+// A servlet Filter logs the duration of every HTTP request.
+@Component
+public class TimingFilter extends OncePerRequestFilter {
+    private static final Logger log = LoggerFactory.getLogger(TimingFilter.class);
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
+                                    FilterChain chain)
+            throws ServletException, IOException {
+        long start = System.nanoTime(); // nanoTime, not currentTimeMillis:
+                                        // only nanoTime is monotonic
+
+        try {
+            chain.doFilter(req, res);
+        } finally {
+            // In a finally block, so a request that threw is still timed.
+            // Those are usually the interesting ones.
+            long durationMs = (System.nanoTime() - start) / 1_000_000;
+            log.info("method={} path={} status={} duration={}ms",
+                req.getMethod(), req.getRequestURI(), res.getStatus(), durationMs);
+        }
+    }
+}
+
+// Spring Boot Actuator already records this as a Micrometer Timer
+// (http_server_requests_seconds) with percentiles, so in a real service
+// prefer that over hand-rolled logging. See chapter 15.
+```
+
 ## Profiling & Flame Graphs
 
 Profiling is the practice of measuring exactly where your application spends its time. A profiler attaches to your running application, samples the call stack at regular intervals, and records which functions are executing, how long they run, and how much CPU or memory they consume.
@@ -276,10 +416,13 @@ Raw profiler output can list thousands of functions, each accounting for some fr
 <svg viewBox="0 0 600 180" xmlns="http://www.w3.org/2000/svg" style="max-width:600px;width:100%"><rect x="10" y="140" width="580" height="28" rx="3" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1"></rect><text x="300" y="158" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="10" fill="var(--dg-ink-2)">main.handleRequest(), 100%</text><rect x="10" y="108" width="90" height="28" rx="3" fill="var(--dg-info-tint)" stroke="var(--dg-info)" stroke-width="1"></rect><text x="55" y="126" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-info-soft)">parseJSON</text><text x="55" y="136" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">8%</text><rect x="100" y="108" width="60" height="28" rx="3" fill="var(--dg-ok-tint)" stroke="var(--dg-ok)" stroke-width="1"></rect><text x="130" y="126" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-ok-soft)">auth</text><text x="130" y="136" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">5%</text><rect x="160" y="108" width="140" height="28" rx="3" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1"></rect><text x="230" y="126" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-accent-2)">db.QueryProducts</text><text x="230" y="136" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">12%</text><rect x="300" y="108" width="260" height="28" rx="3" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)" stroke-width="1.5"></rect><text x="430" y="126" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" font-weight="600" fill="var(--dg-accent-2)">logging.SendRemote </text><text x="430" y="136" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-accent)" font-weight="600">70% &#x3C;- BOTTLENECK</text><rect x="300" y="76" width="180" height="28" rx="3" fill="var(--dg-accent-tint)" stroke="var(--dg-accent-soft)" stroke-width="1"></rect><text x="390" y="94" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-accent-soft)">net.http.Post</text><text x="390" y="104" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">55%</text><rect x="480" y="76" width="80" height="28" rx="3" fill="var(--dg-plum-tint)" stroke="var(--dg-plum)" stroke-width="1"></rect><text x="520" y="94" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-plum)">serialize</text><text x="520" y="104" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">15%</text><rect x="300" y="44" width="120" height="28" rx="3" fill="var(--dg-accent-tint)" stroke="var(--dg-accent-soft)" stroke-width="1"></rect><text x="360" y="62" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="8" fill="var(--dg-accent-soft)">tcp.Dial</text><text x="360" y="72" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">40%</text></svg>
 </Diagram>
 
-### CPU profiling in Go with pprof
+### CPU profiling
+
+Go Python JavaScript TypeScript Java
+
+sample the stack, aggregate, render a flame graph
 
 ```go
-Go
 import (
     "net/http"
     _ "net/http/pprof"  // side-effect import: registers /debug/pprof/
@@ -295,10 +438,7 @@ func main() {
 }
 ```
 
-### CPU profiling in Python
-
-```text
-Python
+```python
 import cProfile
 import pstats
 
@@ -313,6 +453,89 @@ stats.print_stats(20)
 # For flame graphs, use py-spy (external tool):
 #   pip install py-spy
 #   py-spy record -o profile.svg -- python app.py
+#
+# py-spy's real advantage: it attaches to a RUNNING process by pid, so
+# you can profile the production container that is misbehaving right now
+# without redeploying it:  py-spy dump --pid 1
+```
+
+```js
+// Node has a sampling profiler built into the runtime.
+//
+//   node --cpu-prof --cpu-prof-dir=./profiles app.js
+//     -> writes a .cpuprofile you open in Chrome DevTools (Performance)
+//
+// For a running process, send it the inspector signal and attach:
+//   kill -SIGUSR1 <pid>
+//   then open chrome://inspect
+
+// Programmatically, when you want to profile one specific operation:
+import inspector from 'node:inspector/promises'
+
+const session = new inspector.Session()
+session.connect()
+
+await session.post('Profiler.enable')
+await session.post('Profiler.start')
+
+await handleRequest() // your function under test
+
+const { profile } = await session.post('Profiler.stop')
+await writeFile('profile.cpuprofile', JSON.stringify(profile))
+
+// Node caveat that catches everyone: a CPU profile of an IO-bound server
+// is almost entirely idle, because the time is spent WAITING, not
+// computing. If the flame graph is flat, you have an IO problem, and
+// the next section is the one you want.
+```
+
+```ts
+// The same built-in profiler, plus the one measurement that matters most
+// in Node and has no equivalent in the other tabs: EVENT LOOP LAG.
+//
+// A blocked event loop does not show up as slow code in any single
+// handler; it shows up as EVERY handler getting slower at once, which is
+// the single most confusing production symptom in Node.
+import { monitorEventLoopDelay } from 'node:perf_hooks'
+
+const histogram = monitorEventLoopDelay({ resolution: 10 })
+histogram.enable()
+
+setInterval(() => {
+  // If p99 climbs above a few milliseconds, something synchronous is
+  // hogging the loop: JSON.parse on a huge body, a sync crypto call,
+  // a regex backtracking. Profile THAT, not the handler that looks slow.
+  console.log(`event loop p99: ${(histogram.percentile(99) / 1e6).toFixed(1)}ms`)
+}, 10_000)
+
+// Run with --cpu-prof to find the offender:
+//   node --cpu-prof --cpu-prof-dir=./profiles dist/app.js
+```
+
+```java
+// The JVM ships a production-grade profiler: Java Flight Recorder. It is
+// designed to run continuously with ~1% overhead, so unlike most
+// profilers you can leave it on in production.
+//
+//   java -XX:StartFlightRecording=duration=30s,filename=profile.jfr -jar app.jar
+//
+// Or attach to a running process by pid:
+//   jcmd <pid> JFR.start duration=30s filename=profile.jfr
+//   jcmd <pid> JFR.dump  filename=profile.jfr
+//
+// Open profile.jfr in JDK Mission Control (free) for flame graphs, GC
+// pauses, lock contention and allocation hot spots in one view.
+
+// async-profiler is the other standard choice, and it produces a flame
+// graph directly:
+//   ./profiler.sh -d 30 -f flame.html <pid>
+//
+// It also samples ALLOCATION and LOCK events, not just CPU:
+//   ./profiler.sh -e alloc -d 30 -f alloc.html <pid>
+//   ./profiler.sh -e lock  -d 30 -f lock.html  <pid>
+//
+// That matters because on the JVM the bottleneck is often GC pressure or
+// a contended synchronized block, and a pure CPU profile shows neither.
 ```
 
 ### CPU-bound vs I/O-bound bottlenecks
@@ -351,10 +574,11 @@ Imagine a blog application. To render the homepage, you need 20 blog posts with 
 
 Instead of querying in a loop, collect all the IDs you need and fetch them in a single query using `WHERE id IN (...)`. The result: always 2 queries regardless of the number of items, one for the list, one for the related data.
 
-#### Go: solving N+1 with a batch query
+Go Python JavaScript TypeScript Java
+
+two queries, always, no matter how many rows come back
 
 ```go
-Go
 func GetPostsWithAuthors(ctx context.Context, db *sql.DB) ([]PostWithAuthor, error) {
     // Query 1: fetch all posts
     posts, err := queryPosts(ctx, db)
@@ -392,10 +616,7 @@ func GetPostsWithAuthors(ctx context.Context, db *sql.DB) ([]PostWithAuthor, err
 }
 ```
 
-#### Python (Django): select\_related & prefetch\_related
-
-```text
-Python
+```python
 # BAD, N+1 queries (Django ORM)
 posts = Post.objects.all()
 for post in posts:
@@ -408,10 +629,102 @@ posts = Post.objects.select_related("author").all()
 posts = Post.objects.prefetch_related("tags").all()
 ```
 
+```js
+async function getPostsWithAuthors(db) {
+  // Query 1: fetch all posts
+  const { rows: posts } = await db.query('SELECT * FROM posts')
+
+  // Collect unique author IDs
+  const authorIds = [...new Set(posts.map((p) => p.author_id))]
+
+  // Query 2: fetch ALL authors in one batch.
+  // = ANY($1) rather than IN (...): one bound array parameter, so the
+  // query text is identical whether there are 3 authors or 300, which
+  // also means Postgres can reuse the prepared plan.
+  const { rows: authors } = await db.query(
+    'SELECT * FROM users WHERE id = ANY($1)', [authorIds])
+
+  // Build lookup map and merge
+  const authorMap = new Map(authors.map((a) => [a.id, a]))
+
+  return posts.map((post) => ({ post, author: authorMap.get(post.author_id) }))
+}
+
+// The other Node answer is DataLoader, which batches per event-loop tick.
+// It lets each resolver ask for ONE author and still issues one query for
+// all of them, which is why every GraphQL server uses it.
+```
+
+```ts
+import DataLoader from 'dataloader'
+import type { Pool } from 'pg'
+
+// DataLoader is worth showing in the typed tab because its generics are
+// what make it safe: <K, V> pins the key type and the value type, so a
+// loader keyed by author id cannot be handed a post id by mistake.
+function createAuthorLoader(db: Pool): DataLoader<number, Author> {
+  return new DataLoader<number, Author>(async (ids) => {
+    // Called ONCE per event-loop tick with every id requested in it,
+    // however many separate call sites asked. That is the N+1 fix,
+    // applied automatically rather than by restructuring the callers.
+    const { rows } = await db.query<Author>(
+      'SELECT * FROM users WHERE id = ANY($1)', [[...ids]])
+
+    const byId = new Map(rows.map((a) => [a.id, a]))
+
+    // The contract: return results in the SAME ORDER as `ids`, with a
+    // hole for anything missing. Getting this wrong silently hands the
+    // wrong author to the wrong post, and nothing throws.
+    return ids.map((id) => byId.get(id) ?? new Error(`no author ${id}`))
+  })
+}
+
+async function getPostsWithAuthors(db: Pool): Promise<PostWithAuthor[]> {
+  const authors = createAuthorLoader(db) // one loader PER REQUEST, never global
+  const { rows: posts } = await db.query<Post>('SELECT * FROM posts')
+
+  // Looks like N+1 and is not: all of these batch into one query.
+  return Promise.all(
+    posts.map(async (post) => ({ post, author: await authors.load(post.author_id) })),
+  )
+}
+```
+
+```java
+// JPA/Hibernate is where N+1 bites hardest, because the lazy loading
+// that causes it is invisible: `post.getAuthor().getName()` looks like a
+// field access and is a SELECT.
+
+// BAD, N+1 queries
+List<Post> posts = em.createQuery("SELECT p FROM Post p", Post.class).getResultList();
+for (Post post : posts) {
+    System.out.println(post.getAuthor().getName()); // one query EACH
+}
+
+// GOOD, 1 query with a JOIN FETCH
+List<Post> posts = em.createQuery("""
+        SELECT p FROM Post p JOIN FETCH p.author
+        """, Post.class).getResultList();
+
+// GOOD, Spring Data: the same fetch, declared on the repository
+public interface PostRepository extends JpaRepository<Post, Long> {
+    @EntityGraph(attributePaths = "author")
+    List<Post> findAll();
+}
+
+// Or batch it, which is the closest analogue to the Go tab: Hibernate
+// collects the lazy proxies and loads them IN (...) batches of 50.
+//   spring.jpa.properties.hibernate.default_batch_fetch_size: 50
+
+// Turn the SQL log on in development and count the lines. It is the only
+// reliable way to catch this before production does:
+//   spring.jpa.show-sql: true
+```
+
 Every modern ORM provides bulk-fetch primitives: Django has `select_related` / `prefetch_related`, Ruby on Rails has `includes`, Prisma and Drizzle offer `leftJoin` and relation loading. If you're writing raw SQL, the answer is `JOIN`. The pattern to avoid is any loop that fires a query per iteration.
 
 <Callout type="info" title="Pro tip">
-Most modern ORMs have a "print generated SQL" mode. Enable it during development to catch N+1 patterns before they reach production. In Django: `settings.LOGGING` with the `django.db.backends` logger. In Go's GORM: `db.Debug()`.
+Most modern ORMs have a "print generated SQL" mode. Enable it during development to catch N+1 patterns before they reach production. In Django: `settings.LOGGING` with the `django.db.backends` logger. In Go's GORM: `db.Debug()`. In Prisma: `new PrismaClient({ log: ['query'] })`. In Hibernate: `spring.jpa.show-sql: true`.
 </Callout>
 
 ## Indexes & Query Plans
@@ -430,8 +743,7 @@ Sequential scan: O(n) -> Index scan: O(log n)
 
 ### Creating indexes
 
-```text
-SQL
+```sql
 -- Basic single-column index
 CREATE INDEX idx_posts_author_id ON posts (author_id);
 
@@ -469,8 +781,7 @@ Indexes are not free. Each index consumes disk space (and ideally fits in memory
 
 To discover whether your queries use indexes, Postgres provides the `EXPLAIN ANALYZE` command. It runs the query and shows the exact execution plan, which tables were scanned, which indexes were used, and how long each step took.
 
-```dockerfile
-SQL
+```sql
 EXPLAIN ANALYZE
 SELECT p.*, u.name AS author_name
 FROM posts p
@@ -519,10 +830,11 @@ A connection pool maintains a set of pre-established, reusable connections. Inst
 - Total connections to DB are centrally controlled
 - Preferred for **horizontally scaled** production systems
 
-#### Connection pooling in Go
+Go Python JavaScript TypeScript Java
+
+cap the pool, recycle connections, and count the instances
 
 ```go
-Go
 import "database/sql"
 
 db, err := sql.Open("postgres", connStr)
@@ -537,10 +849,7 @@ db.SetConnMaxLifetime(5 * time.Minute)  // recycle connections after 5 min
 db.SetConnMaxIdleTime(1 * time.Minute)  // close idle connections after 1 min
 ```
 
-#### Connection pooling in Python (SQLAlchemy)
-
-```text
-Python
+```python
 from sqlalchemy import create_engine
 
 engine = create_engine(
@@ -551,6 +860,85 @@ engine = create_engine(
     pool_recycle=1800,     # recycle connections every 30 minutes
     pool_pre_ping=True,    # test connection health before use
 )
+```
+
+```js
+import { Pool } from 'pg'
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20,                      // max open connections to the DB
+  idleTimeoutMillis: 60_000,    // close idle connections after 1 min
+  connectionTimeoutMillis: 30_000, // wait up to 30s for a free connection
+  maxLifetimeSeconds: 300,      // recycle connections after 5 min
+})
+
+// Never let a pool error take the process down. A connection dropped by
+// the database (a failover, an idle timeout on the server side) emits
+// 'error' on the IDLE client, and an unhandled 'error' event in Node is
+// an immediate crash.
+pool.on('error', (err) => {
+  console.error('idle client error', err)
+})
+```
+
+```ts
+import { Pool, type PoolConfig } from 'pg'
+
+// The arithmetic is the part worth writing down, because it is what
+// actually breaks: max x replicas must stay under the server's limit.
+// Postgres defaults to 100 connections TOTAL, and a few are reserved for
+// superuser, so 5 replicas x 20 is already the whole budget.
+const MAX_PER_INSTANCE = 20
+const REPLICAS = 5
+// 20 x 5 = 100 -> at the limit. Lower `max`, or put PgBouncer in front.
+
+const config: PoolConfig = {
+  connectionString: process.env.DATABASE_URL,
+  max: MAX_PER_INSTANCE,
+  idleTimeoutMillis: 60_000,
+  connectionTimeoutMillis: 30_000,
+}
+
+export const pool = new Pool(config)
+
+pool.on('error', (err: Error) => console.error('idle client error', err))
+
+// A bigger pool is not a faster app. Past the point where the database
+// can run queries in parallel, extra connections only move the queue
+// from your app into the database, where it is harder to see.
+```
+
+```java
+// Spring Boot uses HikariCP by default, and it is configured entirely in
+// application.yml, no code.
+//
+//   spring.datasource.hikari:
+//     maximum-pool-size: 20      # max open connections to the DB
+//     minimum-idle: 10           # idle connections kept ready
+//     max-lifetime: 300000       # recycle connections after 5 min (ms)
+//     idle-timeout: 60000        # close idle connections after 1 min
+//     connection-timeout: 30000  # fail fast rather than hang forever
+
+// HikariCP's own guidance is deliberately counter-intuitive and worth
+// taking seriously: the optimal pool size is SMALL. Their formula is
+// roughly (core_count * 2) + effective_spindle_count, which for an
+// 8-core database box is about 17, not 200. A larger pool adds context
+// switching and lock contention inside the database and makes
+// throughput WORSE, while making the problem invisible to your metrics.
+
+@Bean
+DataSource dataSource() {
+    HikariConfig config = new HikariConfig();
+    config.setJdbcUrl(System.getenv("DATABASE_URL"));
+    config.setMaximumPoolSize(20);
+    config.setMaxLifetime(Duration.ofMinutes(5).toMillis());
+    // Fail fast when the pool is exhausted. The default is 30s, and a
+    // request that waits 30s for a connection has already timed out
+    // upstream, so all it does is hold a thread hostage.
+    config.setConnectionTimeout(Duration.ofSeconds(5).toMillis());
+    return new HikariDataSource(config);
+}
 ```
 
 <Callout type="info">
@@ -583,10 +971,11 @@ In practice, you place a cache (typically Redis, Memcached, or Valkey) in front 
 
 Many production systems use both: a small local cache for the "hottest" data (most frequently accessed items) backed by a larger distributed cache. A request checks the local cache first (sub-millisecond), then falls back to the distributed cache (a few milliseconds), and only hits the database on a full miss.
 
-#### Simple Redis caching in Go
+Go Python JavaScript TypeScript Java
+
+check the cache, fall back to the database, write back with a TTL
 
 ```go
-Go
 import (
     "context"
     "encoding/json"
@@ -621,10 +1010,7 @@ func GetProduct(ctx context.Context, id string) (*Product, error) {
 }
 ```
 
-#### Simple Redis caching in Python
-
 ```python
-Python
 import json, redis
 
 r = redis.Redis(host="localhost", port=6379, decode_responses=True)
@@ -643,6 +1029,103 @@ def get_product(product_id: str) -> dict:
     # 3. Store with 10-minute TTL
     r.setex(cache_key, 600, json.dumps(product))
     return product
+```
+
+```js
+import { createClient } from 'redis'
+
+const redis = createClient({ url: 'redis://localhost:6379' })
+await redis.connect()
+
+export async function getProduct(id) {
+  const cacheKey = `product:${id}`
+
+  // 1. Try cache first
+  const cached = await redis.get(cacheKey)
+  if (cached !== null) {
+    return JSON.parse(cached) // Cache HIT, ~2ms
+  }
+
+  // 2. Cache miss, query database
+  const product = await queryProductFromDb(id)
+
+  // 3. Store in cache with TTL
+  await redis.set(cacheKey, JSON.stringify(product), { EX: 600 }) // 10 min
+
+  return product
+}
+```
+
+```ts
+import type { RedisClientType } from 'redis'
+
+const TTL_SECONDS = 600 // 10 minutes
+
+// One generic helper instead of this block copied per entity. The type
+// parameter is what makes it reusable: the caller decides what shape
+// comes back, and the cache layer never has to know.
+async function cached<T>(
+  redis: RedisClientType,
+  key: string,
+  load: () => Promise<T>,
+  ttl = TTL_SECONDS,
+): Promise<T> {
+  // 1. Try cache first
+  const hit = await redis.get(key)
+  if (hit !== null) {
+    return JSON.parse(hit) as T // Cache HIT, ~2ms
+  }
+
+  // 2. Cache miss, query database
+  const value = await load()
+
+  // 3. Store in cache with TTL
+  await redis.set(key, JSON.stringify(value), { EX: ttl })
+
+  return value
+}
+
+export const getProduct = (id: string): Promise<Product> =>
+  cached(redis, `product:${id}`, () => queryProductFromDb(id))
+
+// One caveat this shape does NOT solve, and it is the one that bites in
+// production: if a popular key expires, every in-flight request misses
+// at once and they all hit the database together. That is a cache
+// stampede, and the fix is a short lock or a single-flight wrapper so
+// only the first miss does the work. See chapter 09.
+```
+
+```java
+@Service
+public class ProductService {
+    private static final Duration TTL = Duration.ofMinutes(10);
+
+    private final StringRedisTemplate redis;
+    private final ObjectMapper json;
+
+    public Product getProduct(String id) throws JsonProcessingException {
+        String cacheKey = "product:" + id;
+
+        // 1. Try cache first
+        String cached = redis.opsForValue().get(cacheKey);
+        if (cached != null) {
+            return json.readValue(cached, Product.class); // Cache HIT, ~2ms
+        }
+
+        // 2. Cache miss, query database
+        Product product = queryProductFromDb(id);
+
+        // 3. Store in cache with TTL
+        redis.opsForValue().set(cacheKey, json.writeValueAsString(product), TTL);
+
+        return product;
+    }
+}
+
+// Or declaratively, which is the version you would actually ship:
+//   @Cacheable(cacheNames = "product", key = "#id")
+//   public Product getProduct(String id) { return queryProductFromDb(id); }
+// with the TTL set on the RedisCacheManager. See chapter 09.
 ```
 
 ## Cache Invalidation
@@ -764,8 +1247,7 @@ The moment you have more than one server, you need a mechanism to distribute inc
 
 ### Load balancer in practice (Nginx config)
 
-```text
-Nginx
+```nginx
 upstream backend {
     # Least connections algorithm
     least_conn;
@@ -792,10 +1274,11 @@ server {
 
 Load balancers periodically send health check probes (HTTP requests to a `/health` endpoint) to each backend. If a server fails to respond, the load balancer stops routing traffic to it. When the server recovers, traffic resumes. This is the mechanism that provides the redundancy benefit of horizontal scaling.
 
-#### Simple health endpoint in Go
+Go Python JavaScript TypeScript Java
+
+probe the dependency, answer 503 when it is unreachable
 
 ```go
-Go
 http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
     // Check database connectivity
     if err := db.PingContext(r.Context()); err != nil {
@@ -811,6 +1294,89 @@ http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
         "status": "healthy",
     })
 })
+```
+
+```python
+@app.get("/health")
+async def health(response: Response):
+    # Check database connectivity
+    try:
+        await db.execute(text("SELECT 1"))
+    except Exception:
+        response.status_code = 503
+        return {"status": "unhealthy", "reason": "database unreachable"}
+
+    return {"status": "healthy"}
+```
+
+```js
+app.get('/health', async (req, res) => {
+  // Check database connectivity
+  try {
+    await pool.query('SELECT 1')
+  } catch {
+    return res.status(503).json({
+      status: 'unhealthy',
+      reason: 'database unreachable',
+    })
+  }
+
+  res.status(200).json({ status: 'healthy' })
+})
+```
+
+```ts
+import type { Request, Response } from 'express'
+
+// Keep the health check CHEAP and give it a timeout. A probe that runs a
+// real query, or that can hang, turns a slow database into a fleet-wide
+// outage: every instance fails its check at once and the load balancer
+// takes all of them out of rotation simultaneously.
+export async function health(_req: Request, res: Response): Promise<void> {
+  try {
+    await Promise.race([
+      pool.query('SELECT 1'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000)),
+    ])
+  } catch {
+    res.status(503).json({ status: 'unhealthy', reason: 'database unreachable' })
+    return
+  }
+
+  res.status(200).json({ status: 'healthy' })
+}
+```
+
+```java
+// Spring Boot Actuator gives you this endpoint for free, and it already
+// includes a DataSource check:
+//   management.endpoint.health.show-details: always
+//
+// GET /actuator/health -> 200 {"status":"UP"} or 503 {"status":"DOWN"}
+
+// Anything it does not know about is one bean:
+@Component
+public class DatabaseHealthIndicator implements HealthIndicator {
+    private final JdbcClient db;
+
+    DatabaseHealthIndicator(JdbcClient db) {
+        this.db = db;
+    }
+
+    @Override
+    public Health health() {
+        try {
+            db.sql("SELECT 1").query(Integer.class).single();
+            return Health.up().build();
+        } catch (Exception e) {
+            return Health.down().withDetail("reason", "database unreachable").build();
+        }
+    }
+}
+
+// See chapter 12 for why liveness and readiness must be separate groups:
+// a database outage should stop traffic being routed here, but must NOT
+// restart the pod, since restarting does not bring the database back.
 ```
 
 ## Summary & Key Principles
@@ -835,4 +1401,4 @@ Performance engineering is not about memorizing a checklist of techniques. It's 
 
 [^ Back to top](#top)
 
-Backend from First Principles / Chapter 18 / Scaling. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 18 / Scaling. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).

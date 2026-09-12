@@ -2,7 +2,7 @@
 order: 12
 title: "Error Handling & Fault-Tolerant Systems"
 navTitle: "Error Handling & Fault Tolerance"
-summary: "Chapter 12 of Backend from First Principles: Error Handling & Fault Tolerance."
+summary: "Every backend fails; the difference is whether it fails loudly and recoverably or silently and expensively. The five classes of error, failing fast at startup, deep health checks, retries with backoff and jitter, one global handler at the edge, and what a client must never be told. Worked implementations in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "error"
@@ -223,10 +223,14 @@ The golden rule: **validate all required environment variables before the server
 Blue-green deployments make startup-time crashes safe: the new version must pass health checks before the old version is terminated. If the new version crashes at start, the old version keeps serving traffic.
 </Callout>
 
-### Go: Config Validation at Boot
+### Config Validation at Boot
 
-```go
-Gopackage config
+Go Python JavaScript TypeScript Java
+
+check every required variable before the port is bound
+
+```go title="config.go / Go"
+package config
 
 import (
     "fmt"
@@ -279,6 +283,141 @@ func main() {
 }
 ```
 
+```python title="config.py / Python"
+import os
+import sys
+from dataclasses import dataclass
+
+REQUIRED = [
+    "DATABASE_URL",
+    "OPENAI_API_KEY",
+    "JWT_SECRET",
+    "RESEND_API_KEY",
+]
+
+
+@dataclass(frozen=True)
+class Config:
+    database_url: str
+    openai_key: str
+    jwt_secret: str
+    resend_api_key: str
+
+
+def must_load() -> Config:
+    """Exit if any required variable is missing.
+
+    Call this once at startup, before the server binds a port.
+    """
+    missing = [key for key in REQUIRED if not os.getenv(key)]
+    if missing:
+        # Crash immediately, loud and clear
+        sys.exit(f"[FATAL] missing required env vars: {', '.join(missing)}")
+
+    return Config(
+        database_url=os.environ["DATABASE_URL"],
+        openai_key=os.environ["OPENAI_API_KEY"],
+        jwt_secret=os.environ["JWT_SECRET"],
+        resend_api_key=os.environ["RESEND_API_KEY"],
+    )
+
+
+# main.py
+config = must_load()  # exits here if config invalid
+```
+
+```js title="config.js / Node 20+"
+const REQUIRED = [
+  'DATABASE_URL',
+  'OPENAI_API_KEY',
+  'JWT_SECRET',
+  'RESEND_API_KEY',
+]
+
+// Exits if any required variable is missing.
+// Call this once at startup, before app.listen().
+export function mustLoad() {
+  const missing = REQUIRED.filter((key) => !process.env[key])
+
+  if (missing.length > 0) {
+    // Crash immediately, loud and clear
+    console.error(`[FATAL] missing required env vars: ${missing.join(', ')}`)
+    process.exit(1)
+  }
+
+  return {
+    databaseUrl: process.env.DATABASE_URL,
+    openaiKey: process.env.OPENAI_API_KEY,
+    jwtSecret: process.env.JWT_SECRET,
+    resendApiKey: process.env.RESEND_API_KEY,
+  }
+}
+
+// server.js
+const config = mustLoad() // exits here if config invalid
+app.listen(8080)
+```
+
+```ts title="config.ts / TypeScript 5+"
+const REQUIRED = ['DATABASE_URL', 'OPENAI_API_KEY', 'JWT_SECRET', 'RESEND_API_KEY'] as const
+
+type RequiredVar = (typeof REQUIRED)[number]
+
+// The return type is the real payoff: every field is `string`, never
+// `string | undefined`. Because this function has already proved the
+// variable is present, nothing downstream needs a second null check,
+// and `process.env.X!` never has to appear anywhere else in the codebase.
+export type Config = Record<RequiredVar, string>
+
+export function mustLoad(): Config {
+  const missing = REQUIRED.filter((key) => !process.env[key])
+
+  if (missing.length > 0) {
+    console.error(`[FATAL] missing required env vars: ${missing.join(', ')}`)
+    process.exit(1) // crash immediately, loud and clear
+  }
+
+  return Object.fromEntries(
+    REQUIRED.map((key) => [key, process.env[key] as string]),
+  ) as Config
+}
+
+export const config = mustLoad() // exits at import if config invalid
+```
+
+```java title="Config.java / Java 17+ + Spring Boot"
+@Component
+public class Config {
+    private static final List<String> REQUIRED = List.of(
+        "DATABASE_URL",
+        "OPENAI_API_KEY",
+        "JWT_SECRET",
+        "RESEND_API_KEY");
+
+    // @PostConstruct runs while the context is starting, so a missing
+    // variable fails the application BEFORE the port is ever bound. That
+    // is the whole point of failing fast: an app that refused to start is
+    // obvious, an app that started half-configured is not.
+    @PostConstruct
+    void validate() {
+        List<String> missing = REQUIRED.stream()
+            .filter(key -> System.getenv(key) == null || System.getenv(key).isBlank())
+            .toList();
+
+        if (!missing.isEmpty()) {
+            // Crash immediately, loud and clear
+            throw new IllegalStateException(
+                "[FATAL] missing required env vars: " + String.join(", ", missing));
+        }
+    }
+}
+
+// Spring's own spelling of the same guarantee is a placeholder with no
+// default, which fails startup and names the property:
+//   app.database-url: ${DATABASE_URL}
+// See chapter 14 for the fuller version with per-field validation.
+```
+
 08
 
 ## Proactive Error Detection: Health Checks
@@ -298,10 +437,14 @@ Health checks continuously verify that your system is working, not just that it 
 - **Configuration**: verify all required env vars are loaded and non-empty at startup.
 - **Cache warmup**: ensure critical caches (session store, product catalogue) are populated before serving traffic.
 
-### Go: Deep Health Check Endpoint
+### Deep Health Check Endpoint
 
-```go
-Gotype HealthStatus struct {
+Go Python JavaScript TypeScript Java
+
+ping every dependency, report per-check status, answer 503 when degraded
+
+```go title="health.go / Go"
+type HealthStatus struct {
     Status   string            `json:"status"`
     Checks   map[string]string `json:"checks"`
 }
@@ -339,6 +482,140 @@ func healthHandler(db *pgxpool.Pool, rdb *redis.Client) http.HandlerFunc {
 }
 ```
 
+```python title="health.py / Python + FastAPI"
+import asyncio
+
+from fastapi import Response
+from sqlalchemy import text
+
+
+@app.get("/ready")
+async def health(response: Response):
+    checks: dict[str, str] = {}
+    overall = "ok"
+
+    # DB check, with its own timeout
+    try:
+        await asyncio.wait_for(db.execute(text("SELECT 1")), timeout=2.0)
+        checks["database"] = "ok"
+    except Exception as e:
+        checks["database"] = f"unhealthy: {e}"
+        overall = "degraded"
+
+    # Redis check
+    try:
+        await redis.ping()
+        checks["cache"] = "ok"
+    except Exception as e:
+        checks["cache"] = f"unhealthy: {e}"
+        overall = "degraded"
+
+    response.status_code = 200 if overall == "ok" else 503
+    return {"status": overall, "checks": checks}
+```
+
+```js title="health.js / Node 20+ + Express"
+app.get('/ready', async (req, res) => {
+  const checks = {}
+  let overall = 'ok'
+
+  // DB check, with its OWN timeout. A health check that can hang is
+  // worse than no health check: the orchestrator's probe times out, the
+  // pod is killed, and nothing in the logs explains why.
+  try {
+    await withTimeout(pool.query('SELECT 1'), 2000)
+    checks.database = 'ok'
+  } catch (err) {
+    checks.database = `unhealthy: ${err.message}`
+    overall = 'degraded'
+  }
+
+  // Redis check
+  try {
+    await redis.ping()
+    checks.cache = 'ok'
+  } catch (err) {
+    checks.cache = `unhealthy: ${err.message}`
+    overall = 'degraded'
+  }
+
+  res.status(overall === 'ok' ? 200 : 503).json({ status: overall, checks })
+})
+```
+
+```ts title="health.ts / TypeScript 5+ + Express"
+import type { Request, Response } from 'express'
+
+interface HealthStatus {
+  status: 'ok' | 'degraded'
+  checks: Record<string, string>
+}
+
+// Describing a check as DATA rather than as another try/catch block is
+// what keeps this endpoint honest as dependencies are added: one entry
+// per dependency, all of them run concurrently, and nobody can add a
+// fifth check that forgets its timeout.
+const CHECKS: Array<{ name: string; probe: () => Promise<unknown> }> = [
+  { name: 'database', probe: () => pool.query('SELECT 1') },
+  { name: 'cache', probe: () => redis.ping() },
+]
+
+export async function health(_req: Request, res: Response): Promise<void> {
+  const results = await Promise.all(
+    CHECKS.map(async ({ name, probe }) => {
+      try {
+        await withTimeout(probe(), 2000)
+        return [name, 'ok'] as const
+      } catch (err) {
+        return [name, `unhealthy: ${(err as Error).message}`] as const
+      }
+    }),
+  )
+
+  const checks = Object.fromEntries(results)
+  const overall: HealthStatus['status'] =
+    results.every(([, v]) => v === 'ok') ? 'ok' : 'degraded'
+
+  res.status(overall === 'ok' ? 200 : 503).json({ status: overall, checks })
+}
+```
+
+```java title="CacheHealthIndicator.java / Java 17+ + Spring Boot Actuator"
+// Spring Boot Actuator already exposes /actuator/health, and it already
+// aggregates a DataSource and a Redis check with no code at all:
+//   management.endpoint.health.show-details: always
+//   management.endpoint.health.probes.enabled: true
+
+// Anything it does not know about is one bean each.
+@Component
+public class CacheHealthIndicator implements HealthIndicator {
+    private final StringRedisTemplate redis;
+
+    CacheHealthIndicator(StringRedisTemplate redis) {
+        this.redis = redis;
+    }
+
+    @Override
+    public Health health() {
+        try {
+            redis.getConnectionFactory().getConnection().ping();
+            return Health.up().build();
+        } catch (Exception e) {
+            // One DOWN makes the aggregate DOWN, and /actuator/health then
+            // answers 503, which is what the orchestrator actually watches.
+            return Health.down(e).withDetail("cache", "unhealthy").build();
+        }
+    }
+}
+
+// Liveness and readiness are separate GROUPS, and conflating them is the
+// classic mistake: a database outage should fail readiness (stop routing
+// traffic here) but NOT liveness, because restarting the pod will not
+// bring the database back, it will only add a crash loop to the incident.
+//   management.endpoint.health.group.readiness.include: db,cache
+//   management.endpoint.health.group.liveness.include: ping
+```
+
 09
 
 ## Monitoring & Observability
@@ -363,8 +640,31 @@ Health checks tell you something is broken _right now_. Monitoring tells you som
 
 Plain-text logs are hard to query at scale. Use structured JSON logs so log aggregation tools (Grafana Loki, Datadog, ELK) can parse, filter, and alert on them programmatically.
 
-```text
-Python / structlogimport structlog
+Go Python JavaScript TypeScript Java
+
+one queryable object per event, never an interpolated sentence
+
+```go title="logging.go / Go + log/slog"
+// Go's standard library has had structured logging since 1.21: log/slog.
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+// Good, structured, queryable, no sensitive data
+logger.Error("payment_failed",
+    "user_id", userID,
+    "order_id", orderID,
+    "amount_cents", 4999,
+    "provider", "stripe",
+    "error_code", "card_declined",
+    "correlation_id", correlationID,
+)
+
+// Bad: one opaque sentence. No aggregator can filter on "all declined
+// cards for this provider", because there are no fields to filter on.
+logger.Error(fmt.Sprintf("payment failed for %s on order %s", userID, orderID))
+```
+
+```python title="logging.py / Python + structlog"
+import structlog
 
 log = structlog.get_logger()
 
@@ -380,6 +680,79 @@ log.error(
 
 # BAD, never log PII or secrets
 # log.error("payment_failed", email="alice@example.com", card="4242...")
+```
+
+```js title="logging.js / Node 20+ + pino"
+import pino from 'pino'
+
+const log = pino({
+  // Redaction belongs HERE, not at the call sites. One list, applied to
+  // every log line, is the only version of this that survives contact
+  // with a growing codebase.
+  redact: ['*.password', '*.card', 'req.headers.authorization'],
+})
+
+// Good, structured, queryable, no sensitive data.
+// pino's convention: the object first, the message second.
+log.error({
+  user_id: 'u_9a3f',            // ID, not email
+  correlation_id: 'req_abc123',
+  provider: 'stripe',
+  error_code: 'card_declined',
+  amount_cents: 4999,
+}, 'payment_failed')
+
+// BAD, never log PII or secrets
+// log.error({ email: 'alice@example.com', card: '4242...' }, 'payment_failed')
+```
+
+```ts title="logging.ts / TypeScript 5+ + pino"
+import pino from 'pino'
+
+// Naming the event shape is worth it for exactly one reason: the field
+// names become a contract. A dashboard querying `error_code` keeps
+// working because a rename now breaks the build rather than silently
+// emitting a field nothing is watching.
+interface PaymentFailed {
+  user_id: string
+  correlation_id: string
+  provider: 'stripe' | 'adyen'
+  error_code: string
+  amount_cents: number
+}
+
+const log = pino({ redact: ['*.password', '*.card', 'req.headers.authorization'] })
+
+export function logPaymentFailed(event: PaymentFailed): void {
+  log.error(event, 'payment_failed')
+}
+
+// And because `email` is not a field of PaymentFailed, the PII mistake
+// below does not compile:
+//   logPaymentFailed({ ...event, email: user.email })
+```
+
+```java title="Logging.java / Java 17+ + SLF4J + Logstash encoder"
+private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
+
+// SLF4J's message is a template, not a formatted string. The two look
+// alike and are not: the placeholders are only filled in if the level is
+// enabled, and structured appenders can keep the arguments separate.
+log.atError()
+   .setMessage("payment_failed")
+   .addKeyValue("user_id", "u_9a3f")            // ID, not email
+   .addKeyValue("correlation_id", "req_abc123")
+   .addKeyValue("provider", "stripe")
+   .addKeyValue("error_code", "card_declined")
+   .addKeyValue("amount_cents", 4999)
+   .log();
+
+// With net.logstash.logback.encoder.LogstashEncoder, every addKeyValue
+// becomes a top-level JSON field that Loki or ELK can filter on.
+
+// BAD, an interpolated sentence: no fields, nothing to query, and the
+// string is built even when ERROR is disabled.
+// log.error("payment failed for " + user.getEmail() + " on " + orderId);
 ```
 
 10
@@ -404,10 +777,14 @@ log.error(
 
 **Strategy:** Graceful degradation. Fallback. Disable the feature. Protect core functionality.
 
-### Exponential Backoff in Go
+### Exponential Backoff
 
-```go
-Gofunc sendEmailWithRetry(to, subject, body string) error {
+Go Python JavaScript TypeScript Java
+
+double the wait each attempt, add jitter, and never retry a permanent failure
+
+```go title="retry.go / Go"
+func sendEmailWithRetry(to, subject, body string) error {
     maxRetries := 5
     baseDelay  := 1 * time.Second
 
@@ -445,6 +822,159 @@ func isRetryable(err error) bool {
 }
 ```
 
+```python title="retry.py / Python"
+import random
+import time
+
+
+def send_email_with_retry(to: str, subject: str, body: str) -> None:
+    max_retries = 5
+    base_delay = 1.0  # seconds
+
+    for attempt in range(max_retries):
+        try:
+            email_client.send(to, subject, body)
+            return  # success
+        except Exception as err:
+            if not is_retryable(err):
+                raise RuntimeError("permanent failure") from err
+
+            # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+            wait = base_delay * (2 ** attempt)
+            # Add jitter (+/-20%) to prevent thundering herd
+            jitter = random.uniform(0, wait / 5)
+            time.sleep(wait + jitter)
+
+            log.warning(
+                "email_send_failed_retrying",
+                attempt=attempt + 1,
+                wait_ms=int(wait * 1000),
+                error=str(err),
+            )
+
+    raise RuntimeError(f"all {max_retries} retries exhausted")
+
+
+def is_retryable(err: Exception) -> bool:
+    # Retry on 429, 503, network errors; not on 400, 401, 422
+    if isinstance(err, HTTPError):
+        return err.status_code == 429 or err.status_code >= 500
+    return True  # network errors are always retryable
+```
+
+```js title="retry.js / Node 20+"
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+export async function sendEmailWithRetry(to, subject, body) {
+  const maxRetries = 5
+  const baseDelay = 1000 // ms
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      await emailClient.send(to, subject, body)
+      return // success
+    } catch (err) {
+      if (!isRetryable(err)) {
+        throw new Error('permanent failure', { cause: err })
+      }
+
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+      const wait = baseDelay * 2 ** attempt
+      // Add jitter (+/-20%) to prevent thundering herd
+      const jitter = Math.random() * (wait / 5)
+      await sleep(wait + jitter)
+
+      log.warn({ attempt: attempt + 1, wait_ms: wait, err },
+        'email send failed, retrying')
+    }
+  }
+  throw new Error(`all ${maxRetries} retries exhausted`)
+}
+
+function isRetryable(err) {
+  // Retry on 429, 503, network errors; not on 400, 401, 422
+  if (err.statusCode) return err.statusCode === 429 || err.statusCode >= 500
+  return true // network errors are always retryable
+}
+```
+
+```ts title="retry.ts / TypeScript 5+"
+// Generic, because "retry with backoff" is never needed exactly once.
+// The type parameter keeps the wrapped call's return value intact, so
+// adding retries to a call site changes nothing about how it is used.
+export async function withRetry<T>(
+  work: () => Promise<T>,
+  opts: { maxRetries?: number; baseDelayMs?: number; signal?: AbortSignal } = {},
+): Promise<T> {
+  const { maxRetries = 5, baseDelayMs = 1000, signal } = opts
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // The AbortSignal matters more than it looks. Without it, a client
+    // that hung up three seconds ago still costs you thirty-one seconds
+    // of retries against an API you are paying per call for.
+    signal?.throwIfAborted()
+
+    try {
+      return await work()
+    } catch (err) {
+      if (!isRetryable(err)) {
+        throw new Error('permanent failure', { cause: err })
+      }
+
+      const wait = baseDelayMs * 2 ** attempt   // 1s, 2s, 4s, 8s, 16s
+      const jitter = Math.random() * (wait / 5) // +/-20%, no thundering herd
+      await sleep(wait + jitter, signal)
+
+      log.warn({ attempt: attempt + 1, wait_ms: wait, err }, 'retrying')
+    }
+  }
+  throw new Error(`all ${maxRetries} retries exhausted`)
+}
+
+function isRetryable(err: unknown): boolean {
+  // Retry on 429, 503, network errors; not on 400, 401, 422
+  if (err instanceof HTTPError) {
+    return err.statusCode === 429 || err.statusCode >= 500
+  }
+  return true // network errors are always retryable
+}
+
+// Usage: the result is still a Message, cache or no retries.
+const sent: Message = await withRetry(() => emailClient.send(to, subject, body))
+```
+
+```java title="EmailService.java / Java 17+ + Spring Retry"
+// Spring Retry collapses the whole loop into an annotation, and its
+// defaults are exactly the ones above: multiplier 2, plus a random
+// factor that supplies the jitter.
+@Service
+public class EmailService {
+
+    @Retryable(
+        retryFor   = RetryableException.class,  // 429, 5xx, network
+        noRetryFor = PermanentException.class,  // 400, 401, 422: never retry
+        maxAttempts = 5,
+        backoff = @Backoff(delay = 1000, multiplier = 2, random = true))
+    public void sendEmail(String to, String subject, String body) {
+        emailClient.send(to, subject, body); // 1s, 2s, 4s, 8s, 16s (+jitter)
+    }
+
+    // Called once every attempt is exhausted. Without a @Recover method
+    // the final exception simply propagates, which is often right, but
+    // that should be a decision rather than something you discover.
+    @Recover
+    void recover(RetryableException e, String to, String subject, String body) {
+        log.error("all retries exhausted to={}", to, e);
+        deadLetter.park(to, subject, body);
+    }
+}
+
+// Resilience4j is the other standard choice, and its advantage is that
+// the retry composes with a circuit breaker: a provider that is fully
+// down stops being called at all, instead of being retried five times
+// by every single request that arrives.
+```
+
 ### Automatic vs Manual Recovery
 
 - **Automatic**: restart crashed processes (systemd, Kubernetes restart policy), clean up corrupted caches, switch to backup systems. Design carefully, automatic recovery can sometimes _amplify_ a problem.
@@ -471,12 +1001,18 @@ The global error handler is a single middleware that sits at the outermost layer
 
 12
 
-## Go: Global Error Handler Implementation
+## Global Error Handler Implementation
 
-Go doesn't have exceptions, errors are return values. The pattern is to return errors up the call stack and handle them in middleware.
+The shape is the same in every language and splits in two: a **typed application error** that carries the status code and a safe, user-facing message, and a **single place** at the edge that turns anything thrown or returned into that envelope. Go has no exceptions, so its errors travel as return values; the others let an exception fly and catch it at the boundary. Either way, exactly one place decides what the client sees.
 
-```go
-Go / errors/types.gopackage apperr
+### The typed application error
+
+Go Python JavaScript TypeScript Java
+
+a status code, a safe message, and the original error kept for logs only
+
+```go title="errors/types.go / Go"
+package apperr
 
 import "net/http"
 
@@ -509,9 +1045,141 @@ func Internal(err error) *AppError {
 }
 ```
 
-```go
-Go / middleware/error_handler.gopackage middleware
+```python title="errors.py / Python"
+class AppError(Exception):
+    """The canonical error type for this application."""
 
+    def __init__(self, status: int, message: str, details=None, cause=None):
+        super().__init__(message)
+        self.status = status      # HTTP status code
+        self.message = message    # Safe, user-facing message
+        self.details = details    # Optional: field-level errors for 400s
+        self.cause = cause        # Original error, for logging only
+
+
+class NotFoundError(AppError):
+    def __init__(self, resource: str):
+        super().__init__(404, f"{resource} not found")
+
+
+class ConflictError(AppError):
+    def __init__(self, msg: str):
+        super().__init__(409, msg)
+
+
+class BadRequestError(AppError):
+    def __init__(self, msg: str, details=None):
+        super().__init__(400, msg, details)
+
+
+class InternalError(AppError):
+    def __init__(self, cause: Exception):
+        # NEVER put str(cause) in `message`, it reaches the client
+        super().__init__(500, "something went wrong", cause=cause)
+```
+
+```js title="errors.js / Node 20+"
+// The canonical error type for this application.
+export class AppError extends Error {
+  constructor(code, message, details, cause) {
+    super(message, { cause }) // `cause` is for logging only, NEVER sent out
+    this.name = 'AppError'
+    this.code = code          // HTTP status code
+    this.details = details    // Optional: field-level errors for 400s
+  }
+}
+
+// Constructors
+export const notFound = (resource) => new AppError(404, `${resource} not found`)
+export const conflict = (msg) => new AppError(409, msg)
+export const badRequest = (msg, details) => new AppError(400, msg, details)
+export const internal = (cause) =>
+  new AppError(500, 'something went wrong', undefined, cause)
+//                  ^ NEVER cause.message here: it leaks the stack, the
+//                    SQL, and often the schema straight to the client.
+```
+
+```ts title="errors.ts / TypeScript 5+"
+interface FieldError {
+  field: string
+  issue: string
+}
+
+export class AppError extends Error {
+  constructor(
+    readonly code: number,          // HTTP status code
+    override readonly message: string, // safe, user-facing
+    readonly details?: FieldError[], // field-level errors for 400s
+    override readonly cause?: unknown, // original error, LOGGING ONLY
+  ) {
+    super(message, { cause })
+    this.name = 'AppError'
+  }
+}
+
+// The separation the types are enforcing is the security one from sec 14:
+// `message` and `details` are the only fields the handler is allowed to
+// serialise, and `cause` is deliberately typed `unknown` so nobody can
+// casually interpolate it into a response without narrowing it first.
+export const notFound = (resource: string): AppError =>
+  new AppError(404, `${resource} not found`)
+
+export const conflict = (msg: string): AppError => new AppError(409, msg)
+
+export const badRequest = (msg: string, details?: FieldError[]): AppError =>
+  new AppError(400, msg, details)
+
+export const internal = (cause: unknown): AppError =>
+  new AppError(500, 'something went wrong', undefined, cause)
+```
+
+```java title="AppException.java / Java 17+"
+// The canonical error type for this application.
+public class AppException extends RuntimeException {
+    private final int code;              // HTTP status code
+    private final Object details;        // Optional: field-level errors for 400s
+
+    public AppException(int code, String message, Object details, Throwable cause) {
+        super(message, cause);           // cause is for logging only
+        this.code = code;
+        this.details = details;
+    }
+
+    public int code() { return code; }
+    public Object details() { return details; }
+
+    // Factories, so a status code is never typed as a bare int at a call site
+    public static AppException notFound(String resource) {
+        return new AppException(404, resource + " not found", null, null);
+    }
+
+    public static AppException conflict(String msg) {
+        return new AppException(409, msg, null, null);
+    }
+
+    public static AppException badRequest(String msg, Object details) {
+        return new AppException(400, msg, details, null);
+    }
+
+    public static AppException internal(Throwable cause) {
+        // NEVER cause.getMessage() as the message: it reaches the client
+        return new AppException(500, "something went wrong", null, cause);
+    }
+}
+
+// Extending RuntimeException, not Exception, is deliberate: a checked
+// exception would force every layer in between to declare or wrap it,
+// which is exactly the ceremony that makes people swallow errors.
+```
+
+### The handler at the edge
+
+Go Python JavaScript TypeScript Java
+
+one place that maps any failure to the envelope, and logs the rest
+
+```go title="middleware/error_handler.go / Go"
+package middleware
 import (
     "encoding/json"
     "errors"
@@ -577,33 +1245,14 @@ func isPgError(err error, code string) bool {
 }
 ```
 
-13
-
-## Python: Global Error Handler (FastAPI)
-
-```python
-Python / FastAPIfrom fastapi import FastAPI, Request
+```python title="main.py / Python + FastAPI"
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from psycopg2 import errors as pg_errors
 import logging
 
 app = FastAPI()
 logger = logging.getLogger("app")
-
-# --- Custom exception types ---
-class AppError(Exception):
-    def __init__(self, status: int, message: str, details=None):
-        self.status  = status
-        self.message = message
-        self.details = details
-
-class NotFoundError(AppError):
-    def __init__(self, resource: str):
-        super().__init__(404, f"{resource} not found")
-
-class ConflictError(AppError):
-    def __init__(self, msg: str):
-        super().__init__(409, msg)
 
 # --- Global exception handlers ---
 @app.exception_handler(AppError)
@@ -631,6 +1280,137 @@ async def unhandled_error_handler(request: Request, exc: Exception):
         extra={"path": request.url.path})
     return JSONResponse(status_code=500,
         content={"code": 500, "message": "something went wrong"})
+```
+
+```js title="middleware/errorHandler.js / Node 20+ + Express"
+import { AppError, conflict, notFound, internal } from '../errors.js'
+
+// Express identifies an error handler by its FOUR parameters. Drop `next`
+// and it silently becomes an ordinary middleware that is never called on
+// an error, which is the classic way this safety net stops working.
+export function globalErrorHandler(err, req, res, next) {
+  let appErr
+
+  if (err instanceof AppError) {
+    // Already wrapped
+    if (err.cause) log.error({ err: err.cause }, 'app error')
+    appErr = err
+  } else if (err.code === '23505') {
+    // Postgres unique constraint violation -> 409
+    appErr = conflict('resource already exists')
+  } else if (err.code === '23503') {
+    // Postgres foreign key violation -> 404
+    appErr = notFound('referenced resource')
+  } else {
+    // Everything else -> 500 (never leak internal error)
+    log.error({ err, path: req.path }, 'unhandled error')
+    appErr = internal(err)
+  }
+
+  res.status(appErr.code).json({
+    code: appErr.code,
+    message: appErr.message,
+    ...(appErr.details && { details: appErr.details }),
+  })
+}
+
+// Registered LAST, after every route, because Express runs the chain in
+// order and an error handler can only catch what is upstream of it.
+app.use(globalErrorHandler)
+
+// An async handler that rejects does NOT reach here on Express 4; wrap
+// it, or use Express 5, which forwards rejected promises for you.
+```
+
+```ts title="middleware/errorHandler.ts / TypeScript 5+ + Express"
+import type { NextFunction, Request, Response } from 'express'
+import { AppError, conflict, notFound, internal } from '../errors'
+
+// Postgres surfaces its errors as a `code` string on an untyped object,
+// so narrowing it is the honest first step rather than a cast.
+function pgCode(err: unknown): string | undefined {
+  return typeof err === 'object' && err !== null && 'code' in err
+    ? String((err as { code: unknown }).code)
+    : undefined
+}
+
+export function globalErrorHandler(
+  err: unknown, // `unknown`, not `Error`: anything at all can be thrown
+  req: Request,
+  res: Response,
+  _next: NextFunction,
+): void {
+  let appErr: AppError
+
+  if (err instanceof AppError) {
+    if (err.cause) log.error({ err: err.cause }, 'app error')
+    appErr = err
+  } else {
+    switch (pgCode(err)) {
+      case '23505': appErr = conflict('resource already exists'); break  // unique violation
+      case '23503': appErr = notFound('referenced resource'); break      // FK violation
+      default:
+        log.error({ err, path: req.path }, 'unhandled error')
+        appErr = internal(err) // never leak the original message
+    }
+  }
+
+  res.status(appErr.code).json({
+    code: appErr.code,
+    message: appErr.message,
+    ...(appErr.details && { details: appErr.details }),
+  })
+}
+```
+
+```java title="GlobalExceptionHandler.java / Java 17+ + Spring Boot"
+// @RestControllerAdvice IS the global handler: one class, applied to
+// every controller, with a method per exception type. Spring picks the
+// most specific match, so the Exception method is the final net.
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    record ErrorResponse(int code, String message, Object details) {}
+
+    // Already wrapped as AppException
+    @ExceptionHandler(AppException.class)
+    ResponseEntity<ErrorResponse> onApp(AppException e) {
+        if (e.getCause() != null) {
+            log.error("app error", e.getCause()); // the real error, internally
+        }
+        return ResponseEntity.status(e.code())
+            .body(new ErrorResponse(e.code(), e.getMessage(), e.details()));
+    }
+
+    // Postgres unique constraint violation -> 409
+    @ExceptionHandler(DuplicateKeyException.class)
+    ResponseEntity<ErrorResponse> onDuplicate() {
+        return ResponseEntity.status(409)
+            .body(new ErrorResponse(409, "resource already exists", null));
+    }
+
+    // Foreign key / referenced row missing -> 404
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ResponseEntity<ErrorResponse> onIntegrity() {
+        return ResponseEntity.status(404)
+            .body(new ErrorResponse(404, "referenced resource not found", null));
+    }
+
+    // Everything else -> 500, and the real error goes to the log ONLY.
+    @ExceptionHandler(Exception.class)
+    ResponseEntity<ErrorResponse> onUnhandled(Exception e, HttpServletRequest req) {
+        log.error("unhandled error path={}", req.getRequestURI(), e);
+        return ResponseEntity.status(500)
+            .body(new ErrorResponse(500, "something went wrong", null));
+    }
+}
+
+// Turn OFF the default error attributes, or Spring's own /error page can
+// hand back the exception message and a stack trace, undoing all of this:
+//   server.error.include-message: never
+//   server.error.include-stacktrace: never
+//   server.error.include-binding-errors: never
 ```
 
 14
@@ -666,10 +1446,14 @@ Logs are often shipped to third-party aggregation services (Datadog, Grafana Clo
 
 - **Never log**: passwords, API keys, credit card numbers, SSNs, full email addresses, session tokens.
 - **Log instead**: user ID (not email), correlation/request ID, operation name, error code.
-- Use a **log scrubbing library** (e.g. Go: `slog` with custom handler; Python: `structlog` processors) to automatically redact known sensitive fields.
+- Use a **log scrubbing library** (Go: `slog` with a custom handler; Python: `structlog` processors; Node: pino's `redact`; Java: a Logback `RegexReplacement`) to automatically redact known sensitive fields.
 
-```text
-Go / safe vs unsafe logging//UNSAFE, never do this
+Go Python JavaScript TypeScript Java
+
+log the identifier, never the identity
+
+```go title="safe_logging.go / Go + log/slog"
+// UNSAFE, never do this
 slog.Error("login_failed",
     "email", user.Email,          // PII leak
     "password", req.Password,     // catastrophic
@@ -682,6 +1466,116 @@ slog.Error("login_failed",
     "correlation_id", r.Header.Get("X-Request-ID"),
     "reason", "invalid_credentials",  // generic code, not DB message
 )
+```
+
+```python title="safe_logging.py / Python + structlog"
+# UNSAFE, never do this
+log.error("login_failed",
+    email=user.email,           # PII leak
+    password=req.password,      # catastrophic
+    api_key=cfg.openai_key,     # secret leak
+)
+
+# SAFE, IDs and correlation only
+log.error("login_failed",
+    user_id=user.id,
+    correlation_id=request.headers.get("X-Request-ID"),
+    reason="invalid_credentials",  # generic code, not DB message
+)
+
+# Better still: make the leak impossible rather than remembering not to
+# do it. A structlog processor scrubs known-sensitive keys on every
+# event, including the ones a future call site adds carelessly.
+SENSITIVE = {"password", "api_key", "token", "card", "email"}
+
+def scrub(logger, method_name, event_dict):
+    for key in event_dict:
+        if key.lower() in SENSITIVE:
+            event_dict[key] = "[REDACTED]"
+    return event_dict
+
+structlog.configure(processors=[scrub, ...])
+```
+
+```js title="safeLogging.js / Node 20+ + pino"
+// UNSAFE, never do this
+log.error({
+  email: user.email,          // PII leak
+  password: req.body.password, // catastrophic
+  api_key: config.openaiKey,   // secret leak
+}, 'login_failed')
+
+// SAFE, IDs and correlation only
+log.error({
+  user_id: user.id,
+  correlation_id: req.get('X-Request-ID'),
+  reason: 'invalid_credentials', // generic code, not DB message
+}, 'login_failed')
+
+// Best: configure redaction ONCE, so the unsafe version above is
+// neutralised even when somebody writes it by accident.
+const log = pino({
+  redact: {
+    paths: ['*.password', '*.api_key', '*.token', '*.card', 'req.headers.authorization'],
+    censor: '[REDACTED]',
+  },
+})
+
+// Note what redaction does NOT cover: `log.error(user)` where the whole
+// object is logged, or an error whose MESSAGE contains the token. The
+// list is a safety net, not a substitute for choosing the fields.
+```
+
+```ts title="safeLogging.ts / TypeScript 5+ + pino"
+// Redaction is a runtime safety net. TypeScript can add a compile-time
+// one on top, which catches the mistake before it ever ships.
+type Sensitive = 'password' | 'email' | 'api_key' | 'token' | 'card'
+
+// A log payload that simply cannot carry a sensitive key: the mapped
+// type sets each of them to `never`, so supplying one fails to compile.
+type SafeLog = Record<string, unknown> & { [K in Sensitive]?: never }
+
+export function logSafely(event: string, fields: SafeLog): void {
+  log.error(fields, event)
+}
+
+// SAFE, IDs and correlation only
+logSafely('login_failed', {
+  user_id: user.id,
+  correlation_id: req.get('X-Request-ID'),
+  reason: 'invalid_credentials', // generic code, not DB message
+})
+
+// UNSAFE, and this one is now a BUILD failure rather than a breach:
+// logSafely('login_failed', { email: user.email, password: req.body.password })
+```
+
+```java title="SafeLogging.java / Java 17+ + SLF4J"
+// UNSAFE, never do this
+log.error("login_failed email={} password={} api_key={}",
+    user.email(), req.password(), config.openAiKey());
+
+// SAFE, IDs and correlation only
+log.atError()
+   .setMessage("login_failed")
+   .addKeyValue("user_id", user.id())
+   .addKeyValue("correlation_id", req.getHeader("X-Request-ID"))
+   .addKeyValue("reason", "invalid_credentials") // generic code, not DB message
+   .log();
+
+// Java's structural guard is `toString()`: a record prints ALL of its
+// components, so logging a User record logs the password field with it.
+// Override it once, at the type, and every log site is safe by default.
+public record User(String id, String email, String passwordHash) {
+    @Override
+    public String toString() {
+        return "User[id=" + id + "]"; // no email, no hash, ever
+    }
+}
+
+// Logback can also mask at the appender with a RegexReplacement rule,
+// which catches secrets embedded in exception messages, the case no
+// field-level approach can reach.
 ```
 
 <Callout type="info">
@@ -698,4 +1592,4 @@ Follow the [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org
 
 Backend Field Manual / Error Handling & Fault Tolerance / Chapter 16
 
-Backend from First Principles / Chapter 12 / Errors. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 12 / Errors. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).

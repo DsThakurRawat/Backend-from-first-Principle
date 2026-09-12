@@ -346,8 +346,10 @@ Most of the time, teams don't validate their environment variables or whatever s
 <Callout type="ok" title="The One Thing to Take Away From This Whole Topic">
 If you take just one thing away: **always validate your configs**, no matter where they come from. Validate at startup, before your application starts, right after it's deployed. Use a proper validation library:\
 \
-\- **TypeScript backend** -> use `Zod`\
+\- **JavaScript / TypeScript backend** -> use `Zod`\
 \- **Go backend** -> use `go-playground/validator`\
+\- **Python backend** -> use `pydantic-settings`\
+\- **Java backend** -> use Jakarta Validation with `@ConfigurationProperties`\
 \
 Use whatever validation library your language/framework offers, and properly validate every variable, which ones are mandatory, which are optional, which have application-code defaults.
 </Callout>
@@ -356,9 +358,13 @@ Why does this matter so much? It's learned the hard way. If you have a mandatory
 
 ## Code Examples
 
-Below are practical implementations of config loading and validation in Go and Python, covering env vars, per-environment loading, hybrid sources, and startup validation.
+Below is the same config loader written five times over, covering env vars, per-environment loading, hybrid sources, and startup validation. Every one of them does the identical three things in the identical order: read the environment, apply defaults, then **validate before the app is allowed to boot**. Only the validation library changes.
 
-### 9.1: Config Loading & Validation in Go
+### 9.1: Config Loading & Validation
+
+Go Python JavaScript TypeScript Java
+
+read the environment, apply defaults, validate, then boot
 
 ```go title="config.go / Go + go-playground/validator + godotenv"
 package config
@@ -455,8 +461,6 @@ func getEnvInt(key string, fallback int) int {
 //   if err != nil { log.Fatal(err) }  // crash early, crash loud
 ```
 
-### 9.2: Config Loading & Validation in Python
-
 ```python title="config.py / Python + pydantic-settings (the Python equivalent of Zod)"
 from enum import Enum
 from functools import lru_cache
@@ -520,7 +524,183 @@ def get_settings() -> Settings:
 #   if settings.new_checkout_enabled: ...
 ```
 
-### 9.3: Example YAML Config File
+```js title="config.js / Node 20+ + zod + dotenv"
+import 'dotenv/config' // load .env in local dev; a no-op in production
+import { z } from 'zod'
+
+// The schema IS the documentation of what this service needs to run.
+// Everything in process.env is a string, so each field says how to turn
+// that string into the type the app actually wants.
+const ConfigSchema = z.object({
+  // Application settings (with sensible defaults)
+  PORT: z.coerce.number().int().min(1).max(65535).default(8080),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  APP_ENV: z.enum(['development', 'staging', 'production']).default('development'),
+
+  // Database config, mandatory, no defaults (will fail if missing)
+  DB_HOST: z.string().min(1),
+  DB_PORT: z.coerce.number().int().default(5432),
+  DB_USER: z.string().min(1),
+  DB_PASSWORD: z.string().min(1), // sensitive, never hardcoded
+  DB_NAME: z.string().min(1),
+  DB_POOL_SIZE: z.coerce.number().int().min(1).default(10), // dev=10, prod=50
+
+  // External services, mandatory secret
+  STRIPE_API_KEY: z.string().min(1),
+
+  // Feature flag, optional, defaults off.
+  // Note the explicit string compare: Boolean('false') is TRUE, which is
+  // the single most common way a feature flag ships on by accident.
+  NEW_CHECKOUT: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+})
+
+// THE critical step: parse once, at import time, before anything boots.
+const parsed = ConfigSchema.safeParse(process.env)
+if (!parsed.success) {
+  // Crash early, crash loud, and say exactly WHICH vars are wrong.
+  console.error('config validation failed:', z.treeifyError(parsed.error))
+  process.exit(1)
+}
+
+export const config = {
+  ...parsed.data,
+  // Constructed from the parts, never stored as its own secret
+  databaseUrl:
+    `postgresql://${parsed.data.DB_USER}:${parsed.data.DB_PASSWORD}` +
+    `@${parsed.data.DB_HOST}:${parsed.data.DB_PORT}/${parsed.data.DB_NAME}`,
+}
+
+// Usage:
+//   import { config } from './config.js'
+//   app.listen(config.PORT)
+```
+
+```ts title="config.ts / TypeScript 5+ + zod + dotenv"
+import 'dotenv/config'
+import { z } from 'zod'
+
+const ConfigSchema = z.object({
+  port: z.coerce.number().int().min(1).max(65535).default(8080),
+  logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  appEnv: z.enum(['development', 'staging', 'production']).default('development'),
+
+  dbHost: z.string().min(1),
+  dbPort: z.coerce.number().int().default(5432),
+  dbUser: z.string().min(1),
+  dbPassword: z.string().min(1),
+  dbName: z.string().min(1),
+  dbPoolSize: z.coerce.number().int().min(1).default(10),
+
+  stripeApiKey: z.string().min(1),
+  newCheckoutEnabled: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+})
+
+// This one line is why TypeScript is worth it here: the Config TYPE is
+// derived FROM the schema, so the thing the compiler checks and the thing
+// that runs at startup can never drift apart. Add a field to the schema
+// and every place that builds a Config stops compiling until it is set.
+export type Config = z.infer<typeof ConfigSchema>
+
+function load(): Config & { databaseUrl: string } {
+  const parsed = ConfigSchema.safeParse({
+    port: process.env.PORT,
+    logLevel: process.env.LOG_LEVEL,
+    appEnv: process.env.APP_ENV,
+    dbHost: process.env.DB_HOST,
+    dbPort: process.env.DB_PORT,
+    dbUser: process.env.DB_USER,
+    dbPassword: process.env.DB_PASSWORD,
+    dbName: process.env.DB_NAME,
+    dbPoolSize: process.env.DB_POOL_SIZE,
+    stripeApiKey: process.env.STRIPE_API_KEY,
+    newCheckoutEnabled: process.env.NEW_CHECKOUT,
+  })
+
+  if (!parsed.success) {
+    // Crash early, crash loud, naming every field that failed
+    console.error('config validation failed:', z.treeifyError(parsed.error))
+    process.exit(1)
+  }
+
+  const c = parsed.data
+  return {
+    ...c,
+    databaseUrl: `postgresql://${c.dbUser}:${c.dbPassword}@${c.dbHost}:${c.dbPort}/${c.dbName}`,
+  }
+}
+
+export const config = load() // validated once, at import, reused everywhere
+```
+
+```java title="AppConfig.java / Java 17+ + Spring Boot + Jakarta Validation"
+// Spring binds environment variables onto this record by NAME:
+// DB_POOL_SIZE -> db.pool-size -> dbPoolSize. The jakarta.validation
+// annotations are the validate tags, and @Validated is what makes the
+// application context refuse to start when one of them fails.
+@Validated
+@ConfigurationProperties(prefix = "app")
+public record AppConfig(
+
+    // Application settings
+    @Min(1) @Max(65535) int port,
+    @Pattern(regexp = "debug|info|warn|error") String logLevel,
+    @NotNull Environment appEnv,
+
+    // Database config (sensitive)
+    @NotBlank String dbHost,
+    int dbPort,
+    @NotBlank String dbUser,
+    @NotBlank String dbPassword,
+    @NotBlank String dbName,
+    @Min(1) int dbPoolSize,
+
+    // External services (sensitive)
+    @NotBlank String stripeApiKey,
+
+    // Feature flag, optional, defaults off
+    boolean newCheckoutEnabled
+) {
+    public enum Environment { DEVELOPMENT, STAGING, PRODUCTION }
+
+    /** Constructs the connection URL from the parts. */
+    public String databaseUrl() {
+        return "postgresql://%s:%s@%s:%d/%s"
+            .formatted(dbUser, dbPassword, dbHost, dbPort, dbName);
+    }
+}
+
+// application.yml carries the DEFAULTS and the env-var mapping. The
+// ${VAR:default} syntax is the whole defaulting story in one place, and
+// a ${VAR} with no default fails startup if the variable is missing.
+//
+//   app:
+//     port:          ${PORT:8080}
+//     log-level:     ${LOG_LEVEL:info}
+//     app-env:       ${APP_ENV:DEVELOPMENT}
+//     db-host:       ${DB_HOST}
+//     db-port:       ${DB_PORT:5432}
+//     db-pool-size:  ${DB_POOL_SIZE:10}
+//     stripe-api-key: ${STRIPE_API_KEY}
+//     new-checkout-enabled: ${NEW_CHECKOUT:false}
+
+@SpringBootApplication
+@EnableConfigurationProperties(AppConfig.class)
+public class Application {
+    public static void main(String[] args) {
+        // A validation failure throws before the port is ever bound:
+        // crash early, crash loud, with the failing field named.
+        SpringApplication.run(Application.class, args);
+    }
+}
+```
+
+### 9.2: Example YAML Config File
 
 For non-secret, structured settings, a YAML file (with comments, unlike JSON) is a common choice, as seen in real codebases like Authelia and Apache Answer:
 
@@ -586,6 +766,6 @@ business:
 </Callout>
 
 BACKEND ENGINEERING FIELD MANUAL / V2 / CHAPTER 13 / CONFIGURATION MANAGEMENT\
-Notes compiled from lecture transcript / Go + Python examples / Vault/MDN references inline
+Notes compiled from lecture transcript / Go, Python, JavaScript, TypeScript & Java examples / Vault/MDN references inline
 
-Backend from First Principles / Chapter 14 / Config. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 14 / Config. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).

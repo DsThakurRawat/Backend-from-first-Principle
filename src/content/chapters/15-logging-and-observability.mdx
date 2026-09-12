@@ -2,7 +2,7 @@
 order: 15
 title: "Logging & Observability"
 navTitle: "Logging & Observability"
-summary: "Chapter 15 of Backend from First Principles: Logging & Observability."
+summary: "You cannot fix what you cannot see. The three pillars, logs, metrics and traces, what each one answers that the other two cannot, and how to wire all three into a service so a 3am page leads to the actual broken line. Worked implementations in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "logging"
@@ -220,9 +220,13 @@ FATAL
 Levels form a hierarchy: **DEBUG &lt; INFO &lt; WARN &lt; ERROR &lt; FATAL**. Setting your logger to `INFO` means it emits INFO, WARN, ERROR, and FATAL, but suppresses DEBUG. Setting to `ERROR` means only ERROR and FATAL are emitted. This is how you control log volume per environment.
 </Callout>
 
-### Environment-Specific Level Configuration (Go)
+### Environment-Specific Level Configuration
 
-```go
+Go Python JavaScript TypeScript Java
+
+JSON in production, a readable console locally, and a level per environment
+
+```go title="logger/logger.go / Go + Zap"
 // logger/logger.go, Environment-aware log level
 package logger
 
@@ -264,7 +268,140 @@ func New() *zap.Logger {
     logger, _ := cfg.Build()
     return logger
 }
-Go / Zap
+```
+
+```python title="logging_config.py / Python + structlog"
+# logging_config.py, Environment-aware log level
+import logging
+import os
+
+import structlog
+
+
+def get_log_level() -> int:
+    env = os.getenv("APP_ENV", "development")
+    if env == "production":
+        return logging.INFO      # production: INFO and above
+    if env == "staging":
+        return logging.WARNING   # staging: WARN and above only
+    return logging.DEBUG         # local dev: everything
+
+
+def configure() -> None:
+    env = os.getenv("APP_ENV", "development")
+
+    if env == "production":
+        # Production: JSON format, parseable by Loki, ELK, New Relic
+        renderer = structlog.processors.JSONRenderer()
+    else:
+        # Development: coloured console format, human-readable
+        renderer = structlog.dev.ConsoleRenderer(colors=True)
+
+    structlog.configure(
+        processors=[
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.stdlib.add_log_level,
+            renderer,
+        ],
+        # A FILTERING bound logger drops suppressed levels before the
+        # message is ever formatted, so a debug log in a hot path costs
+        # almost nothing in production rather than being built and binned.
+        wrapper_class=structlog.make_filtering_bound_logger(get_log_level()),
+    )
+    logging.basicConfig(level=get_log_level())
+```
+
+```js title="logger.js / Node 20+ + pino"
+// logger.js, Environment-aware log level
+import pino from 'pino'
+
+const env = process.env.APP_ENV ?? 'development'
+
+function getLogLevel() {
+  switch (env) {
+    case 'production': return 'info'  // production: INFO and above
+    case 'staging':    return 'warn'  // staging: WARN and above only
+    default:           return 'debug' // local dev: everything
+  }
+}
+
+export const log = pino({
+  level: getLogLevel(),
+  timestamp: pino.stdTimeFunctions.isoTime,
+
+  // Production: raw JSON straight to stdout, which is exactly what Loki,
+  // ELK and New Relic want. Development: coloured, human-readable.
+  // pino-pretty is a DEV dependency on purpose, it costs real throughput.
+  transport:
+    env === 'production'
+      ? undefined
+      : { target: 'pino-pretty', options: { colorize: true } },
+})
+```
+
+```ts title="logger.ts / TypeScript 5+ + pino"
+import pino, { type Level, type Logger } from 'pino'
+
+type Env = 'development' | 'staging' | 'production'
+
+const env = (process.env.APP_ENV ?? 'development') as Env
+
+// A Record keyed by Env means adding a fourth environment will not
+// compile until this table decides what level it logs at. A switch with
+// a default would have silently given it the dev level instead.
+const LEVELS: Record<Env, Level> = {
+  production: 'info',   // production: INFO and above
+  staging: 'warn',      // staging: WARN and above only
+  development: 'debug', // local dev: everything
+}
+
+export const log: Logger = pino({
+  level: LEVELS[env],
+  timestamp: pino.stdTimeFunctions.isoTime,
+  transport:
+    env === 'production'
+      ? undefined
+      : { target: 'pino-pretty', options: { colorize: true } },
+})
+```
+
+```java title="logback-spring.xml / Java 17+ + Logback"
+<!-- Java keeps this in configuration rather than code, and Spring's
+     profile blocks are how the environment picks a shape. -->
+<configuration>
+
+  <!-- Production: one JSON object per line, parseable by Loki / ELK / NR -->
+  <springProfile name="production">
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+        <timeZone>UTC</timeZone>
+      </encoder>
+    </appender>
+    <root level="INFO"><appender-ref ref="JSON"/></root>
+  </springProfile>
+
+  <springProfile name="staging">
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    </appender>
+    <root level="WARN"><appender-ref ref="JSON"/></root>
+  </springProfile>
+
+  <!-- Local dev: coloured console, human-readable -->
+  <springProfile name="default">
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder>
+        <pattern>%highlight(%-5level) %cyan(%logger{20}) - %msg%n</pattern>
+      </encoder>
+    </appender>
+    <root level="DEBUG"><appender-ref ref="CONSOLE"/></root>
+  </springProfile>
+
+</configuration>
+
+<!-- Because the level lives per LOGGER NAME (the class), you can also
+     raise one package to DEBUG in production without touching the rest:
+       <logger name="com.example.todo.repo" level="DEBUG"/> -->
 ```
 
 07
@@ -418,13 +555,17 @@ OTel provides libraries that auto-instrument popular frameworks (net/http, gin, 
 
 11
 
-## Code: Go: Full LMO Implementation
+## Code: Full LMO Implementation
 
-A complete example showing logging (Zap), metrics (Prometheus), and tracing (OpenTelemetry) wired into a Go service handler. This is the pattern from the lecture's to-do application.
+A complete example showing logging, metrics and tracing wired into one service handler, in five languages. This is the pattern from the lecture's to-do application. The libraries differ, Zap and structlog and pino and Logback, but the three pillars are assembled the same way everywhere: a logger that emits JSON with fixed fields, a middleware that opens a span per request, a service method that logs and traces the business event, and a middleware that counts and times every request.
 
-### Logger Setup (Zap)
+### Logger Setup
 
-```go
+Go Python JavaScript TypeScript Java
+
+structured output with a fixed set of fields on every line
+
+```go title="logger/logger.go / Go + Zap"
 // logger/logger.go
 package logger
 
@@ -457,12 +598,140 @@ func Init() {
         ),
     )
 }
-Go / Zap
+```
+
+```python title="logging_config.py / Python + structlog"
+# logging_config.py, structlog setup for Python
+import logging
+import os
+
+import structlog
+
+
+def configure_logging():
+    env = os.getenv("APP_ENV", "development")
+
+    if env == "production":
+        # JSON renderer for production, parseable by Loki / ELK
+        renderer = structlog.processors.JSONRenderer()
+        level = logging.INFO
+    else:
+        # Colourful console for local dev, human-readable
+        renderer = structlog.dev.ConsoleRenderer(colors=True)
+        level = logging.DEBUG
+
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,      # merge request-scoped context
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.add_logger_name,
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.ExceptionRenderer(),     # auto-renders exceptions
+            renderer,
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+
+    logging.basicConfig(level=level)
+
+
+# Always include these fields in every log entry
+log = structlog.get_logger().bind(
+    service="todo-api",
+    env=os.getenv("APP_ENV", "development"),
+)
+```
+
+```js title="logger.js / Node 20+ + pino"
+// logger.js
+import pino from 'pino'
+
+const env = process.env.APP_ENV ?? 'development'
+
+export const log = pino({
+  level: env === 'production' ? 'info' : 'debug',
+
+  // `base` is the fixed field set: these two land on EVERY log entry
+  base: { service: 'todo-api', env },
+
+  timestamp: pino.stdTimeFunctions.isoTime,
+
+  transport:
+    env === 'production'
+      ? undefined // JSON output
+      : { target: 'pino-pretty', options: { colorize: true } }, // coloured console
+
+  // Redaction belongs in the logger, not in the hundred call sites that
+  // might each forget. See sec 21: never log credentials, ever.
+  redact: ['req.headers.authorization', '*.password', '*.token'],
+})
+```
+
+```ts title="logger.ts / TypeScript 5+ + pino"
+import pino, { type Logger } from 'pino'
+
+const env = process.env.APP_ENV ?? 'development'
+
+export const log: Logger = pino({
+  level: env === 'production' ? 'info' : 'debug',
+  base: { service: 'todo-api', env }, // on every log entry
+  timestamp: pino.stdTimeFunctions.isoTime,
+  redact: ['req.headers.authorization', '*.password', '*.token'],
+  transport:
+    env === 'production'
+      ? undefined
+      : { target: 'pino-pretty', options: { colorize: true } },
+})
+
+// A CHILD logger binds fields once and stamps them on every line it
+// emits. This is the cheap way to guarantee the request id from chapter
+// 06 reaches every log entry in a request, with no call site passing it
+// by hand, and the returned type is still a plain Logger, so nothing
+// downstream has to know whether it was handed the root or a child.
+export function requestLogger(requestId: string, userId: string): Logger {
+  return log.child({ request_id: requestId, user_id: userId })
+}
+```
+
+```java title="TodoService.java / Java 17+ + SLF4J + Logback"
+// In Java the CONFIGURATION lives in logback-spring.xml (see sec 06) and
+// the code side is deliberately tiny: one logger per class, obtained by
+// class, so the class name becomes the logger name.
+@Service
+public class TodoService {
+
+    // Always static final: it is created once per class, not per instance.
+    private static final Logger log = LoggerFactory.getLogger(TodoService.class);
+
+    // The fixed fields ("service", "env") are set once in the encoder:
+    //   <customFields>{"service":"todo-api","env":"production"}</customFields>
+
+    void example(String userId, String requestId) {
+        // MDC is the per-request context from chapter 06. Anything put
+        // here is added to every JSON log line from this thread, which is
+        // how a request id reaches a log statement ten frames down that
+        // has never heard of the request.
+        MDC.put("user_id", userId);
+        MDC.put("request_id", requestId);
+        try {
+            log.info("creating todo"); // the JSON gains both fields for free
+        } finally {
+            MDC.clear(); // threads are pooled; never leak into the next request
+        }
+    }
+}
 ```
 
 ### Tracing Middleware (OpenTelemetry)
 
-```go
+Go Python JavaScript TypeScript Java
+
+extract the incoming trace, open a span, attach the business context
+
+```go title="middleware/tracing.go / Go + Gin + OTel"
 // middleware/tracing.go, Creates a trace span per request
 package middleware
 
@@ -517,12 +786,198 @@ func EnhancedTracing() gin.HandlerFunc {
         )
     }
 }
-Go / Gin + OTel
+```
+
+```python title="tracing.py / Python + FastAPI + OTel"
+# tracing.py, OTel setup for FastAPI
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
+
+def setup_tracing(app):
+    # Tracer provider, sends spans to OTel Collector via gRPC
+    provider = TracerProvider()
+    exporter = OTLPSpanExporter(endpoint="http://otel-collector:4317")
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+
+    # Auto-instrument FastAPI, all routes get spans automatically, and
+    # the incoming traceparent header is extracted for you
+    FastAPIInstrumentor.instrument_app(app)
+
+    # Auto-instrument SQLAlchemy, all DB queries get spans automatically
+    SQLAlchemyInstrumentor().instrument(engine=engine)
+
+
+# main.py, wire it all up
+from fastapi import FastAPI
+from tracing import setup_tracing
+from logging_config import configure_logging, log
+
+configure_logging()
+app = FastAPI()
+setup_tracing(app)
+```
+
+```js title="tracing.js / Node 20+ + Express + OTel"
+// tracing.js, creates a trace span per request
+import { NodeSDK } from '@opentelemetry/sdk-node'
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc'
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node'
+import { trace, context, propagation, SpanStatusCode } from '@opentelemetry/api'
+import { log } from './logger.js'
+
+// Auto-instrumentation patches http, express, pg and redis, so most spans
+// exist without you writing them. It MUST start before your app imports
+// those modules, so this file is loaded with --import, not required later.
+new NodeSDK({
+  traceExporter: new OTLPTraceExporter({ url: 'http://otel-collector:4317' }),
+  instrumentations: [getNodeAutoInstrumentations()],
+}).start()
+
+const tracer = trace.getTracer('todo-api')
+
+export function enhancedTracing(req, res, next) {
+  // Extract incoming trace context (from load balancer / front-end)
+  const parent = propagation.extract(context.active(), req.headers)
+
+  // Start root span for this request
+  const span = tracer.startSpan(req.route?.path ?? req.path, {}, parent)
+
+  // Attach metadata to span (visible in trace UI)
+  span.setAttributes({
+    'http.method': req.method,
+    'http.path': req.route?.path ?? req.path,
+    'http.user_agent': req.get('user-agent'),
+    'user.id': getUserId(req),
+  })
+
+  res.on('finish', () => {
+    // After the handler returns: record status code on span
+    span.setAttribute('http.status_code', res.statusCode)
+    if (res.statusCode >= 500) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: 'server error' })
+    }
+
+    // Structured log entry linking to this trace
+    log.info({
+      method: req.method,
+      path: req.route?.path ?? req.path,
+      status: res.statusCode,
+      trace_id: span.spanContext().traceId,
+    }, 'request completed')
+
+    span.end()
+  })
+
+  // Run the rest of the chain INSIDE this span's context, so anything
+  // downstream that opens a span becomes its child automatically.
+  context.with(trace.setSpan(parent, span), next)
+}
+```
+
+```ts title="tracing.ts / TypeScript 5+ + Express + OTel"
+import { trace, context, propagation, SpanStatusCode, type Span } from '@opentelemetry/api'
+import type { NextFunction, Request, Response } from 'express'
+
+const tracer = trace.getTracer('todo-api')
+
+export function enhancedTracing(req: Request, res: Response, next: NextFunction): void {
+  // Extract incoming trace context (from load balancer / front-end)
+  const parent = propagation.extract(context.active(), req.headers)
+
+  // Use the ROUTE TEMPLATE as the span name ("/todos/:id"), never the
+  // real path. A span name per todo id makes the trace UI useless,
+  // exactly as it would make a Prometheus label useless (sec 10).
+  const routeName = req.route?.path ?? req.path
+  const span: Span = tracer.startSpan(routeName, {}, parent)
+
+  span.setAttributes({
+    'http.method': req.method,
+    'http.path': routeName,
+    'http.user_agent': req.get('user-agent') ?? 'unknown',
+    'user.id': getUserId(req),
+  })
+
+  res.on('finish', () => {
+    span.setAttribute('http.status_code', res.statusCode)
+    if (res.statusCode >= 500) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: 'server error' })
+    }
+    log.info({
+      method: req.method,
+      path: routeName,
+      status: res.statusCode,
+      trace_id: span.spanContext().traceId,
+    }, 'request completed')
+    span.end() // in the 'finish' handler, so it runs on every path
+  })
+
+  context.with(trace.setSpan(parent, span), next)
+}
+```
+
+```java title="TracingFilter.java / Java 17+ + Spring Boot + OTel"
+// Spring needs very little tracing middleware of its own. Adding the
+// OpenTelemetry starter instruments every controller, RestClient and JDBC
+// call, and extracts the incoming traceparent header automatically:
+//
+//   implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter'
+//
+//   otel.service.name: todo-api
+//   otel.exporter.otlp.endpoint: http://otel-collector:4317
+
+// What is still worth writing by hand is the per-request enrichment.
+@Component
+public class TracingFilter extends OncePerRequestFilter {
+    private static final Logger log = LoggerFactory.getLogger(TracingFilter.class);
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
+                                    FilterChain chain)
+            throws ServletException, IOException {
+        // The starter already extracted the incoming trace context and
+        // started the root span; pick it up rather than starting another.
+        Span span = Span.current();
+
+        // Attach metadata to span (visible in trace UI)
+        span.setAttribute("http.method", req.getMethod());
+        span.setAttribute("http.path", req.getRequestURI());
+        span.setAttribute("http.user_agent", String.valueOf(req.getHeader("User-Agent")));
+        span.setAttribute("user.id", getUserId(req));
+
+        // Putting the trace id in MDC is what joins the three pillars:
+        // every log line this request emits now carries the id that the
+        // trace UI is keyed on, so a slow span leads straight to its logs.
+        MDC.put("trace_id", span.getSpanContext().getTraceId());
+
+        try {
+            chain.doFilter(req, res);
+        } finally {
+            int status = res.getStatus();
+            span.setAttribute("http.status_code", status);
+            if (status >= 500) {
+                span.setStatus(StatusCode.ERROR, "server error");
+            }
+            log.info("request completed method={} path={} status={}",
+                req.getMethod(), req.getRequestURI(), status);
+            MDC.clear();
+        }
+    }
+}
 ```
 
 ### Service Layer: Logging + Tracing + Error Handling
 
-```go
+Go Python JavaScript TypeScript Java
+
+one business operation, instrumented end to end
+
+```go title="services/todo_service.go / Go + Zap + OTel"
 // services/todo_service.go, The full LMO pattern per function
 package services
 
@@ -589,12 +1044,217 @@ func CreateTodo(ctx context.Context, req models.CreateTodoRequest, userID string
 
     return todo, nil
 }
-Go / Zap + OTel
+```
+
+```python title="services/todo_service.py / Python + structlog + OTel"
+# services/todo_service.py
+from opentelemetry import trace
+import structlog
+
+tracer = trace.get_tracer("todo-service")
+log = structlog.get_logger()
+
+
+async def create_todo(user_id: str, req: CreateTodoRequest) -> Todo:
+    # 1. Start child span (the parent is the request span from the middleware)
+    with tracer.start_as_current_span("TodoService.create_todo") as span:
+        # 2. Add business context to the span, visible in trace UI
+        span.set_attribute("user.id", user_id)
+        span.set_attribute("todo.title", req.title)
+
+        # 3. INFO log, business event start
+        log.info("creating_todo", user_id=user_id, title=req.title)
+
+        try:
+            # 4. Execute DB operation (its own child span, auto-instrumented)
+            todo = await repo.create_todo(user_id, req)
+
+            # 5. DEBUG log, only visible in dev, suppressed in production
+            log.debug("todo_created", todo_id=todo.id)
+
+            # 6. INFO, business event completion log (for audit trail)
+            log.info("todo_created_successfully",
+                todo_id=todo.id,
+                user_id=user_id,
+                title=todo.title,
+                priority=todo.priority,
+            )
+            return todo
+
+        except Exception as e:
+            # ERROR log with full context + span error recording
+            log.error("todo_creation_failed", user_id=user_id, error=str(e))
+            span.record_exception(e)
+            span.set_status(trace.StatusCode.ERROR, str(e))
+            raise
+```
+
+```js title="services/todoService.js / Node 20+ + pino + OTel"
+// services/todoService.js, the full LMO pattern per function
+import { trace, SpanStatusCode } from '@opentelemetry/api'
+import { log } from '../logger.js'
+
+const tracer = trace.getTracer('todo-service')
+
+export async function createTodo(req, userId) {
+  // 1. Start a child span. startActiveSpan also makes it the CURRENT
+  //    span, so the DB call below nests under it automatically.
+  return tracer.startActiveSpan('TodoService.createTodo', async (span) => {
+    // 2. Add business context to the span, visible in trace UI
+    span.setAttributes({
+      'user.id': userId,
+      'todo.title': req.title,
+      'todo.priority': req.priority,
+    })
+
+    const traceId = span.spanContext().traceId
+
+    // 3. INFO log, record business event start
+    log.info({ user_id: userId, title: req.title, trace_id: traceId }, 'creating todo')
+
+    try {
+      // 4. Execute DB operation (its own child span, auto-instrumented)
+      const todo = await repo.createTodo(req, userId)
+
+      // 5. DEBUG log, only visible in dev, suppressed in production
+      log.debug({ todo_id: todo.id }, 'todo created')
+
+      // 6. INFO, business event completion log (for audit trail)
+      log.info({
+        todo_id: todo.id,
+        user_id: userId,
+        title: todo.title,
+        priority: todo.priority,
+        category_id: todo.categoryId,
+      }, 'todo created successfully')
+
+      return todo
+    } catch (err) {
+      // ERROR log with full context
+      log.error({ user_id: userId, err, trace_id: traceId }, 'failed to create todo')
+      // Record error on span, shows as failed in Jaeger / Grafana Tempo
+      span.recordException(err)
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message })
+      throw err
+    } finally {
+      // startActiveSpan does NOT end the span for you. A span that is
+      // never ended is a span that never reaches the collector.
+      span.end()
+    }
+  })
+}
+```
+
+```ts title="services/todoService.ts / TypeScript 5+ + pino + OTel"
+import { trace, SpanStatusCode, type Span } from '@opentelemetry/api'
+import { log } from '../logger'
+
+const tracer = trace.getTracer('todo-service')
+
+export async function createTodo(req: CreateTodoRequest, userId: string): Promise<Todo> {
+  // 1. Start a child span, and make it current for everything inside
+  return tracer.startActiveSpan('TodoService.createTodo', async (span: Span) => {
+    // 2. Add business context to the span, visible in trace UI.
+    // Attribute VALUES must be primitives; passing an object silently
+    // drops the attribute, so shape it here rather than at the call site.
+    span.setAttributes({
+      'user.id': userId,
+      'todo.title': req.title,
+      'todo.priority': req.priority,
+    })
+
+    const traceId = span.spanContext().traceId
+
+    // 3. INFO log, record business event start
+    log.info({ user_id: userId, title: req.title, trace_id: traceId }, 'creating todo')
+
+    try {
+      const todo = await repo.createTodo(req, userId) // 4. DB, own child span
+
+      log.debug({ todo_id: todo.id }, 'todo created') // 5. dev only
+
+      // 6. INFO, business event completion log (for audit trail)
+      log.info({
+        todo_id: todo.id,
+        user_id: userId,
+        title: todo.title,
+        priority: todo.priority,
+        category_id: todo.categoryId,
+      }, 'todo created successfully')
+
+      return todo
+    } catch (err) {
+      log.error({ user_id: userId, err, trace_id: traceId }, 'failed to create todo')
+      span.recordException(err as Error)
+      span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message })
+      throw err // re-throw: the caller decides the status code, not us
+    } finally {
+      span.end()
+    }
+  })
+}
+```
+
+```java title="TodoService.java / Java 17+ + SLF4J + OTel"
+// TodoService.java, the full LMO pattern per method
+@Service
+public class TodoService {
+    private static final Logger log = LoggerFactory.getLogger(TodoService.class);
+    private final Tracer tracer = GlobalOpenTelemetry.getTracer("todo-service");
+
+    public Todo createTodo(CreateTodoRequest req, String userId) {
+        // 1. Start a child span (the parent is the current Context)
+        Span span = tracer.spanBuilder("TodoService.createTodo").startSpan();
+
+        // 2. Add business context to the span, visible in trace UI
+        span.setAttribute("user.id", userId);
+        span.setAttribute("todo.title", req.title());
+        span.setAttribute("todo.priority", req.priority());
+
+        // makeCurrent() is what makes the NEXT span a child of this one.
+        // Forget it and the trace flattens into a list of orphan spans
+        // that no longer tells you what called what.
+        try (Scope scope = span.makeCurrent()) {
+            // 3. INFO log, record business event start
+            log.info("creating todo user_id={} title={}", userId, req.title());
+
+            // 4. Execute DB operation (its own child span, auto-instrumented)
+            Todo todo = repo.createTodo(req, userId);
+
+            // 5. DEBUG log, only visible in dev, suppressed in production
+            log.debug("todo created todo_id={}", todo.id());
+
+            // 6. INFO, business event completion log (for audit trail)
+            log.info("todo created successfully todo_id={} user_id={} title={} priority={}",
+                todo.id(), userId, todo.title(), todo.priority());
+
+            return todo;
+
+        } catch (RuntimeException e) {
+            // ERROR log with full context. The exception goes LAST and
+            // without a placeholder: that is the SLF4J signature that
+            // logs the full stack trace rather than just its toString.
+            log.error("failed to create todo user_id={}", userId, e);
+
+            // Record error on span, shows as failed in Jaeger / Tempo
+            span.recordException(e);
+            span.setStatus(StatusCode.ERROR, e.getMessage());
+            throw e;
+
+        } finally {
+            span.end(); // ALWAYS, or the span leaks and never reaches the collector
+        }
+    }
+}
 ```
 
 ### Prometheus Middleware (Metrics)
 
-```go
+Go Python JavaScript TypeScript Java
+
+count and time every request, labelled by the route TEMPLATE
+
+```go title="middleware/metrics.go / Go + Gin + Prometheus"
 // middleware/metrics.go, HTTP metrics instrumentation
 package middleware
 
@@ -630,127 +1290,162 @@ func PrometheusMetrics() gin.HandlerFunc {
         httpDuration.WithLabelValues(c.Request.Method, c.FullPath()).Observe(duration.Seconds())
     }
 }
-Go / Gin + Prometheus
 ```
 
-12
+```python title="middleware/metrics.py / Python + FastAPI + prometheus_client"
+# middleware/metrics.py, HTTP metrics instrumentation
+import time
 
-## Code: Python: Full LMO Implementation
+from fastapi import Request
+from prometheus_client import Counter, Histogram, make_asgi_app
 
-### Structured Logging with structlog
+http_requests_total = Counter(
+    "http_requests_total",
+    "Total HTTP requests",
+    ["method", "path", "status"],
+)
 
-```python
-# logging_config.py, structlog setup for Python
-import logging
-import os
-import structlog
+http_duration = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request latency",
+    ["method", "path"],
+    buckets=(.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5),
+)
 
-def configure_logging():
-    env = os.getenv("APP_ENV", "development")
 
-    if env == "production":
-        # JSON renderer for production, parseable by Loki / ELK
-        renderer = structlog.processors.JSONRenderer()
-        level = logging.INFO
-    else:
-        # ColourfulConsole for local dev, human-readable
-        renderer = structlog.dev.ConsoleRenderer(colors=True)
-        level = logging.DEBUG
+@app.middleware("http")
+async def prometheus_metrics(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start
 
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,      # merge request-scoped context
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.add_logger_name,
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.ExceptionRenderer(),     # auto-renders exceptions
-            renderer,
-        ],
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
+    # The route TEMPLATE ("/todos/{id}"), never request.url.path. The raw
+    # path would mint one time series per todo id, and THAT is what takes
+    # a Prometheus server down, not the request volume.
+    route = request.scope.get("route")
+    path = route.path if route else "unmatched"
 
-    logging.basicConfig(level=level)
+    http_requests_total.labels(request.method, path, response.status_code).inc()
+    http_duration.labels(request.method, path).observe(duration)
+    return response
 
-log = structlog.get_logger()
-Python / structlog
+
+# Expose /metrics for Prometheus to scrape
+app.mount("/metrics", make_asgi_app())
 ```
 
-### OpenTelemetry Tracing in FastAPI
+```js title="middleware/metrics.js / Node 20+ + Express + prom-client"
+// middleware/metrics.js, HTTP metrics instrumentation
+import { Counter, Histogram, register } from 'prom-client'
 
-```python
-# tracing.py, OTel setup for FastAPI
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+const httpRequestsTotal = new Counter({
+  name: 'http_requests_total',
+  help: 'Total HTTP requests',
+  labelNames: ['method', 'path', 'status'],
+})
 
-def setup_tracing(app):
-    # Tracer provider, sends spans to OTel Collector via gRPC
-    provider = TracerProvider()
-    exporter = OTLPSpanExporter(endpoint="http://otel-collector:4317")
-    provider.add_span_processor(BatchSpanProcessor(exporter))
-    trace.set_tracer_provider(provider)
+const httpDuration = new Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'HTTP request latency',
+  labelNames: ['method', 'path'],
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+})
 
-    # Auto-instrument FastAPI, all routes get spans automatically
-    FastAPIInstrumentor.instrument_app(app)
+export function prometheusMetrics(req, res, next) {
+  const end = httpDuration.startTimer()
 
-    # Auto-instrument SQLAlchemy, all DB queries get spans automatically
-    SQLAlchemyInstrumentor().instrument(engine=engine)
+  res.on('finish', () => {
+    // req.route.path is the TEMPLATE ("/todos/:id"). req.path is the real
+    // url and would create one time series per todo id.
+    const path = req.route?.path ?? 'unmatched'
+    end({ method: req.method, path })
+    httpRequestsTotal.inc({ method: req.method, path, status: res.statusCode })
+  })
 
-# main.py, wire it all up
-from fastapi import FastAPI
-from tracing import setup_tracing
-from logging_config import configure_logging, log
+  next()
+}
 
-configure_logging()
-app = FastAPI()
-setup_tracing(app)
-Python / FastAPI + OTel
+// Expose /metrics for Prometheus to scrape
+app.get('/metrics', async (_req, res) => {
+  res.set('Content-Type', register.contentType)
+  res.end(await register.metrics())
+})
 ```
 
-### Service Layer with Full LMO Pattern
+```ts title="middleware/metrics.ts / TypeScript 5+ + Express + prom-client"
+import { Counter, Histogram, register } from 'prom-client'
+import type { NextFunction, Request, Response } from 'express'
 
-```python
-# services/todo_service.py
-from opentelemetry import trace
-import structlog
+// Naming the label set as a type is worth the three lines. Prometheus
+// costs one time series per distinct label COMBINATION, so the danger is
+// never the metric, it is somebody adding `user_id` to this object in six
+// months. A closed type makes that a compile error.
+type HttpLabels = { method: string; path: string; status?: number }
 
-tracer = trace.get_tracer("todo-service")
-log = structlog.get_logger()
+const httpRequestsTotal = new Counter<keyof HttpLabels>({
+  name: 'http_requests_total',
+  help: 'Total HTTP requests',
+  labelNames: ['method', 'path', 'status'],
+})
 
-async def create_todo(user_id: str, req: CreateTodoRequest) -> Todo:
-    # 1. Start child span
-    with tracer.start_as_current_span("TodoService.create_todo") as span:
-        span.set_attribute("user.id", user_id)
-        span.set_attribute("todo.title", req.title)
+const httpDuration = new Histogram<keyof HttpLabels>({
+  name: 'http_request_duration_seconds',
+  help: 'HTTP request latency',
+  labelNames: ['method', 'path'],
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+})
 
-        # 2. INFO log, business event start
-        log.info("creating_todo", user_id=user_id, title=req.title)
+export function prometheusMetrics(req: Request, res: Response, next: NextFunction): void {
+  const end = httpDuration.startTimer()
 
-        try:
-            todo = await repo.create_todo(user_id, req)
+  res.on('finish', () => {
+    const labels: HttpLabels = { method: req.method, path: req.route?.path ?? 'unmatched' }
+    end(labels)
+    httpRequestsTotal.inc({ ...labels, status: res.statusCode })
+  })
 
-            # 3. Business event log, audit trail
-            log.info("todo_created",
-                todo_id=todo.id,
-                user_id=user_id,
-                title=todo.title,
-                priority=todo.priority,
-            )
-            return todo
+  next()
+}
+```
 
-        except Exception as e:
-            # 4. ERROR log + span error recording
-            log.error("todo_creation_failed", user_id=user_id, error=str(e))
-            span.record_exception(e)
-            span.set_status(trace.StatusCode.ERROR, str(e))
-            raise
-Python / FastAPI + OTel + structlog
+```java title="TodoMetrics.java / Java 17+ + Spring Boot + Micrometer"
+// Spring Boot gives you the HTTP metrics for free. Add
+// spring-boot-starter-actuator + micrometer-registry-prometheus and every
+// controller is counted and timed as http_server_requests_seconds,
+// tagged by method, status, and the uri TEMPLATE:
+//
+//   management.endpoints.web.exposure.include: prometheus
+//   management.metrics.tags.service: todo-api
+//
+// The uri tag uses "/todos/{id}", never the actual path. That is not an
+// accident: tagging by raw path mints one time series per id, which is
+// the classic way to take a Prometheus server down.
+
+// What no framework can know is your BUSINESS metrics, so write those.
+@Component
+public class TodoMetrics {
+    private final Counter created;
+    private final Timer dbWrite;
+
+    TodoMetrics(MeterRegistry registry) {
+        this.created = Counter.builder("todos_created_total")
+            .description("Todos successfully created")
+            .register(registry);
+
+        this.dbWrite = Timer.builder("todo_db_write_seconds")
+            .description("Time spent writing a todo")
+            .publishPercentileHistogram() // the histogram buckets
+            .register(registry);
+    }
+
+    public void recordCreated() {
+        created.increment();
+    }
+
+    public <T> T timeDbWrite(Supplier<T> work) {
+        return dbWrite.record(work); // times both the happy and throwing paths
+    }
+}
 ```
 
 13
@@ -789,9 +1484,13 @@ If you don't have the team to manage the open-source stack, proprietary all-in-o
 | **Sentry**    | Best-in-class error tracking. Groups identical errors, shows stack traces, user context, release tracking. | Error monitoring specifically, pairs well with Grafana for metrics | Free tier (5k errors/month), then per event   |
 | **Honeycomb** | High-cardinality event querying. Built for observability-first teams. Native OTel support.                 | Teams doing advanced distributed tracing, many microservices       | Per event ingested                            |
 
-### New Relic Go Agent: Quick Integration
+### New Relic Agent: Quick Integration
 
-```go
+Go Python JavaScript TypeScript Java
+
+one agent, auto-instrumented routes, no per-handler code
+
+```go title="main.go / Go + New Relic go-agent"
 // main.go, New Relic agent setup in Go
 import (
     "github.com/newrelic/go-agent/v3/newrelic"
@@ -813,11 +1512,138 @@ func main() {
 
     r.Run(":8080")
 }
-Go / New Relic
+```
+
+```python title="main.py / Python + newrelic agent"
+# Python's agent is mostly configuration, not code. Install it, point it
+# at a config file, and start the app THROUGH the admin wrapper:
+#
+#   pip install newrelic
+#   newrelic-admin generate-config $NEW_RELIC_LICENSE_KEY newrelic.ini
+#   NEW_RELIC_CONFIG_FILE=newrelic.ini newrelic-admin run-program \
+#       uvicorn main:app --host 0.0.0.0 --port 8000
+
+# newrelic.ini
+#   [newrelic]
+#   app_name = todo-api
+#   application_logging_forwarding_enabled = true   ; forward logs to NR
+#   distributed_tracing.enabled = true              ; enable distributed tracing
+
+# Or initialise in-process, which keeps the wrapper out of your Dockerfile:
+import newrelic.agent
+
+newrelic.agent.initialize("newrelic.ini")  # MUST run before importing the app
+
+from fastapi import FastAPI
+
+app = FastAPI()
+# The agent auto-instruments FastAPI, SQLAlchemy, redis and httpx by
+# monkey-patching them on import, which is why initialise must come first.
+
+
+# Only custom business spans need writing by hand:
+@newrelic.agent.function_trace()
+async def create_todo(user_id: str, req: CreateTodoRequest) -> Todo:
+    ...
+```
+
+```js title="server.js / Node 20+ + newrelic"
+// The Node agent instruments by patching modules as they load, so it has
+// to be the VERY first thing the process imports, before express or pg.
+//   node --import newrelic/esm-loader.mjs server.js
+// or, for CommonJS, literally the first line of the entry file:
+//   require('newrelic')
+
+// newrelic.cjs, config lives beside the entry point
+exports.config = {
+  app_name: ['todo-api'],
+  license_key: process.env.NEW_RELIC_LICENSE_KEY,
+  application_logging: {
+    forwarding: { enabled: true }, // forward logs to NR
+  },
+  distributed_tracing: { enabled: true }, // enable distributed tracing
+}
+
+// server.js
+import 'newrelic' // first import, always
+import express from 'express'
+
+const app = express()
+// Every route is now auto-instrumented as an NR transaction; there is no
+// middleware to add. Only custom segments are written by hand:
+import newrelic from 'newrelic'
+
+app.get('/todos/:id', async (req, res) => {
+  const todo = await newrelic.startSegment('repo.findTodo', true, () =>
+    repo.findTodo(req.params.id))
+  res.json(todo)
+})
+```
+
+```ts title="server.ts / TypeScript 5+ + newrelic"
+import 'newrelic' // first import, before express and pg are loaded
+import newrelic from 'newrelic'
+import express from 'express'
+
+// Worth knowing before you reach for a vendor agent in a TypeScript
+// codebase: the agent patches modules at load time, which no type
+// system can see. A mis-ordered import type-checks perfectly and
+// instruments nothing, so keep the bare `import 'newrelic'` on line one
+// and configure the entry point with `--import`, never a lazy import.
+
+const app = express()
+
+// Custom segments are the only hand-written part, and they are generic,
+// so the return type of the wrapped work survives the wrapper.
+async function findTodo(id: string): Promise<Todo> {
+  return newrelic.startSegment('repo.findTodo', true, () => repo.findTodo(id))
+}
+
+app.get('/todos/:id', async (req, res) => {
+  res.json(await findTodo(req.params.id))
+})
+
+// Prefer OTel + a collector if you may ever change vendor. New Relic,
+// Datadog and Honeycomb all ingest OTLP, so the instrumentation in the
+// sections above ports between them; a vendor agent does not.
+```
+
+```java title="build.gradle + JVM flag / Java 17+ + New Relic"
+// The Java agent is a JVM-level attachment: no dependency, no code, and
+// nothing to import. You download newrelic.jar and hand it to the JVM:
+//
+//   java -javaagent:/opt/newrelic/newrelic.jar -jar todo-api.jar
+//
+// newrelic.yml
+//   common: &default_settings
+//     app_name: todo-api
+//     license_key: ${NEW_RELIC_LICENSE_KEY}
+//     application_logging:
+//       forwarding:
+//         enabled: true            # forward logs to NR
+//     distributed_tracing:
+//       enabled: true              # enable distributed tracing
+
+// Bytecode instrumentation means every Spring controller, JDBC query and
+// HTTP client call is traced without a single annotation. Only custom
+// business spans are written by hand:
+@Service
+public class TodoService {
+
+    @Trace(dispatcher = true) // com.newrelic.api.agent.Trace
+    public Todo createTodo(CreateTodoRequest req, String userId) {
+        NewRelic.addCustomParameter("user.id", userId);
+        return repo.createTodo(req, userId);
+    }
+}
+
+// Same caveat as everywhere else in this section: the OTel instrumentation
+// above is vendor-neutral and New Relic ingests OTLP directly. Reach for
+// the agent when you want zero-code coverage, not as the default.
 ```
 
 <Callout type="info" title="What New Relic shows you">
-After adding the middleware, New Relic automatically captures: transaction time per route, error rate, throughput (req/sec), Apdex score, Go runtime metrics (GC pause, goroutine count, memory), and distributed traces. The dashboard shows all of this within minutes of deploying.
+Once the agent is attached, New Relic automatically captures: transaction time per route, error rate, throughput (req/sec), Apdex score, runtime metrics for the language it is running in (Go GC pause and goroutine count, JVM heap and GC, Node event-loop lag, Python GC), and distributed traces. The dashboard shows all of this within minutes of deploying.
 </Callout>
 
 15
@@ -925,7 +1751,6 @@ groups:
           severity: critical
         annotations:
           summary: "todo-api service is unreachable"
-YAML / Prometheus Rules
 ```
 
 <Callout type="info" title="Alert Severity Levels">
@@ -1017,4 +1842,4 @@ Start with basic structured logging in JSON format + a simple Prometheus counter
 **Logs** tell you what happened. **Metrics** tell you patterns and trends. **Traces** tell you where exactly things went wrong and how long each step took. A system is _observable_ when all three are in place and correlated. This requires developer effort (instrument your code) and infrastructure effort (collect, store, display) working together. The tooling, whether Grafana stack or New Relic, is secondary to the practice of consistently instrumenting your code with the right context.
 </Callout>
 
-Backend from First Principles / Chapter 15 / Observability. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 15 / Observability. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).

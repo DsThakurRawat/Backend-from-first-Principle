@@ -319,11 +319,15 @@ For example, say you established a Redis connection, then a DB connection, then 
 
 ## Code Examples
 
-We typically avoid looking at code in this series, but a practical example helps avoid a hollow understanding. You don't have to understand every line, just follow the narrative. In practice, most frameworks (Node.js, Go, Rust, Python) provide this code ready to copy-paste; what matters is understanding _what happens_ and _why_.
+We typically avoid looking at code in this series, but a practical example helps avoid a hollow understanding. You don't have to understand every line, just follow the narrative. In practice, most frameworks (Node.js, Go, Rust, Python, Spring) provide this code ready to copy-paste; what matters is understanding _what happens_ and _why_. The five tabs below do the identical four things in the identical order, and only the syntax changes: register a handler for SIGINT and SIGTERM, block until one arrives, drain in-flight requests under a hard deadline, then release resources in reverse order of acquisition.
 
-### 7.1: Graceful Shutdown in Go
+### 7.1: Graceful Shutdown
 
-This mirrors the live demo from the lecture: register a handler waiting for signals, then on receipt run the shutdown function which closes the HTTP server, then the database, then the Redis-backed background job server, in reverse order of acquisition.
+This mirrors the live demo from the lecture: register a handler waiting for signals, then on receipt run the shutdown function which closes the HTTP server, then the background job worker, then the database, in reverse order of acquisition.
+
+Go Python JavaScript TypeScript Java
+
+catch the signal, drain, release in reverse
 
 ```go title="main.go / Go / net/http + signal.NotifyContext"
 package main
@@ -404,10 +408,6 @@ func gracefulShutdown(
 }
 ```
 
-### 7.2: Graceful Shutdown in Python
-
-The same concepts in Python using the `signal` module: register handlers for SIGINT and SIGTERM, drain in-flight work, then release resources in reverse.
-
 ```python title="server.py / Python / signal + asyncio"
 import asyncio
 import signal
@@ -474,6 +474,178 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+```js title="server.js / Node 20+ + Express"
+import express from 'express'
+
+const SHUTDOWN_TIMEOUT = 30_000 // hard limit in ms
+
+// --- Startup phase: acquire resources in order ---
+const db = await connectDatabase()      // 1. acquire DB (TCP pool)
+const jobs = await startBackgroundJobs() // 2. acquire Redis-backed worker
+
+const app = express()
+const server = app.listen(8080, () =>
+  console.log('server started, ready to accept requests'))
+
+let shuttingDown = false
+
+async function gracefulShutdown(signal) {
+  // A second Ctrl+C while draining must not restart the sequence.
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`signal received: ${signal}, starting graceful shutdown`)
+
+  // Hard limit: if draining hangs, exit anyway. Without this the process
+  // sits forever on one keep-alive connection and the orchestrator ends
+  // up SIGKILLing it, which is the exact outcome we are avoiding.
+  const forceExit = setTimeout(() => {
+    console.warn('timeout exceeded, forcing shutdown')
+    process.exit(1)
+  }, SHUTDOWN_TIMEOUT)
+  forceExit.unref() // do not keep the loop alive just for this timer
+
+  // 1. CONNECTION DRAINING: stop accepting NEW connections, and let
+  //    in-flight requests finish. The callback fires when the last one has.
+  await new Promise((resolve) => server.close(resolve))
+  console.log('HTTP connections drained')
+
+  // 2 & 3. Release in REVERSE order of acquisition.
+  console.log('stopping background job server...')
+  await jobs.shutdown()
+  console.log('closing database connection...')
+  await db.end()
+
+  clearTimeout(forceExit)
+  console.log('server exited properly')
+  process.exit(0)
+}
+
+// Handle BOTH the same way: the intention is identical.
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))   // Ctrl+C, dev
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM')) // PM2 / k8s, prod
+
+// Node caveat worth knowing: server.close() waits for idle KEEP-ALIVE
+// sockets too. Set `server.closeIdleConnections()` (Node 18.2+) right
+// after, or a browser tab holding an idle connection blocks the drain.
+```
+
+```ts title="server.ts / TypeScript 5+ + Express"
+import express from 'express'
+import type { Server } from 'node:http'
+
+const SHUTDOWN_TIMEOUT = 30_000 // hard limit in ms
+
+// Naming the contract every resource must satisfy is what makes the
+// reverse-order rule enforceable rather than a comment somebody has to
+// remember. Push in acquisition order, release by walking backwards.
+interface Closeable {
+  name: string
+  close: () => Promise<void>
+}
+
+const acquired: Closeable[] = []
+
+const db = await connectDatabase()
+acquired.push({ name: 'database', close: () => db.end() })       // 1
+
+const jobs = await startBackgroundJobs()
+acquired.push({ name: 'job server', close: () => jobs.shutdown() }) // 2
+
+const app = express()
+const server: Server = app.listen(8080, () =>
+  console.log('server started, ready to accept requests'))
+
+let shuttingDown = false
+
+async function gracefulShutdown(signal: NodeJS.Signals): Promise<void> {
+  if (shuttingDown) return // a second Ctrl+C must not restart the sequence
+  shuttingDown = true
+  console.log(`signal received: ${signal}, starting graceful shutdown`)
+
+  const forceExit = setTimeout(() => {
+    console.warn('timeout exceeded, forcing shutdown')
+    process.exit(1)
+  }, SHUTDOWN_TIMEOUT)
+  forceExit.unref()
+
+  // 1. CONNECTION DRAINING
+  console.log('draining HTTP connections...')
+  await new Promise<void>((resolve) => server.close(() => resolve()))
+  server.closeIdleConnections() // idle keep-alives would otherwise block
+
+  // 2 & 3. REVERSE order of acquisition, by construction
+  for (const resource of acquired.reverse()) {
+    console.log(`closing ${resource.name}...`)
+    await resource.close()
+  }
+
+  clearTimeout(forceExit)
+  console.log('server exited properly')
+  process.exit(0)
+}
+
+process.on('SIGINT', () => void gracefulShutdown('SIGINT'))
+process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'))
+```
+
+```java title="Application.java / Java 17+ + Spring Boot"
+// Spring Boot does almost all of this for you, and the important part is
+// knowing WHICH parts, so you only write what is missing.
+//
+// application.yml:
+//   server.shutdown: graceful          # drain instead of cutting off
+//   spring.lifecycle.timeout-per-shutdown-phase: 30s   # the hard limit
+//
+// With those two lines, SIGTERM makes Tomcat stop accepting new
+// connections and wait for in-flight requests, exactly like srv.Shutdown.
+
+@SpringBootApplication
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+    }
+}
+
+// Resource cleanup is @PreDestroy, and Spring already calls it in REVERSE
+// dependency order: a bean is destroyed before the beans it depends on.
+// That is the reverse-order-of-acquisition rule, enforced by the container
+// rather than by a shutdown function you have to keep in sync.
+@Component
+class JobServer {
+    @PreDestroy
+    void shutdown() {
+        log.info("stopping background job server...");
+        // closes Redis connections, waits for workers to finish current jobs
+    }
+}
+
+@Component
+class Database implements AutoCloseable {
+    @Override
+    @PreDestroy
+    public void close() {
+        log.info("closing database connection...");
+        // commit or rollback open transactions, then close the pool
+    }
+}
+
+// The one thing to add by hand is the pre-drain pause, and it matters
+// more than the rest: a load balancer needs a few seconds to notice this
+// instance is going away, and requests routed in during that window are
+// dropped no matter how gracefully the app shuts down afterwards.
+@Component
+class DrainDelay implements ApplicationListener<ContextClosedEvent> {
+    @Override
+    public void onApplicationEvent(ContextClosedEvent event) {
+        try {
+            Thread.sleep(5_000); // let the LB deregister us first
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+```
+
 ## Further Reading & Documentation
 
 #### Unix Signals
@@ -507,6 +679,6 @@ if __name__ == "__main__":
 </Callout>
 
 BACKEND ENGINEERING FIELD MANUAL / V2 / CHAPTER 14 / GRACEFUL SHUTDOWN\
-Notes compiled from lecture transcript / Go + Python examples / Unix signals & orchestration references inline
+Notes compiled from lecture transcript / Go, Python, JavaScript, TypeScript & Java examples / Unix signals & orchestration references inline
 
-Backend from First Principles / Chapter 16 / Shutdown. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 16 / Shutdown. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).

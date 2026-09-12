@@ -2,7 +2,7 @@
 order: 6
 title: "Handlers, Services & Repositories."
 navTitle: "Controllers, Services & Middlewares"
-summary: "A first-principles walkthrough of how a single HTTP request travels inside your server, through routing, the three architectural layers, the middleware chain, and the request context that ties it all together. Complete implementations in Go and Python shown side by side."
+summary: "A first-principles walkthrough of how a single HTTP request travels inside your server, through routing, the three architectural layers, the middleware chain, and the request context that ties it all together. Complete implementations in Go, Python, JavaScript, TypeScript and Java shown side by side."
 readingTime: "2-3 hours"
 keywords:
   - "controllers"
@@ -108,11 +108,11 @@ With those two objects in hand, the handler runs through a precise, ordered work
 
 ### A note on Node.js vs Go & Python
 
-In a Node.js/Express app the deserialization step often happens _upstream_ in a middleware (the `json()` body parser), so JSON is already a JavaScript object by the time your handler runs. In **Go** and **Python** you typically deserialize _explicitly_ inside the handler, into a struct, a dictionary, or a class.
+In a Node.js/Express app the deserialization step often happens _upstream_ in a middleware (the `json()` body parser), so JSON is already a JavaScript object by the time your handler runs. Spring goes further still and binds the body into a record before your method is even called. In **Go** and **Python** you typically deserialize _explicitly_ inside the handler, into a struct, a dictionary, or a class. The step never disappears, it only moves: the further upstream it runs, the less of it you write yourself.
 
 #### Step 1: 2 / Extract & bind the body; 400 on failure
 
-```go title="create_book / handler Go Python"
+```go title="create_book / handler Go Python JavaScript TypeScript Java"
 // CreateBookRequest is our native format, the bind target.
 type CreateBookRequest struct {
     Title  string `json:"title"`
@@ -151,11 +151,85 @@ def create_book_handler():
     # ... validation, transformation, delegation follow ...
 ```
 
+```js
+// Express's json() body parser has already deserialized the body upstream,
+// so req.body is a JavaScript object by the time the handler runs. That
+// makes step 1 free and turns step 2 into "check the shape you expected".
+app.post('/books', (req, res) => {
+  // Step 1 + 2: extract the body and bind the fields we accept.
+  const { title, author } = req.body ?? {}
+
+  // express.json() leaves req.body empty when the payload is malformed.
+  if (typeof title !== 'string' || typeof author !== 'string') {
+    // Binding failed -> the payload is malformed.
+    return res.status(400).json({ error: 'invalid request body' }) // 400
+  }
+
+  const createBookRequest = { title, author }
+  // ... validation, transformation, delegation follow ...
+})
+```
+
+```ts
+import type { Request, Response } from 'express'
+
+// CreateBookRequest is our native format, the bind target.
+interface CreateBookRequest {
+  title: string
+  author: string
+}
+
+// A parsed body is `unknown` until something proves its shape. A type
+// guard is that proof, and it is what lets the rest of the handler treat
+// `req.body` as a CreateBookRequest without a cast.
+function isCreateBookRequest(value: unknown): value is CreateBookRequest {
+  const body = value as Partial<CreateBookRequest> | null
+  return typeof body?.title === 'string' && typeof body?.author === 'string'
+}
+
+export function createBookHandler(req: Request, res: Response): void {
+  // Step 1 + 2: extract the body and deserialize (bind) into the type.
+  if (!isCreateBookRequest(req.body)) {
+    // Deserialization failed -> the payload is malformed.
+    res.status(400).json({ error: 'invalid request body' }) // 400
+    return // terminate the request here; do not proceed.
+  }
+
+  const body: CreateBookRequest = req.body
+  // ... validation, transformation, delegation follow ...
+}
+```
+
+```java
+// CreateBookRequest is our native format, the bind target.
+public record CreateBookRequest(String title, String author) {}
+
+@RestController
+class BookController {
+
+    // Step 1 + 2 happen BEFORE this method runs: @RequestBody tells Spring
+    // to read the body and let Jackson deserialize it into the record.
+    @PostMapping("/books")
+    ResponseEntity<?> createBook(@RequestBody CreateBookRequest req) {
+        // ... validation, transformation, delegation follow ...
+        return ResponseEntity.status(HttpStatus.CREATED).build(); // 201
+    }
+
+    // A body Jackson cannot read never reaches the handler, it arrives
+    // here instead. Same outcome as the explicit `if` above: 400.
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ResponseEntity<?> onUnreadableBody() {
+        return ResponseEntity.badRequest()
+            .body(Map.of("error", "invalid request body")); // 400
+    }
+}
+```
+
 #### Step 3: 4 / Validate, then transform (inject a default for an optional query param)
 
 A good API design rule: make query parameters **optional** wherever possible. Consider `GET /books?sort=name|date`. If the client sends nothing, validation must still pass, so the transformation step injects a sensible default.
 
-```go title="list_books / validate + transform Go Python"
+```go title="list_books / validate + transform Go Python JavaScript TypeScript Java"
 func ListBooksHandler(w http.ResponseWriter, r *http.Request) {
     sort := r.URL.Query().Get("sort") // "" if absent
 
@@ -200,6 +274,80 @@ def list_books_handler():
     return jsonify(books), 200  # array of books
 ```
 
+```js
+app.get('/books', async (req, res) => {
+  const sort = req.query.sort // undefined if absent
+
+  // VALIDATION: if present, it must be one of the allowed values.
+  if (sort !== undefined && sort !== 'name' && sort !== 'date') {
+    return res.status(400).json({ error: "sort must be 'name' or 'date'" })
+  }
+
+  // TRANSFORMATION: query params are optional -> inject a default.
+  const sortBy = sort ?? 'date' // downstream layers never see undefined
+
+  try {
+    const books = await bookService.listBooks(sortBy) // delegate
+    res.status(200).json(books) // 200 with the array of books
+  } catch {
+    res.status(500).json({ error: 'could not fetch books' }) // 500
+  }
+})
+```
+
+```ts
+import type { Request, Response } from 'express'
+
+const SORTS = ['name', 'date'] as const
+type Sort = (typeof SORTS)[number]
+
+export async function listBooksHandler(req: Request, res: Response): Promise<void> {
+  const sort = req.query.sort // string | string[] | undefined | ...
+
+  // VALIDATION: if present, it must be one of the allowed values.
+  if (sort !== undefined && !SORTS.includes(sort as Sort)) {
+    res.status(400).json({ error: "sort must be 'name' or 'date'" })
+    return
+  }
+
+  // TRANSFORMATION: optional param -> inject a default. Note what the
+  // narrowed type buys you: the service takes a `Sort`, so a typo in a
+  // future edit stops compiling instead of reaching the database.
+  const sortBy: Sort = (sort as Sort | undefined) ?? 'date'
+
+  try {
+    const books = await bookService.listBooks(sortBy) // delegate
+    res.status(200).json(books) // 200 with the array of books
+  } catch {
+    res.status(500).json({ error: 'could not fetch books' }) // 500
+  }
+}
+```
+
+```java
+@GetMapping("/books")
+ResponseEntity<?> listBooks(@RequestParam(required = false) String sort) {
+    // VALIDATION: if present, it must be one of the allowed values.
+    if (sort != null && !sort.equals("name") && !sort.equals("date")) {
+        return ResponseEntity.badRequest()
+            .body(Map.of("error", "sort must be 'name' or 'date'")); // 400
+    }
+
+    // TRANSFORMATION: query params are optional -> inject a default.
+    // (@RequestParam(defaultValue = "date") would do exactly this for you;
+    // it is spelled out here so the step stays visible.)
+    String sortBy = (sort == null) ? "date" : sort;
+
+    try {
+        List<Book> books = bookService.listBooks(sortBy); // delegate
+        return ResponseEntity.ok(books); // 200 with the array of books
+    } catch (DataAccessException e) {
+        return ResponseEntity.internalServerError()
+            .body(Map.of("error", "could not fetch books")); // 500
+    }
+}
+```
+
 ## 06The Service Layer
 
 The service layer is where the **actual processing**: the business logic, happens. The single most important rule governs it:
@@ -214,7 +362,7 @@ This isolation is what keeps the system decoupled. The service decides _what to 
 
 A single service method can do a great deal. It can call **one or several repository methods** and merge their results, make external API calls, send emails, fire notifications, anything the business operation requires. This coordinating role is called **orchestration**: the service stitches together data from multiple sources and returns a single clean result to the handler. A service that only sends an email may never touch the repository at all.
 
-```go title="book_service / pure business logic Go Python"
+```go title="book_service / pure business logic Go Python JavaScript TypeScript Java"
 // Notice: no http.Request, no ResponseWriter, no status codes.
 // You cannot tell from this signature that it serves an API.
 func (s *BookService) ListBooks(ctx context.Context, sort string) ([]Book, error) {
@@ -251,6 +399,80 @@ class BookService:
         self.mailer.send(email, "Your book was added")
 ```
 
+```js
+// Notice: no req, no res, no status codes.
+// You cannot tell from these methods that they serve an API.
+class BookService {
+  constructor(repo, mailer) {
+    this.repo = repo
+    this.mailer = mailer
+  }
+
+  async listBooks(sort) {
+    // Orchestration: call the repository for the data it needs.
+    const books = await this.repo.findAllBooks(sort)
+    // Could also: enrich, merge other repo calls, send notifications...
+    return books
+  }
+
+  // A service that needs no database at all is perfectly valid:
+  async notifyOwner(email) {
+    await this.mailer.send(email, 'Your book was added')
+  }
+}
+```
+
+```ts
+// The types tell the same story the comments do: every name in this
+// signature is a domain word (Book, Sort, Mailer). Not one of them is
+// an HTTP word, which is exactly the isolation we are after.
+export class BookService {
+  constructor(
+    private readonly repo: BookRepo,
+    private readonly mailer: Mailer,
+  ) {}
+
+  async listBooks(sort: Sort): Promise<Book[]> {
+    // Orchestration: ask the repository for what it needs.
+    const books = await this.repo.findAllBooks(sort)
+    // Could merge other repo calls, enrich, notify, etc.
+    return books
+  }
+
+  // A purely-logic service that never touches the DB:
+  async notifyOwner(email: string): Promise<void> {
+    await this.mailer.send(email, 'Your book was added')
+  }
+}
+```
+
+```java
+// No HttpServletRequest, no ResponseEntity, no status codes. Nothing here
+// says "web", this class would work unchanged behind a CLI or a queue.
+@Service
+public class BookService {
+    private final BookRepo repo;
+    private final Mailer mailer;
+
+    BookService(BookRepo repo, Mailer mailer) {
+        this.repo = repo;
+        this.mailer = mailer;
+    }
+
+    public List<Book> listBooks(String sort) {
+        // Orchestration: call the repository for the data it needs.
+        List<Book> books = repo.findAllBooks(sort);
+        // Could also: enrich, merge other repo calls, send notifications...
+        return books;
+    }
+
+    // A service that needs no database at all is perfectly valid:
+    public void notifyOwner(String email) {
+        mailer.send(email, "Your book was added");
+    }
+}
+```
+
 ## 07The Repository Layer
 
 The repository (or _database_) layer has a single concern: **talking to the database**. It receives data from the service, **constructs the database query**: for inserting, filtering, or sorting, runs it, and returns the raw result back up to the service.
@@ -259,7 +481,7 @@ The repository (or _database_) layer has a single concern: **talking to the data
 A repository method should do **one thing** and return **one kind of data**. Do _not_ write a single method that, depending on an optional parameter, returns either one book or all books. Instead write two distinct methods: `FindAllBooks()` and `FindBookByID(id)`.
 </Callout>
 
-```go title="book_repository / one job per method Go Python"
+```go title="book_repository / one job per method Go Python JavaScript TypeScript Java"
 // ONE method, ONE shape of result: all books, sorted.
 func (r *BookRepo) FindAllBooks(ctx context.Context, sort string) ([]Book, error) {
     // Build the query from the data the service handed down.
@@ -304,6 +526,92 @@ class BookRepo:
         cur = self.db.execute(
             "SELECT id, title, author FROM books WHERE id = ?", (book_id,))
         return dict(cur.fetchone())
+```
+
+```js
+class BookRepo {
+  constructor(db) {
+    this.db = db // a node-postgres Pool
+  }
+
+  // ONE method, ONE shape of result: all books, sorted.
+  async findAllBooks(sort) {
+    // A column name can never be a bound parameter, so it goes through a
+    // fixed lookup rather than into the string. Values always use $1, $2.
+    const column = { name: 'title', date: 'created_at' }[sort] ?? 'created_at'
+    const { rows } = await this.db.query(
+      `SELECT id, title, author FROM books ORDER BY ${column}`)
+    return rows
+  }
+
+  // SEPARATE method for one book. No optional toggle parameter.
+  async findBookById(id) {
+    const { rows } = await this.db.query(
+      'SELECT id, title, author FROM books WHERE id = $1', [id])
+    return rows[0] ?? null
+  }
+}
+```
+
+```ts
+import type { Pool } from 'pg'
+
+const SORT_COLUMNS: Record<Sort, string> = { name: 'title', date: 'created_at' }
+
+export class BookRepo {
+  constructor(private readonly db: Pool) {}
+
+  // ONE method, ONE shape of result: all books, sorted.
+  async findAllBooks(sort: Sort): Promise<Book[]> {
+    // Because `sort` is a `Sort` and not a `string`, the lookup is total:
+    // there is no value it could hold that produces a column we did not
+    // write ourselves. The type is the injection defence.
+    const { rows } = await this.db.query<Book>(
+      `SELECT id, title, author FROM books ORDER BY ${SORT_COLUMNS[sort]}`)
+    return rows
+  }
+
+  // SEPARATE method for one book. No optional toggle parameter.
+  // The return type says "may be missing" out loud, so the service has
+  // to decide what that means instead of tripping over undefined.
+  async findBookById(id: number): Promise<Book | null> {
+    const { rows } = await this.db.query<Book>(
+      'SELECT id, title, author FROM books WHERE id = $1', [id])
+    return rows[0] ?? null
+  }
+}
+```
+
+```java
+@Repository
+public class BookRepo {
+    // A column name can never be a bound parameter, so it goes through a
+    // fixed map rather than into the string. Values always use ?.
+    private static final Map<String, String> SORT_COLUMNS =
+        Map.of("name", "title", "date", "created_at");
+
+    private final JdbcClient db;
+
+    BookRepo(JdbcClient db) {
+        this.db = db;
+    }
+
+    // ONE method, ONE shape of result: all books, sorted.
+    public List<Book> findAllBooks(String sort) {
+        String column = SORT_COLUMNS.getOrDefault(sort, "created_at");
+        return db.sql("SELECT id, title, author FROM books ORDER BY " + column)
+                 .query(Book.class)
+                 .list();
+    }
+
+    // SEPARATE method for one book. No optional toggle parameter.
+    public Optional<Book> findBookById(long id) {
+        return db.sql("SELECT id, title, author FROM books WHERE id = ?")
+                 .param(id)
+                 .query(Book.class)
+                 .optional();
+    }
+}
 ```
 
 ## 08The Full Lifecycle, End to End
@@ -362,7 +670,7 @@ The third thing a middleware receives is **`next`**, a function. Calling `next()
 
 Because a middleware has both the request and response objects, it can read and modify the request, and it can terminate the request right where it stands by returning a response. That is the full extent of a middleware's power.
 
-```go title="middleware shape / req, res, next Go Python"
+```go title="middleware shape / req, res, next Go Python JavaScript TypeScript Java"
 // In Go, middleware wraps the "next" handler. Calling next.ServeHTTP
 // is the equivalent of next(): pass execution along the chain.
 func LoggingMiddleware(next http.Handler) http.Handler {
@@ -393,6 +701,70 @@ def logging_middleware(next):
 
         return next(request)  # === next(): continue the chain ===
     return wrapper
+```
+
+```js
+// Express middleware is the shape the whole idea is named after:
+// (req, res, next). Calling next() passes execution along the chain.
+function loggingMiddleware(req, res, next) {
+  console.log(`${req.method} ${req.path}`) // do work
+
+  // EARLY EXIT example (short-circuit, never calls next):
+  if (req.get('X-Blocked') === 'yes') {
+    return res.status(403).send('forbidden') // request stops here
+  }
+
+  next() // === next(): continue the chain ===
+}
+
+app.use(loggingMiddleware)
+```
+
+```ts
+import type { NextFunction, Request, Response } from 'express'
+
+// The three parameters, spelled out by their types: the request, the
+// response, and the `next` callable that invokes the rest of the chain.
+// The `void` return is the reminder that a middleware communicates by
+// calling next() or by writing a response, never by returning a value.
+function loggingMiddleware(req: Request, res: Response, next: NextFunction): void {
+  console.log(`${req.method} ${req.path}`) // do work
+
+  // EARLY EXIT example (short-circuit, never calls next):
+  if (req.get('X-Blocked') === 'yes') {
+    res.status(403).send('forbidden') // request stops here
+    return
+  }
+
+  next() // === next(): continue the chain ===
+}
+
+app.use(loggingMiddleware)
+```
+
+```java
+// A servlet Filter is Java's middleware. It receives the request, the
+// response, and a FilterChain, and chain.doFilter IS next(): pass
+// execution to the next filter, or on to the controller.
+@Component
+public class LoggingFilter extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req,
+                                    HttpServletResponse res,
+                                    FilterChain chain)
+            throws ServletException, IOException {
+        log.info("{} {}", req.getMethod(), req.getRequestURI()); // do work
+
+        // EARLY EXIT example (short-circuit, never calls the chain):
+        if ("yes".equals(req.getHeader("X-Blocked"))) {
+            res.sendError(HttpServletResponse.SC_FORBIDDEN, "forbidden");
+            return; // request stops here
+        }
+
+        chain.doFilter(req, res); // === next(): continue the chain ===
+    }
+}
 ```
 
 #### Why middleware at all?
@@ -447,7 +819,7 @@ Serialization/deserialization, and even validation/transformation, can be delega
 
 #### The CORS & Authentication middlewares in code
 
-```go title="cors + auth middleware Go Python"
+```go title="cors + auth middleware Go Python JavaScript TypeScript Java"
 var allowedOrigin = "https://app.example.com"
 
 func CORSMiddleware(next http.Handler) http.Handler {
@@ -502,12 +874,109 @@ def auth_middleware(next):
     return wrapper
 ```
 
+```js
+const ALLOWED_ORIGIN = 'https://app.example.com'
+
+function corsMiddleware(req, res, next) {
+  const origin = req.get('Origin') // runtime gives us this
+  if (origin === ALLOWED_ORIGIN) {
+    res.set('Access-Control-Allow-Origin', origin)
+  }
+  next() // pass along; browser blocks if header absent
+}
+
+function authMiddleware(req, res, next) {
+  const token = req.get('Authorization')
+  let claims
+  try {
+    claims = verifyToken(token)
+  } catch {
+    return res.status(401).send('unauthorized') // 401, stop
+  }
+  // SUCCESS: stash identity in the request context, then continue.
+  req.context = { ...req.context, userId: claims.userId, role: claims.role }
+  next()
+}
+```
+
+```ts
+import type { NextFunction, Request, Response } from 'express'
+
+const ALLOWED_ORIGIN = 'https://app.example.com'
+
+export function corsMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const origin = req.get('Origin') // runtime gives us this
+  if (origin === ALLOWED_ORIGIN) {
+    res.set('Access-Control-Allow-Origin', origin)
+  }
+  next() // pass along; browser blocks if header absent
+}
+
+export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const token = req.get('Authorization')
+  let claims: TokenClaims
+  try {
+    claims = verifyToken(token)
+  } catch {
+    res.status(401).send('unauthorized') // 401, stop
+    return
+  }
+  // SUCCESS: stash identity in the request context, then continue.
+  // `req.context` is typed once via declaration merging (next section),
+  // so every handler downstream reads it without a cast.
+  req.context = { ...req.context, userId: claims.userId, role: claims.role }
+  next()
+}
+```
+
+```java
+@Component
+public class CorsFilter extends OncePerRequestFilter {
+    private static final String ALLOWED_ORIGIN = "https://app.example.com";
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
+                                    FilterChain chain)
+            throws ServletException, IOException {
+        String origin = req.getHeader("Origin"); // runtime gives us this
+        if (ALLOWED_ORIGIN.equals(origin)) {
+            res.setHeader("Access-Control-Allow-Origin", origin);
+        }
+        chain.doFilter(req, res); // pass along; browser blocks if header absent
+    }
+}
+
+@Component
+public class AuthFilter extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
+                                    FilterChain chain)
+            throws ServletException, IOException {
+        String token = req.getHeader("Authorization");
+        TokenClaims claims;
+        try {
+            claims = verifyToken(token);
+        } catch (InvalidTokenException e) {
+            res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "unauthorized"); // 401, stop
+            return;
+        }
+        // SUCCESS: stash identity in the request context, then continue.
+        // Request attributes ARE the servlet request context: a key-value
+        // map that lives and dies with this one request.
+        req.setAttribute("userId", claims.userId());
+        req.setAttribute("role", claims.role());
+        chain.doFilter(req, res);
+    }
+}
+```
+
 ## 13What Request Context Is
 
 The auth middleware just did something subtle: it stored the user ID and role somewhere so that a later handler could read them. That "somewhere" is the **request context**.
 
 <Callout type="info" title="Definition / Request Context">
-A piece of **storage or state**: usually a simple key–value store, that is **scoped to a single HTTP request**. Every request gets its own context; it does not leak into other requests. Every framework in every language (Node, Go, Python) ships some implementation of this concept; the mechanics differ, the idea is the same.
+A piece of **storage or state**: usually a simple key–value store, that is **scoped to a single HTTP request**. Every request gets its own context; it does not leak into other requests. Every framework in every language ships some implementation of this concept, Go's `context.Context`, Express's `req` object, a servlet's request attributes, Python's request-scoped globals; the mechanics differ, the idea is the same.
 </Callout>
 
 Why does it exist? Because a request passes through many **isolated function boundaries**: CORS, logging, routing, auth, permission checks, the handler, the error handler. The context gives all of them a shared place to read and write state **without tightly coupling** them, without one middleware having to explicitly pass values into the next by hand.
@@ -526,7 +995,7 @@ The canonical use. The auth middleware verifies credentials, extracts the `user_
 If you took the `user_id` from the client payload, a malicious client could send _someone else's_ ID and act as them. Reading identity from the context, populated only by your verified auth middleware, closes that hole. The same context-stored role drives permission checks (is this user an admin? does it have write access?).
 </Callout>
 
-```go title="handler reads identity from context Go Python"
+```go title="handler reads identity from context Go Python JavaScript TypeScript Java"
 func CreateBookHandler(w http.ResponseWriter, r *http.Request) {
     var req CreateBookRequest
     json.NewDecoder(r.Body).Decode(&req)
@@ -565,13 +1034,80 @@ def create_book_handler(request):
     return jsonify(book), 201
 ```
 
+```js
+app.post('/books', async (req, res) => {
+  const { title, author } = req.body ?? {}
+
+  // Read the trusted user id FROM THE CONTEXT, not from the body.
+  // The auth middleware put it there after verifying the token.
+  const { userId, role } = req.context
+
+  if (role !== 'admin' && role !== 'user') {
+    return res.status(403).send('forbidden')
+  }
+
+  // Persist with the SERVER-VERIFIED owner id, never the client's.
+  const book = await bookService.create({ title, author }, userId)
+  res.status(201).json(book) // 201
+})
+```
+
+```ts
+import type { Request, Response } from 'express'
+
+// Declare the context's shape ONCE and every handler in the codebase
+// sees it. This is how you stop `req.context` from decaying into an
+// `any` bag that each handler guesses at.
+declare module 'express-serve-static-core' {
+  interface Request {
+    context: { userId: number; role: string; requestId: string }
+  }
+}
+
+export async function createBookHandler(req: Request, res: Response): Promise<void> {
+  const body = req.body as CreateBookRequest
+
+  // Read the trusted user id FROM THE CONTEXT, not from the body.
+  // The auth middleware put it there after verifying the token.
+  const { userId, role } = req.context
+
+  if (role !== 'admin' && role !== 'user') {
+    res.status(403).send('forbidden')
+    return
+  }
+
+  // Persist with the SERVER-VERIFIED owner id, never the client's.
+  const book = await bookService.create(body, userId)
+  res.status(201).json(book) // 201
+}
+```
+
+```java
+@PostMapping("/books")
+ResponseEntity<?> createBook(@RequestBody CreateBookRequest req,
+                             HttpServletRequest http) {
+    // Read the trusted user id FROM THE REQUEST CONTEXT, not from req.
+    // The auth filter put it there after verifying the token.
+    long userId = (long) http.getAttribute("userId");
+    String role = (String) http.getAttribute("role");
+
+    if (!role.equals("admin") && !role.equals("user")) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body("forbidden");
+    }
+
+    // Persist with the SERVER-VERIFIED owner id, never the client's.
+    Book book = bookService.create(req, userId);
+    return ResponseEntity.status(HttpStatus.CREATED).body(book); // 201
+}
+```
+
 ## 15Use Cases / Tracing & Cancellation
 
 ### Request tracing
 
 An early middleware can generate a unique ID (a UUID) and save it in the context. For the entire lifecycle of that request, every log line can include this ID, and any outbound calls to other microservices can forward it in a header like `X-Request-ID`. When you later audit your logs to debug a problem, that single ID lets you **trace one request across every service it touched**: where it started and everywhere it went.
 
-```go title="request-id middleware Go Python"
+```go title="request-id middleware Go Python JavaScript TypeScript Java"
 func RequestIDMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         id := uuid.NewString() // one unique id for this request
@@ -597,6 +1133,60 @@ def request_id_middleware(next):
     return wrapper
 ```
 
+```js
+import { randomUUID } from 'node:crypto'
+
+function requestIdMiddleware(req, res, next) {
+  const id = randomUUID() // one unique id for this request
+  req.context = { ...req.context, requestId: id }
+  res.set('X-Request-ID', id) // echo it back / forward it
+  console.log(`[${id}] ${req.method} ${req.path}`)
+  next()
+}
+```
+
+```ts
+import { randomUUID } from 'node:crypto'
+import type { NextFunction, Request, Response } from 'express'
+
+export function requestIdMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const id = randomUUID() // one unique id for this request
+  req.context = { ...req.context, requestId: id }
+  res.set('X-Request-ID', id) // echo it back / forward it
+  console.log(`[${id}] ${req.method} ${req.path}`)
+  // Node also ships AsyncLocalStorage, which carries the id through
+  // awaits into code that never sees `req` at all, the logger, the
+  // database layer, an outbound fetch. Same context, no hand-off.
+  next()
+}
+```
+
+```java
+@Component
+public class RequestIdFilter extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
+                                    FilterChain chain)
+            throws ServletException, IOException {
+        String id = UUID.randomUUID().toString(); // one unique id for this request
+        req.setAttribute("requestId", id);
+        res.setHeader("X-Request-ID", id); // echo it back / forward it
+
+        // MDC is the logging framework's own per-request context. Put the
+        // id in once and EVERY log line from this request carries it, with
+        // no logging call having to pass it along by hand.
+        MDC.put("requestId", id);
+        try {
+            log.info("{} {}", req.getMethod(), req.getRequestURI());
+            chain.doFilter(req, res);
+        } finally {
+            MDC.clear(); // threads are pooled, never leak it to the next request
+        }
+    }
+}
+```
+
 ### Cancellation, abort signals & deadlines
 
 The request context is also the standard place to carry **cancellation signals** and **deadlines**. If a client disconnects or a deadline passes, those signals propagate to downstream external calls, so a service never **hangs perpetually** waiting on work that no longer matters. In Go this is the built-in `context.Context` with `WithTimeout`; in Python it surfaces as timeouts / cancellation tokens passed along the call chain.
@@ -605,4 +1195,4 @@ The request context is also the standard place to carry **cancellation signals**
 A request enters at the entry point, flows through an ordered chain of middlewares and routing, lands in a handler that validates and transforms the data, delegates to a service that orchestrates the business logic, which calls repositories for database work, all while a per-request **context** carries identity, a trace ID, and deadlines alongside it. The result climbs back up, and the handler chooses a status code and sends the response. That is the full request lifecycle.
 </Callout>
 
-Backend from First Principles / Chapter 06 / Layers. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 06 / Layers. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).
