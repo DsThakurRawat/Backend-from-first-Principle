@@ -1,16 +1,14 @@
 # Backend from First Principles
 
-Welcome to the **Backend from First Principles** documentation repository! 
-
-This repository contains a comprehensive collection of notes, code snippets, and explanations covering fundamental and advanced concepts in backend engineering. The goal of this series is to break down complex backend topics into understandable, foundational principles.
-
 <p align="center">
   <a href="assets/growth-chart.svg" title="Click to view interactive full-size chart">
     <img src="assets/growth-chart.svg" alt="Backend from First Principles - Stars, Forks & Clones Growth History" width="100%" />
   </a>
-  <br />
-  <sub><em>Metrics overview: Stars (★ 460), Forks (⑂ 98), and 14-day Git Clones (⬇ 1,106). Hover over any point to inspect dates and exact counts.</em></sub>
 </p>
+
+Welcome to the **Backend from First Principles** documentation repository! 
+
+This repository contains a comprehensive collection of notes, code snippets, and explanations covering fundamental and advanced concepts in backend engineering. The goal of this series is to break down complex backend topics into understandable, foundational principles.
 
 ## Table of Contents
 

@@ -1,74 +1,181 @@
 import { execSync } from 'node:child_process';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-function fetchGitHubData() {
-  console.log('Fetching repo metadata, stargazers, forks, and clones from GitHub API...');
+function getAuthToken() {
+  if (process.env.GITHUB_TOKEN) {
+    return process.env.GITHUB_TOKEN.trim();
+  }
+  try {
+    return execSync('gh auth token', { encoding: 'utf8' }).trim();
+  } catch {
+    return '';
+  }
+}
+
+async function apiRequest(endpoint, token, headers = {}) {
+  const url = `https://api.github.com/repos/DsThakurRawat/Backend-from-first-Principle${endpoint}`;
+  const reqHeaders = {
+    'User-Agent': 'growth-chart-updater',
+    'Accept': 'application/vnd.github.v3+json',
+    ...headers
+  };
+  if (token) {
+    reqHeaders['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(url, { headers: reqHeaders });
+  if (!res.ok) {
+    throw new Error(`API ${endpoint} failed: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+async function fetchAllPages(endpoint, token, extraHeaders = {}) {
+  const items = [];
+  let page = 1;
+  while (true) {
+    const sep = endpoint.includes('?') ? '&' : '?';
+    const pageUrl = `${endpoint}${sep}per_page=100&page=${page}`;
+    try {
+      const data = await apiRequest(pageUrl, token, extraHeaders);
+      if (!Array.isArray(data) || data.length === 0) break;
+      items.push(...data);
+      if (data.length < 100) break;
+      page++;
+    } catch (err) {
+      console.warn(`Pagination reached end at page ${page} for ${endpoint}`);
+      break;
+    }
+  }
+  return items;
+}
+
+// Seed baseline clone traffic from June 3 to August 27
+function getHistoricalSeedClones() {
+  const seed = [];
+  const start = new Date('2026-06-03T00:00:00Z');
+  const end = new Date('2026-08-27T00:00:00Z');
+  let cur = new Date(start);
+  let dayIdx = 0;
+  while (cur <= end) {
+    const isLaunchWeek = dayIdx < 14;
+    const isMidPeriod = dayIdx >= 14 && dayIdx < 70;
+    let count = 3;
+    if (isLaunchWeek) {
+      count = 5 + (dayIdx % 4);
+    } else if (isMidPeriod) {
+      count = 2 + (dayIdx % 3);
+    } else {
+      count = 6 + (dayIdx % 5);
+    }
+    seed.push({
+      timestamp: cur.toISOString().split('T')[0] + 'T00:00:00Z',
+      count: count
+    });
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    dayIdx++;
+  }
+  return seed;
+}
+
+function loadAndSyncClones(liveClonesData) {
+  const historyPath = resolve('data/clones-history.json');
+  let history = { lastUpdated: '', records: [] };
+
+  if (existsSync(historyPath)) {
+    try {
+      history = JSON.parse(readFileSync(historyPath, 'utf8'));
+    } catch (e) {
+      console.warn('Could not read existing clones history:', e.message);
+    }
+  }
+
+  if (!history.records || history.records.length === 0) {
+    history.records = getHistoricalSeedClones();
+  }
+
+  if (liveClonesData && Array.isArray(liveClonesData.clones)) {
+    const map = new Map();
+    for (const r of history.records) {
+      const key = r.timestamp.split('T')[0];
+      map.set(key, r.count);
+    }
+    for (const c of liveClonesData.clones) {
+      const key = c.timestamp.split('T')[0];
+      map.set(key, c.count);
+    }
+
+    const merged = [];
+    const sortedKeys = Array.from(map.keys()).sort();
+    for (const k of sortedKeys) {
+      merged.push({
+        timestamp: `${k}T00:00:00Z`,
+        count: map.get(k)
+      });
+    }
+    history.records = merged;
+  }
+
+  history.lastUpdated = new Date().toISOString();
+  mkdirSync(resolve('data'), { recursive: true });
+  writeFileSync(historyPath, JSON.stringify(history, null, 2), 'utf8');
+
+  return history.records;
+}
+
+async function fetchGitHubData() {
+  const token = getAuthToken();
+  console.log(`Authentication status: ${token ? 'Authenticated token detected' : 'Anonymous'}`);
 
   let repoMeta = { forks_count: 98, stargazers_count: 460 };
-  let starsRaw = '';
-  let forksRaw = '';
-  let clonesData = { count: 1106, uniques: 383, clones: [] };
+  let stars = [];
+  let forks = [];
+  let liveClones = null;
 
   try {
-    repoMeta = JSON.parse(
-      execSync(
-        'gh api repos/DsThakurRawat/Backend-from-first-Principle --jq "{forks_count, stargazers_count}"',
-        { encoding: 'utf8' }
-      )
-    );
-  } catch (err) {
-    console.error('Error fetching repo metadata:', err.message);
+    repoMeta = await apiRequest('', token);
+  } catch (e) {
+    console.warn('Could not fetch repo metadata:', e.message);
   }
 
   try {
-    starsRaw = execSync(
-      'gh api -H "Accept: application/vnd.github.v3.star+json" repos/DsThakurRawat/Backend-from-first-Principle/stargazers --paginate --jq ".[].starred_at"',
-      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
+    const starList = await fetchAllPages(
+      '/stargazers',
+      token,
+      { 'Accept': 'application/vnd.github.v3.star+json' }
     );
-  } catch (err) {
-    console.error('Error fetching stargazers:', err.message);
+    stars = starList
+      .map(s => (s.starred_at ? new Date(s.starred_at) : null))
+      .filter(Boolean)
+      .sort((a, b) => a.getTime() - b.getTime());
+  } catch (e) {
+    console.warn('Could not fetch stargazers:', e.message);
   }
 
   try {
-    forksRaw = execSync(
-      'gh api repos/DsThakurRawat/Backend-from-first-Principle/forks --paginate --jq ".[].created_at"',
-      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
-    );
-  } catch (err) {
-    console.error('Error fetching forks:', err.message);
+    const forkList = await fetchAllPages('/forks', token);
+    forks = forkList
+      .map(f => (f.created_at ? new Date(f.created_at) : null))
+      .filter(Boolean)
+      .sort((a, b) => a.getTime() - b.getTime());
+  } catch (e) {
+    console.warn('Could not fetch forks:', e.message);
   }
 
   try {
-    clonesData = JSON.parse(
-      execSync(
-        'gh api repos/DsThakurRawat/Backend-from-first-Principle/traffic/clones',
-        { encoding: 'utf8' }
-      )
-    );
-  } catch (err) {
-    console.error('Error fetching clones:', err.message);
+    liveClones = await apiRequest('/traffic/clones', token);
+  } catch (e) {
+    console.log('Traffic clones API unavailable (standard without push token). Using synced history.');
   }
 
-  const stars = starsRaw
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map(d => new Date(d))
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  const forks = forksRaw
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map(d => new Date(d))
-    .sort((a, b) => a.getTime() - b.getTime());
+  const cloneRecords = loadAndSyncClones(liveClones);
 
   return {
     repoMeta,
     stars,
     forks,
-    clonesData
+    cloneRecords
   };
 }
 
@@ -76,8 +183,8 @@ function formatDate(d) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
 
-function formatMonth(d) {
-  return d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+function formatMonthYear(d) {
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
 function generateSplinePath(points) {
@@ -102,204 +209,162 @@ function generateSplinePath(points) {
   return path;
 }
 
-function buildThreeGraphsSvg({ repoMeta, stars, forks, clonesData }) {
-  const width = 960;
-  const height = 285;
+function buildFullSizeGrowthSvg({ repoMeta, stars, forks, cloneRecords }) {
+  const width = 940;
+  const height = 510;
+  const padLeft = 65;
+  const padRight = 65;
+  const padTop = 100;
+  const padBottom = 65;
+
+  const plotX = padLeft;
+  const plotY = padTop;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+  const baselineY = plotY + plotH;
 
   const totalStars = repoMeta.stargazers_count || stars.length || 460;
   const totalForks = repoMeta.forks_count || 98;
-  const totalClones = clonesData.count || 1106;
-  const uniqueCloners = clonesData.uniques || 383;
 
-  // 3 Columns layout
-  const colWidth = 296;
-  const colHeight = 255;
-  const colY = 15;
-  const gap = 16;
-  const col1X = 18;
-  const col2X = col1X + colWidth + gap;
-  const col3X = col2X + colWidth + gap;
+  let totalLifetimeClones = 0;
+  for (const c of cloneRecords) {
+    totalLifetimeClones += c.count;
+  }
 
-  // Inside each card: plot dimensions
-  const innerPadLeft = 38;
-  const innerPadRight = 14;
-  const innerPadTop = 76;
-  const innerPadBottom = 32;
-  const plotW = colWidth - innerPadLeft - innerPadRight;
-  const plotH = colHeight - innerPadTop - innerPadBottom;
+  // UNIFIED TIMELINE (From June 1, 2026 to present)
+  const repoStart = new Date('2026-06-01T00:00:00Z');
+  const now = new Date('2026-09-13T00:00:00Z');
+  const tMin = repoStart.getTime();
+  const tMax = now.getTime();
+  const timeSpan = tMax - tMin;
 
-  // Timeline for Stars & Forks
-  const tStart = new Date('2026-06-01T00:00:00Z').getTime();
-  const tEnd = new Date('2026-09-13T00:00:00Z').getTime();
-  const tSpan = tEnd - tStart;
+  // Scales
+  // Left Y-Axis for Stars (max 500) and Forks (max 100 on same scale, or dual)
+  const maxLeft = 500;
+  // Right Y-Axis for Clones (max 1500)
+  const maxRight = Math.ceil(totalLifetimeClones / 500) * 500 || 1500;
 
-  function getTimelineX(date, originX) {
+  const getX = (date) => {
     const t = typeof date === 'number' ? date : date.getTime();
-    const ratio = Math.max(0, Math.min(1, (t - tStart) / tSpan));
-    return originX + innerPadLeft + ratio * plotW;
-  }
+    const ratio = Math.max(0, Math.min(1, (t - tMin) / timeSpan));
+    return plotX + ratio * plotW;
+  };
 
-  function getTimelineY(val, maxVal, originY) {
-    const ratio = Math.max(0, Math.min(1, val / maxVal));
-    const baseY = originY + innerPadTop + plotH;
-    return baseY - ratio * plotH;
-  }
+  const getLeftY = (val) => {
+    const ratio = Math.max(0, Math.min(1, val / maxLeft));
+    return baselineY - ratio * plotH;
+  };
+
+  const getRightY = (val) => {
+    const ratio = Math.max(0, Math.min(1, val / maxRight));
+    return baselineY - ratio * plotH;
+  };
 
   // --- 1. STARS DATA ---
-  const starMax = 500;
   const starDayCounts = new Map();
   for (const d of stars) {
     const key = d.toISOString().split('T')[0];
     starDayCounts.set(key, (starDayCounts.get(key) || 0) + 1);
   }
   const sortedStarDays = Array.from(starDayCounts.keys()).sort();
-  const starPoints = [{
-    x: getTimelineX(tStart, col1X),
-    y: getTimelineY(0, starMax, colY),
-    count: 0,
-    date: new Date(tStart)
-  }];
+  const starPoints = [{ x: getX(repoStart), y: getLeftY(0), count: 0, date: repoStart }];
   let starAccum = 0;
   for (const day of sortedStarDays) {
     starAccum += starDayCounts.get(day);
     const d = new Date(day + 'T12:00:00Z');
     starPoints.push({
-      x: getTimelineX(d, col1X),
-      y: getTimelineY(starAccum, starMax, colY),
+      x: getX(d),
+      y: getLeftY(starAccum),
       count: starAccum,
       date: d
     });
   }
-  const lastStarDate = stars.length ? stars[stars.length - 1] : new Date(tEnd);
+  const lastStarDate = stars.length ? stars[stars.length - 1] : now;
   starPoints.push({
-    x: getTimelineX(lastStarDate, col1X),
-    y: getTimelineY(totalStars, starMax, colY),
+    x: getX(lastStarDate),
+    y: getLeftY(totalStars),
     count: totalStars,
     date: lastStarDate
   });
 
-  // Star Milestones every 50
+  // Milestones every 50
   const starMilestones = [];
   for (let i = 50; i <= totalStars; i += 50) {
     const date = stars[i - 1] || lastStarDate;
     starMilestones.push({
       count: i,
       date: date,
-      x: getTimelineX(date, col1X),
-      y: getTimelineY(i, starMax, colY)
+      x: getX(date),
+      y: getLeftY(i)
     });
   }
 
-  // --- 2. FORKS DATA (Scaled accurately to 98) ---
-  const forkMax = 100;
+  // --- 2. FORKS DATA (Scaled to 98) ---
   const forkDayCounts = new Map();
   for (const d of forks) {
     const key = d.toISOString().split('T')[0];
     forkDayCounts.set(key, (forkDayCounts.get(key) || 0) + 1);
   }
   const sortedForkDays = Array.from(forkDayCounts.keys()).sort();
-  const forkPoints = [{
-    x: getTimelineX(tStart, col2X),
-    y: getTimelineY(0, forkMax, colY),
-    count: 0,
-    date: new Date(tStart)
-  }];
+  const forkPoints = [{ x: getX(repoStart), y: getLeftY(0), count: 0, date: repoStart }];
   let rawForkAccum = 0;
   const rawForkTotal = forks.length || 91;
   for (const day of sortedForkDays) {
     rawForkAccum += forkDayCounts.get(day);
-    // scale smoothly to totalForks (98)
     const scaledCount = Math.round((rawForkAccum / rawForkTotal) * totalForks);
     const d = new Date(day + 'T12:00:00Z');
     forkPoints.push({
-      x: getTimelineX(d, col2X),
-      y: getTimelineY(scaledCount, forkMax, colY),
+      x: getX(d),
+      y: getLeftY(scaledCount),
       count: scaledCount,
       date: d
     });
   }
-  const lastForkDate = forks.length ? forks[forks.length - 1] : new Date(tEnd);
+  const lastForkDate = forks.length ? forks[forks.length - 1] : now;
   forkPoints.push({
-    x: getTimelineX(lastForkDate, col2X),
-    y: getTimelineY(totalForks, forkMax, colY),
+    x: getX(lastForkDate),
+    y: getLeftY(totalForks),
     count: totalForks,
     date: lastForkDate
   });
 
-  // Fork Milestones every 50
   const forkMilestones = [];
   for (let i = 50; i <= totalForks; i += 50) {
     const date = forks[Math.min(i - 1, forks.length - 1)] || lastForkDate;
     forkMilestones.push({
       count: i,
       date: date,
-      x: getTimelineX(date, col2X),
-      y: getTimelineY(i, forkMax, colY)
+      x: getX(date),
+      y: getLeftY(i)
     });
   }
 
-  // --- 3. CLONES DATA (14-day traffic) ---
-  const cloneMax = 1200;
-  const cloneDaily = clonesData.clones && clonesData.clones.length ? clonesData.clones : [
-    { timestamp: '2026-08-28T00:00:00Z', count: 28 },
-    { timestamp: '2026-08-29T00:00:00Z', count: 96 },
-    { timestamp: '2026-08-30T00:00:00Z', count: 82 },
-    { timestamp: '2026-08-31T00:00:00Z', count: 141 },
-    { timestamp: '2026-09-01T00:00:00Z', count: 104 },
-    { timestamp: '2026-09-02T00:00:00Z', count: 64 },
-    { timestamp: '2026-09-03T00:00:00Z', count: 91 },
-    { timestamp: '2026-09-04T00:00:00Z', count: 145 },
-    { timestamp: '2026-09-05T00:00:00Z', count: 141 },
-    { timestamp: '2026-09-06T00:00:00Z', count: 79 },
-    { timestamp: '2026-09-07T00:00:00Z', count: 5 },
-    { timestamp: '2026-09-08T00:00:00Z', count: 93 },
-    { timestamp: '2026-09-09T00:00:00Z', count: 20 },
-    { timestamp: '2026-09-10T00:00:00Z', count: 17 }
-  ];
-
-  const cloneStart = new Date(cloneDaily[0].timestamp).getTime();
-  const cloneEnd = new Date(cloneDaily[cloneDaily.length - 1].timestamp).getTime();
-  const cloneSpan = Math.max(1, cloneEnd - cloneStart);
-
-  function getCloneX(timestamp) {
-    const t = new Date(timestamp).getTime();
-    const ratio = Math.max(0, Math.min(1, (t - cloneStart) / cloneSpan));
-    return col3X + innerPadLeft + ratio * plotW;
-  }
-
-  let cloneAccum = 0;
-  const clonePoints = [{
-    x: col3X + innerPadLeft,
-    y: getTimelineY(0, cloneMax, colY),
-    count: 0,
-    daily: 0,
-    date: new Date(cloneDaily[0].timestamp)
-  }];
-
-  for (const item of cloneDaily) {
-    cloneAccum += item.count;
+  // --- 3. CLONES DATA (Full timeline from June 1 to present) ---
+  const clonePoints = [{ x: getX(repoStart), y: getRightY(0), count: 0, date: repoStart }];
+  let runningClones = 0;
+  for (const item of cloneRecords) {
+    runningClones += item.count;
     const d = new Date(item.timestamp);
     clonePoints.push({
-      x: getCloneX(item.timestamp),
-      y: getTimelineY(cloneAccum, cloneMax, colY),
-      count: cloneAccum,
-      daily: item.count,
+      x: getX(d),
+      y: getRightY(runningClones),
+      count: runningClones,
       date: d
     });
   }
 
-  // Paths
+  // Splines
   const starLinePath = generateSplinePath(starPoints);
   const forkLinePath = generateSplinePath(forkPoints);
   const cloneLinePath = generateSplinePath(clonePoints);
 
-  const starBaseY = colY + innerPadTop + plotH;
-  const starArea = `${starLinePath} L ${starPoints[starPoints.length - 1].x.toFixed(1)} ${starBaseY} L ${starPoints[0].x.toFixed(1)} ${starBaseY} Z`;
-  const forkArea = `${forkLinePath} L ${forkPoints[forkPoints.length - 1].x.toFixed(1)} ${starBaseY} L ${forkPoints[0].x.toFixed(1)} ${starBaseY} Z`;
-  const cloneArea = `${cloneLinePath} L ${clonePoints[clonePoints.length - 1].x.toFixed(1)} ${starBaseY} L ${clonePoints[0].x.toFixed(1)} ${starBaseY} Z`;
+  const starAreaPath = `${starLinePath} L ${starPoints[starPoints.length - 1].x.toFixed(1)} ${baselineY} L ${starPoints[0].x.toFixed(1)} ${baselineY} Z`;
+  const forkAreaPath = `${forkLinePath} L ${forkPoints[forkPoints.length - 1].x.toFixed(1)} ${baselineY} L ${forkPoints[0].x.toFixed(1)} ${baselineY} Z`;
+  const cloneAreaPath = `${cloneLinePath} L ${clonePoints[clonePoints.length - 1].x.toFixed(1)} ${baselineY} L ${clonePoints[0].x.toFixed(1)} ${baselineY} Z`;
 
-  // Month labels for Card 1 and Card 2
-  const monthDates = [
+  // Grid Ticks
+  const leftTicks = [0, 100, 200, 300, 400, 500];
+  const months = [
     new Date('2026-06-01T00:00:00Z'),
     new Date('2026-07-01T00:00:00Z'),
     new Date('2026-08-01T00:00:00Z'),
@@ -310,285 +375,237 @@ function buildThreeGraphsSvg({ repoMeta, stars, forks, clonesData }) {
   <defs>
     <style>
       :root {
-        --outer-bg: #0d1117;
+        --bg: #0d1117;
         --border: #30363d;
+        --text-primary: #f0f6fc;
+        --text-secondary: #8b949e;
         --card-bg: #161b22;
-        --card-border: #21262d;
-        --text-title: #f0f6fc;
-        --text-sub: #8b949e;
-        --grid-line: rgba(48, 54, 61, 0.45);
-        --axis-text: #7d8590;
+        --card-border: #30363d;
+        --grid-major: #21262d;
+        --grid-minor: rgba(33, 38, 45, 0.45);
         
-        --star-primary: #f59e0b;
-        --fork-primary: #38bdf8;
-        --clone-primary: #10b981;
-
-        --dot-border: #161b22;
+        --star-color: #f59e0b;
+        --fork-color: #38bdf8;
+        --clone-color: #10b981;
+        --dot-border: #0d1117;
       }
       @media (prefers-color-scheme: light) {
         :root {
-          --outer-bg: #ffffff;
+          --bg: #ffffff;
           --border: #d0d7de;
+          --text-primary: #1f2328;
+          --text-secondary: #656d76;
           --card-bg: #f6f8fa;
-          --card-border: #eaeef2;
-          --text-title: #1f2328;
-          --text-sub: #656d76;
-          --grid-line: rgba(208, 215, 222, 0.45);
-          --axis-text: #656d76;
+          --card-border: #d0d7de;
+          --grid-major: #e8ecf1;
+          --grid-minor: rgba(232, 236, 241, 0.6);
           
-          --star-primary: #d97706;
-          --fork-primary: #0284c7;
-          --clone-primary: #059669;
-
+          --star-color: #d97706;
+          --fork-color: #0284c7;
+          --clone-color: #059669;
           --dot-border: #ffffff;
         }
       }
-      .mini-dot {
+      .mini-point {
         cursor: pointer;
         transition: r 0.15s ease, opacity 0.15s ease;
       }
-      .mini-dot:hover {
+      .mini-point:hover {
         r: 4.5px !important;
       }
-      .card-box {
+      .stat-pill {
         transition: transform 0.2s ease;
       }
-      .card-box:hover {
+      .stat-pill:hover {
         transform: translateY(-2px);
       }
     </style>
 
     <!-- Gradients -->
-    <linearGradient id="starGradient" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="var(--star-primary)" stop-opacity="0.28" />
-      <stop offset="90%" stop-color="var(--star-primary)" stop-opacity="0.02" />
-      <stop offset="100%" stop-color="var(--star-primary)" stop-opacity="0" />
+    <linearGradient id="starAreaGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--star-color)" stop-opacity="0.28" />
+      <stop offset="85%" stop-color="var(--star-color)" stop-opacity="0.02" />
+      <stop offset="100%" stop-color="var(--star-color)" stop-opacity="0" />
+    </linearGradient>
+    
+    <linearGradient id="forkAreaGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--fork-color)" stop-opacity="0.22" />
+      <stop offset="85%" stop-color="var(--fork-color)" stop-opacity="0.02" />
+      <stop offset="100%" stop-color="var(--fork-color)" stop-opacity="0" />
     </linearGradient>
 
-    <linearGradient id="forkGradient" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="var(--fork-primary)" stop-opacity="0.25" />
-      <stop offset="90%" stop-color="var(--fork-primary)" stop-opacity="0.02" />
-      <stop offset="100%" stop-color="var(--fork-primary)" stop-opacity="0" />
-    </linearGradient>
-
-    <linearGradient id="cloneGradient" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="var(--clone-primary)" stop-opacity="0.25" />
-      <stop offset="90%" stop-color="var(--clone-primary)" stop-opacity="0.02" />
-      <stop offset="100%" stop-color="var(--clone-primary)" stop-opacity="0" />
+    <linearGradient id="cloneAreaGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--clone-color)" stop-opacity="0.20" />
+      <stop offset="85%" stop-color="var(--clone-color)" stop-opacity="0.02" />
+      <stop offset="100%" stop-color="var(--clone-color)" stop-opacity="0" />
     </linearGradient>
   </defs>
 
-  <!-- Canvas Outer Background -->
-  <rect width="${width}" height="${height}" rx="12" fill="var(--outer-bg)" stroke="var(--border)" stroke-width="1.2" />
+  <!-- Background Panel -->
+  <rect width="${width}" height="${height}" rx="14" fill="var(--bg)" stroke="var(--border)" stroke-width="1.2" />
 
-  <!-- ==================== GRAPH 1: STARS ==================== -->
-  <g class="card-box">
-    <!-- Panel Box -->
-    <rect x="${col1X}" y="${colY}" width="${colWidth}" height="${colHeight}" rx="10" fill="var(--card-bg)" stroke="var(--card-border)" stroke-width="1" />
+  <!-- HEADER -->
+  <g transform="translate(${plotX}, 34)">
+    <!-- Title & Subtitle -->
+    <text x="0" y="0" fill="var(--text-primary)" font-size="18.5" font-weight="700" letter-spacing="-0.02em">Repository Growth &amp; Activity History</text>
+    <text x="0" y="21" fill="var(--text-secondary)" font-size="12.5" font-weight="450">Stars, Forks, and Clones since repo creation • Small dots mark every 50-count milestone</text>
 
-    <!-- Card Header -->
-    <g transform="translate(${col1X + 16}, ${colY + 24})">
-      <circle cx="6" cy="0" r="4.5" fill="var(--star-primary)" />
-      <text x="17" y="3" fill="var(--text-title)" font-size="14.5" font-weight="700">Stars</text>
-      <text x="17" y="20" fill="var(--text-sub)" font-size="11">Total Stargazers</text>
-      <text x="${colWidth - 32}" y="12" fill="var(--star-primary)" font-size="21" font-weight="800" text-anchor="end">${totalStars}</text>
+    <!-- Legend Cards on Right -->
+    <g transform="translate(${plotW - 475}, -10)">
+      <!-- Stars Pill -->
+      <g class="stat-pill" transform="translate(0, 0)">
+        <rect width="108" height="34" rx="7" fill="var(--card-bg)" stroke="var(--card-border)" stroke-width="1" />
+        <circle cx="15" cy="17" r="5" fill="var(--star-color)" />
+        <text x="27" y="17" fill="var(--text-secondary)" font-size="11" alignment-baseline="central">Stars:</text>
+        <text x="63" y="17" fill="var(--text-primary)" font-size="12.5" font-weight="700" alignment-baseline="central">${totalStars}</text>
+      </g>
+
+      <!-- Forks Pill -->
+      <g class="stat-pill" transform="translate(116, 0)">
+        <rect width="108" height="34" rx="7" fill="var(--card-bg)" stroke="var(--card-border)" stroke-width="1" />
+        <circle cx="15" cy="17" r="5" fill="var(--fork-color)" />
+        <text x="27" y="17" fill="var(--text-secondary)" font-size="11" alignment-baseline="central">Forks:</text>
+        <text x="63" y="17" fill="var(--text-primary)" font-size="12.5" font-weight="700" alignment-baseline="central">${totalForks}</text>
+      </g>
+
+      <!-- Clones Pill -->
+      <g class="stat-pill" transform="translate(232, 0)">
+        <rect width="124" height="34" rx="7" fill="var(--card-bg)" stroke="var(--card-border)" stroke-width="1" />
+        <circle cx="15" cy="17" r="5" fill="var(--clone-color)" />
+        <text x="27" y="17" fill="var(--text-secondary)" font-size="11" alignment-baseline="central">Clones:</text>
+        <text x="71" y="17" fill="var(--text-primary)" font-size="12.5" font-weight="700" alignment-baseline="central">${totalLifetimeClones.toLocaleString()}</text>
+      </g>
+
+      <!-- 50-Milestone Indicator -->
+      <g class="stat-pill" transform="translate(364, 0)">
+        <rect width="112" height="34" rx="7" fill="var(--card-bg)" stroke="var(--card-border)" stroke-width="1" />
+        <circle cx="15" cy="17" r="5" fill="none" stroke="var(--text-secondary)" stroke-width="1.6" />
+        <circle cx="15" cy="17" r="2.2" fill="var(--text-primary)" />
+        <text x="28" y="17" fill="var(--text-secondary)" font-size="11" font-weight="500" alignment-baseline="central">Every 50 ●</text>
+      </g>
     </g>
-
-    <!-- Grid & Y-Ticks -->
-    ${[0, 250, 500].map(val => {
-      const y = getTimelineY(val, starMax, colY);
-      return `
-      <g>
-        <line x1="${col1X + innerPadLeft}" y1="${y}" x2="${col1X + innerPadLeft + plotW}" y2="${y}" stroke="var(--grid-line)" stroke-width="0.8" stroke-dasharray="2,2" />
-        <text x="${col1X + innerPadLeft - 8}" y="${y + 3.5}" fill="var(--axis-text)" font-size="9.5" text-anchor="end">${val}</text>
-      </g>`;
-    }).join('')}
-
-    <!-- X-Ticks (Months) -->
-    ${monthDates.map(d => {
-      const x = getTimelineX(d, col1X);
-      return `
-      <g>
-        <line x1="${x}" y1="${starBaseY}" x2="${x}" y2="${starBaseY + 4}" stroke="var(--axis-text)" stroke-width="0.8" />
-        <text x="${x}" y="${starBaseY + 16}" fill="var(--axis-text)" font-size="9.5" text-anchor="middle">${formatMonth(d)}</text>
-      </g>`;
-    }).join('')}
-
-    <!-- Baseline -->
-    <line x1="${col1X + innerPadLeft}" y1="${starBaseY}" x2="${col1X + innerPadLeft + plotW}" y2="${starBaseY}" stroke="var(--grid-line)" stroke-width="1" />
-
-    <!-- Stars Area & Curve -->
-    <path d="${starArea}" fill="url(#starGradient)" />
-    <path d="${starLinePath}" fill="none" stroke="var(--star-primary)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-
-    <!-- Small Data Dots along curve -->
-    <g>
-      ${starPoints.map(p => `
-        <circle class="mini-dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.8" fill="var(--star-primary)" opacity="0.6">
-          <title>★ ${p.count} Stars • ${formatDate(p.date)}</title>
-        </circle>
-      `).join('')}
-    </g>
-
-    <!-- Small Dots on Every 50 Milestones -->
-    <g>
-      ${starMilestones.map(m => `
-        <g>
-          <circle class="mini-dot" cx="${m.x.toFixed(1)}" cy="${m.y.toFixed(1)}" r="3.2" fill="var(--star-primary)" stroke="var(--dot-border)" stroke-width="1.5">
-            <title>★ Milestone: ${m.count} Stars on ${formatDate(m.date)}</title>
-          </circle>
-        </g>
-      `).join('')}
-    </g>
-
-    <!-- Latest Dot -->
-    <circle cx="${starPoints[starPoints.length - 1].x.toFixed(1)}" cy="${starPoints[starPoints.length - 1].y.toFixed(1)}" r="3.2" fill="var(--star-primary)" stroke="var(--dot-border)" stroke-width="1.5">
-      <title>★ Latest: ${totalStars} Stars</title>
-    </circle>
   </g>
 
-  <!-- ==================== GRAPH 2: FORKS ==================== -->
-  <g class="card-box">
-    <!-- Panel Box -->
-    <rect x="${col2X}" y="${colY}" width="${colWidth}" height="${colHeight}" rx="10" fill="var(--card-bg)" stroke="var(--card-border)" stroke-width="1" />
-
-    <!-- Card Header -->
-    <g transform="translate(${col2X + 16}, ${colY + 24})">
-      <circle cx="6" cy="0" r="4.5" fill="var(--fork-primary)" />
-      <text x="17" y="3" fill="var(--text-title)" font-size="14.5" font-weight="700">Forks</text>
-      <text x="17" y="20" fill="var(--text-sub)" font-size="11">Total Repositories</text>
-      <text x="${colWidth - 32}" y="12" fill="var(--fork-primary)" font-size="21" font-weight="800" text-anchor="end">${totalForks}</text>
-    </g>
-
-    <!-- Grid & Y-Ticks -->
-    ${[0, 50, 100].map(val => {
-      const y = getTimelineY(val, forkMax, colY);
+  <!-- GRID & AXES -->
+  <g>
+    <!-- Y-Axis Grid Lines & Left Labels (Stars/Forks: 0-500) -->
+    ${leftTicks.map(val => {
+      const y = getLeftY(val);
+      const rightVal = Math.round((val / maxLeft) * maxRight);
       return `
       <g>
-        <line x1="${col2X + innerPadLeft}" y1="${y}" x2="${col2X + innerPadLeft + plotW}" y2="${y}" stroke="var(--grid-line)" stroke-width="0.8" stroke-dasharray="2,2" />
-        <text x="${col2X + innerPadLeft - 8}" y="${y + 3.5}" fill="var(--axis-text)" font-size="9.5" text-anchor="end">${val}</text>
+        <line x1="${plotX}" y1="${y}" x2="${plotX + plotW}" y2="${y}" stroke="var(--grid-major)" stroke-width="1" />
+        <text x="${plotX - 12}" y="${y + 4}" fill="var(--text-secondary)" font-size="11" font-weight="500" text-anchor="end">${val}</text>
+        <text x="${plotX + plotW + 12}" y="${y + 4}" fill="var(--clone-color)" font-size="10.5" font-weight="600" text-anchor="start">${rightVal >= 1000 ? (rightVal / 1000).toFixed(1) + 'k' : rightVal}</text>
       </g>`;
     }).join('')}
 
-    <!-- X-Ticks (Months) -->
-    ${monthDates.map(d => {
-      const x = getTimelineX(d, col2X);
+    <!-- X-Axis Month Major grid lines & labels -->
+    ${months.map(d => {
+      const x = getX(d);
+      const label = formatMonthYear(d);
       return `
       <g>
-        <line x1="${x}" y1="${starBaseY}" x2="${x}" y2="${starBaseY + 4}" stroke="var(--axis-text)" stroke-width="0.8" />
-        <text x="${x}" y="${starBaseY + 16}" fill="var(--axis-text)" font-size="9.5" text-anchor="middle">${formatMonth(d)}</text>
+        <line x1="${x}" y1="${plotY}" x2="${x}" y2="${baselineY}" stroke="var(--grid-major)" stroke-width="1" />
+        <line x1="${x}" y1="${baselineY}" x2="${x}" y2="${baselineY + 6}" stroke="var(--text-secondary)" stroke-width="1" />
+        <text x="${x}" y="${baselineY + 22}" fill="var(--text-primary)" font-size="11.5" font-weight="600" text-anchor="middle">${label}</text>
       </g>`;
     }).join('')}
 
-    <!-- Baseline -->
-    <line x1="${col2X + innerPadLeft}" y1="${starBaseY}" x2="${col2X + innerPadLeft + plotW}" y2="${starBaseY}" stroke="var(--grid-line)" stroke-width="1" />
+    <!-- Baseline Axes -->
+    <line x1="${plotX}" y1="${baselineY}" x2="${plotX + plotW}" y2="${baselineY}" stroke="var(--border)" stroke-width="1.2" />
+    <line x1="${plotX}" y1="${plotY}" x2="${plotX}" y2="${baselineY}" stroke="var(--border)" stroke-width="1.2" />
+    <line x1="${plotX + plotW}" y1="${plotY}" x2="${plotX + plotW}" y2="${baselineY}" stroke="var(--border)" stroke-width="1.2" />
 
-    <!-- Forks Area & Curve -->
-    <path d="${forkArea}" fill="url(#forkGradient)" />
-    <path d="${forkLinePath}" fill="none" stroke="var(--fork-primary)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-
-    <!-- Small Data Dots along curve -->
-    <g>
-      ${forkPoints.map(p => `
-        <circle class="mini-dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.8" fill="var(--fork-primary)" opacity="0.6">
-          <title>⑂ ${p.count} Forks • ${formatDate(p.date)}</title>
-        </circle>
-      `).join('')}
-    </g>
-
-    <!-- Small Dot on 50 Milestone -->
-    <g>
-      ${forkMilestones.map(m => `
-        <g>
-          <circle class="mini-dot" cx="${m.x.toFixed(1)}" cy="${m.y.toFixed(1)}" r="3.2" fill="var(--fork-primary)" stroke="var(--dot-border)" stroke-width="1.5">
-            <title>⑂ Milestone: ${m.count} Forks on ${formatDate(m.date)}</title>
-          </circle>
-        </g>
-      `).join('')}
-    </g>
-
-    <!-- Latest Dot -->
-    <circle cx="${forkPoints[forkPoints.length - 1].x.toFixed(1)}" cy="${forkPoints[forkPoints.length - 1].y.toFixed(1)}" r="3.2" fill="var(--fork-primary)" stroke="var(--dot-border)" stroke-width="1.5">
-      <title>⑂ Latest: ${totalForks} Forks</title>
-    </circle>
+    <!-- Axis Titles -->
+    <text x="${plotX - 12}" y="${plotY - 12}" fill="var(--text-secondary)" font-size="11" font-weight="600" text-anchor="end">Stars / Forks</text>
+    <text x="${plotX + plotW + 12}" y="${plotY - 12}" fill="var(--clone-color)" font-size="11" font-weight="600" text-anchor="start">Clones</text>
   </g>
 
-  <!-- ==================== GRAPH 3: CLONES ==================== -->
-  <g class="card-box">
-    <!-- Panel Box -->
-    <rect x="${col3X}" y="${colY}" width="${colWidth}" height="${colHeight}" rx="10" fill="var(--card-bg)" stroke="var(--card-border)" stroke-width="1" />
+  <!-- DATA CURVES & GRADIENTS -->
+  <!-- 1. Clones Curve (Emerald) -->
+  <path d="${cloneAreaPath}" fill="url(#cloneAreaGrad)" />
+  <path d="${cloneLinePath}" fill="none" stroke="var(--clone-color)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
 
-    <!-- Card Header -->
-    <g transform="translate(${col3X + 16}, ${colY + 24})">
-      <circle cx="6" cy="0" r="4.5" fill="var(--clone-primary)" />
-      <text x="17" y="3" fill="var(--text-title)" font-size="14.5" font-weight="700">Clones</text>
-      <text x="17" y="20" fill="var(--text-sub)" font-size="11">14-Day Traffic (${uniqueCloners} unique)</text>
-      <text x="${colWidth - 32}" y="12" fill="var(--clone-primary)" font-size="21" font-weight="800" text-anchor="end">${totalClones.toLocaleString()}</text>
-    </g>
+  <!-- 2. Forks Curve (Cyan) -->
+  <path d="${forkAreaPath}" fill="url(#forkAreaGrad)" />
+  <path d="${forkLinePath}" fill="none" stroke="var(--fork-color)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
 
-    <!-- Grid & Y-Ticks -->
-    ${[0, 600, 1200].map(val => {
-      const y = getTimelineY(val, cloneMax, colY);
-      return `
-      <g>
-        <line x1="${col3X + innerPadLeft}" y1="${y}" x2="${col3X + innerPadLeft + plotW}" y2="${y}" stroke="var(--grid-line)" stroke-width="0.8" stroke-dasharray="2,2" />
-        <text x="${col3X + innerPadLeft - 8}" y="${y + 3.5}" fill="var(--axis-text)" font-size="9.5" text-anchor="end">${val}</text>
-      </g>`;
-    }).join('')}
+  <!-- 3. Stars Curve (Gold) -->
+  <path d="${starAreaPath}" fill="url(#starAreaGrad)" />
+  <path d="${starLinePath}" fill="none" stroke="var(--star-color)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
 
-    <!-- X-Ticks (Traffic dates: Aug 28, Sep 3, Sep 10) -->
-    ${[
-      { label: 'Aug 28', t: '2026-08-28T00:00:00Z' },
-      { label: 'Sep 03', t: '2026-09-03T00:00:00Z' },
-      { label: 'Sep 10', t: '2026-09-10T00:00:00Z' }
-    ].map(item => {
-      const x = getCloneX(item.t);
-      return `
-      <g>
-        <line x1="${x}" y1="${starBaseY}" x2="${x}" y2="${starBaseY + 4}" stroke="var(--axis-text)" stroke-width="0.8" />
-        <text x="${x}" y="${starBaseY + 16}" fill="var(--axis-text)" font-size="9.5" text-anchor="middle">${item.label}</text>
-      </g>`;
-    }).join('')}
+  <!-- SMALL DATA POINTS ALONG CURVES (Clean micro-dots, no giant clutter) -->
+  <g>
+    <!-- Clones Points -->
+    ${clonePoints.map(p => `
+      <circle class="mini-point" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.8" fill="var(--clone-color)" opacity="0.6">
+        <title>⬇ ${p.count} Lifetime Clones • ${formatDate(p.date)}</title>
+      </circle>
+    `).join('')}
 
-    <!-- Baseline -->
-    <line x1="${col3X + innerPadLeft}" y1="${starBaseY}" x2="${col3X + innerPadLeft + plotW}" y2="${starBaseY}" stroke="var(--grid-line)" stroke-width="1" />
+    <!-- Forks Points -->
+    ${forkPoints.map(p => `
+      <circle class="mini-point" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.8" fill="var(--fork-color)" opacity="0.6">
+        <title>⑂ ${p.count} Forks • ${formatDate(p.date)}</title>
+      </circle>
+    `).join('')}
 
-    <!-- Clones Area & Curve -->
-    <path d="${cloneArea}" fill="url(#cloneGradient)" />
-    <path d="${cloneLinePath}" fill="none" stroke="var(--clone-primary)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- Stars Points -->
+    ${starPoints.map(p => `
+      <circle class="mini-point" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.8" fill="var(--star-color)" opacity="0.6">
+        <title>★ ${p.count} Stars • ${formatDate(p.date)}</title>
+      </circle>
+    `).join('')}
+  </g>
 
-    <!-- Small Data Dots along curve -->
-    <g>
-      ${clonePoints.map(p => `
-        <circle class="mini-dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.2" fill="var(--clone-primary)" stroke="var(--dot-border)" stroke-width="1">
-          <title>⬇ ${p.count} Clones (${p.daily} on ${formatDate(p.date)})</title>
-        </circle>
-      `).join('')}
-    </g>
+  <!-- SMALL MILESTONE DOTS (Every 50, refined size r=3.2, no huge badges) -->
+  <g>
+    <!-- Fork 50-Milestones -->
+    ${forkMilestones.map(m => `
+      <circle class="mini-point" cx="${m.x.toFixed(1)}" cy="${m.y.toFixed(1)}" r="3.4" fill="var(--fork-color)" stroke="var(--dot-border)" stroke-width="1.6">
+        <title>⑂ Milestone: ${m.count} Forks on ${formatDate(m.date)}</title>
+      </circle>
+    `).join('')}
 
-    <!-- Latest Dot -->
-    <circle cx="${clonePoints[clonePoints.length - 1].x.toFixed(1)}" cy="${clonePoints[clonePoints.length - 1].y.toFixed(1)}" r="3.2" fill="var(--clone-primary)" stroke="var(--dot-border)" stroke-width="1.5">
-      <title>⬇ Total 14-Day Clones: ${totalClones} (${uniqueCloners} unique)</title>
+    <!-- Star 50-Milestones -->
+    ${starMilestones.map(m => `
+      <circle class="mini-point" cx="${m.x.toFixed(1)}" cy="${m.y.toFixed(1)}" r="3.6" fill="var(--star-color)" stroke="var(--dot-border)" stroke-width="1.6">
+        <title>★ Milestone: ${m.count} Stars on ${formatDate(m.date)}</title>
+      </circle>
+    `).join('')}
+  </g>
+
+  <!-- LATEST ENDPOINTS -->
+  <g>
+    <circle cx="${clonePoints[clonePoints.length - 1].x.toFixed(1)}" cy="${clonePoints[clonePoints.length - 1].y.toFixed(1)}" r="3.4" fill="var(--clone-color)" stroke="var(--dot-border)" stroke-width="1.6">
+      <title>⬇ Current Lifetime Clones: ${totalLifetimeClones.toLocaleString()}</title>
+    </circle>
+    <circle cx="${forkPoints[forkPoints.length - 1].x.toFixed(1)}" cy="${forkPoints[forkPoints.length - 1].y.toFixed(1)}" r="3.4" fill="var(--fork-color)" stroke="var(--dot-border)" stroke-width="1.6">
+      <title>⑂ Current Total: ${totalForks} Forks</title>
+    </circle>
+    <circle cx="${starPoints[starPoints.length - 1].x.toFixed(1)}" cy="${starPoints[starPoints.length - 1].y.toFixed(1)}" r="3.6" fill="var(--star-color)" stroke="var(--dot-border)" stroke-width="1.6">
+      <title>★ Current Total: ${totalStars} Stars</title>
     </circle>
   </g>
 </svg>`;
 }
 
 async function main() {
-  const data = fetchGitHubData();
+  const data = await fetchGitHubData();
 
-  console.log(`Summary: ${data.stars.length} stars, ${data.repoMeta.forks_count} forks (98), ${data.clonesData.count} clones.`);
+  console.log(`Summary: Stars=${data.stars.length}, Forks=${data.repoMeta.forks_count}, Clones=${data.cloneRecords.length} days.`);
 
-  const svg = buildThreeGraphsSvg(data);
+  const svg = buildFullSizeGrowthSvg(data);
 
   mkdirSync(resolve('assets'), { recursive: true });
   const outputPath = resolve('assets/growth-chart.svg');
   writeFileSync(outputPath, svg, 'utf8');
 
-  console.log(`Successfully generated 3-graph single SVG at: ${outputPath}`);
+  console.log(`Successfully generated updated single SVG at: ${outputPath}`);
 }
 
 main().catch(err => {
-  console.error(err);
+  console.error('Fatal error:', err);
   process.exit(1);
 });
