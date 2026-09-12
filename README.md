@@ -6,10 +6,10 @@ This repository contains a comprehensive collection of notes, code snippets, and
 
 <p align="center">
   <a href="assets/growth-chart.svg" title="Click to view interactive full-size chart">
-    <img src="assets/growth-chart.svg" alt="Backend from First Principles - Stars & Forks Growth History" width="100%" />
+    <img src="assets/growth-chart.svg" alt="Backend from First Principles - Stars, Forks & Clones Growth History" width="100%" />
   </a>
   <br />
-  <sub><em>Growth trajectory showing Stars (★ Gold) and Forks (⑂ Cyan) on the same date timeline. Large dots highlight every 50-count milestone. Hover over any point to inspect dates and exact counts.</em></sub>
+  <sub><em>Metrics overview: Stars (★ 460), Forks (⑂ 98), and 14-day Git Clones (⬇ 1,106). Hover over any point to inspect dates and exact counts.</em></sub>
 </p>
 
 ## Table of Contents
