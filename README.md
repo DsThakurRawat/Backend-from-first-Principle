@@ -65,6 +65,16 @@ Contributions are warmly welcomed! You can help by:
 
 Feel free to open an **[Issue](https://github.com/DsThakurRawat/Backend-from-first-Principle/issues)** or submit a **[Pull Request](https://github.com/DsThakurRawat/Backend-from-first-Principle/pulls)**!
 
+## Star History
+
+<a href="https://star-history.com/#DsThakurRawat/Backend-from-first-Principle&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=DsThakurRawat/Backend-from-first-Principle&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=DsThakurRawat/Backend-from-first-Principle&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=DsThakurRawat/Backend-from-first-Principle&type=Date" />
+ </picture>
+</a>
+
 ---
 
 *"Learn the fundamentals, and the frameworks become obvious."*
