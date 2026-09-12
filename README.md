@@ -4,6 +4,18 @@ Welcome to the **Backend from First Principles** documentation repository!
 
 This repository contains a comprehensive collection of notes, code snippets, and explanations covering fundamental and advanced concepts in backend engineering. The goal of this series is to break down complex backend topics into understandable, foundational principles.
 
+<p align="center">
+  <a href="https://www.star-history.com/#DsThakurRawat/Backend-from-first-Principle&Date" title="Click to view interactive star history">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=DsThakurRawat/Backend-from-first-Principle&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=DsThakurRawat/Backend-from-first-Principle&type=Date" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=DsThakurRawat/Backend-from-first-Principle&type=Date" />
+    </picture>
+  </a>
+  <br />
+  <sub><em>Click the chart to open the interactive view and inspect the exact date and star count at any point on the curve.</em></sub>
+</p>
+
 ## Table of Contents
 
 The documentation is organized into the following topics:
@@ -64,16 +76,6 @@ Contributions are warmly welcomed! You can help by:
 - Fixing typos, broken links, or syntax issues
 
 Feel free to open an **[Issue](https://github.com/DsThakurRawat/Backend-from-first-Principle/issues)** or submit a **[Pull Request](https://github.com/DsThakurRawat/Backend-from-first-Principle/pulls)**!
-
-## Star History
-
-<a href="https://star-history.com/#DsThakurRawat/Backend-from-first-Principle&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=DsThakurRawat/Backend-from-first-Principle&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=DsThakurRawat/Backend-from-first-Principle&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=DsThakurRawat/Backend-from-first-Principle&type=Date" />
- </picture>
-</a>
 
 ---
 
