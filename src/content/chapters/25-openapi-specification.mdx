@@ -1,0 +1,622 @@
+---
+order: 25
+title: "OpenAPI Specification & Documentation"
+navTitle: "OpenAPI & Docs"
+summary: "An API without documentation is a rumor, not an interface. OpenAPI has become the industry-standard contract language for APIs, turning prose agreements into machine-readable specifications that drive documentation, testing, and code generation. This chapter explains what OpenAPI is, why it exists, how to write a specification, the trade-offs between design-first and code-first workflows, and how to keep the spec and the implementation in sync over time."
+readingTime: "2-3 hours"
+keywords:
+  - "openapi"
+  - "swagger"
+  - "api documentation"
+  - "specification"
+  - "contract"
+  - "code generation"
+  - "swagger ui"
+  - "design-first"
+  - "code-first"
+  - "api client"
+---
+Part II / The Contract Layer
+
+## The Problem OpenAPI Solves
+
+Every API starts as an idea between two engineers. Alice builds a server. Bob writes a client. At first the contract lives in Alice's head, or in a Slack thread, or in a handwritten markdown file that lives next to the code. It works — until it doesn't.
+
+The failure mode is universal and deeply human: **drift**. Alice adds a field to a response. Bob's client breaks. Alice says "that's not a breaking change," Bob says "my code expects it." A markdown file was never a contract — it was a conversation, and conversations drift. The cost is not the bug itself; it's the time spent arguing about what the API _actually_ does, time that could have been spent building.
+
+<Diagram caption="The drift problem">
+<svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two engineers, Alice and Bob, whose API contract drifts apart because the spec lives in prose, not in code"><rect x="40" y="30" width="140" height="80" rx="12" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="110" y="62" font-size="13" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">Alice</text><text x="110" y="85" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">writes code</text><rect x="280" y="30" width="160" height="80" rx="12" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="360" y="62" font-size="13" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">Prose spec</text><text x="360" y="85" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">lives in markdown</text><rect x="540" y="30" width="140" height="80" rx="12" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="610" y="62" font-size="13" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">Bob</text><text x="610" y="85" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">reads prose</text><path d="M180 70 H280" stroke="var(--dg-line)" stroke-width="1.5" stroke-dasharray="4 3"></path><path d="M440 70 H540" stroke="var(--dg-line)" stroke-width="1.5" stroke-dasharray="4 3"></path><path d="M190 150 H160" stroke="var(--dg-warn)" stroke-width="1.5" stroke-dasharray="3 2"></path><path d="M160 160 H140" stroke="var(--dg-warn)" stroke-width="1.5" stroke-dasharray="3 2"></path><path d="M140 170 H130" stroke="var(--dg-warn)" stroke-width="1.5" stroke-dasharray="3 2"></path><text x="90" y="190" font-size="9" fill="var(--dg-warn)" text-anchor="end">drift</text><text x="360" y="208" class="mono" font-size="10" fill="var(--dg-ink-3)" text-anchor="middle">not a contract — a conversation</text></svg>
+</Diagram>
+
+**OpenAPI** (formerly Swagger) solves this by making the API contract a **machine-readable file** — a single YAML or JSON document that describes every endpoint, every request shape, every response, every status code, and every security requirement. The spec becomes the source of truth. Documentation is generated from it. Tests are written against it. Client SDKs are generated from it. When Alice changes the spec, the tooling tells Bob _immediately_, not at 2 AM after a production incident.
+
+The core insight is that **a contract that machines can read is a contract that machines can enforce**. You can write a CI check that rejects a pull request if the implementation doesn't match the spec. That's not a dream — it's the standard workflow in teams that take API design seriously.
+
+<Callout type="ok" title="The one change">
+Replace "let's document the API" with "let's _spec_ the API." A spec is a file that a computer can parse. A document is a file a human reads and ignores. The difference is the difference between a living contract and a dead wiki page.
+</Callout>
+
+## What OpenAPI Is (and Why It Exists)
+
+OpenAPI Specification (OAS) is a **standard, language-agnostic interface description** for REST-like APIs. It defines a canonical way to describe:
+
+- **What endpoints exist** and what HTTP methods they support
+- **What inputs they accept** (path parameters, query parameters, request bodies, headers)
+- **What outputs they produce** (response bodies, headers, status codes)
+- **How to authenticate** (API keys, OAuth2, Bearer tokens)
+- **What the data shapes look like** (schemas for requests, responses, and shared types)
+
+The spec was originally created by **Tony Tam** at **Wordnik** around 2010 as the **Swagger** specification, driven by the practical need to auto-generate API documentation from code. In 2015, the **OpenAPI Initiative** (under the Linux Foundation) took ownership, renamed it, and standardized it. Today, OAS 3.1 is the current version and is supported by virtually every API tooling ecosystem — from Swagger UI to Postman to code generators in every major language.
+
+<Callout type="info" title="Swagger vs OpenAPI">
+"Swagger" was the original name. The OpenAPI Initiative took it over in 2015. "Swagger" tools still work — Swagger UI, the swagger-codegen toolchain — but the formal specification is now called OpenAPI. When someone says "Swagger spec," they usually mean an OpenAPI spec. Don't get confused; they're the same thing.
+</Callout>
+
+The reason OpenAPI took off is that it sits at the intersection of **three problems that every API team eventually hits**: documentation that goes stale, integration tests that are actually manual, and client SDKs that are copy-pasted instead of generated. OpenAPI solves all three at once by making the spec the single source of truth from which documentation, tests, and clients are all derived.
+
+## The Anatomy of an OpenAPI Specification
+
+An OpenAPI specification is a single YAML (or JSON) file. At its heart are these top-level keys:
+
+```yaml
+openapi: 3.1.0
+info:
+  title: Bookstore API
+  description: A simple API for managing a book collection
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@bookstore.example.com
+servers:
+  - url: https://api.bookstore.example.com/v1
+    description: Production server
+  - url: http://localhost:3000/v1
+    description: Local development server
+paths:
+  /books:
+    get:
+      summary: List all books
+      ...
+  /books/{bookId}:
+    get:
+      summary: Get a single book
+      ...
+components:
+  schemas:
+    Book:
+      type: object
+      ...
+```
+
+Each key has a specific job:
+
+| Key | Purpose | Required |
+|-----|---------|----------|
+| `openapi` | Version of the OAS spec being used (e.g. `3.1.0`) | Yes |
+| `info` | Metadata — title, description, version, contact info | Yes |
+| `servers` | Base URLs for different environments (prod, staging, local) | No |
+| `paths` | Every endpoint and its HTTP methods, parameters, and responses | Yes |
+| `components` | Reusable definitions — schemas, security schemes, parameters | No |
+| `tags` | Logical grouping of endpoints (e.g. "Books", "Users") | No |
+| `security` | Global authentication requirements | No |
+
+### The `info` block — why metadata matters
+
+The `info` object is deceptively simple. It contains the API title, description, version, and contact information. But it serves a deeper purpose than branding: **the `version` field is how you track which spec goes with which deployed API**. When you change the spec, you bump the version, and every tool that consumes the spec knows exactly what it's looking at.
+
+```yaml
+info:
+  title: Bookstore API
+  version: 2.1.0
+  description: >
+    Version 2.1 adds pagination to all list endpoints
+    and introduces the `publisher` field on books.
+```
+
+The description supports **Markdown** — so you can write detailed changelogs, migration guides, and usage notes directly in the spec.
+
+### The `servers` block — environment awareness
+
+Without `servers`, every example in the spec points to a single URL and you have to mentally adjust for staging, production, and local development. The `servers` array solves this by listing all environments:
+
+```yaml
+servers:
+  - url: https://api.example.com/v1
+    description: Production
+  - url: https://staging.api.example.com/v1
+    description: Staging
+  - url: http://localhost:4000/v1
+    description: Local development
+```
+
+Swagger UI and other tools let you switch between servers, so the interactive documentation reflects the right base URL for the environment you're testing against.
+
+### The `paths` object — every endpoint, every method
+
+The `paths` object is the core of the spec. Each key is a URL path pattern. Each value is an object mapping HTTP methods to operation objects:
+
+```yaml
+paths:
+  /books:
+    get:
+      operationId: listBooks
+      summary: List all books
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        "200":
+          description: A paginated list of books
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Book'
+                  total:
+                    type: integer
+```
+
+Notice the pattern: every operation has an `operationId` (a unique identifier used by code generators), a `summary`, `parameters`, and a `responses` object. The responses are keyed by HTTP status code — `"200"`, `"404"`, `"500"` — and each response describes its content type and schema.
+
+<Diagram caption="An OpenAPI spec at a glance">
+<svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The main sections of an OpenAPI specification file laid out as a diagram"><rect x="20" y="30" width="680" height="52" rx="10" fill="var(--dg-accent)" stroke="var(--dg-accent)"></rect><text x="60" y="50" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">openapi: "3.1.0"</text><text x="60" y="68" class="mono" font-size="10" fill="var(--dg-on-accent)" text-anchor="middle">The spec version identifier</text><rect x="20" y="100" width="320" height="170" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="60" y="122" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">info</text><text x="60" y="140" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">title, version, contact</text><rect x="380" y="100" width="320" height="170" rx="10" fill="var(--dg-info-surface)" stroke="var(--dg-info)"></rect><text x="420" y="122" font-size="12" font-weight="700" fill="var(--dg-info)" text-anchor="middle">paths</text><text x="420" y="140" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">every endpoint &amp; method</text><text x="60" y="175" class="mono" font-size="8.5" fill="var(--dg-ink-3)">/books, /books/:id</text><text x="60" y="190" class="mono" font-size="8.5" fill="var(--dg-ink-3)">GET, POST, PUT, DELETE</text><rect x="20" y="290" width="680" height="0" rx="10" fill="none"></rect><rect x="680" y="270" width="680" height="0" rx="10" fill="none"></rect><rect x="20" y="275" width="320" height="20" rx="5" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="60" y="289" font-size="10" font-weight="600" fill="var(--dg-warn)" text-anchor="middle">components</text><rect x="380" y="275" width="320" height="20" rx="5" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="420" y="289" font-size="10" font-weight="600" fill="var(--dg-accent)" text-anchor="middle">servers, tags, security</text></svg>
+</Diagram>
+
+## Defining Endpoints, Schemas, and Status Codes
+
+### Parameters and request bodies
+
+OpenAPI distinguishes between parameters that live in the URL and bodies that live in the request payload:
+
+```yaml
+parameters:
+  - name: bookId
+    in: path          # URL path parameter — always required
+    required: true
+    schema:
+      type: string
+      pattern: '^[a-zA-Z0-9_-]+$'
+  - name: filter
+    in: query         # Query parameter — optional
+    required: false
+    schema:
+      type: string
+      enum: [active, archived, all]
+      default: all
+  - name: X-Request-ID
+    in: header        # Header parameter
+    required: false
+    schema:
+      type: string
+      format: uuid
+requestBody:          # Body parameter — for POST/PUT/PATCH
+  required: true
+  content:
+    application/json:
+      schema:
+        $ref: '#/components/schemas/CreateBook'
+```
+
+The `in` field determines where the parameter lives: `path` (part of the URL), `query` (after `?`), `header` (in the HTTP headers), or `cookie`. Path parameters are always required; query, header, and cookie parameters can be optional. The `requestBody` is separate and only applies to methods that carry a payload.
+
+### Response schemas and status codes
+
+Every response must have a status code key and a description. The `content` block specifies the media type and schema:
+
+```yaml
+responses:
+  "200":
+    description: Successfully retrieved a book
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Book'
+  "404":
+    description: Book not found
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Error'
+  "500":
+    description: Internal server error
+```
+
+Status codes in OpenAPI follow the same semantics as HTTP: `2xx` for success, `4xx` for client errors, `5xx` for server errors. A well-specified API documents at least the success case and the most important error cases — the ones a consumer actually needs to handle.
+
+### Reusable schemas with `components`
+
+The `components/schemas` section is where you define reusable data types. Every parameter and response can reference them with `$ref`:
+
+```yaml
+components:
+  schemas:
+    Book:
+      type: object
+      required: [id, title, author]
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        author:
+          type: string
+          minLength: 1
+        isbn:
+          type: string
+          format: isbn
+          nullable: true
+        publishedAt:
+          type: string
+          format: date-time
+      example:
+        id: 42
+        title: "Designing Data-Intensive Applications"
+        author: "Martin Kleppmann"
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        details:
+          type: object
+    CreateBook:
+      type: object
+      required: [title, author]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        author:
+          type: string
+        isbn:
+          type: string
+          format: isbn
+```
+
+Notice the `readOnly: true` on `id` — this tells consumers that `id` is always present in responses but must never be sent in requests. The `example` field provides a concrete sample that Swagger UI renders in the interactive documentation.
+
+<Callout type="info" title="Why components matter">
+Without `components`, every response and request body would need to inline the full schema definition. With `components`, a `Book` is defined once and referenced everywhere with `$ref: '#/components/schemas/Book'`. This keeps the spec DRY, readable, and consistent — if you change the Book schema, every endpoint that uses it updates automatically.
+</Callout>
+
+## Authentication and Security Schemes
+
+OpenAPI defines security at two levels: **globally** (applying to all endpoints by default) and **per-operation** (overriding or adding specific requirements).
+
+### Defining security schemes
+
+The `components/securitySchemes` object declares every authentication mechanism the API supports:
+
+```yaml
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.example.com/oauth/authorize
+          tokenUrl: https://auth.example.com/oauth/token
+          scopes:
+            read: Read access
+            write: Write access
+            admin: Full administrative access
+```
+
+Three common scheme types cover most real-world APIs:
+
+| Type | Where the credential goes | Typical use |
+|------|--------------------------|-------------|
+| `apiKey` | Header, query, or cookie | Simple key-based auth (e.g. `X-API-Key`) |
+| `http` | `Authorization` header | Bearer tokens, Basic Auth |
+| `oauth2` | OAuth2 flows | Third-party delegated access |
+
+### Applying security globally and per-operation
+
+Apply security globally so every endpoint requires authentication unless explicitly overridden:
+
+```yaml
+security:
+  - BearerAuth: []          # All endpoints require Bearer token by default
+
+paths:
+  /books:
+    get:
+      security:             # Override: this endpoint is public
+        []
+      ...
+  /books/{id}:
+    get:
+      security:
+        - BearerAuth: [read]  # Requires the "read" scope
+      ...
+  /books:
+    post:
+      security:
+        - BearerAuth: [write] # Requires the "write" scope
+```
+
+The empty array `[]` as the security value means "this endpoint requires no authentication" — a deliberate override of the global default. The array of scopes on a security scheme restricts which permissions the caller must hold.
+
+<Diagram caption="Security scheme types and where credentials live">
+<svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three OpenAPI security scheme types and where each credential is sent"><rect x="40" y="30" width="200" height="160" rx="12" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="140" y="55" font-size="12" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">apiKey</text><text x="140" y="80" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">Header, query, or cookie</text><text x="140" y="100" class="mono" font-size="8.5" fill="var(--dg-ink-3)">X-API-Key: abc123</text><rect x="260" y="30" width="200" height="160" rx="12" fill="var(--dg-info-surface)" stroke="var(--dg-info)"></rect><text x="360" y="55" font-size="12" font-weight="700" fill="var(--dg-info)" text-anchor="middle">http</text><text x="360" y="80" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">Authorization header</text><text x="360" y="100" class="mono" font-size="8.5" fill="var(--dg-ink-3)">Bearer &lt;JWT&gt;</text><rect x="480" y="30" width="200" height="160" rx="12" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="580" y="55" font-size="12" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">oauth2</text><text x="580" y="80" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">OAuth2 flows</text><text x="580" y="100" class="mono" font-size="8.5" fill="var(--dg-ink-3)">auth/token URLs</text><text x="60" y="205" font-size="10" font-style="italic" fill="var(--dg-ink-3)" text-anchor="start">Credential location determined by the scheme type</text></svg>
+</Diagram>
+
+## Swagger UI and Interactive Documentation
+
+The single biggest practical benefit of an OpenAPI spec is that it can be rendered into **interactive documentation** by tools like **Swagger UI**, **Redoc**, or **Scalar**. Swagger UI parses the spec and produces a self-documenting website where users can:
+
+1. **Browse every endpoint** organized by tag
+2. **Expand any operation** to see parameters, request body, and responses
+3. **Try it out** — fill in parameter values, hit "Execute", and see the real response
+4. **See example values** — from `example` fields in the spec
+5. **Understand auth** — see which endpoints require which security schemes
+
+<Diagram caption="From spec to interactive documentation">
+<svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A spec file rendered into interactive documentation by Swagger UI"><rect x="40" y="30" width="280" height="180" rx="12" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="180" y="55" font-size="12" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">openapi.yaml</text><text x="180" y="80" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">paths, schemas, security</text><text x="180" y="105" class="mono" font-size="8.5" fill="var(--dg-ink-3)">machine-readable spec</text><path d="M320 100 L370 100" stroke="var(--dg-line)" stroke-width="2" marker-end="url(#a)"></path><rect x="380" y="30" width="300" height="180" rx="12" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="530" y="55" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Swagger UI</text><text x="530" y="80" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">Interactive docs</text><text x="530" y="105" class="mono" font-size="8.5" fill="var(--dg-ink-3)">Try endpoints, see examples</text><text x="530" y="130" class="mono" font-size="8.5" fill="var(--dg-ink-3)">Generated from spec</text><defs><marker id="a" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="var(--dg-ink-2)"></path></marker></defs><text x="360" y="208" font-size="10" font-style="italic" fill="var(--dg-ink-3)" text-anchor="middle">One spec, many renderers</text></svg>
+</Diagram>
+
+### Serving with Swagger UI
+
+The simplest way to get interactive docs is to serve the spec through Swagger UI. This can be done via npm packages, Docker, or hosted services like **Scalar** or **Redoc**. For a simple static setup:
+
+```html
+<!-- Minimal Swagger UI HTML -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>API Docs</title>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+</head>
+<body>
+  <div id="swagger"></div>
+  <script>
+    SwaggerUIBundle({
+      url: "/openapi.yaml",
+      dom_id: "#swagger",
+      presets: [SwaggerUIBundle.Presets.APIs],
+    });
+  </script>
+</body>
+</html>
+```
+
+The `url` points to your OpenAPI spec file. Swagger UI fetches it, parses it, and renders the full interactive documentation. Every change to the spec immediately updates the docs — no manual maintenance.
+
+### Other renderers
+
+- **Redoc** — More polished, supports one-page layout and deep linking to definitions
+- **Scalar** — Modern, FastAPI-native, excellent dark mode
+- **Stoplight Elements** — Embeddable widget if you don't want a full docs page
+
+All of them consume the same OpenAPI spec, so you write the spec once and choose your renderer based on branding needs.
+
+<Callout type="ok" title="The documentation workflow">
+Write the spec → serve it through Swagger UI → every stakeholder (frontend team, mobile team, QA, external partners) gets a live, interactive documentation site that stays in sync automatically. No more "the docs are on Confluence and they haven't been updated since 2021."
+</Callout>
+
+## Design-First vs Code-First
+
+There are two fundamentally different philosophies for creating an OpenAPI spec, and the choice affects how you structure your entire API workflow.
+
+### Design-first
+
+In the **design-first** approach, you write the OpenAPI spec _before_ writing any server code. The spec is the contract, the code implements it, and everything is validated against it.
+
+The workflow:
+1. Define the API in `openapi.yaml` — endpoints, schemas, status codes, security
+2. Validate the spec with a linter (e.g. `openapi-lint`)
+3. Generate server stubs and client SDKs from the spec
+4. Implement the server by filling in the generated handler logic
+5. Run tests that verify the implementation matches the spec
+
+**Advantages:**
+- The contract is agreed upon _before_ implementation starts — frontend and backend teams can work in parallel
+- The spec is a proper design artifact, reviewed and versioned independently of code
+- Client SDKs are generated at the same time as the server, so they're always available
+- Easier to maintain consistency across multiple services because they all share the same spec
+
+**Disadvantages:**
+- The spec must be kept in sync with the code manually (more on this below)
+- Refactoring the implementation means editing both the spec and the code
+- Can feel heavy for small, rapidly evolving APIs
+
+### Code-first
+
+In the **code-first** approach, you write the server code first and generate the OpenAPI spec from it. The code defines the API, and the spec is a derived artifact.
+
+The workflow:
+1. Write server code with route decorators and Pydantic/FastAPI models
+2. Generate the OpenAPI spec at build time or runtime
+3. Serve the spec through Swagger UI
+4. Generate client SDKs from the generated spec
+5. Write tests against the generated spec
+
+**Advantages:**
+- The spec is always in sync with the code — it's generated, not hand-written
+- Faster iteration for small teams — write code, the spec appears automatically
+- Less context switching between spec files and implementation files
+- Frameworks like FastAPI make this trivial
+
+**Disadvantages:**
+- The spec inherits the constraints of the code — you can't easily express design decisions that the code doesn't support
+- Harder to get cross-team agreement on the API shape before implementation
+- The spec may contain implementation details that don't belong in a public contract
+
+### When to choose which
+
+| Factor | Design-first | Code-first |
+|--------|-------------|------------|
+| Team size | 3+ engineers, multiple teams | Solo or small team |
+| API stability | Stable contract, long-lived API | Evolving rapidly |
+| External consumers | Yes (partner APIs) | Internal only |
+| Frontend team | Separate frontend team | Full-stack developer |
+| Maturity | Established API, formal process | Prototype or new service |
+
+Most mature API teams start with design-first and migrate toward code-first as the team and API stabilize. Some teams use a hybrid: design the initial contract (design-first), generate stubs, implement (code-first), and then keep the spec in sync via CI validation.
+
+<Callout type="warn" title="The hybrid is the sweet spot for most teams">
+Write the spec first for the initial contract (design-first), implement the server in code (code-first), and use a CI check that validates the generated spec against the hand-written spec. This gives you the best of both: the design conversation happens before code, but the spec stays accurate because it's generated and validated, not hand-maintained.
+</Callout>
+
+## Code Generation and Type-Safe API Clients
+
+An OpenAPI spec is not just documentation — it's a **source of truth that machines can consume**. Code generators read the spec and produce ready-to-use client SDKs, server stubs, and TypeScript types for every language in the ecosystem.
+
+### Popular generators
+
+| Tool | Output | Language | Notes |
+|------|--------|----------|-------|
+| **openapi-generator** | Client SDKs, server stubs, docs | 40+ languages | The most comprehensive generator |
+| **orval** | TypeScript clients with fetchers | TypeScript | Works with OpenAPI 3.x, excellent DX |
+| **swagger-typescript-api** | TypeScript types and API client | TypeScript | Lightweight, fast |
+| **openapi-typescript** | TypeScript types only | TypeScript | Minimal, zero-runtime |
+| **mockttp** | Mock servers | — | From the spec |
+
+### Generating a TypeScript client
+
+With **orval**, generating a type-safe TypeScript client from a spec is a single command:
+
+```bash
+npx orval --openapi ./openapi.yaml --output ./src/api/client
+```
+
+This produces:
+- Typed function calls for every endpoint (`getBooks()`, `createBook(data)`, `getBookById(id)`)
+- TypeScript types for every schema (`Book`, `CreateBook`, `Error`)
+- Request/response type inference — the compiler knows what shape each call returns
+
+```typescript
+// Auto-generated from the spec
+export const getBooks = (params?: { page?: number; limit?: number }) =>
+  fetcher<{ data: Book[]; total: number }>('/books', { method: 'GET', params });
+
+export type Book = {
+  id: number;
+  title: string;
+  author: string;
+  isbn?: string;
+  publishedAt?: string;
+};
+```
+
+The result: your frontend code gets **compile-time type checking** for every API call. If the spec changes, the generated types change, and TypeScript tells you exactly which files need updating. No more `any` and no more guessing at runtime.
+
+### Generating server stubs
+
+**openapi-generator** can also generate server stubs — skeleton controller files in Go, Python, Java, or any supported language — that you fill in with business logic:
+
+```bash
+npx @openapi-generator/cli generate \
+  -i openapi.yaml \
+  -g go \
+  -o ./server/generated
+```
+
+This produces typed handlers with the correct method signatures, parameter bindings, and response types. You implement the handlers by filling in the generated function bodies.
+
+<Callout type="ok" title="The codegen loop">
+Write the spec → generate clients and stubs → implement the server → test the implementation against the spec → regenerate clients when the spec changes. The spec drives the entire development cycle, not just documentation.
+</Callout>
+
+## Keeping the Spec in Sync
+
+The hardest part of OpenAPI is not writing the spec — it's **keeping it in sync** with the implementation as the API evolves. A stale spec is worse than no spec, because it actively misleads consumers.
+
+### Validation in CI
+
+Add a validation step to your CI pipeline that checks the spec against the running API:
+
+```yaml
+# .github/workflows/openapi-validation.yml
+name: Validate OpenAPI Spec
+on: [pull_request]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install
+      - run: npm run build        # Starts the server
+      - run: npx openapi-match \
+            spec: openapi.yaml \
+            base-url: http://localhost:4000
+```
+
+Tools like **`openapi-match`**, **`dredd`**, or **`prism`** spin up your server, send requests defined in the spec, and verify that the responses match the documented schemas. If a field is missing or a status code differs, the CI fails.
+
+### Linting the spec
+
+Lint the spec itself for common problems before it ever reaches production:
+
+- **`openapi-lint`** — Checks for missing descriptions, invalid examples, missing status codes
+- **`spectral`** — Enforces custom rules (e.g., "all endpoints must have a 4xx response", "all schemas must have an example")
+- **`speccy`** — Validates syntax and checks for common mistakes
+
+```yaml
+- run: npx spectral lint openapi.yaml
+```
+
+### Drift detection
+
+For code-first teams, detect drift between the generated spec and the hand-written spec at build time:
+
+```bash
+# Generate the spec from code
+npm run build:spec       # Produces generated-openapi.yaml
+
+# Compare with the canonical spec
+npx json-diff openapi.yaml generated-openapi.yaml
+```
+
+If there are differences, either the hand-written spec is outdated (update it) or the code has drifted from the contract (fix the code). Either way, the discrepancy surfaces automatically.
+
+### Versioning the spec
+
+Treat the OpenAPI spec like any other source artifact:
+
+- **Version it** with the API version (`v1/openapi.yaml`, `v2/openapi.yaml`)
+- **Store it in Git** alongside the code — never in a separate wiki or Confluence
+- **Automate updates** with a CI pipeline that regenerates the spec and opens a PR if the hand-written version doesn't match
+- **Add a changelog** in the spec's `description` field, using Markdown
+
+<Diagram caption="The spec maintenance loop">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A continuous loop showing how the OpenAPI spec stays in sync with implementation"><circle cx="360" cy="125" r="110" fill="none" stroke="var(--dg-line)" stroke-width="1.5" stroke-dasharray="4 3"></circle><rect x="20" y="60" width="180" height="130" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="110" y="90" font-size="11" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">Write / Update Spec</text><text x="110" y="120" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">YAML, machine-readable</text><text x="110" y="150" class="mono" font-size="8.5" fill="var(--dg-ink-3)">Validate with CI</text><path d="M200 125 A140 140 0 0 1 360 15" fill="none" stroke="var(--dg-ok)" stroke-width="2" marker-end="url(#br)"></path><rect x="310" y="30" width="190" height="130" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="405" y="60" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Generate Client SDKs</text><text x="405" y="90" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">TypeScript, Go, Python</text><text x="405" y="120" class="mono" font-size="8.5" fill="var(--dg-ink-3)">Type-safe, always current</text><path d="M455 85 A140 140 0 0 1 600 125" fill="none" stroke="var(--dg-info)" stroke-width="2" marker-end="url(#bg)"></path><rect x="530" y="70" width="170" height="110" rx="10" fill="var(--dg-info-surface)" stroke="var(--dg-info)"></rect><text x="615" y="95" font-size="11" font-weight="700" fill="var(--dg-info)" text-anchor="middle">Serve Docs</text><text x="615" y="120" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">Swagger UI / Scalar</text><text x="615" y="145" class="mono" font-size="8.5" fill="var(--dg-ink-3)">Interactive, live</text><path d="M570 125 A140 140 0 0 1 450 170" fill="none" stroke="var(--dg-warn)" stroke-width="2" marker-end="url(#bw)"></path><rect x="260" y="170" width="200" height="70" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="360" y="198" font-size="11" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">CI Validation</text><text x="360" y="218" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">Spec matches server</text><defs><marker id="br" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="var(--dg-ok)"></path></marker><marker id="bg" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="var(--dg-info)"></path></marker><marker id="bw" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="var(--dg-warn)"></path></marker></defs></svg>
+</Diagram>
+
+## The chapter in one breath
+
+OpenAPI is not a documentation tool — it's a **contract language** for APIs. Write the spec, validate it, generate from it, and keep it in sync. The spec becomes the single source of truth that drives documentation, testing, client SDKs, and CI checks. Teams that adopt this workflow stop arguing about what their API does and start building on top of it.
+
+<Callout type="info" title="Recommended starting point">
+If you're starting a new API, try **code-first with FastAPI** (Python) or **NestJS** (TypeScript) — both generate a valid OpenAPI spec from your code with zero configuration. Add Swagger UI for interactive docs, and a CI validation step to catch drift. As the API matures and the team grows, migrate to a design-first workflow where the spec is the explicit contract that drives parallel development.
+</Callout>
