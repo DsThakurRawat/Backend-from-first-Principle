@@ -815,7 +815,7 @@ body{padding-bottom:80px;}
         <a class="bfp-toc-link" href="#s12"><span class="bfp-toc-num">12</span><span class="bfp-toc-text">Kubernetes Architecture</span></a>
         <a class="bfp-toc-link" href="#s13"><span class="bfp-toc-num">13</span><span class="bfp-toc-text">Pods</span></a>
         <a class="bfp-toc-link" href="#s14"><span class="bfp-toc-num">14</span><span class="bfp-toc-text">Deployments &amp; ReplicaSets</span></a>
-        <a class="bfp-toc-link" href="#s15"><span class="bfp-toc-num">15</span><span class="bfp-toc-text">Services &amp; Ingress</span></a>
+        <a class="bfp-toc-link" href="#s15"><span class="bfp-toc-num">15</span><span class="bfp-toc-text">Services, Gateway API &amp; Ingress</span></a>
         <a class="bfp-toc-link" href="#s16"><span class="bfp-toc-num">16</span><span class="bfp-toc-text">Config, Secrets &amp; Env</span></a>
         <a class="bfp-toc-link" href="#s17"><span class="bfp-toc-num">17</span><span class="bfp-toc-text">Health Probes &amp; Resources</span></a>
         <a class="bfp-toc-link" href="#s18"><span class="bfp-toc-num">18</span><span class="bfp-toc-text">Scaling &amp; Rollouts</span></a>
@@ -1754,7 +1754,7 @@ kubectl rollout undo  deployment/api          # roll back to the previous versio
 
       <!-- 15 -->
       <section id="s15">
-        <div class="sec-head"><div class="sec-num">15</div><h2>Services &amp; Ingress</h2></div>
+        <div class="sec-head"><div class="sec-num">15</div><h2>Services, Gateway API &amp; Ingress</h2></div>
         <p>Pods are mortal and their IPs churn (sec 13), so you can't point traffic at a pod. A <strong>Service</strong>
           is the fix: a <em>stable</em> virtual IP and DNS name in front of a dynamic set of pods, with built-in load
           balancing. It uses a <strong>label selector</strong> to track "all pods with <code>app: api</code>", as
@@ -1795,6 +1795,7 @@ kubectl rollout undo  deployment/api          # roll back to the previous versio
               <tr><td><code>NodePort</code></td><td>A port on every node</td><td>Basic/dev external access</td></tr>
               <tr><td><code>LoadBalancer</code></td><td>The internet (cloud LB)</td><td>One TCP/UDP service exposed directly</td></tr>
               <tr><td><strong>Ingress</strong></td><td>The internet, via L7 rules</td><td>HTTP host/path routing + TLS for many services through one entry point</td></tr>
+              <tr><td><strong>Gateway API</strong></td><td>The internet, via listeners and routes</td><td>Role-oriented HTTP/TCP routing with a reusable Gateway and separate route resources</td></tr>
             </tbody>
           </table>
         </div>
@@ -1828,12 +1829,88 @@ spec:
                 port: { number: 80 }</code></pre>
         </div>
 
-        <div class="box note"><span class="tag">The full path of a request</span>
-          <p>External client -&gt; <strong>Ingress</strong> (TLS, host/path routing) -&gt; <strong>Service</strong>
-            (stable IP, load-balance) -&gt; a healthy <strong>Pod</strong> -&gt; your container. Each hop adds one
-            concern, routing, discovery, the actual work, and together they're how a packet from the
-            internet reaches one replica of your app.</p>
+        <h3>Gateway API: GatewayClass, Gateway &amp; HTTPRoute</h3>
+        <p><strong>Gateway API</strong> is the newer alternative to <strong>Ingress</strong>. You will still encounter Ingress in production systems: its API is stable, but Kubernetes has frozen it and recommends Gateway instead for new designs.</p>
+        <p>The Ingress above puts the hostname, path, and destination Service in one resource. Gateway API separates the entry point from those routing rules, so several applications can share a Gateway while defining their own routes.</p>
+        <p>See the <a href="https://kubernetes.io/docs/concepts/services-networking/gateway/">Gateway API documentation</a> and the <a href="https://kubernetes.io/docs/concepts/services-networking/ingress/">Ingress documentation</a>.</p>
+
+        <p>The three resources divide that work:</p>
+        <ul>
+          <li><strong>GatewayClass</strong> is a cluster-scoped blueprint shared by many Gateways. Its <code>controllerName</code> selects the implementation, such as Envoy Gateway, that will set up and manage their proxies or load balancers.</li>
+          <li><strong>Gateway</strong> is an individual entry point created using that class. It references the blueprint through <code>gatewayClassName: envoy</code> and defines listeners: the protocols and ports that accept traffic, such as HTTP on port 80.</li>
+          <li><strong>HTTPRoute</strong> contains the familiar Ingress rules: match a hostname and path, then send the request to a Service. <code>parentRefs</code> attaches it to a Gateway; <code>backendRefs</code> identifies the destination Service and port.</li>
+        </ul>
+
+        <p>Think of the image-to-container relationship from earlier: one reusable definition, many instances. One GatewayClass can serve many Gateways, and each Gateway can have several HTTPRoutes attached to it.</p>
+
+        <div class="viz">
+          <div class="viz-cap">Gateway API request flow</div>
+          <div class="viz-title">Infrastructure and routing resources lead traffic to healthy pods</div>
+          <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img"
+            aria-label="One GatewayClass can be referenced by many Gateways while client traffic passes through a Gateway and HTTPRoute to a Service and healthy pods">
+            <defs><marker id="gwa" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#3f6f4e"/></marker><marker id="gwc" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f2f20"/></marker></defs>
+            <rect x="150" y="18" width="140" height="44" rx="9" fill="#f4d9cf" stroke="#b8402e"/><text x="220" y="45" font-size="12" font-weight="700" fill="#8f2f20" text-anchor="middle">GatewayClass</text>
+            <path d="M220 64 V105" stroke="#8f2f20" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#gwc)"/><text x="235" y="87" class="mono" font-size="8.5" fill="#8f2f20">gatewayClassName: envoy</text>
+            <rect x="18" y="112" width="96" height="52" rx="9" fill="#b8402e"/><text x="66" y="143" font-size="11.5" font-weight="700" fill="#fff" text-anchor="middle">client</text>
+            <rect x="150" y="106" width="140" height="64" rx="10" fill="#211e1a"/><text x="220" y="132" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">Gateway</text><text x="220" y="151" class="mono" font-size="8.5" fill="#7fd1c4" text-anchor="middle">one of many :80</text>
+            <rect x="326" y="106" width="140" height="64" rx="10" fill="#f1e3cf" stroke="#b75d14"/><text x="396" y="132" font-size="12" font-weight="700" fill="#b75d14" text-anchor="middle">HTTPRoute</text><text x="396" y="151" class="mono" font-size="8.5" fill="#5b5347" text-anchor="middle">host + path rules</text>
+            <rect x="502" y="106" width="100" height="64" rx="10" fill="#3f6f4e"/><text x="552" y="132" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">Service</text><text x="552" y="151" class="mono" font-size="8.5" fill="#fff" text-anchor="middle">stable endpoint</text>
+            <rect x="646" y="92" width="58" height="40" rx="8" fill="#e0e9dd" stroke="#3f6f4e"/><text x="675" y="116" font-size="10" fill="#3f6f4e" text-anchor="middle">Pod</text>
+            <rect x="646" y="146" width="58" height="40" rx="8" fill="#e0e9dd" stroke="#3f6f4e"/><text x="675" y="170" font-size="10" fill="#3f6f4e" text-anchor="middle">Pod</text>
+            <g stroke="#3f6f4e" stroke-width="1.8" fill="none"><path d="M116 138 H148" marker-end="url(#gwa)"/><path d="M292 138 H324" marker-end="url(#gwa)"/><path d="M468 138 H500" marker-end="url(#gwa)"/><path d="M604 127 C620 116 630 112 644 112" marker-end="url(#gwa)"/><path d="M604 149 C620 160 630 166 644 166" marker-end="url(#gwa)"/></g>
+            <text x="360" y="222" class="serif" font-size="12.5" font-style="italic" fill="#5b5347" text-anchor="middle">One GatewayClass can be referenced by many Gateways; each Gateway can route traffic to Services.</text>
+          </svg>
         </div>
+
+        <p>Like Ingress, Gateway API needs a controller to turn configuration into working networking. The controller named by <code>controllerName</code> must be installed and running; writing its name does not install it.</p>
+        <p>This YAML uses Envoy Gateway as one example implementation. Other Gateway API implementations can be used with their own documented controller name.</p>
+        <p>The controller reads the listeners and routes and configures the proxies that handle requests. The diagram shows how the configuration fits together; Gateway and HTTPRoute are API objects, not separate servers.</p>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">gatewayclass.yaml</span></div>
+          <pre><code class="language-yaml">apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: envoy
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller</code></pre>
+        </div>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">gateway.yaml</span></div>
+          <pre><code class="language-yaml">apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: api-gateway
+spec:
+  gatewayClassName: envoy
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80</code></pre>
+        </div>
+
+        <div class="codeblock single">
+          <div class="code-bar"><div class="dots"><i></i><i></i><i></i></div><span class="filename">api-httproute.yaml</span></div>
+          <pre><code class="language-yaml">apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: api-httproute
+spec:
+  parentRefs:
+    - name: api-gateway
+  hostnames:
+    - "api.example.com"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: api
+          port: 80</code></pre>
+        </div>
+
       </section>
 
       <!-- 16 -->
@@ -2181,6 +2258,7 @@ jobs:
               <tr><td>Deployment</td><td>Keeps N replicas of a pod running; self-heals; does rolling updates.</td></tr>
               <tr><td>Service</td><td>Stable IP/DNS load-balancing across matching pods, service discovery.</td></tr>
               <tr><td>Ingress</td><td>One L7 entry point: host/path routing + TLS to many Services.</td></tr>
+              <tr><td>Gateway API</td><td>Newer, role-oriented networking API: GatewayClass selects a controller; Gateway listens; HTTPRoute routes to Services.</td></tr>
               <tr><td>Config/Secrets</td><td>Inject at run time (ConfigMap/Secret); same image everywhere. Secrets aren't encrypted by default.</td></tr>
               <tr><td>Probes</td><td>Liveness -&gt; restart; readiness -&gt; in/out of rotation; startup -&gt; guard slow boots.</td></tr>
               <tr><td>Requests/limits</td><td>Request = reserved (scheduling); limit = cgroup ceiling. Over memory -&gt; OOMKilled.</td></tr>
@@ -2201,7 +2279,7 @@ jobs:
             a SHA-tagged image to a registry (sec 8). Locally you wire several containers with networks, volumes, and
             Compose (sec 9-10). At fleet scale, Kubernetes reconciles declared desired state onto nodes
             (sec 11-12): Deployments keep replicas of pods alive and self-healing (sec 13-14), Services
-            and Ingress give stable addressing and routing (sec 15), ConfigMaps/Secrets inject per-environment config
+            and Gateway API or Ingress give stable addressing and routing (sec 15), ConfigMaps/Secrets inject per-environment config
             (sec 16), probes and resource requests/limits drive health and scheduling (sec 17), and HPA plus rolling
             updates deliver scaling and zero-downtime releases (sec 18). CI/CD automates commit-&gt;build-&gt;test-&gt;
             scan-&gt;push-&gt;deploy (sec 19), and blue-green/canary/GitOps make releases safe and auditable (sec 20).
