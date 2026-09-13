@@ -397,7 +397,7 @@ The vulnerability appears when you build queries by **concatenating strings** wi
 
 ______
 
-SQLGoPython
+SQL Go Python JavaScript TypeScript Java
 
 GET /v1/users/:id, same query, parameter-safe in each layer
 
@@ -428,6 +428,58 @@ cur.execute(
     """,
     (user_id,),  # the driver escapes it; injection is impossible
 )
+```
+
+```js
+// node-postgres: the values live in the ARRAY, never in the string.
+const { rows } = await db.query(
+  `SELECT u.*, to_jsonb(up.*) AS profile
+   FROM users u
+   LEFT JOIN user_profiles up ON u.id = up.user_id
+   WHERE u.id = $1`,
+  [userId], // userId is treated strictly as data, never SQL
+)
+
+// The JavaScript-specific trap: a template literal looks almost identical
+// and IS the injection. These two lines differ by four characters:
+//   WHERE u.id = $1`, [userId]   <- safe, the driver binds it
+//   WHERE u.id = ${userId}`      <- concatenation; you just lost the table
+```
+
+```ts
+import type { Pool } from 'pg'
+
+// The generic types the ROW, so `user.profile` is checked at compile time.
+// Worth being clear about what that does and does not buy you: it checks
+// the shape you claim to get back, not the SQL. The parameter slot is
+// still the only thing standing between you and injection.
+const { rows } = await db.query<UserWithProfile>(
+  `SELECT u.*, to_jsonb(up.*) AS profile
+   FROM users u
+   LEFT JOIN user_profiles up ON u.id = up.user_id
+   WHERE u.id = $1`,
+  [userId], // sent separately; the driver never interpolates it
+)
+const user: UserWithProfile | undefined = rows[0]
+```
+
+```java
+// Spring's JdbcClient: ? is the parameter slot, param() supplies the value.
+Optional<UserWithProfile> user = db.sql("""
+        SELECT u.*, to_jsonb(up.*) AS profile
+        FROM users u
+        LEFT JOIN user_profiles up ON u.id = up.user_id
+        WHERE u.id = ?
+        """)
+    .param(userId) // bound as data; the driver never interpolates it
+    .query(UserWithProfile.class)
+    .optional();
+
+// JPA/Hibernate is the same rule in a different spelling, a named
+// parameter instead of a positional one:
+//   em.createQuery("SELECT u FROM User u WHERE u.id = :id")
+//     .setParameter("id", userId)
+// and the same cardinal sin: never "... WHERE u.id = " + userId.
 ```
 
 ### Insert & update
@@ -579,7 +631,7 @@ Move INR 500 from account A to account B. That's two writes: subtract from A, ad
 
 ______
 
-SQLGoPython
+SQL Go Python JavaScript TypeScript Java
 
 both writes commit together, or neither does
 
@@ -615,6 +667,77 @@ try:
     # reaching here means both writes committed atomically
 finally:
     pool.putconn(conn)
+```
+
+```js
+// A transaction lives on ONE connection. `pool.query` hands out whichever
+// connection is free, so a BEGIN sent that way can easily land on a
+// different connection than the UPDATE that follows it. Check one out.
+const tx = await pool.connect()
+try {
+  await tx.query('BEGIN') // start the transaction
+  await tx.query('UPDATE accounts SET balance = balance - 500 WHERE id = $1', [a]) // debit A
+  await tx.query('UPDATE accounts SET balance = balance + 500 WHERE id = $1', [b]) // credit B
+  await tx.query('COMMIT') // only here do both writes become permanent
+} catch (err) {
+  await tx.query('ROLLBACK') // anything failed -> both reverted
+  throw err
+} finally {
+  tx.release() // the checked-out connection MUST go back to the pool
+}
+```
+
+```ts
+import type { Pool, PoolClient } from 'pg'
+
+// The release() in the finally block is the part that must never be
+// forgotten, and "must never be forgotten" is the signal to write it once.
+// The callback shape also makes the transaction's extent obvious: it is
+// exactly the body of `fn`, no more and no less.
+async function withTransaction<T>(pool: Pool, fn: (tx: PoolClient) => Promise<T>): Promise<T> {
+  const tx = await pool.connect()
+  try {
+    await tx.query('BEGIN')
+    const result = await fn(tx)
+    await tx.query('COMMIT') // only here do the writes become permanent
+    return result
+  } catch (err) {
+    await tx.query('ROLLBACK') // anything failed -> everything reverted
+    throw err
+  } finally {
+    tx.release()
+  }
+}
+
+await withTransaction(pool, async (tx) => {
+  await tx.query('UPDATE accounts SET balance = balance - 500 WHERE id = $1', [a]) // debit A
+  await tx.query('UPDATE accounts SET balance = balance + 500 WHERE id = $1', [b]) // credit B
+})
+```
+
+```java
+// @Transactional IS begin/commit/rollback: Spring opens a transaction
+// before the method body runs, commits when it returns normally, and rolls
+// back if it throws. Both writes are atomic without a BEGIN in sight.
+@Transactional
+public void transfer(long a, long b) {
+    db.sql("UPDATE accounts SET balance = balance - 500 WHERE id = ?")
+      .param(a)
+      .update(); // debit A
+
+    db.sql("UPDATE accounts SET balance = balance + 500 WHERE id = ?")
+      .param(b)
+      .update(); // credit B
+
+    // returning normally commits; any RuntimeException rolls BOTH back
+}
+
+// Two things that surprise people, both worth knowing before you trust it:
+//  1. It works through a proxy, so calling transfer() from another method
+//     of the SAME class skips the proxy and you get two auto-commits.
+//  2. By default it rolls back on RuntimeException but NOT on a checked
+//     exception, which commits the half-done work. Say so explicitly:
+//     @Transactional(rollbackFor = Exception.class)
 ```
 
 ### ACID: the four guarantees
@@ -747,4 +870,4 @@ The Backend Lens / Field Manual v2, Chapter 12.\
 Schema, constraints, trigger, joins and index usage in this chapter were executed and verified against PostgreSQL 16.\
 Companion chapter: 11 / Complete REST API Design (same project-management example).
 
-Backend from First Principles / Chapter 08 / Postgres. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 08 / Postgres. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).

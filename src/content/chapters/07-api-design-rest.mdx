@@ -205,7 +205,7 @@ Two clients GET the same record. A changes the email and saves. B (who never saw
 
 ______
 
-GoPython
+Go Python JavaScript TypeScript Java
 
 PATCH with optimistic-concurrency guard
 
@@ -247,6 +247,72 @@ def update_organization(id: str, body: dict, if_match: str | None = Header(None)
     )                                  # 200 + updated entity
 ```
 
+```js
+app.patch('/v1/organizations/:id', async (req, res) => {
+  const org = await store.get(req.params.id)
+  if (!org) {
+    return res.status(404).json(errBody('organization not found'))
+  }
+  // optimistic concurrency: reject stale writes
+  const ifMatch = req.get('If-Match')
+  if (ifMatch && ifMatch !== org.etag) {
+    return res.status(412).json(errBody('resource changed; re-fetch and retry'))
+  }
+  const updated = await store.patch(req.params.id, req.body) // merge, don't replace
+  res.set('ETag', updated.etag)
+  res.status(200).json(updated)                              // 200 + updated entity
+})
+```
+
+```ts
+import type { Request, Response } from 'express'
+
+export async function updateOrganization(req: Request, res: Response): Promise<void> {
+  const org = await store.get(req.params.id)
+  if (org === null) {
+    res.status(404).json(errBody('organization not found'))
+    return
+  }
+  // optimistic concurrency: reject stale writes
+  const ifMatch = req.get('If-Match')
+  if (ifMatch !== undefined && ifMatch !== org.etag) {
+    res.status(412).json(errBody('resource changed; re-fetch and retry'))
+    return
+  }
+  // `Partial<Organization>` IS the PATCH contract written as a type: every
+  // field optional, and absent means "leave it alone". Typing the body as
+  // `Organization` here would quietly re-introduce the PUT trap.
+  const patch = req.body as Partial<Organization>
+  const updated = await store.patch(req.params.id, patch) // merge, don't replace
+  res.set('ETag', updated.etag)
+  res.status(200).json(updated)                           // 200 + updated entity
+}
+```
+
+```java
+@PatchMapping("/v1/organizations/{id}")
+ResponseEntity<?> updateOrganization(
+        @PathVariable String id,
+        @RequestBody Map<String, Object> patch, // only the fields to change
+        @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+
+    Organization org = store.get(id);
+    if (org == null) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(errBody("organization not found"));
+    }
+    // optimistic concurrency: reject stale writes
+    if (ifMatch != null && !ifMatch.equals(org.etag())) {
+        return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED)
+            .body(errBody("resource changed; re-fetch and retry")); // 412
+    }
+    Organization updated = store.patch(id, patch); // merge, don't replace
+    return ResponseEntity.ok()
+        .eTag(updated.etag())
+        .body(updated);                            // 200 + updated entity
+}
+```
+
 | Code                         | On a PUT / PATCH, this means                                                         |
 | ---------------------------- | ------------------------------------------------------------------------------------ |
 | `200 OK`                     | Updated; body holds the new state.                                                   |
@@ -277,7 +343,7 @@ Say you `POST /payments {amount: 5000}` and the network drops _after_ the server
 
 ______
 
-GoPython
+Go Python JavaScript TypeScript Java
 
 making POST retry-safe with an idempotency key
 
@@ -311,6 +377,70 @@ def create_payment(body: dict, idempotency_key: str = Header(...)):
     payment = charge(body["amount"])               # the real, non-idempotent side effect
     idem_store.save(idempotency_key, 201, payment) # remember it, keyed by the idempotency key
     return payment
+```
+
+```js
+app.post('/v1/payments', async (req, res) => {
+  const key = req.get('Idempotency-Key') // client-generated UUID
+
+  // already processed this exact request? return the SAME result, don't re-charge
+  const prior = await idemStore.get(key)
+  if (prior) {
+    return res.status(prior.status).json(prior.body)
+  }
+
+  const payment = await charge(req.body.amount) // the real, non-idempotent side effect
+  await idemStore.save(key, 201, payment)       // remember it, keyed by the idempotency key
+  res.status(201).json(payment)
+})
+```
+
+```ts
+import type { Request, Response } from 'express'
+
+interface StoredResult {
+  status: number
+  body: Payment
+}
+
+export async function createPayment(req: Request, res: Response): Promise<void> {
+  const key = req.get('Idempotency-Key') // client-generated UUID
+  if (key === undefined) {
+    res.status(400).json(errBody('Idempotency-Key header is required'))
+    return
+  }
+
+  // already processed this exact request? return the SAME result, don't re-charge
+  const prior: StoredResult | null = await idemStore.get(key)
+  if (prior !== null) {
+    res.status(prior.status).json(prior.body)
+    return
+  }
+
+  // Worth knowing: this read-then-write is itself racy if two retries land
+  // at once. In production the key is claimed with a single atomic insert
+  // (a unique index on the key), and a duplicate insert means "someone else
+  // is already charging this, wait for their result".
+  const payment = await charge(req.body.amount as number) // the non-idempotent side effect
+  await idemStore.save(key, 201, payment) // remember it, keyed by the idempotency key
+  res.status(201).json(payment)
+}
+```
+
+```java
+@PostMapping("/v1/payments")
+ResponseEntity<?> createPayment(@RequestBody PaymentRequest in,
+                                @RequestHeader("Idempotency-Key") String key) {
+    // already processed this exact request? return the SAME result, don't re-charge
+    Optional<StoredResult> prior = idemStore.get(key);
+    if (prior.isPresent()) {
+        return ResponseEntity.status(prior.get().status()).body(prior.get().body());
+    }
+
+    Payment payment = charge(in.amount()); // the real, non-idempotent side effect
+    idemStore.save(key, 201, payment);     // remember it, keyed by the idempotency key
+    return ResponseEntity.status(HttpStatus.CREATED).body(payment);
+}
 ```
 
 | Code                         | On a POST, this means                                                    |
@@ -380,7 +510,7 @@ Pass resource fields as query params to narrow the list: `?status=active`, or co
 
 ______
 
-GoPython
+Go Python JavaScript TypeScript Java
 
 list endpoint / page / sort / filter / sane defaults
 
@@ -435,6 +565,99 @@ def list_organizations(
         "page": page,
         "totalPages": total_pages,
     }
+```
+
+```js
+// GET /v1/organizations?status=active&sortBy=name&sortOrder=ascending&page=1&limit=10
+app.get('/v1/organizations', async (req, res) => {
+  const q = req.query
+
+  // --- sane defaults: never crash if the client omits params ---
+  // Note the `||` rather than `??`: a query param arrives as a string, so
+  // Number('abc') is NaN and Number('') is 0, and both must fall back too.
+  const page = Number(q.page) || 1
+  const limit = Number(q.limit) || 10
+  const sortBy = q.sortBy || 'createdAt'
+  const sortOrder = q.sortOrder || 'descending'
+
+  const filters = {}
+  if (q.status) {
+    filters.status = q.status // ?status=active
+  }
+
+  const { rows, total } = await store.query(filters, sortBy, sortOrder, page, limit)
+  const totalPages = Math.ceil(total / limit)
+
+  res.status(200).json({ data: rows, total, page, totalPages })
+})
+```
+
+```ts
+import type { Request, Response } from 'express'
+
+interface ListPage<T> {
+  data: T[]
+  total: number
+  page: number
+  totalPages: number
+}
+
+// GET /v1/organizations?status=active&sortBy=name&sortOrder=ascending&page=1&limit=10
+export async function listOrganizations(req: Request, res: Response): Promise<void> {
+  const q = req.query
+
+  // --- sane defaults: never crash if the client omits params ---
+  // Everything in `req.query` is `unknown`-ish by nature (a string, an
+  // array of strings, or missing), so each param is coerced once, here,
+  // and the rest of the function works with real numbers and strings.
+  const page = Number(q.page) || 1
+  const limit = Math.min(Number(q.limit) || 10, 100) // and cap it, see below
+  const sortBy = String(q.sortBy ?? 'createdAt')
+  const sortOrder = q.sortOrder === 'ascending' ? 'ascending' : 'descending'
+
+  const filters: Record<string, string> = {}
+  if (typeof q.status === 'string') {
+    filters.status = q.status // ?status=active
+  }
+
+  const { rows, total } = await store.query(filters, sortBy, sortOrder, page, limit)
+
+  const body: ListPage<Organization> = {
+    data: rows,
+    total,
+    page,
+    totalPages: Math.ceil(total / limit),
+  }
+  res.status(200).json(body)
+}
+```
+
+```java
+// GET /v1/organizations?status=active&sortBy=name&sortOrder=ascending&page=1&limit=10
+@GetMapping("/v1/organizations")
+ResponseEntity<?> listOrganizations(
+        // --- sane defaults: never crash if the client omits params ---
+        // defaultValue does the whole job; the param is never null here.
+        @RequestParam(defaultValue = "1")          int page,
+        @RequestParam(defaultValue = "10")         int limit,
+        @RequestParam(defaultValue = "createdAt")  String sortBy,
+        @RequestParam(defaultValue = "descending") String sortOrder,
+        @RequestParam(required = false)            String status) {
+
+    Map<String, String> filters = new HashMap<>();
+    if (status != null) {
+        filters.put("status", status); // ?status=active
+    }
+
+    QueryResult<Organization> result = store.query(filters, sortBy, sortOrder, page, limit);
+    int totalPages = (result.total() + limit - 1) / limit; // ceil division
+
+    return ResponseEntity.ok(Map.of(
+        "data",       result.rows(),
+        "total",      result.total(),
+        "page",       page,
+        "totalPages", totalPages));
+}
 ```
 
 ## Status Codes: done right
@@ -524,7 +747,7 @@ Notice the symmetry: **list** and **create** share the collection URL (`/organiz
 
 ______
 
-GoPython
+Go Python JavaScript TypeScript Java
 
 wiring the full resource / CRUD + custom action
 
@@ -607,6 +830,164 @@ def archive_organization(id: str):
     return store.archive(id)   # flips status + cascades: projects, tasks, emails...
 ```
 
+```js
+import { Router } from 'express'
+
+const router = Router()
+
+// list + create share the collection URL, split by method
+router.get('/v1/organizations', listOrganizations) // (see section 07)
+router.post('/v1/organizations', createOrganization)
+
+// get-one / update / delete share /:id, split by method
+router.get('/v1/organizations/:id', getOrganization)
+router.patch('/v1/organizations/:id', updateOrganization)
+router.delete('/v1/organizations/:id', deleteOrganization)
+
+// custom action: verb at the end of a specific resource
+router.post('/v1/organizations/:id/archive', archiveOrganization)
+
+async function createOrganization(req, res) {
+  const { name, status, description } = req.body
+  const org = await store.insert({
+    name,
+    status: status || 'active', // sane default, don't force the client to send the obvious
+    description,
+  }) // id, createdAt set server-side
+  res.status(201).json(org) // 201 Created + the new entity
+}
+
+async function getOrganization(req, res) {
+  const org = await store.get(req.params.id)
+  if (!org) {
+    return res.status(404).json(errBody('organization not found')) // single id -> 404
+  }
+  res.status(200).json(org)
+}
+
+async function updateOrganization(req, res) {
+  res.status(200).json(await store.update(req.params.id, req.body)) // partial update -> 200
+}
+
+async function deleteOrganization(req, res) {
+  await store.delete(req.params.id)
+  res.sendStatus(204) // No Content
+}
+
+async function archiveOrganization(req, res) {
+  const org = await store.archive(req.params.id) // flips status + cascades: projects, tasks, emails...
+  res.status(200).json(org) // custom action -> 200, NOT 201
+}
+```
+
+```ts
+import { Router, type Request, type Response } from 'express'
+
+const router = Router()
+
+// list + create share the collection URL, split by method
+router.get('/v1/organizations', listOrganizations) // (see section 07)
+router.post('/v1/organizations', createOrganization)
+
+// get-one / update / delete share /:id, split by method
+router.get('/v1/organizations/:id', getOrganization)
+router.patch('/v1/organizations/:id', updateOrganization)
+router.delete('/v1/organizations/:id', deleteOrganization)
+
+// custom action: verb at the end of a specific resource
+router.post('/v1/organizations/:id/archive', archiveOrganization)
+
+// The create body and the stored entity are DIFFERENT types, and saying so
+// is the point: `id` and `createdAt` are server-side, so they are absent
+// from the input type and a client cannot smuggle them in.
+interface CreateOrganization {
+  name: string
+  status?: string
+  description?: string
+}
+
+async function createOrganization(req: Request, res: Response): Promise<void> {
+  const body = req.body as CreateOrganization
+  const org: Organization = await store.insert({
+    name: body.name,
+    status: body.status ?? 'active', // sane default
+    description: body.description,
+  })
+  res.status(201).json(org) // 201 Created + the new entity
+}
+
+async function getOrganization(req: Request, res: Response): Promise<void> {
+  const org = await store.get(req.params.id)
+  if (org === null) {
+    res.status(404).json(errBody('organization not found')) // single id -> 404
+    return
+  }
+  res.status(200).json(org)
+}
+
+async function updateOrganization(req: Request, res: Response): Promise<void> {
+  const patch = req.body as Partial<Organization>
+  res.status(200).json(await store.update(req.params.id, patch)) // partial update -> 200
+}
+
+async function deleteOrganization(req: Request, res: Response): Promise<void> {
+  await store.delete(req.params.id)
+  res.sendStatus(204) // No Content
+}
+
+async function archiveOrganization(req: Request, res: Response): Promise<void> {
+  const org = await store.archive(req.params.id) // flips status + cascades
+  res.status(200).json(org) // custom action -> 200, NOT 201
+}
+```
+
+```java
+@RestController
+@RequestMapping("/v1/organizations") // the collection URL, written once
+class OrganizationController {
+
+    // list + create share the collection URL, split by method
+    @GetMapping
+    ListPage<Organization> list() { /* (see section 07) */ }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED) // 201 Created + the new entity
+    Organization create(@RequestBody CreateOrganization body) {
+        String status = (body.status() == null) ? "active" : body.status(); // sane default
+        // id, createdAt set server-side
+        return store.insert(body.name(), status, body.description());
+    }
+
+    // get-one / update / delete share /{id}, split by method
+    @GetMapping("/{id}")
+    Organization getOne(@PathVariable String id) {
+        Organization org = store.get(id);
+        if (org == null) {
+            // single id -> 404
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "organization not found");
+        }
+        return org;
+    }
+
+    @PatchMapping("/{id}") // partial update -> 200
+    Organization update(@PathVariable String id, @RequestBody Map<String, Object> body) {
+        return store.update(id, body);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT) // 204, nothing to send back
+    void delete(@PathVariable String id) {
+        store.delete(id);
+    }
+
+    // custom action: verb at the end -> POST, returns 200 (created nothing)
+    @PostMapping("/{id}/archive")
+    Organization archive(@PathVariable String id) {
+        return store.archive(id); // flips status + cascades: projects, tasks, emails...
+    }
+}
+```
+
 ## Golden Rules
 
 ### Extract nouns from the UI first
@@ -615,7 +996,7 @@ Before writing a line of business logic, look at the wireframes (Figma) or talk 
 
 ### Design the interface before coding
 
-A REST API is _designed_, not programmed-first. Lay out routes, payloads, and responses in a tool like **Insomnia** or **Postman** before touching Go, Python, or any framework. The whole point is a delightful, intuitive, unambiguous interface, so the consumer never has to read your source code or guess your behavior by trial and error.
+A REST API is _designed_, not programmed-first. Lay out routes, payloads, and responses in a tool like **Insomnia** or **Postman** before touching Go, Python, Node, Spring, or any other framework. The whole point is a delightful, intuitive, unambiguous interface, so the consumer never has to read your source code or guess your behavior by trial and error.
 
 ### Provide sane defaults
 
@@ -686,7 +1067,7 @@ Don't return stack traces, SQL errors, file paths, or framework exception dumps 
 
 ______
 
-GoPython
+Go Python JavaScript TypeScript Java
 
 one error helper, used everywhere
 
@@ -733,6 +1114,102 @@ error_response(
         {"field": "age",   "issue": "must be >= 0"},
     ],
 )
+```
+
+```js
+function writeError(res, status, code, message, details = []) {
+  res.status(status).json({
+    error: {
+      code,
+      message,
+      details,
+      requestId: res.locals.requestId, // put there by the request-id middleware
+    },
+  }) // SAME shape for every error in the whole API
+}
+
+// usage
+writeError(res, 422, 'validation_failed', 'Some fields are invalid.', [
+  { field: 'email', issue: 'must be a valid email' },
+  { field: 'age', issue: 'must be >= 0' },
+])
+```
+
+```ts
+import type { Response } from 'express'
+
+interface FieldError {
+  field: string
+  issue: string
+}
+
+// Exporting the envelope type is the quiet win here: the client imports
+// the same declaration, so `switch (err.error.code)` is checked against
+// the codes the server can actually send, on both sides of the wire.
+export interface ErrorEnvelope {
+  error: {
+    code: string
+    message: string
+    details: FieldError[]
+    requestId: string
+  }
+}
+
+export function writeError(
+  res: Response,
+  status: number,
+  code: string,
+  message: string,
+  details: FieldError[] = [],
+): void {
+  const body: ErrorEnvelope = {
+    error: { code, message, details, requestId: res.locals.requestId },
+  }
+  res.status(status).json(body) // SAME shape for every error in the whole API
+}
+
+// usage
+writeError(res, 422, 'validation_failed', 'Some fields are invalid.', [
+  { field: 'email', issue: 'must be a valid email' },
+  { field: 'age', issue: 'must be >= 0' },
+])
+```
+
+```java
+// Named ApiFieldError so it does not collide with Spring's own FieldError.
+public record ApiFieldError(String field, String issue) {}
+
+public record ErrorEnvelope(String code, String message,
+                            List<ApiFieldError> details, String requestId) {}
+
+@RestControllerAdvice
+class ApiErrors {
+
+    static ResponseEntity<Map<String, ErrorEnvelope>> writeError(
+            HttpStatus status, String code, String message, List<ApiFieldError> details) {
+        var envelope = new ErrorEnvelope(code, message, details, MDC.get("requestId"));
+        // SAME shape for every error in the whole API
+        return ResponseEntity.status(status).body(Map.of("error", envelope));
+    }
+
+    // The framework's OWN validation failures get funnelled through the same
+    // helper, so a bean-validation error and a hand-written one are
+    // indistinguishable to the client. That is what "consistent" has to mean.
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    ResponseEntity<?> onInvalid(MethodArgumentNotValidException e) {
+        List<ApiFieldError> details = e.getBindingResult().getFieldErrors().stream()
+            .map(f -> new ApiFieldError(f.getField(), f.getDefaultMessage()))
+            .toList();
+        return writeError(HttpStatus.UNPROCESSABLE_ENTITY,
+            "validation_failed", "Some fields are invalid.", details);
+    }
+}
+
+// usage
+writeError(HttpStatus.UNPROCESSABLE_ENTITY,
+    "validation_failed", "Some fields are invalid.",
+    List.of(new ApiFieldError("email", "must be a valid email"),
+            new ApiFieldError("age", "must be >= 0")));
 ```
 
 <Callout type="info" title="There's a standard for this too">
@@ -1322,4 +1799,4 @@ One resource, three layers, a method-aware router, and an in-memory store behind
 The Backend Lens / Field Manual v2, Chapter 11.\
 Further reading: [MDN / REST](https://developer.mozilla.org/en-US/docs/Glossary/REST) / [MDN / Web APIs](https://developer.mozilla.org/en-US/docs/Web/API) / Roy Fielding's 2000 dissertation on REST.
 
-Backend from First Principles / Chapter 07 / REST. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 07 / REST. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot). The complete worked program at the end is Go only.

@@ -563,9 +563,13 @@ That is the reason we want to separate this out, for two reasons. First, to make
 
 ## Code Examples
 
-Below are practical implementations of caching patterns using Go and Python, the two languages referenced in this course.
+Below are practical implementations of the patterns from this chapter, each one written out in Go, Python, JavaScript, TypeScript and Java. Pick a tab. What is worth noticing as you switch between them is how little changes: the Redis commands are identical in all five, because the cache has no idea what language is talking to it. The differences are all in how each language spells "wrap this", "this may be missing", and "run this before the handler".
 
-### 10.1: Lazy (Cache-Aside) Caching in Go
+### 10.1: Lazy (Cache-Aside) Caching
+
+Go Python JavaScript TypeScript Java
+
+check the cache, fall back to the database, write what you found
 
 ```go title="cache_aside.go / Go + github.com/redis/go-redis/v9"
 package main
@@ -635,7 +639,216 @@ func UpdateProduct(ctx context.Context, product *Product) error {
 }
 ```
 
-### 10.2: Rate Limiting Middleware in Go
+```python title="cache_aside.py / Python + redis-py"
+import json
+from dataclasses import dataclass, asdict
+
+import redis
+
+r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+
+TTL_SECONDS = 3600  # 1 hour
+
+
+@dataclass
+class Product:
+    id: str
+    name: str
+    price: float
+
+
+def get_product(product_id: str) -> Product:
+    """Cache-Aside (Lazy) caching.
+
+    1. Check Redis first
+    2. On miss, fetch from DB, store in cache, return
+    """
+    cache_key = f"product:{product_id}"
+
+    # Step 1: Try cache first (Cache Hit path)
+    cached = r.get(cache_key)
+    if cached:
+        print("[CACHE HIT]", product_id)
+        return Product(**json.loads(cached))
+
+    # Step 2: Cache Miss, fetch from database (expensive operation)
+    print("[CACHE MISS] fetching from DB...", product_id)
+    product = fetch_from_database(product_id)
+
+    # Step 3: Store in cache with a 1-hour TTL
+    r.setex(cache_key, TTL_SECONDS, json.dumps(asdict(product)))
+
+    return product
+
+
+def update_product(product: Product) -> None:
+    """Write-Through: update DB and cache simultaneously."""
+    # Step 1: Update in database
+    update_in_database(product)
+
+    # Step 2: Write-through, update cache immediately
+    r.setex(f"product:{product.id}", TTL_SECONDS, json.dumps(asdict(product)))
+
+    print("[WRITE-THROUGH] DB + cache updated for", product.id)
+```
+
+```js title="cacheAside.js / Node 20+ + node-redis"
+import { createClient } from 'redis'
+
+const redis = createClient({ url: 'redis://localhost:6379' })
+await redis.connect()
+
+const TTL_SECONDS = 3600 // 1 hour
+
+// getProduct implements Cache-Aside (Lazy) caching.
+// 1. Check Redis first
+// 2. On miss, fetch from DB, store in cache, return
+export async function getProduct(productId) {
+  const cacheKey = `product:${productId}`
+
+  // Step 1: Try cache first (Cache Hit path)
+  const cached = await redis.get(cacheKey)
+  if (cached !== null) {
+    console.log('[CACHE HIT]', productId)
+    return JSON.parse(cached)
+  }
+
+  // Step 2: Cache Miss, fetch from database (expensive operation)
+  console.log('[CACHE MISS] fetching from DB...', productId)
+  const product = await fetchFromDatabase(productId)
+
+  // Step 3: Store in cache with a 1-hour TTL
+  await redis.set(cacheKey, JSON.stringify(product), { EX: TTL_SECONDS })
+
+  return product
+}
+
+// Write-Through: update DB and cache simultaneously
+export async function updateProduct(product) {
+  // Step 1: Update in database
+  await updateInDatabase(product)
+
+  // Step 2: Write-through, update cache immediately
+  await redis.set(`product:${product.id}`, JSON.stringify(product), { EX: TTL_SECONDS })
+
+  console.log('[WRITE-THROUGH] DB + cache updated for', product.id)
+}
+```
+
+```ts title="cacheAside.ts / TypeScript 5+ + node-redis"
+import { createClient } from 'redis'
+
+const redis = createClient({ url: 'redis://localhost:6379' })
+await redis.connect()
+
+interface Product {
+  id: string
+  name: string
+  price: number
+}
+
+const TTL_SECONDS = 3600 // 1 hour
+
+// getProduct implements Cache-Aside (Lazy) caching.
+// 1. Check Redis first
+// 2. On miss, fetch from DB, store in cache, return
+export async function getProduct(productId: string): Promise<Product> {
+  const cacheKey = `product:${productId}`
+
+  // Step 1: Try cache first (Cache Hit path)
+  const cached = await redis.get(cacheKey)
+  if (cached !== null) {
+    console.log('[CACHE HIT]', productId)
+    // Worth pausing on: this cast is a PROMISE, not a check. Redis hands
+    // back a string, and a value written by last month's deploy still has
+    // last month's shape. That is why cache keys get a version in them
+    // ("product:v2:...") the moment the stored shape changes.
+    return JSON.parse(cached) as Product
+  }
+
+  // Step 2: Cache Miss, fetch from database (expensive operation)
+  console.log('[CACHE MISS] fetching from DB...', productId)
+  const product = await fetchFromDatabase(productId)
+
+  // Step 3: Store in cache with a 1-hour TTL
+  await redis.set(cacheKey, JSON.stringify(product), { EX: TTL_SECONDS })
+
+  return product
+}
+
+// Write-Through: update DB and cache simultaneously
+export async function updateProduct(product: Product): Promise<void> {
+  // Step 1: Update in database
+  await updateInDatabase(product)
+
+  // Step 2: Write-through, update cache immediately
+  await redis.set(`product:${product.id}`, JSON.stringify(product), { EX: TTL_SECONDS })
+
+  console.log('[WRITE-THROUGH] DB + cache updated for', product.id)
+}
+```
+
+```java title="ProductService.java / Java 17+ + Spring Data Redis"
+@Service
+public class ProductService {
+    private static final Duration TTL = Duration.ofHours(1);
+
+    private final StringRedisTemplate redis;
+    private final ObjectMapper json;
+    private final ProductRepository db;
+
+    ProductService(StringRedisTemplate redis, ObjectMapper json, ProductRepository db) {
+        this.redis = redis;
+        this.json = json;
+        this.db = db;
+    }
+
+    // getProduct implements Cache-Aside (Lazy) caching.
+    // 1. Check Redis first
+    // 2. On miss, fetch from DB, store in cache, return
+    public Product getProduct(String productId) throws JsonProcessingException {
+        String cacheKey = "product:" + productId;
+
+        // Step 1: Try cache first (Cache Hit path)
+        String cached = redis.opsForValue().get(cacheKey);
+        if (cached != null) {
+            log.info("[CACHE HIT] {}", productId);
+            return json.readValue(cached, Product.class);
+        }
+
+        // Step 2: Cache Miss, fetch from database (expensive operation)
+        log.info("[CACHE MISS] fetching from DB... {}", productId);
+        Product product = db.findById(productId).orElseThrow();
+
+        // Step 3: Store in cache with a 1-hour TTL
+        redis.opsForValue().set(cacheKey, json.writeValueAsString(product), TTL);
+
+        return product;
+    }
+
+    // Write-Through: update DB and cache simultaneously
+    public void updateProduct(Product product) throws JsonProcessingException {
+        // Step 1: Update in database
+        db.save(product);
+
+        // Step 2: Write-through, update cache immediately
+        redis.opsForValue().set("product:" + product.id(),
+            json.writeValueAsString(product), TTL);
+
+        log.info("[WRITE-THROUGH] DB + cache updated for {}", product.id());
+    }
+}
+
+// Spring will also do all of the above declaratively, and the annotation
+// names map straight onto the pattern names: @Cacheable IS cache-aside,
+// @CachePut IS write-through. Section 10.3 shows that version.
+```
+
+### 10.2: Rate Limiting Middleware
+
+Go Python JavaScript TypeScript Java
+
+one atomic INCR per request, per IP, per minute window
 
 ```go title="rate_limiter.go / Go + go-redis"
 package middleware
@@ -693,7 +906,233 @@ func RateLimitMiddleware(rdb *redis.Client) http.HandlerFunc {
 }
 ```
 
-### 10.3: Caching Decorator in Python
+```python title="rate_limiter.py / Python + redis-py + FastAPI"
+import time
+
+import redis
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+
+MAX_REQUESTS = 50
+WINDOW_SECONDS = 60
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Extract client IP from X-Forwarded-For header
+    # (set by reverse proxy like Nginx or Caddy)
+    client_ip = request.headers.get("X-Forwarded-For") or request.client.host
+
+    # Redis key: per IP, per minute window
+    key = f"rate_limit:{client_ip}:{int(time.time()) // WINDOW_SECONDS}"
+
+    # INCR is atomic, no race condition even with concurrent requests
+    count = r.incr(key)
+
+    # Set TTL on first request of this window (key is new)
+    if count == 1:
+        r.expire(key, WINDOW_SECONDS)
+
+    # Check if limit exceeded
+    if count > MAX_REQUESTS:
+        return JSONResponse(
+            {"error": "429 Too Many Requests"},
+            status_code=429,
+            headers={"Retry-After": str(WINDOW_SECONDS)},
+        )  # short-circuit: the route handler never runs
+
+    # Proceed to actual handler
+    response = await call_next(request)
+    response.headers["X-RateLimit-Remaining"] = str(MAX_REQUESTS - count)
+    return response
+```
+
+```js title="rateLimiter.js / Node 20+ + node-redis + Express"
+const MAX_REQUESTS = 50
+const WINDOW_SECONDS = 60
+
+export async function rateLimitMiddleware(req, res, next) {
+  // Extract client IP from X-Forwarded-For header
+  // (set by reverse proxy like Nginx or Caddy)
+  const clientIp = req.get('X-Forwarded-For') ?? req.socket.remoteAddress
+
+  // Redis key: per IP, per minute window
+  const window = Math.floor(Date.now() / 1000 / WINDOW_SECONDS)
+  const key = `rate_limit:${clientIp}:${window}`
+
+  // INCR is atomic, no race condition even with concurrent requests
+  const count = await redis.incr(key)
+
+  // Set TTL on first request of this window (key is new)
+  if (count === 1) {
+    await redis.expire(key, WINDOW_SECONDS)
+  }
+
+  // Check if limit exceeded
+  if (count > MAX_REQUESTS) {
+    res.set('Retry-After', String(WINDOW_SECONDS))
+    return res.status(429).send('429 Too Many Requests') // never calls next()
+  }
+
+  // Proceed to actual handler
+  res.set('X-RateLimit-Remaining', String(MAX_REQUESTS - count))
+  next()
+}
+```
+
+```ts title="rateLimiter.ts / TypeScript 5+ + node-redis + Express"
+import type { NextFunction, Request, Response } from 'express'
+
+const MAX_REQUESTS = 50
+const WINDOW_SECONDS = 60
+
+export async function rateLimitMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  // Extract client IP from X-Forwarded-For header
+  // (set by reverse proxy like Nginx or Caddy)
+  const clientIp = req.get('X-Forwarded-For') ?? req.socket.remoteAddress ?? 'unknown'
+
+  // Redis key: per IP, per minute window
+  const window = Math.floor(Date.now() / 1000 / WINDOW_SECONDS)
+  const key = `rate_limit:${clientIp}:${window}`
+
+  // Both commands in one round trip. That is not just a speed trick: with
+  // a bare INCR followed by a separate EXPIRE, a crash in between leaves a
+  // key with NO TTL, and that IP stays rate-limited forever.
+  const [count] = (await redis
+    .multi()
+    .incr(key) // atomic; no race even with concurrent requests
+    .expire(key, WINDOW_SECONDS)
+    .exec()) as [number, boolean]
+
+  // Check if limit exceeded
+  if (count > MAX_REQUESTS) {
+    res.set('Retry-After', String(WINDOW_SECONDS))
+    res.status(429).send('429 Too Many Requests') // never calls next()
+    return
+  }
+
+  // Proceed to actual handler
+  res.set('X-RateLimit-Remaining', String(MAX_REQUESTS - count))
+  next()
+}
+```
+
+```java title="RateLimitFilter.java / Java 17+ + Spring Data Redis"
+@Component
+public class RateLimitFilter extends OncePerRequestFilter {
+    private static final int MAX_REQUESTS = 50;
+    private static final Duration WINDOW = Duration.ofMinutes(1);
+
+    private final StringRedisTemplate redis;
+
+    RateLimitFilter(StringRedisTemplate redis) {
+        this.redis = redis;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
+                                    FilterChain chain)
+            throws ServletException, IOException {
+        // Extract client IP from X-Forwarded-For header
+        // (set by reverse proxy like Nginx or Caddy)
+        String clientIp = req.getHeader("X-Forwarded-For");
+        if (clientIp == null) {
+            clientIp = req.getRemoteAddr();
+        }
+
+        // Redis key: per IP, per minute window
+        String key = "rate_limit:%s:%d".formatted(
+            clientIp, Instant.now().getEpochSecond() / WINDOW.toSeconds());
+
+        // INCR is atomic, no race condition even with concurrent requests
+        Long count = redis.opsForValue().increment(key);
+        if (count == null) {
+            res.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            return;
+        }
+
+        // Set TTL on first request of this window (key is new)
+        if (count == 1L) {
+            redis.expire(key, WINDOW);
+        }
+
+        // Check if limit exceeded
+        if (count > MAX_REQUESTS) {
+            res.setHeader("Retry-After", String.valueOf(WINDOW.toSeconds()));
+            res.sendError(429, "429 Too Many Requests");
+            return; // short-circuit: the controller never runs
+        }
+
+        // Proceed to actual handler
+        res.setHeader("X-RateLimit-Remaining", String.valueOf(MAX_REQUESTS - count));
+        chain.doFilter(req, res);
+    }
+}
+```
+
+### 10.3: Wrapping a Function in a Cache
+
+Every language has some way to say "run this function, but check the cache first", and the name changes with the language: a decorator in Python, a higher-order function in Go and JavaScript, an annotation and a proxy in Java. The three steps inside are always the same ones from section 10.1.
+
+Go Python JavaScript TypeScript Java
+
+the same cache-aside logic, hoisted out of the function it wraps
+
+```go title="cached.go / Go + go-redis + generics"
+// Go has no decorator syntax, so the same idea is a higher-order
+// function: hand it a fetch func, get a cache-aside version back.
+// The generic parameter is what keeps it reusable, the wrapper never
+// needs to know what it is caching.
+func Cached[T any](rdb *redis.Client, key string, ttl time.Duration,
+    fetch func(context.Context) (T, error)) func(context.Context) (T, error) {
+
+    return func(ctx context.Context) (T, error) {
+        var zero T
+
+        // Step 1: Check cache (Cache Hit)
+        if cached, err := rdb.Get(ctx, key).Result(); err == nil {
+            var out T
+            if json.Unmarshal([]byte(cached), &out) == nil {
+                fmt.Println("[CACHE HIT]", key)
+                return out, nil
+            }
+            // Unmarshal failed: a stale shape from an older deploy.
+            // Treat it as a miss rather than failing the request.
+        }
+
+        // Step 2: Cache Miss, execute the actual function
+        fmt.Println("[CACHE MISS] fetching", key)
+        result, err := fetch(ctx)
+        if err != nil {
+            return zero, err
+        }
+
+        // Step 3: Store in Redis with TTL
+        if data, mErr := json.Marshal(result); mErr == nil {
+            rdb.Set(ctx, key, data, ttl)
+        }
+
+        return result, nil
+    }
+}
+
+// Usage: wrap any expensive call. Only runs the DB query on a miss.
+getProduct := Cached(rdb, "product:42", time.Hour,
+    func(ctx context.Context) (Product, error) {
+        return fetchFromDB(ctx, "42")
+    })
+
+// TTL-based API response caching (e.g. weather) is the SAME wrapper with
+// a different key: weather doesn't change every minute, and the upstream
+// API is rate limited and charges per call.
+getWeather := Cached(rdb, "weather:pune", time.Hour, callWeatherAPI)
+```
 
 ```python title="cache.py / Python + redis-py + FastAPI"
 import json
@@ -761,7 +1200,208 @@ async def get_weather(city: str):
     return {"source": "api", "data": weather_data}
 ```
 
-### 10.4: Session Management with Redis (Python)
+```js title="cacheResult.js / Node 20+ + node-redis + Express"
+// JavaScript's decorators aren't in plain Node yet, so the wrapper is a
+// higher-order function: pass a function in, get a cached one back.
+function cacheResult(fn, ttl = 3600) {
+  return async (...args) => {
+    // Build cache key from function name + args
+    const cacheKey = `${fn.name}:${JSON.stringify(args)}`
+
+    // Step 1: Check cache (Cache Hit)
+    const cached = await redis.get(cacheKey)
+    if (cached !== null) {
+      console.log(`[CACHE HIT] ${cacheKey}`)
+      return JSON.parse(cached)
+    }
+
+    // Step 2: Cache Miss, execute the actual function
+    console.log(`[CACHE MISS] calling ${fn.name}...`)
+    const result = await fn(...args)
+
+    // Step 3: Store in Redis with TTL
+    await redis.set(cacheKey, JSON.stringify(result), { EX: ttl })
+
+    return result
+  }
+}
+
+// Usage: wrap the expensive call, not the route. The handler never
+// learns that a cache exists, which is the whole point.
+const getProduct = cacheResult(fetchFromDb, 3600) // cache for 1 hour
+
+app.get('/products/:id', async (req, res) => {
+  res.json(await getProduct(req.params.id))
+})
+
+// TTL-based API Response Caching (e.g. weather)
+app.get('/weather/:city', async (req, res) => {
+  const cacheKey = `weather:${req.params.city}`
+
+  // Check cache (TTL = 1 hour, weather doesn't change every minute)
+  const cached = await redis.get(cacheKey)
+  if (cached !== null) {
+    return res.json({ source: 'cache', data: JSON.parse(cached) })
+  }
+
+  // Miss: call external weather API (costs money / rate limited)
+  const weatherData = await callWeatherApi(req.params.city)
+
+  // Store for 1 hour
+  await redis.set(cacheKey, JSON.stringify(weatherData), { EX: 3600 })
+
+  res.json({ source: 'api', data: weatherData })
+})
+```
+
+```ts title="cacheResult.ts / TypeScript 5+ + node-redis"
+// The two generics are the point of the TypeScript version: the wrapper
+// hands back a function with the SAME signature it was given. Adding a
+// cache to a call site therefore changes nothing about how it is called,
+// and if it did, the build would break rather than production.
+function cacheResult<A extends unknown[], R>(
+  fn: (...args: A) => Promise<R>,
+  ttl = 3600,
+): (...args: A) => Promise<R> {
+  return async (...args: A): Promise<R> => {
+    // Build cache key from function name + args
+    const cacheKey = `${fn.name}:${JSON.stringify(args)}`
+
+    // Step 1: Check cache (Cache Hit)
+    const cached = await redis.get(cacheKey)
+    if (cached !== null) {
+      console.log(`[CACHE HIT] ${cacheKey}`)
+      return JSON.parse(cached) as R
+    }
+
+    // Step 2: Cache Miss, execute the actual function
+    console.log(`[CACHE MISS] calling ${fn.name}...`)
+    const result = await fn(...args)
+
+    // Step 3: Store in Redis with TTL
+    await redis.set(cacheKey, JSON.stringify(result), { EX: ttl })
+
+    return result
+  }
+}
+
+// Usage: still (id: string) => Promise<Product>, cache or no cache.
+const getProduct: (id: string) => Promise<Product> = cacheResult(fetchFromDb, 3600)
+
+// TTL-based API response caching (e.g. weather), same wrapper, different
+// upstream: the external API costs money and is rate limited.
+const getWeather: (city: string) => Promise<WeatherData> = cacheResult(callWeatherApi, 3600)
+```
+
+```java title="ProductService.java / Java 17+ + Spring Cache + Redis"
+// Java's answer to Python's decorator is an annotation plus a proxy, and
+// Spring ships it: @Cacheable IS cache-aside. All three steps still
+// happen, they just happen in the proxy instead of in your method body.
+@Configuration
+@EnableCaching
+class CacheConfig {
+    @Bean
+    RedisCacheManager cacheManager(RedisConnectionFactory cf) {
+        return RedisCacheManager.builder(cf)
+            .cacheDefaults(RedisCacheConfiguration.defaultCacheConfig()
+                .entryTtl(Duration.ofHours(1))) // the TTL, as in SETEX
+            .build();
+    }
+}
+
+@Service
+public class ProductService {
+
+    // Step 1 check Redis, step 2 run this body only on a miss, step 3
+    // store what it returned under "product::<id>". You write none of it.
+    @Cacheable(cacheNames = "product", key = "#productId")
+    public Product getProduct(String productId) {
+        // Expensive DB query, only runs on cache miss
+        return db.findById(productId).orElseThrow();
+    }
+
+    // TTL-based API response caching (e.g. weather). Same annotation, a
+    // different upstream: the external API is rate limited and paid-per-call.
+    @Cacheable(cacheNames = "weather", key = "#city")
+    public WeatherData getWeather(String city) {
+        return weatherApi.fetch(city);
+    }
+
+    // Write-through, the cache is updated instead of skipped, so the next
+    // read gets the new value rather than a stale one.
+    @CachePut(cacheNames = "product", key = "#product.id()")
+    public Product updateProduct(Product product) {
+        return db.save(product);
+    }
+}
+
+// The catch worth knowing: this runs through a proxy, so calling
+// getProduct() from another method of THIS class bypasses the cache
+// entirely and hits the database on every single call.
+```
+
+### 10.4: Session Management with Redis
+
+Go Python JavaScript TypeScript Java
+
+create on login, validate on every request, delete on logout
+
+```go title="session.go / Go + go-redis"
+const sessionTTL = 24 * time.Hour
+
+// CreateSession stores a session after successful login.
+func CreateSession(ctx context.Context, userID string,
+    userData map[string]any) (string, error) {
+
+    sessionID := uuid.NewString()
+    sessionKey := "session:" + sessionID
+
+    payload := map[string]any{"user_id": userID}
+    for k, v := range userData {
+        payload[k] = v
+    }
+
+    data, err := json.Marshal(payload)
+    if err != nil {
+        return "", err
+    }
+
+    // Store session data with 24-hour TTL.
+    // TTL ensures sessions auto-expire, no manual cleanup needed.
+    if err := rdb.Set(ctx, sessionKey, data, sessionTTL).Err(); err != nil {
+        return "", err
+    }
+
+    return sessionID, nil // returned to client as cookie/token
+}
+
+// GetSession validates the session on every authenticated API request.
+// Redis O(1) lookup, microseconds, not milliseconds.
+func GetSession(ctx context.Context, sessionID string) (map[string]any, error) {
+    sessionKey := "session:" + sessionID
+
+    data, err := rdb.Get(ctx, sessionKey).Result()
+    if errors.Is(err, redis.Nil) {
+        return nil, nil // session expired or invalid
+    } else if err != nil {
+        return nil, err
+    }
+
+    // Optionally: refresh TTL on activity (sliding window)
+    rdb.Expire(ctx, sessionKey, sessionTTL)
+
+    var session map[string]any
+    if err := json.Unmarshal([]byte(data), &session); err != nil {
+        return nil, err
+    }
+    return session, nil
+}
+
+// DeleteSession logs the user out, removing the session immediately.
+func DeleteSession(ctx context.Context, sessionID string) error {
+    return rdb.Del(ctx, "session:"+sessionID).Err()
+}
+```
 
 ```python title="session.py / Python + redis-py"
 import uuid
@@ -807,6 +1447,159 @@ def delete_session(session_id: str):
     r.delete(f"session:{session_id}")
 ```
 
+```js title="session.js / Node 20+ + node-redis"
+import { randomUUID } from 'node:crypto'
+
+const SESSION_TTL = 60 * 60 * 24 // 24 hours, in seconds
+
+// Create a session after successful login. Store in Redis.
+export async function createSession(userId, userData) {
+  const sessionId = randomUUID()
+
+  // Store session data with 24-hour TTL.
+  // TTL ensures sessions auto-expire, no manual cleanup needed.
+  await redis.set(
+    `session:${sessionId}`,
+    JSON.stringify({ user_id: userId, ...userData }),
+    { EX: SESSION_TTL },
+  )
+
+  return sessionId // returned to client as cookie/token
+}
+
+// Validate session on every authenticated API request.
+// Redis O(1) lookup, microseconds, not milliseconds.
+export async function getSession(sessionId) {
+  const sessionKey = `session:${sessionId}`
+  const data = await redis.get(sessionKey)
+
+  if (data === null) {
+    return null // session expired or invalid
+  }
+
+  // Optionally: refresh TTL on activity (sliding window)
+  await redis.expire(sessionKey, SESSION_TTL)
+
+  return JSON.parse(data)
+}
+
+// Logout, delete session from Redis immediately.
+export async function deleteSession(sessionId) {
+  await redis.del(`session:${sessionId}`)
+}
+```
+
+```ts title="session.ts / TypeScript 5+ + node-redis"
+import { randomUUID } from 'node:crypto'
+
+const SESSION_TTL = 60 * 60 * 24 // 24 hours, in seconds
+
+export interface Session {
+  user_id: string
+  email: string
+  role: string
+}
+
+// `Omit<Session, 'user_id'>` says the caller supplies everything EXCEPT
+// the id, which this function owns. A login handler cannot accidentally
+// pass a user_id from the request body.
+export async function createSession(
+  userId: string,
+  userData: Omit<Session, 'user_id'>,
+): Promise<string> {
+  const sessionId = randomUUID()
+  const session: Session = { user_id: userId, ...userData }
+
+  // Store session data with 24-hour TTL.
+  // TTL ensures sessions auto-expire, no manual cleanup needed.
+  await redis.set(`session:${sessionId}`, JSON.stringify(session), { EX: SESSION_TTL })
+
+  return sessionId // returned to client as cookie/token
+}
+
+// The `| null` in the return type is the part that earns its keep: every
+// caller is forced to handle "expired or invalid" before it can read
+// user_id, and that is exactly the check an auth middleware must not skip.
+export async function getSession(sessionId: string): Promise<Session | null> {
+  const sessionKey = `session:${sessionId}`
+  const data = await redis.get(sessionKey)
+
+  if (data === null) {
+    return null // session expired or invalid
+  }
+
+  // Optionally: refresh TTL on activity (sliding window)
+  await redis.expire(sessionKey, SESSION_TTL)
+
+  return JSON.parse(data) as Session
+}
+
+// Logout, delete session from Redis immediately.
+export async function deleteSession(sessionId: string): Promise<void> {
+  await redis.del(`session:${sessionId}`)
+}
+```
+
+```java title="SessionService.java / Java 17+ + Spring Data Redis"
+@Service
+public class SessionService {
+    private static final Duration SESSION_TTL = Duration.ofHours(24);
+
+    private final StringRedisTemplate redis;
+    private final ObjectMapper json;
+
+    SessionService(StringRedisTemplate redis, ObjectMapper json) {
+        this.redis = redis;
+        this.json = json;
+    }
+
+    /** Create a session after successful login. Store in Redis. */
+    public String createSession(String userId, Map<String, Object> userData)
+            throws JsonProcessingException {
+        String sessionId = UUID.randomUUID().toString();
+
+        Map<String, Object> payload = new HashMap<>(userData);
+        payload.put("user_id", userId);
+
+        // Store session data with 24-hour TTL.
+        // TTL ensures sessions auto-expire, no manual cleanup needed.
+        redis.opsForValue().set("session:" + sessionId,
+            json.writeValueAsString(payload), SESSION_TTL);
+
+        return sessionId; // returned to client as cookie/token
+    }
+
+    /**
+     * Validate session on every authenticated API request.
+     * Redis O(1) lookup, microseconds, not milliseconds.
+     */
+    public Optional<Map<String, Object>> getSession(String sessionId)
+            throws JsonProcessingException {
+        String sessionKey = "session:" + sessionId;
+        String data = redis.opsForValue().get(sessionKey);
+
+        if (data == null) {
+            return Optional.empty(); // session expired or invalid
+        }
+
+        // Optionally: refresh TTL on activity (sliding window)
+        redis.expire(sessionKey, SESSION_TTL);
+
+        return Optional.of(json.readValue(data, new TypeReference<Map<String, Object>>() {}));
+    }
+
+    /** Logout, delete session from Redis immediately. */
+    public void deleteSession(String sessionId) {
+        redis.delete("session:" + sessionId);
+    }
+}
+
+// Spring Session does the whole of the above for you: add
+// spring-session-data-redis and @EnableRedisHttpSession, and the ordinary
+// servlet HttpSession is backed by Redis with a TTL, with no session code
+// of your own at all. Worth writing it by hand once, then reaching for that.
+```
+
 ## Further Reading & Documentation
 
 #### Redis Official Docs
@@ -840,6 +1633,6 @@ def delete_session(session_id: str):
 </Callout>
 
 BACKEND ENGINEERING FIELD MANUAL / V2 / CHAPTER 12 / CACHING\
-Notes compiled from lecture transcript / Go + Python examples / MDN & Redis references inline
+Notes compiled from lecture transcript / Go, Python, JavaScript, TypeScript & Java examples / MDN & Redis references inline
 
-Backend from First Principles / Chapter 09 / Caching. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 09 / Caching. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).
