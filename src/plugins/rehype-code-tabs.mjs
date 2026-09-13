@@ -209,7 +209,14 @@ function isCodeBlock(node) {
   return isAstroCode && !!node.properties?.['data-lang'];
 }
 
+// The key a block is grouped and labelled by. Normally the fence
+// language, but an explicit `tab="Go"` wins: it is what lets five blocks
+// that share a language (five Dockerfiles, say) still be alternatives.
+// The tag is written as a display name, so it is normalised back to the
+// internal key here and everything downstream stays unchanged.
 function getLang(pre) {
+  const tab = pre.properties?.['data-tab'];
+  if (typeof tab === 'string') return LANG_BY_DISPLAY_NAME.get(tab) ?? tab.toLowerCase();
   return pre.properties?.['data-lang'];
 }
 

@@ -2,7 +2,7 @@
 order: 21
 title: "Docker, K8s & CI/CD"
 navTitle: "Docker, K8s & CI/CD"
-summary: "A first-principles walkthrough of how backend code gets packaged and run in production, from the kernel features that make a container (namespaces and cgroups), through Docker images, layers and multi-stage builds, into Kubernetes orchestration (pods, deployments, services, probes, autoscaling), and out to CI/CD pipelines and zero-downtime rollouts. Written to explain not just what each piece does but why it exists and how it works underneath. Application examples in both Go and Python."
+summary: "A first-principles walkthrough of how backend code gets packaged and run in production, from the kernel features that make a container (namespaces and cgroups), through Docker images, layers and multi-stage builds, into Kubernetes orchestration (pods, deployments, services, probes, autoscaling), and out to CI/CD pipelines and zero-downtime rollouts. Written to explain not just what each piece does but why it exists and how it works underneath. Application examples in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "docker"
@@ -105,13 +105,13 @@ Anything a container writes to its own filesystem dies with the container. Logs,
 
 ## The Dockerfile
 
-A **Dockerfile** is the recipe that builds an image: a sequence of instructions, executed top to bottom, _each producing one layer_ (sec 04). `docker build` reads it, runs each step, and caches the result. Because the file is plain text in your repo, your build is reproducible and reviewable, the environment becomes code. Here is the same web service containerized in Go and in Python:
+A **Dockerfile** is the recipe that builds an image: a sequence of instructions, executed top to bottom, _each producing one layer_ (sec 04). `docker build` reads it, runs each step, and caches the result. Because the file is plain text in your repo, your build is reproducible and reviewable, the environment becomes code. Here is the same web service containerized five times over. Read one tab and then another: the instructions are identical in order and purpose, and only the toolchain changes.
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
-```dockerfile
+```dockerfile tab="Go"
 # FROM picks the base image, the first (bottom) layer. Pin a version, never :latest
 FROM golang:1.22
 
@@ -133,7 +133,7 @@ EXPOSE 8080
 CMD ["/server"]
 ```
 
-```dockerfile
+```dockerfile tab="Python"
 # Pin a slim base, smaller and fewer CVEs than the full image
 FROM python:3.11-slim
 
@@ -150,6 +150,87 @@ EXPOSE 8080
 
 # Exec form (JSON array), runs the process directly as PID 1, so signals work (sec  graceful shutdown)
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+```dockerfile tab="JavaScript"
+# Pin a slim base, smaller and fewer CVEs than the full image
+FROM node:20-slim
+
+WORKDIR /app
+
+# Copy the manifests FIRST so the dependency layer caches across code edits (sec 7)
+COPY package.json package-lock.json ./
+# `npm ci` not `npm install`: ci installs exactly the lockfile, and fails
+# if the lockfile is stale. A build must never silently resolve new versions.
+RUN npm ci --omit=dev
+
+# Then copy the application code
+COPY . .
+
+EXPOSE 8080
+
+# The node image already has a non-root `node` user (sec 17)
+USER node
+
+# Exec form, and NODE runs directly as PID 1 so it receives SIGTERM
+# itself. Wrapping this in `npm start` puts npm at PID 1, npm does not
+# forward signals, and graceful shutdown (chapter 16) silently stops working.
+CMD ["node", "server.js"]
+```
+
+```dockerfile tab="TypeScript"
+# TypeScript adds one thing the others do not have: a COMPILE step whose
+# output is all you want to ship. That makes the two-stage split below
+# not an optimisation but the natural shape.
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci                       # ALL deps, including typescript itself
+
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build                # tsc -> ./dist
+
+# ---- runtime: production deps + compiled JS only ----
+FROM node:20-slim
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev            # no typescript, no @types/*, no test runner
+
+COPY --from=builder /app/dist ./dist
+
+EXPOSE 8080
+USER node
+CMD ["node", "dist/server.js"]
+```
+
+```dockerfile tab="Java"
+# Pin the JDK for building; the JRE is enough to run (see multi-stage below)
+FROM eclipse-temurin:21-jdk
+
+WORKDIR /app
+
+# Copy the build files FIRST and warm the dependency cache (sec 7).
+# Gradle and Maven both download a great deal; this layer is the one
+# you most want to keep.
+COPY gradlew ./
+COPY gradle ./gradle
+COPY build.gradle settings.gradle ./
+RUN ./gradlew dependencies --no-daemon
+
+# Then copy the source and build the jar
+COPY src ./src
+RUN ./gradlew bootJar --no-daemon
+
+EXPOSE 8080
+
+# Exec form, java as PID 1 so it receives SIGTERM directly (chapter 16)
+CMD ["java", "-jar", "build/libs/app.jar"]
 ```
 
 | Instruction          | What it does                                                                                             |
@@ -176,9 +257,9 @@ The single most impactful technique for production images. The problem: _buildin
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
-```dockerfile
+```dockerfile tab="Go"
 # ---- Stage 1: build with the full Go toolchain ----
 FROM golang:1.22 AS builder
 WORKDIR /app
@@ -197,7 +278,7 @@ ENTRYPOINT ["/server"]
 # Result: a ~10-15 MB image with no shell, no package manager, minimal CVEs
 ```
 
-```dockerfile
+```dockerfile tab="Python"
 # ---- Stage 1: install deps into a venv with build tools available ----
 FROM python:3.11 AS builder
 WORKDIR /app
@@ -218,7 +299,98 @@ EXPOSE 8080
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
 ```
 
-Go compiles to a single static binary, so the final stage can be near-empty (distroless/scratch). Python needs the interpreter, so the win comes from copying a pre-built virtualenv into a `-slim` base instead of carrying the compilers.
+```dockerfile tab="JavaScript"
+# ---- Stage 1: install ALL deps (some need a compiler for native modules) ----
+FROM node:20 AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# ---- Stage 2: slim runtime, production deps only, non-root ----
+FROM node:20-slim
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Reinstall with --omit=dev rather than copying node_modules across:
+# the dev tree contains test runners, linters and their transitive
+# dependencies, which is often more than half the image.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY . .
+EXPOSE 8080
+USER node                                # never run as root (sec 17)
+CMD ["node", "server.js"]
+# Result: ~200 MB. Node ships an interpreter, so there is no scratch
+# option here, but the dev toolchain is gone.
+```
+
+```dockerfile tab="TypeScript"
+# ---- Stage 1: compile with the full toolchain ----
+FROM node:20 AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci                               # includes typescript, @types/*
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build                        # tsc -> ./dist
+
+# ---- Stage 2: production deps ----
+FROM node:20 AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+# ---- Stage 3: distroless runtime, no shell, no npm, non-root ----
+FROM gcr.io/distroless/nodejs20-debian12:nonroot
+WORKDIR /app
+COPY --from=deps    /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist     # copy ONLY the compiled output
+COPY package.json ./
+EXPOSE 8080
+# The distroless node image has node as its entrypoint already
+CMD ["dist/server.js"]
+# Result: no shell for an attacker, and none of the source or the
+# compiler is in the shipped image.
+```
+
+```dockerfile tab="Java"
+# ---- Stage 1: build the jar with the full JDK ----
+FROM eclipse-temurin:21-jdk AS builder
+WORKDIR /app
+COPY gradlew ./
+COPY gradle ./gradle
+COPY build.gradle settings.gradle ./
+RUN ./gradlew dependencies --no-daemon
+COPY src ./src
+RUN ./gradlew bootJar --no-daemon
+
+# ---- Stage 2: explode the jar so the layers cache properly ----
+# A Spring Boot fat jar is one ~60 MB file, so ANY code change
+# invalidates the whole layer. Exploding it separates the dependencies
+# (which rarely change) from your classes (which change every commit).
+FROM eclipse-temurin:21-jdk AS extractor
+WORKDIR /app
+COPY --from=builder /app/build/libs/app.jar app.jar
+RUN java -Djarmode=layertools -jar app.jar extract
+
+# ---- Stage 3: JRE only, no compiler, non-root ----
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY --from=extractor /app/dependencies/ ./
+COPY --from=extractor /app/spring-boot-loader/ ./
+COPY --from=extractor /app/snapshot-dependencies/ ./
+COPY --from=extractor /app/application/ ./   # your code: the top, smallest layer
+
+EXPOSE 8080
+USER 1000:1000                               # never run as root (sec 17)
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
+# Result: ~250 MB with the JRE. For a genuinely small Java image,
+# GraalVM native-image compiles to a static binary and gets you into
+# distroless/static territory alongside Go.
+```
+
+The size you can reach depends on what the language needs at run time. Go compiles to a single static binary, so its final stage can be near-empty (distroless/scratch, ~15 MB). Python, Node and Java all need a runtime, so the win there is discarding the **build** toolchain: a pre-built virtualenv into a `-slim` base, production-only `node_modules`, or a JRE instead of the JDK. In every case the rule is identical, copy the finished artifact into a clean stage and leave the compiler behind.
 
 Why this matters in production
 
@@ -242,15 +414,91 @@ Docker caches each layer and reuses it on the next build _as long as that instru
 - **`.dockerignore`**: keeps junk out of the build context and the image (faster builds, smaller images, no secrets leaking in).
 - **Combine related `RUN`s & clean up in the same layer**: deleting a cache in a _later_ layer doesn't shrink the image (the bytes still live in the earlier layer); clean within the same `RUN`.
 
-```text title=".dockerignore / trim the build context"
+● Go● Python● JavaScript● TypeScript● Java
+
+what counts as junk depends on the toolchain
+
+```text tab="Go" title=".dockerignore / trim the build context"
 .git
-node_modules
 *.md
 .env            # never bake secrets into an image (sec 16)
-**/__pycache__
 *.log
-dist/
 .vscode/
+
+# Go-specific: the build happens INSIDE the image, so a binary compiled
+# on your laptop must not be copied in. It is built for the wrong OS
+# half the time, and it silently shadows the one the Dockerfile builds.
+/server
+*.test
+vendor/         # only if you are NOT using vendored deps
+```
+
+```text tab="Python" title=".dockerignore / trim the build context"
+.git
+*.md
+.env            # never bake secrets into an image (sec 16)
+*.log
+.vscode/
+
+# Python-specific: bytecode is built for the interpreter that produced
+# it, so copying it in is at best useless and at worst a stale-import bug.
+**/__pycache__
+*.py[cod]
+.venv/          # the venv is built in the image, never copied in
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+```
+
+```text tab="JavaScript" title=".dockerignore / trim the build context"
+.git
+*.md
+.env            # never bake secrets into an image (sec 16)
+*.log
+.vscode/
+
+# node_modules is the single most important line in this file. It is
+# usually the largest directory in the repo, and copying it in ALSO
+# breaks native modules: they are compiled for your laptop's OS and
+# architecture, not the image's.
+node_modules
+npm-debug.log
+coverage/
+.nyc_output/
+```
+
+```text tab="TypeScript" title=".dockerignore / trim the build context"
+.git
+*.md
+.env            # never bake secrets into an image (sec 16)
+*.log
+.vscode/
+
+node_modules
+coverage/
+
+# TypeScript-specific: dist/ is produced by the builder stage, so a
+# stale local build must not be copied over it. This is the one that
+# bites hardest, because the image runs and serves LAST WEEK's code.
+dist/
+*.tsbuildinfo
+```
+
+```text tab="Java" title=".dockerignore / trim the build context"
+.git
+*.md
+.env            # never bake secrets into an image (sec 16)
+*.log
+.vscode/
+
+# Build output, produced inside the image by Gradle or Maven
+build/
+target/
+*.jar
+!gradle/wrapper/gradle-wrapper.jar   # except the wrapper, which IS needed
+
+# The Gradle cache is large and machine-specific
+.gradle/
 ```
 
 Cleanup must be in the same layer
@@ -329,7 +577,7 @@ Treat containers as disposable and keep all durable state in volumes or external
 
 Running a real app means several containers, API, database, cache, maybe a worker (the task-queue chapter's setup), with the right networks, volumes, env, and start order. Wiring that by hand with many `docker run` commands is tedious and error-prone. **Docker Compose** declares the whole local stack in one YAML file and brings it up with a single command. It's the standard for local development and simple single-host deployments.
 
-```go title="compose.yaml / an API (your Go or Python service), Postgres, and Redis"
+```yaml title="compose.yaml / an API, Postgres, and Redis"
 services:
   api:
     build: .                      # build the image from the local Dockerfile (sec 5/6)
@@ -540,7 +788,7 @@ An image must be **environment-agnostic**: the _same_ tested image runs in dev, 
 <svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One image combined with different ConfigMaps and Secrets to run in dev, staging and production"><rect x="280" y="20" width="160" height="40" rx="9" fill="var(--dg-inverse)"></rect><text x="360" y="38" font-size="11" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">one tested image</text><text x="360" y="53" class="mono" font-size="8.5" fill="var(--dg-on-inverse-info)" text-anchor="middle">myapp:1.4.0</text><defs><marker id="ca" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><g stroke="var(--dg-ok)" stroke-width="1.5" fill="none"><path d="M300 60 C220 80 180 92 140 100" marker-end="url(#ca)"></path><path d="M360 62 V100" marker-end="url(#ca)"></path><path d="M420 60 C500 80 540 92 580 100" marker-end="url(#ca)"></path></g><rect x="40" y="104" width="200" height="58" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="140" y="126" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">dev</text><text x="140" y="144" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">+ ConfigMap-dev + Secret-dev</text><rect x="260" y="104" width="200" height="58" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="360" y="126" font-size="11" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">staging</text><text x="360" y="144" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">+ ConfigMap-stg + Secret-stg</text><rect x="480" y="104" width="200" height="58" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="580" y="126" font-size="11" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">production</text><text x="580" y="144" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">+ ConfigMap-prod + Secret-prod</text></svg>
 </Diagram>
 
-```text title="configmap + secret, injected as env vars"
+```yaml title="configmap + secret, injected as env vars"
 apiVersion: v1
 kind: ConfigMap
 metadata: { name: api-config }
@@ -584,7 +832,11 @@ For self-healing and zero-downtime to work, Kubernetes needs to know two things 
 
 A **request** is the amount the scheduler reserves for a container (and uses to pick a node); a **limit** is the hard ceiling the runtime enforces via cgroups. Exceed a CPU limit and the container is _throttled_; exceed a memory limit and it's _killed_ (`OOMKilled`). Setting these well is the difference between a stable cluster and noisy-neighbor chaos, and they feed autoscaling (sec 18).
 
-```text title="probes + resources in the container spec"
+● Go● Python● JavaScript● TypeScript● Java
+
+the probe paths and the memory numbers both depend on the runtime
+
+```yaml tab="Go" title="probes + resources in the container spec"
 # ...inside the Deployment's containers: entry (sec 14)
           livenessProbe:
             httpGet: { path: /healthz, port: 8080 }   # wedged? -> restart
@@ -596,6 +848,99 @@ A **request** is the amount the scheduler reserves for a container (and uses to 
           resources:
             requests: { cpu: "100m", memory: "128Mi" } # scheduler reserves this
             limits:   { cpu: "500m", memory: "256Mi" } # cgroup ceiling; over memory -> OOMKilled
+          # Go starts in milliseconds, so a startupProbe is rarely needed
+          # and initialDelaySeconds can stay small.
+```
+
+```yaml tab="Python" title="probes + resources in the container spec"
+# ...inside the Deployment's containers: entry (sec 14)
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10                    # interpreter + imports
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "200m", memory: "256Mi" }
+            limits:   { cpu: "1000m", memory: "512Mi" }
+          # Size the CPU limit against the worker count, not the other
+          # way round: uvicorn/gunicorn with 4 workers on a 500m limit
+          # spends its life being throttled by the cgroup.
+          env:
+            - name: WEB_CONCURRENCY
+              value: "2"
+```
+
+```yaml tab="JavaScript" title="probes + resources in the container spec"
+# ...inside the Deployment's containers: entry (sec 14)
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+          env:
+            # V8 does NOT read the cgroup limit. Left alone it sizes its
+            # heap against the NODE's total memory, grows past the
+            # container limit, and is OOMKilled with no JS error at all.
+            # Set it to roughly 75% of the memory limit.
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=384"
+```
+
+```yaml tab="TypeScript" title="probes + resources in the container spec"
+# ...inside the Deployment's containers: entry (sec 14)
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+          env:
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=384"   # ~75% of the limit
+          # Node is single-threaded per process, so a CPU limit above
+          # 1000m buys nothing for one container. Scale with replicas
+          # (sec 18) rather than with a bigger CPU ceiling.
+```
+
+```yaml tab="Java" title="probes + resources in the container spec"
+# ...inside the Deployment's containers: entry (sec 14)
+          # Spring Boot Actuator exposes purpose-built endpoints, and
+          # using them matters: /liveness must NOT fail on a database
+          # outage, or every pod restarts during an incident that a
+          # restart cannot fix (chapter 12).
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            periodSeconds: 5
+          # The JVM's cold start is long enough that a liveness probe
+          # can kill the pod before it ever serves. A startupProbe holds
+          # the other two off until boot finishes: 30 x 5s = 150s budget.
+          startupProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            failureThreshold: 30
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits:   { cpu: "2000m", memory: "1Gi" }
+          env:
+            # Java 10+ IS cgroup-aware, so the heap is sized from the
+            # container limit rather than the node. Tune the fraction
+            # rather than hard-coding -Xmx, which ignores the limit.
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=70"
 ```
 
 <Callout type="info" title="Probes pair with graceful shutdown">
@@ -651,7 +996,11 @@ Containers make the artifact reproducible; **CI/CD** makes the path from a code 
 <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A CI/CD pipeline: commit, build image, test, scan, push to registry, deploy to Kubernetes"><defs><marker id="pp" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs><g font-family="var(--font-ui)"><rect x="14" y="50" width="92" height="48" rx="9" fill="var(--dg-accent)"></rect><text x="60" y="70" font-size="10.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">commit</text><text x="60" y="86" class="mono" font-size="8" fill="var(--dg-on-accent)" text-anchor="middle">git push</text><rect x="126" y="50" width="92" height="48" rx="9" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="172" y="70" font-size="10.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">build</text><text x="172" y="86" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">image sec 6</text><rect x="238" y="50" width="92" height="48" rx="9" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="284" y="70" font-size="10.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">test</text><text x="284" y="86" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">unit/integ</text><rect x="350" y="50" width="92" height="48" rx="9" fill="var(--dg-surface)" stroke="var(--dg-accent)"></rect><text x="396" y="70" font-size="10.5" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">scan</text><text x="396" y="86" class="mono" font-size="8" fill="var(--dg-ink-2)" text-anchor="middle">CVEs</text><rect x="462" y="50" width="100" height="48" rx="9" fill="var(--dg-inverse)"></rect><text x="512" y="70" font-size="10.5" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">push</text><text x="512" y="86" class="mono" font-size="8" fill="var(--dg-on-inverse)" text-anchor="middle">registry sec 8</text><rect x="582" y="50" width="120" height="48" rx="9" fill="var(--dg-ok)"></rect><text x="642" y="70" font-size="10.5" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">deploy</text><text x="642" y="86" class="mono" font-size="8" fill="var(--dg-on-accent)" text-anchor="middle">rollout sec 18</text></g><path d="M106 74 H124" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#pp)"></path><path d="M218 74 H236" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#pp)"></path><path d="M330 74 H348" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#pp)"></path><path d="M442 74 H460" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#pp)"></path><path d="M562 74 H580" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#pp)"></path><text x="360" y="128" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Each stage is a gate: a failed test or a critical CVE stops the pipeline before anything reaches production.</text></svg>
 </Diagram>
 
-```yaml title=".github/workflows/deploy.yaml / a representative pipeline"
+● Go● Python● JavaScript● TypeScript● Java
+
+the same six gates; only the test and build steps change
+
+```yaml tab="Go" title=".github/workflows/deploy.yaml / a representative pipeline"
 name: ci-cd
 on:
   push:
@@ -663,8 +1012,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.22", cache: true }
+
       - name: Run tests              # CI gate, must pass before we ship (sec testing chapter)
-        run: make test               # go test ./...  |  pytest
+        run: go test -race ./...     # -race in CI: it costs minutes and
+                                     # catches the bugs of chapter 20
 
       - name: Build image
         run: docker build -t $REGISTRY/myapp:${{ github.sha }} .   # tag = commit SHA (sec 8)
@@ -678,6 +1031,166 @@ jobs:
           docker push $REGISTRY/myapp:${{ github.sha }}
 
       - name: Deploy to Kubernetes   # update the Deployment's image -> triggers a rolling update (sec 18)
+        run: kubectl set image deployment/api api=$REGISTRY/myapp:${{ github.sha }}
+```
+
+```yaml tab="Python" title=".github/workflows/deploy.yaml / a representative pipeline"
+name: ci-cd
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: "pip" }
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests              # CI gate, must pass before we ship
+        run: pytest --cov=app --cov-fail-under=80
+
+      - name: Type check             # mypy is the closest Python gets to
+        run: mypy app                # the TypeScript tab's compile gate
+
+      - name: Build image
+        run: docker build -t $REGISTRY/myapp:${{ github.sha }} .
+
+      - name: Scan image for vulnerabilities
+        run: trivy image --severity HIGH,CRITICAL --exit-code 1 $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Push to registry
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u ci --password-stdin
+          docker push $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Deploy to Kubernetes
+        run: kubectl set image deployment/api api=$REGISTRY/myapp:${{ github.sha }}
+```
+
+```yaml tab="JavaScript" title=".github/workflows/deploy.yaml / a representative pipeline"
+name: ci-cd
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: "npm" }
+
+      # `npm ci`, never `npm install`, in CI: it installs exactly the
+      # lockfile and FAILS on a stale one, so the pipeline tests the same
+      # dependency tree the image will ship.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests              # CI gate, must pass before we ship
+        run: npm test
+
+      - name: Audit dependencies     # the supply chain is the attack
+        run: npm audit --audit-level=high  # surface here (chapter 17)
+
+      - name: Build image
+        run: docker build -t $REGISTRY/myapp:${{ github.sha }} .
+
+      - name: Scan image for vulnerabilities
+        run: trivy image --severity HIGH,CRITICAL --exit-code 1 $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Push to registry
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u ci --password-stdin
+          docker push $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Deploy to Kubernetes
+        run: kubectl set image deployment/api api=$REGISTRY/myapp:${{ github.sha }}
+```
+
+```yaml tab="TypeScript" title=".github/workflows/deploy.yaml / a representative pipeline"
+name: ci-cd
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: "npm" }
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The compile IS a test, and it is the cheapest one you have, so
+      # run it first and fail fast. `tsc --noEmit` type-checks without
+      # writing output; the image's builder stage does the real build.
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run tests              # CI gate, must pass before we ship
+        run: npm test
+
+      - name: Build image
+        run: docker build -t $REGISTRY/myapp:${{ github.sha }} .
+
+      - name: Scan image for vulnerabilities
+        run: trivy image --severity HIGH,CRITICAL --exit-code 1 $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Push to registry
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u ci --password-stdin
+          docker push $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Deploy to Kubernetes
+        run: kubectl set image deployment/api api=$REGISTRY/myapp:${{ github.sha }}
+```
+
+```yaml tab="Java" title=".github/workflows/deploy.yaml / a representative pipeline"
+name: ci-cd
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: gradle           # the Gradle cache is large; cache it
+
+      - name: Run tests              # CI gate, must pass before we ship
+        run: ./gradlew test --no-daemon   # --no-daemon: the daemon only
+                                          # pays off across repeated runs
+
+      - name: Build image
+        run: docker build -t $REGISTRY/myapp:${{ github.sha }} .
+
+      - name: Scan image for vulnerabilities
+        run: trivy image --severity HIGH,CRITICAL --exit-code 1 $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Push to registry
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u ci --password-stdin
+          docker push $REGISTRY/myapp:${{ github.sha }}
+
+      - name: Deploy to Kubernetes
         run: kubectl set image deployment/api api=$REGISTRY/myapp:${{ github.sha }}
 ```
 
@@ -742,4 +1255,4 @@ The whole manual compressed to what you reach for under pressure.
 
 Grounded in the Docker & Kubernetes docs / OCI image-spec / the Twelve-Factor App / Go 1.22+ / Python 3.11+ application examples.
 
-Backend from First Principles / Chapter 21 / Containers. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 21 / Containers. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 21+.

@@ -2,7 +2,7 @@
 order: 11
 title: "Full-Text Search & Elasticsearch"
 navTitle: "Full-Text Search (Elasticsearch)"
-summary: "Chapter 11 of Backend from First Principles: Full-Text Search (Elasticsearch)."
+summary: "Why ILIKE '%term%' cannot use an index and what to do instead: the inverted index, BM25 relevance scoring, fuzzy matching, and when Postgres full-text search is enough versus when you need Elasticsearch. Worked implementations in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "elasticsearch"
@@ -25,7 +25,7 @@ From a simple `ILIKE` query that suffocates under millions of rows, to relevance
 Imagine it's **2005**. You're a backend engineer at a fast-growing e-commerce startup. The product catalog has \~5,000 items. You write a search endpoint using a classic SQL pattern:
 
 ```sql
-SQL-- Works great at 5 000 rows
+-- Works great at 5 000 rows
 SELECT * FROM products
 WHERE  name        ILIKE '%laptop%'
    OR  description ILIKE '%laptop%';
@@ -72,8 +72,8 @@ A leading `%` in a LIKE/ILIKE expression _disables_ B-tree index usage. Postgres
 
 ### What the query plan looks like
 
-```dockerfile
-SQL / EXPLAIN ANALYZEEXPLAIN ANALYZE
+```sql title="EXPLAIN ANALYZE"
+EXPLAIN ANALYZE
 SELECT id, name
 FROM  products
 WHERE name ILIKE '%laptop%';
@@ -245,14 +245,14 @@ If your company already runs ELK for logging, adding product/content search on t
 
 09
 
-## Postgres Full-Text Search in Go
+## Postgres Full-Text Search
 
 Postgres has had native full-text search since version 8.3 via the `tsvector` / `tsquery` types. It uses its own inverted index (the **GIN** index) and a BM25-variant scorer called `ts_rank`. It's not as feature-rich as Elasticsearch but perfectly adequate for moderate search needs on data already in Postgres.
 
 ### DDL: Add a GIN Index
 
-```text
-SQL-- Add a generated tsvector column and index it
+```sql
+-- Add a generated tsvector column and index it
 ALTER TABLE products
   ADD COLUMN search_vec tsvector
     GENERATED ALWAYS AS (
@@ -265,10 +265,14 @@ CREATE INDEX idx_products_fts ON products USING GIN(search_vec);
 
 `setweight('A')` means title matches outrank description matches, the Postgres equivalent of field boosting.
 
-### Go: Full-Text Search Handler
+### The Full-Text Search Handler
 
-```go
-Gopackage main
+Go Python JavaScript TypeScript Java
+
+`@@` against the GIN index, ranked by `ts_rank`, parameterised throughout
+
+```go title="main.go / Go + pgx"
+package main
 
 import (
     "context"
@@ -331,24 +335,224 @@ func main() {
 }
 ```
 
+```python title="search.py / Python + psycopg + FastAPI"
+from fastapi import FastAPI, HTTPException
+
+app = FastAPI()
+
+SQL = """
+    SELECT id, name, description,
+           ts_rank(search_vec, plainto_tsquery('english', %s)) AS rank
+    FROM   products
+    WHERE  search_vec @@ plainto_tsquery('english', %s)
+    ORDER  BY rank DESC
+    LIMIT  20
+"""
+
+
+@app.get("/search")
+async def search(q: str = ""):
+    if not q:
+        raise HTTPException(400, "missing query param q")
+
+    # plainto_tsquery converts plain text safely (no special chars needed);
+    # websearch_to_tsquery also supports AND/OR/-term syntax.
+    # The query text is a BOUND PARAMETER, never interpolated (chapter 08).
+    async with pool.connection() as conn:
+        cur = await conn.execute(SQL, (q, q))
+        rows = await cur.fetchall()
+
+    return [
+        {"id": r[0], "name": r[1], "description": r[2], "rank": r[3]}
+        for r in rows
+    ]
+```
+
+```js title="search.js / Node 20+ + node-postgres + Express"
+const SQL = `
+  SELECT id, name, description,
+         ts_rank(search_vec, plainto_tsquery('english', $1)) AS rank
+  FROM   products
+  WHERE  search_vec @@ plainto_tsquery('english', $1)
+  ORDER  BY rank DESC
+  LIMIT  20
+`
+
+app.get('/search', async (req, res) => {
+  const q = req.query.q
+  if (!q) {
+    return res.status(400).json({ error: 'missing query param q' })
+  }
+
+  try {
+    // plainto_tsquery converts plain text safely (no special chars needed);
+    // websearch_to_tsquery also supports AND/OR/-term syntax.
+    const { rows } = await pool.query(SQL, [q])
+    res.json(rows)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+```
+
+```ts title="search.ts / TypeScript 5+ + node-postgres + Express"
+import type { Pool } from 'pg'
+import type { Request, Response } from 'express'
+
+interface SearchResult {
+  id: number
+  name: string
+  description: string
+  rank: number
+}
+
+const SQL = `
+  SELECT id, name, description,
+         ts_rank(search_vec, plainto_tsquery('english', $1)) AS rank
+  FROM   products
+  WHERE  search_vec @@ plainto_tsquery('english', $1)
+  ORDER  BY rank DESC
+  LIMIT  20
+`
+
+export async function search(req: Request, res: Response): Promise<void> {
+  // `req.query.q` is not a string: Express parses `?q=a&q=b` into an
+  // ARRAY, so a naive cast would hand an array straight to the driver.
+  // Narrowing it here is the difference between a 400 and a 500.
+  const q = typeof req.query.q === 'string' ? req.query.q : ''
+  if (q === '') {
+    res.status(400).json({ error: 'missing query param q' })
+    return
+  }
+
+  const { rows } = await pool.query<SearchResult>(SQL, [q])
+  res.json(rows)
+}
+```
+
+```java title="SearchController.java / Java 17+ + Spring Boot + JdbcClient"
+public record SearchResult(int id, String name, String description, double rank) {}
+
+@RestController
+class SearchController {
+    private static final String SQL = """
+        SELECT id, name, description,
+               ts_rank(search_vec, plainto_tsquery('english', ?)) AS rank
+        FROM   products
+        WHERE  search_vec @@ plainto_tsquery('english', ?)
+        ORDER  BY rank DESC
+        LIMIT  20
+        """;
+
+    private final JdbcClient db;
+
+    SearchController(JdbcClient db) {
+        this.db = db;
+    }
+
+    @GetMapping("/search")
+    ResponseEntity<?> search(@RequestParam(defaultValue = "") String q) {
+        if (q.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "missing query param q"));
+        }
+
+        // plainto_tsquery converts plain text safely (no special chars needed);
+        // websearch_to_tsquery also supports AND/OR/-term syntax.
+        // Both placeholders are bound, never concatenated (chapter 08).
+        List<SearchResult> results = db.sql(SQL)
+            .params(q, q)
+            .query(SearchResult.class)
+            .list();
+
+        return ResponseEntity.ok(results);
+    }
+}
+```
+
 <Callout type="info">
 The `@@` operator is Postgres's full-text match operator. It uses the GIN index, query time stays O(log n) regardless of table size.
 </Callout>
 
 10
 
-## Elasticsearch in Python (Official SDK)
+## Elasticsearch (Official SDKs)
 
-The official Python client is [elasticsearch-py](https://www.elastic.co/guide/en/elasticsearch/client/python-api/current/index.html). Install:
+Elastic ships a first-party client for every language here: [elasticsearch-py](https://www.elastic.co/guide/en/elasticsearch/client/python-api/current/index.html), [go-elasticsearch](https://github.com/elastic/go-elasticsearch), [@elastic/elasticsearch](https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/index.html) for Node and TypeScript, and the [Elasticsearch Java API Client](https://www.elastic.co/guide/en/elasticsearch/client/java-api-client/current/index.html). They are all thin wrappers over the same JSON REST API, which is worth remembering when you read the tabs: the **query DSL is identical everywhere**, only the way each language spells a nested object changes. Install:
 
-```text
-Shellpip install elasticsearch
+```bash
+pip install elasticsearch      # Python
+npm  install @elastic/elasticsearch   # Node / TypeScript
+go   get github.com/elastic/go-elasticsearch/v8   # Go
+# Java: implementation 'co.elastic.clients:elasticsearch-java:8.13.0'
 ```
 
 ### Index Setup & Bulk Insert
 
-```python
-Pythonfrom elasticsearch import Elasticsearch, helpers
+Go Python JavaScript TypeScript Java
+
+an explicit mapping (text vs keyword), then a bulk load
+
+```go title="index.go / Go + go-elasticsearch"
+// The mapping is the one decision that cannot be undone later: changing
+// a field's type means reindexing everything. "text" is analysed and
+// searchable by word; "keyword" is stored whole, for exact filters.
+mapping := `{
+  "mappings": {
+    "properties": {
+      "review":    {"type": "text"},
+      "sentiment": {"type": "keyword"}
+    }
+  }
+}`
+
+es, _ := elasticsearch.NewClient(elasticsearch.Config{
+    CloudID: "YOUR_CLOUD_ID",
+    APIKey:  "YOUR_API_KEY",
+})
+
+const index = "reviews"
+
+es.Indices.Delete([]string{index}) // ignore error if absent
+es.Indices.Create(index, es.Indices.Create.WithBody(strings.NewReader(mapping)))
+
+// Bulk insert via the BulkIndexer, which batches and retries for you.
+bi, _ := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{
+    Index:         index,
+    Client:        es,
+    NumWorkers:    4,
+    FlushBytes:    5e6,          // flush every 5 MB
+    FlushInterval: 30 * time.Second,
+})
+
+f, _ := os.Open("reviews.csv")
+defer f.Close()
+
+r := csv.NewReader(f)
+_, _ = r.Read() // skip the header row
+
+for {
+    row, err := r.Read()
+    if err == io.EOF {
+        break
+    }
+    if row[0] == "" || row[1] == "" {
+        continue
+    }
+
+    doc, _ := json.Marshal(map[string]string{"review": row[0], "sentiment": row[1]})
+    bi.Add(context.Background(), esutil.BulkIndexerItem{
+        Action: "index",
+        Body:   bytes.NewReader(doc),
+    })
+}
+
+bi.Close(context.Background()) // flushes whatever is still buffered
+stats := bi.Stats()
+fmt.Printf("Inserted %d documents, %d errors\n", stats.NumFlushed, stats.NumFailed)
+```
+
+```python title="index.py / Python + elasticsearch-py"
+from elasticsearch import Elasticsearch, helpers
 import csv
 
 es = Elasticsearch(
@@ -389,10 +593,206 @@ success, errors = helpers.bulk(es, generate_docs("reviews.csv"))
 print(f"Inserted {success} documents, {len(errors)} errors")
 ```
 
+```js title="index.js / Node 20+ + @elastic/elasticsearch"
+import { Client } from '@elastic/elasticsearch'
+import { createReadStream } from 'node:fs'
+import { parse } from 'csv-parse'
+
+const es = new Client({
+  cloud: { id: 'YOUR_CLOUD_ID' },
+  auth: { apiKey: 'YOUR_API_KEY' },
+})
+
+const INDEX = 'reviews'
+
+// 1. Create index with explicit mapping
+if (await es.indices.exists({ index: INDEX })) {
+  await es.indices.delete({ index: INDEX })
+}
+
+await es.indices.create({
+  index: INDEX,
+  mappings: {
+    properties: {
+      review: { type: 'text' },       // analysed full-text
+      sentiment: { type: 'keyword' }, // exact: "positive" / "negative"
+    },
+  },
+})
+
+// 2. Bulk insert from CSV. `helpers.bulk` takes an async iterable, so the
+// file is streamed rather than read into memory, which matters the first
+// time somebody points this at a 2 GB export.
+async function* generateDocs(path) {
+  const parser = createReadStream(path).pipe(parse({ columns: true }))
+  for await (const row of parser) {
+    if (row.review && row.sentiment) {
+      yield { review: row.review, sentiment: row.sentiment }
+    }
+  }
+}
+
+const result = await es.helpers.bulk({
+  datasource: generateDocs('reviews.csv'),
+  onDocument: () => ({ index: { _index: INDEX } }),
+})
+
+console.log(`Inserted ${result.successful} documents, ${result.failed} errors`)
+```
+
+```ts title="index.ts / TypeScript 5+ + @elastic/elasticsearch"
+import { Client } from '@elastic/elasticsearch'
+
+// The document type is worth declaring even though Elasticsearch is
+// schemaless-ish: it is the only thing keeping the indexer and the
+// search code agreeing on field names, and a field name typo here is
+// not an error at all in Elasticsearch, it just indexes a new field
+// that nothing will ever search.
+interface Review {
+  review: string
+  sentiment: 'positive' | 'negative'
+}
+
+const es = new Client({
+  cloud: { id: process.env.ELASTIC_CLOUD_ID! },
+  auth: { apiKey: process.env.ELASTIC_API_KEY! },
+})
+
+const INDEX = 'reviews'
+
+// 1. Create index with explicit mapping
+if (await es.indices.exists({ index: INDEX })) {
+  await es.indices.delete({ index: INDEX })
+}
+
+await es.indices.create({
+  index: INDEX,
+  mappings: {
+    properties: {
+      review: { type: 'text' },       // analysed full-text
+      sentiment: { type: 'keyword' }, // exact: "positive" / "negative"
+    },
+  },
+})
+
+// 2. Bulk insert, streamed
+const result = await es.helpers.bulk<Review>({
+  datasource: generateDocs('reviews.csv'),
+  onDocument: () => ({ index: { _index: INDEX } }),
+  onDrop: (doc) => console.error('dropped', doc.document, doc.error),
+})
+
+console.log(`Inserted ${result.successful} documents, ${result.failed} errors`)
+```
+
+```java title="Indexer.java / Java 17+ + Elasticsearch Java API Client"
+public record Review(String review, String sentiment) {}
+
+ElasticsearchClient es = new ElasticsearchClient(
+    new RestClientTransport(
+        RestClient.builder(HttpHost.create("https://...")).build(),
+        new JacksonJsonpMapper()));
+
+final String INDEX = "reviews";
+
+// 1. Create index with explicit mapping.
+// The Java client's builder lambdas mirror the JSON DSL one level per
+// nested object, which is verbose but means a misspelled DSL key is a
+// compile error rather than an index that silently ignores it.
+if (es.indices().exists(e -> e.index(INDEX)).value()) {
+    es.indices().delete(d -> d.index(INDEX));
+}
+
+es.indices().create(c -> c
+    .index(INDEX)
+    .mappings(m -> m
+        .properties("review", p -> p.text(t -> t))        // analysed full-text
+        .properties("sentiment", p -> p.keyword(k -> k))  // exact match
+    ));
+
+// 2. Bulk insert from CSV, in batches rather than one request per row.
+BulkRequest.Builder br = new BulkRequest.Builder();
+
+try (CSVParser rows = CSVFormat.DEFAULT.withFirstRecordAsHeader()
+        .parse(new FileReader("reviews.csv"))) {
+    for (CSVRecord row : rows) {
+        String review = row.get("review");
+        String sentiment = row.get("sentiment");
+        if (review.isBlank() || sentiment.isBlank()) continue;
+
+        br.operations(op -> op.index(idx -> idx
+            .index(INDEX)
+            .document(new Review(review, sentiment))));
+    }
+}
+
+BulkResponse result = es.bulk(br.build());
+long failed = result.items().stream().filter(i -> i.error() != null).count();
+System.out.printf("Inserted %d documents, %d errors%n",
+    result.items().size() - failed, failed);
+```
+
 ### Search with Fuzzy + Field Boost
 
-```python
-Pythondef search_reviews(query: str, sentiment_filter: str = None) -> list:
+Go Python JavaScript TypeScript Java
+
+`must` scores, `filter` does not: the difference is relevance vs a yes/no gate
+
+```go title="search.go / Go + go-elasticsearch"
+// The DSL below is the SAME JSON as in every other tab. What differs is
+// only how the language builds a nested object, so read one tab for the
+// query and the others for the ergonomics.
+func searchReviews(es *elasticsearch.Client, query, sentiment string) ([]Hit, error) {
+    must := []map[string]any{{
+        "multi_match": map[string]any{
+            "query":     strings.ToLower(query),
+            "fields":    []string{"review"},
+            "fuzziness": "AUTO",  // edit distance scaled to term length
+            "operator":  "and",   // all terms must appear
+        },
+    }}
+
+    filter := []map[string]any{}
+    if sentiment != "" {
+        // `filter`, not `must`: a filter is a yes/no gate that does not
+        // affect the score, and Elasticsearch caches it. Putting an exact
+        // term in `must` pollutes the ranking with a constant.
+        filter = append(filter, map[string]any{
+            "term": map[string]any{"sentiment": sentiment},
+        })
+    }
+
+    body, _ := json.Marshal(map[string]any{
+        "query": map[string]any{"bool": map[string]any{"must": must, "filter": filter}},
+        "size":  20,
+    })
+
+    res, err := es.Search(
+        es.Search.WithIndex("reviews"),
+        es.Search.WithBody(bytes.NewReader(body)),
+    )
+    if err != nil {
+        return nil, err
+    }
+    defer res.Body.Close()
+
+    var parsed struct {
+        Hits struct {
+            Hits []struct {
+                Score  float64         `json:"_score"`
+                Source json.RawMessage `json:"_source"`
+            } `json:"hits"`
+        } `json:"hits"`
+    }
+    json.NewDecoder(res.Body).Decode(&parsed)
+
+    // "gret" (typo for "great") matches via fuzziness=AUTO (edit distance 1)
+    return toHits(parsed.Hits.Hits), nil
+}
+```
+
+```python title="search.py / Python + elasticsearch-py"
+def search_reviews(query: str, sentiment_filter: str = None) -> list:
     must_clauses = [{
         "multi_match": {
             "query":     query.lower(),
@@ -424,12 +824,196 @@ results = search_reviews("gret product", sentiment_filter="positive")
 # "gret" (typo for "great") matched via fuzziness=AUTO (edit distance 1)
 ```
 
-### Streaming Results from Two Sources (Node.js Pattern)
+```js title="search.js / Node 20+ + @elastic/elasticsearch"
+async function searchReviews(query, sentimentFilter) {
+  const must = [{
+    multi_match: {
+      query: query.toLowerCase(),
+      fields: ['review'],
+      fuzziness: 'AUTO', // edit distance scaled to term length
+      operator: 'and',   // all terms must appear
+    },
+  }]
 
-The demo in the lecture used a Next.js API route that streams results from Postgres and Elasticsearch simultaneously so neither waits for the other. Here is the pattern in pure Node.js:
+  // `filter`, not `must`. A filter is a yes/no gate: it does not
+  // contribute to the score and Elasticsearch caches the bitset, so it
+  // is both more correct for exact matches and faster.
+  const filter = sentimentFilter
+    ? [{ term: { sentiment: sentimentFilter } }]
+    : []
 
-```text
-Node.js (ESM)import { Client } from '@elastic/elasticsearch'
+  const resp = await es.search({
+    index: INDEX,
+    query: { bool: { must, filter } },
+    size: 20,
+  })
+
+  return resp.hits.hits.map((hit) => ({ score: hit._score, ...hit._source }))
+}
+
+// Usage
+const results = await searchReviews('gret product', 'positive')
+// "gret" (typo for "great") matched via fuzziness=AUTO (edit distance 1)
+```
+
+```ts title="search.ts / TypeScript 5+ + @elastic/elasticsearch"
+import type { QueryDslQueryContainer } from '@elastic/elasticsearch/lib/api/types'
+
+// The client's own DSL types are the reason to use TypeScript here: the
+// query DSL is a deeply nested untyped blob in every other language, and
+// a misspelled key like `fuzzines` is not an error to Elasticsearch, it
+// is a silently ignored clause that quietly turns typo tolerance off.
+async function searchReviews(
+  query: string,
+  sentimentFilter?: 'positive' | 'negative',
+): Promise<Array<Review & { score: number }>> {
+  const must: QueryDslQueryContainer[] = [{
+    multi_match: {
+      query: query.toLowerCase(),
+      fields: ['review'],
+      fuzziness: 'AUTO', // edit distance scaled to term length
+      operator: 'and',   // all terms must appear
+    },
+  }]
+
+  const filter: QueryDslQueryContainer[] = sentimentFilter
+    ? [{ term: { sentiment: sentimentFilter } }] // exact gate, unscored
+    : []
+
+  const resp = await es.search<Review>({
+    index: INDEX,
+    query: { bool: { must, filter } },
+    size: 20,
+  })
+
+  return resp.hits.hits.map((hit) => ({
+    score: hit._score ?? 0, // _score is null on a pure filter query
+    ...(hit._source as Review),
+  }))
+}
+```
+
+```java title="SearchService.java / Java 17+ + Elasticsearch Java API Client"
+List<Hit<Review>> searchReviews(String query, String sentimentFilter) throws IOException {
+    Query multiMatch = MultiMatchQuery.of(m -> m
+        .query(query.toLowerCase())
+        .fields("review")
+        .fuzziness("AUTO")                 // edit distance scaled to term length
+        .operator(Operator.And)            // all terms must appear
+    )._toQuery();
+
+    // `filter`, not `must`: an exact term is a yes/no gate that should
+    // not influence the score, and Elasticsearch caches it.
+    List<Query> filters = (sentimentFilter == null) ? List.of() : List.of(
+        TermQuery.of(t -> t.field("sentiment").value(sentimentFilter))._toQuery());
+
+    SearchResponse<Review> resp = es.search(s -> s
+        .index("reviews")
+        .size(20)
+        .query(q -> q.bool(b -> b.must(multiMatch).filter(filters))),
+        Review.class);
+
+    // "gret" (typo for "great") matches via fuzziness=AUTO (edit distance 1)
+    return resp.hits().hits();
+}
+```
+
+### Streaming Results from Two Sources
+
+The demo in the lecture used a Next.js API route that streams results from Postgres and Elasticsearch simultaneously so neither waits for the other. The shape is the same everywhere: **start both queries before awaiting either**, then send each result the moment it lands rather than holding the fast one hostage to the slow one.
+
+Go Python JavaScript TypeScript Java
+
+fire both queries concurrently, stream each result as it arrives
+
+```go title="stream.go / Go"
+// Go's version of "don't await sequentially" is a goroutine per source
+// writing into one channel, and a flush after every write so the bytes
+// actually leave the process instead of sitting in the buffer.
+func streamSearch(w http.ResponseWriter, r *http.Request) {
+    term := r.URL.Query().Get("q")
+
+    w.Header().Set("Content-Type", "text/event-stream")
+    flusher, ok := w.(http.Flusher)
+    if !ok {
+        http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+        return
+    }
+
+    type result struct {
+        Source string `json:"source"`
+        Data   any    `json:"data"`
+        Err    string `json:"error,omitempty"`
+    }
+
+    ch := make(chan result, 2)
+    var wg sync.WaitGroup
+    wg.Add(2)
+
+    // Fire BOTH queries concurrently, don't await sequentially
+    go func() {
+        defer wg.Done()
+        rows, err := pgSearch(r.Context(), term)
+        ch <- result{Source: "postgres", Data: rows, Err: errString(err)}
+    }()
+
+    go func() {
+        defer wg.Done()
+        hits, err := esSearch(r.Context(), term)
+        ch <- result{Source: "elasticsearch", Data: hits, Err: errString(err)}
+    }()
+
+    go func() { wg.Wait(); close(ch) }()
+
+    enc := json.NewEncoder(w)
+    for res := range ch { // whichever finishes first is sent first
+        enc.Encode(res)
+        flusher.Flush()
+    }
+}
+```
+
+```python title="stream.py / Python + FastAPI"
+import asyncio
+import json
+
+from fastapi import Request
+from fastapi.responses import StreamingResponse
+
+
+@app.get("/search/stream")
+async def stream_search(request: Request):
+    term = request.query_params.get("q", "")
+
+    async def generate():
+        # Fire BOTH queries concurrently, don't await sequentially.
+        # create_task starts the coroutine now; awaiting them in turn
+        # would run the second only after the first had finished.
+        pending = {
+            asyncio.create_task(pg_search(term)): "postgres",
+            asyncio.create_task(es_search(term)): "elasticsearch",
+        }
+
+        while pending:
+            # Wake on whichever task finishes FIRST, so the fast source
+            # is never held hostage by the slow one.
+            done, _ = await asyncio.wait(
+                pending, return_when=asyncio.FIRST_COMPLETED)
+
+            for task in done:
+                source = pending.pop(task)
+                try:
+                    yield json.dumps({"source": source, "data": task.result()}) + "\n"
+                except Exception as e:
+                    # One source failing degrades the page, it does not
+                    # blank it: the other source's results still ship.
+                    yield json.dumps({"source": source, "error": str(e)}) + "\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+```
+
+```js title="stream.js / Node 20+ (ESM)"
+import { Client } from '@elastic/elasticsearch'
 import { neon }     from '@neondatabase/serverless'
 
 export async function GET(req) {
@@ -457,6 +1041,92 @@ export async function GET(req) {
     }
   })
   return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+}
+```
+
+```ts title="stream.ts / TypeScript 5+"
+interface StreamChunk<T> {
+  source: 'postgres' | 'elasticsearch'
+  status: 'fulfilled' | 'rejected'
+  data?: T
+  error?: string
+}
+
+// allSettled, never all: `Promise.all` rejects the whole response the
+// moment ONE source fails, which is precisely the wrong behaviour here.
+// Elasticsearch being down should degrade the page to Postgres results,
+// not blank it. The union type above is what forces the consumer to
+// handle the rejected case rather than assuming `data` is there.
+export async function GET(req: Request): Promise<Response> {
+  const term = new URL(req.url).searchParams.get('q') ?? ''
+  const encoder = new TextEncoder()
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = <T>(chunk: StreamChunk<T>): void => {
+        controller.enqueue(encoder.encode(JSON.stringify(chunk) + '\n'))
+      }
+
+      // Fire BOTH queries concurrently, and send each as it settles
+      await Promise.all([
+        pgSearch(term).then(
+          (data) => send({ source: 'postgres', status: 'fulfilled', data }),
+          (err: Error) => send({ source: 'postgres', status: 'rejected', error: err.message }),
+        ),
+        esSearch(term).then(
+          (data) => send({ source: 'elasticsearch', status: 'fulfilled', data }),
+          (err: Error) => send({ source: 'elasticsearch', status: 'rejected', error: err.message }),
+        ),
+      ])
+
+      controller.close()
+    },
+  })
+
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+}
+```
+
+```java title="StreamController.java / Java 17+ + Spring Boot"
+@RestController
+class StreamController {
+
+    // SseEmitter is Spring's streaming response: the request thread is
+    // released immediately and events are pushed as they are produced.
+    @GetMapping(value = "/search/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    SseEmitter streamSearch(@RequestParam(defaultValue = "") String q) {
+        SseEmitter emitter = new SseEmitter(30_000L); // always set a timeout
+
+        // Fire BOTH queries concurrently, don't await sequentially.
+        // supplyAsync starts the work now; the thenAccept fires per source.
+        CompletableFuture<Void> pg = CompletableFuture
+            .supplyAsync(() -> pgSearch(q))
+            .handle((data, err) -> send(emitter, "postgres", data, err))
+            .thenAccept(x -> { });
+
+        CompletableFuture<Void> es = CompletableFuture
+            .supplyAsync(() -> esSearch(q))
+            .handle((data, err) -> send(emitter, "elasticsearch", data, err))
+            .thenAccept(x -> { });
+
+        // Complete only once BOTH have reported, success or failure.
+        CompletableFuture.allOf(pg, es)
+            .whenComplete((v, err) -> emitter.complete());
+
+        return emitter;
+    }
+
+    private Object send(SseEmitter emitter, String source, Object data, Throwable err) {
+        try {
+            emitter.send(Map.of(
+                "source", source,
+                err == null ? "data" : "error",
+                err == null ? data : err.getMessage()));
+        } catch (IOException io) {
+            emitter.completeWithError(io); // client hung up mid-stream
+        }
+        return null;
+    }
 }
 ```
 
@@ -518,4 +1188,4 @@ As the lecturer noted: _"You don't have to master Elasticsearch the way you must
 
 Backend Field Manual / Full-Text Search Chapter / Notes compiled from video lecture
 
-Backend from First Principles / Chapter 11 / Search. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 11 / Search. Code targets Postgres 14+, Elasticsearch 8+, Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).

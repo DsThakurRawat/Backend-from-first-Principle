@@ -2,7 +2,7 @@
 order: 19
 title: "Infrastructure, Architecture & Beyond"
 navTitle: "Scaling & Performance (Part 2)"
-summary: "Chapter 19 of Backend from First Principles: Scaling & Performance (Part 2)."
+summary: "Scaling past one machine: statelessness as the thing that makes instances interchangeable, load balancer algorithms and health checks, read replicas and sharding, CDNs and the edge, offloading work to queues, and the honest trade-offs of microservices and serverless. Worked implementations in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "scaling"
@@ -37,10 +37,11 @@ Statelessness is the principle that no single server instance holds any informat
 | **Database**        | SQLite file on disk         | Postgres (RDS), MySQL, centralized SQLite |
 | **Background jobs** | In-process goroutine/thread | Redis queue, RabbitMQ, Kafka              |
 
-#### Stateless session management in Go
+Go Python JavaScript TypeScript Java
+
+the session lives in Redis, so any instance can serve any request
 
 ```go
-Go
 import (
     "context"
     "github.com/redis/go-redis/v9"
@@ -61,10 +62,7 @@ func GetSession(ctx context.Context, sessionID string) (string, error) {
 }
 ```
 
-#### Stateless session in Python (FastAPI + Redis)
-
 ```python
-Python
 import redis, uuid
 from fastapi import FastAPI, Response, Cookie
 
@@ -80,6 +78,91 @@ def login(response: Response, email: str, password: str):
     r.setex(f"session:{session_id}", 86400, user.id)
     response.set_cookie("session_id", session_id, httponly=True)
     return {"status": "ok"}
+```
+
+```js
+import { randomUUID } from 'node:crypto'
+
+const SESSION_TTL = 60 * 60 * 24 // 24 hours
+
+app.post('/login', async (req, res) => {
+  const user = await authenticate(req.body.email, req.body.password)
+  const sessionId = randomUUID()
+
+  // Store in Redis, accessible by ALL server instances
+  await redis.set(`session:${sessionId}`, user.id, { EX: SESSION_TTL })
+
+  res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'lax' })
+  res.json({ status: 'ok' })
+})
+
+// The Express default that breaks this: express-session with no store
+// keeps sessions in a MemoryStore, in the process. It works perfectly on
+// one instance and logs users out at random the moment you run two.
+```
+
+```ts
+import session from 'express-session'
+import { RedisStore } from 'connect-redis'
+
+// Typing the session payload once is what stops it drifting into an
+// untyped bag that each handler guesses at. Declaration merging widens
+// the library's own type, so `req.session.userId` is checked everywhere.
+declare module 'express-session' {
+  interface SessionData {
+    userId: string
+    role: 'admin' | 'user'
+  }
+}
+
+app.use(session({
+  // The store is the ONLY line that matters for horizontal scaling:
+  // omit it and express-session silently uses an in-process MemoryStore,
+  // which is exactly the state that makes instances non-interchangeable.
+  store: new RedisStore({ client: redis, prefix: 'session:' }),
+  secret: process.env.SESSION_SECRET!,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, secure: true, maxAge: 86_400_000 },
+}))
+
+app.post('/login', async (req, res) => {
+  const user = await authenticate(req.body.email, req.body.password)
+  req.session.userId = user.id // written straight through to Redis
+  res.json({ status: 'ok' })
+})
+```
+
+```java
+// Spring Session turns this into one dependency plus one annotation. The
+// ordinary servlet HttpSession is then backed by Redis, so every
+// getAttribute / setAttribute already in your codebase becomes shared
+// across instances with no code change at all.
+//
+//   implementation 'org.springframework.session:spring-session-data-redis'
+
+@Configuration
+@EnableRedisHttpSession(maxInactiveIntervalInSeconds = 86400) // 24h
+public class SessionConfig { }
+
+@RestController
+class AuthController {
+
+    @PostMapping("/login")
+    Map<String, String> login(@RequestBody LoginRequest body, HttpSession session) {
+        User user = authenticate(body.email(), body.password());
+
+        // Stored in Redis, accessible by ALL server instances
+        session.setAttribute("userId", user.id());
+
+        return Map.of("status", "ok");
+    }
+}
+
+// The default without Spring Session is Tomcat's in-memory session map,
+// which is per-JVM. That is what forces people into sticky sessions at
+// the load balancer, and sticky sessions mean losing every user on that
+// instance when it restarts. Externalise the session instead.
 ```
 
 <Callout type="info" title="Thumb rule">
@@ -118,10 +201,11 @@ What happens when a server crashes? Without health checks, a round-robin load ba
 <svg viewBox="0 0 600 180" xmlns="http://www.w3.org/2000/svg" style="max-width:600px;width:100%"><defs><marker id="ah" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="var(--dg-ok)"></path></marker><marker id="af" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="var(--dg-accent)"></path></marker></defs><rect x="20" y="55" width="100" height="65" rx="5" fill="var(--dg-surface)" stroke="var(--dg-ink-2)" stroke-width="1.3"></rect><text x="70" y="85" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ink-2)">LB</text><text x="70" y="100" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">health check</text><text x="70" y="112" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">every 1s</text><rect x="200" y="15" width="120" height="40" rx="4" fill="var(--dg-surface)" stroke="var(--dg-ok)" stroke-width="1.3"></rect><text x="260" y="39" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ok-soft)">Server A </text><line x1="120" y1="72" x2="200" y2="35" stroke="var(--dg-ok)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#ah)"></line><text x="170" y="44" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ok)">200</text><rect x="200" y="70" width="120" height="40" rx="4" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-width="1.5" stroke-dasharray="4 3"></rect><text x="260" y="94" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-accent)">Server B</text><line x1="120" y1="88" x2="200" y2="90" stroke="var(--dg-accent)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#af)"></line><text x="170" y="82" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-accent)">502</text><text x="340" y="82" font-family="var(--font-ui)" font-size="8" fill="var(--dg-accent)" font-weight="600">-> BLACKLISTED</text><text x="340" y="95" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ink-2)">no user traffic sent</text><rect x="200" y="125" width="120" height="40" rx="4" fill="var(--dg-surface)" stroke="var(--dg-ok)" stroke-width="1.3"></rect><text x="260" y="149" text-anchor="middle" font-family="var(--font-diagram-mono)" font-size="9" fill="var(--dg-ok-soft)">Server C </text><line x1="120" y1="105" x2="200" y2="145" stroke="var(--dg-ok)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#ah)"></line><text x="170" y="135" font-family="var(--font-diagram-mono)" font-size="7" fill="var(--dg-ok)">200</text></svg>
 </Diagram>
 
-#### Health endpoint in Go
+Go Python JavaScript TypeScript Java
+
+check every downstream dependency, not just "I am alive"
 
 ```go
-Go
 // A production health check verifies downstream dependencies, not just "I'm alive."
 http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
     checks := map[string]string{}
@@ -147,6 +231,119 @@ http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
     }
     json.NewEncoder(w).Encode(checks)
 })
+```
+
+```python
+# A production health check verifies downstream dependencies,
+# not just "I'm alive."
+@app.get("/health")
+async def health(response: Response):
+    checks = {}
+
+    try:
+        await db.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception:
+        checks["database"] = "unreachable"
+
+    try:
+        await redis.ping()
+        checks["redis"] = "ok"
+    except Exception:
+        checks["redis"] = "unreachable"
+
+    if any(v != "ok" for v in checks.values()):
+        response.status_code = 503
+
+    return checks
+```
+
+```js
+// A production health check verifies downstream dependencies,
+// not just "I'm alive."
+app.get('/health', async (req, res) => {
+  const checks = {}
+
+  // Run the probes CONCURRENTLY. Done in sequence, a health check with
+  // four dependencies that each take a second is a four-second probe,
+  // and the load balancer's timeout is usually shorter than that.
+  const [db, cache] = await Promise.allSettled([
+    pool.query('SELECT 1'),
+    redis.ping(),
+  ])
+
+  checks.database = db.status === 'fulfilled' ? 'ok' : 'unreachable'
+  checks.redis = cache.status === 'fulfilled' ? 'ok' : 'unreachable'
+
+  const healthy = Object.values(checks).every((v) => v === 'ok')
+  res.status(healthy ? 200 : 503).json(checks)
+})
+```
+
+```ts
+import type { Request, Response } from 'express'
+
+type CheckResult = 'ok' | 'unreachable'
+
+// Declaring the dependencies as data rather than as another pair of
+// try/catch blocks is what keeps this endpoint correct as the service
+// grows: adding a fifth dependency is one line, and it automatically
+// inherits the concurrency and the timeout.
+const DEPENDENCIES: Array<{ name: string; probe: () => Promise<unknown> }> = [
+  { name: 'database', probe: () => pool.query('SELECT 1') },
+  { name: 'redis', probe: () => redis.ping() },
+]
+
+export async function health(_req: Request, res: Response): Promise<void> {
+  const results = await Promise.all(
+    DEPENDENCIES.map(async ({ name, probe }): Promise<[string, CheckResult]> => {
+      try {
+        await Promise.race([
+          probe(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2000)),
+        ])
+        return [name, 'ok']
+      } catch {
+        return [name, 'unreachable']
+      }
+    }),
+  )
+
+  const checks = Object.fromEntries(results)
+  const healthy = results.every(([, v]) => v === 'ok')
+
+  res.status(healthy ? 200 : 503).json(checks)
+}
+```
+
+```java
+// Spring Boot Actuator aggregates every HealthIndicator on the classpath
+// and already ships ones for DataSource and Redis, so this endpoint
+// exists without code:
+//   management.endpoint.health.show-details: always
+//
+// GET /actuator/health
+//   200 {"status":"UP","components":{"db":{"status":"UP"},"redis":{...}}}
+//   503 {"status":"DOWN",...}   as soon as any component is DOWN
+
+// Add your own for anything Actuator cannot know about:
+@Component
+public class PaymentProviderHealthIndicator implements HealthIndicator {
+    private final RestClient client;
+
+    @Override
+    public Health health() {
+        try {
+            client.get().uri("/ping").retrieve().toBodilessEntity();
+            return Health.up().build();
+        } catch (Exception e) {
+            // Consider whether a third party being down should really
+            // take YOUR instance out of rotation. Often it should not:
+            // report it as a detail, and keep the aggregate UP.
+            return Health.down().withDetail("provider", "unreachable").build();
+        }
+    }
+}
 ```
 
 ## Read Replicas
@@ -259,10 +456,11 @@ Async: 100ms (DB) + push to queue = 100ms perceived
 
 **Emails & notifications**: users don't expect instant delivery. **Image/video processing**: encoding, resizing, thumbnail generation. **Account deletion**: cascading deletes across many tables. **Report generation**: aggregating data across millions of rows. **Webhook delivery**: retrying on failure without blocking the main request. The rule: if the user doesn't need the result in the same HTTP response, it's a candidate for async processing.
 
-#### Background job with Go and Redis
+Go Python JavaScript TypeScript Java
+
+the API pushes, a separate worker process pops
 
 ```go
-Go
 import (
     "context"
     "encoding/json"
@@ -294,10 +492,7 @@ func EmailWorker(ctx context.Context) {
 }
 ```
 
-#### Background job with Python (Celery)
-
 ```python
-Python
 from celery import Celery
 
 app = Celery("tasks", broker="redis://localhost:6379/0")
@@ -318,8 +513,98 @@ def send_invitation_email(self, email: str, invite_url: str):
 send_invitation_email.delay("user@example.com", "https://app.co/invite/abc")
 ```
 
+```js
+import { Queue, Worker } from 'bullmq'
+
+const connection = { host: 'localhost', port: 6379 }
+
+// Producer: push job to queue (called from your API handler)
+const emailQueue = new Queue('emails', { connection })
+
+export async function enqueueEmail(job) {
+  await emailQueue.add('send', job, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 60_000 },
+  })
+}
+
+// Consumer: runs as a SEPARATE process, never imported by the API
+new Worker('emails', async (job) => {
+  await sendEmail(job.data) // takes 300ms, but no user is waiting
+}, { connection, concurrency: 10 })
+
+// In your API handler, returns instantly to the user
+await enqueueEmail({ to: 'user@example.com', subject: "You've been invited!" })
+```
+
+```ts
+import { Queue, Worker, type Job } from 'bullmq'
+
+// The job payload type, imported by BOTH the producer and the worker.
+// This is the cheapest possible fix for the most common queue bug: a
+// producer that starts sending a renamed field while the worker still
+// reads the old one, which fails silently, in a different process,
+// minutes later. Here it is a compile error.
+export interface EmailJob {
+  to: string
+  subject: string
+  template: string
+}
+
+const emailQueue = new Queue<EmailJob>('emails', { connection })
+
+// Producer: push job to queue (called from your API handler)
+export async function enqueueEmail(job: EmailJob): Promise<void> {
+  await emailQueue.add('send', job, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 60_000 },
+  })
+}
+
+// Consumer: a separate process
+new Worker<EmailJob>('emails', async (job: Job<EmailJob>) => {
+  await sendEmail(job.data) // takes 300ms, but no user is waiting
+}, { connection, concurrency: 10 })
+```
+
+```java
+// Producer: the simplest version in Spring is @Async, which hands the
+// method to a thread pool and returns to the caller immediately.
+@Service
+public class EmailService {
+
+    @Async
+    public void sendInvitationEmail(String email, String inviteUrl) {
+        emailProvider.send(email, "You've been invited!", "invite",
+            Map.of("url", inviteUrl)); // 300ms, but no user is waiting
+    }
+}
+
+@Configuration
+@EnableAsync
+class AsyncConfig {
+    @Bean
+    Executor taskExecutor() {
+        var executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(10);
+        executor.setQueueCapacity(100);
+        // What to do when the queue is full. The default silently
+        // REJECTS the task; CallerRunsPolicy instead runs it on the
+        // calling thread, which slows the API down but never loses work.
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        return executor;
+    }
+}
+
+// The limitation is the one that matters: @Async runs IN your API
+// process, so a restart loses every queued job and the work does not
+// scale independently of the web tier. For anything that must survive a
+// deploy, put it in a real broker, Redis Streams, RabbitMQ or SQS, and
+// run the worker separately. See chapter 10.
+```
+
 <Callout type="info">
-**Reference:** [Celery Documentation](https://docs.celeryq.dev/en/stable/) / [BullMQ (Node.js)](https://docs.bullmq.io/), production-grade task queues for Python and JavaScript respectively.
+**Reference:** [Celery](https://docs.celeryq.dev/en/stable/) (Python) / [BullMQ](https://docs.bullmq.io/) (Node.js) / [Asynq](https://github.com/hibiken/asynq) (Go) / [Spring Batch](https://spring.io/projects/spring-batch) and [JobRunr](https://www.jobrunr.io/) (Java), production-grade task queues. Chapter 10 covers all of them in depth.
 </Callout>
 
 ## Monoliths vs Microservices
@@ -420,7 +705,6 @@ You don't need to build for a million users on day one, most platforms never rea
 Observability is the one exception to "start simple." Production-grade logging, metrics, and tracing should be in place from the first deployment. They pay for themselves immediately, you never have to guess where a bug is, you never get surprised by a traffic spike, and you always have the data to make informed scaling decisions.
 
 ```go
-Go
 // A minimal but real observability setup: Prometheus metrics + structured logging
 import (
     "github.com/prometheus/client_golang/prometheus"
@@ -468,4 +752,4 @@ Scaling is not a one-time project. It's an ongoing practice, you build systems, 
 
 [^ Back to top](#top)
 
-Backend from First Principles / Chapter 19 / Scaling II. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 19 / Scaling II. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).

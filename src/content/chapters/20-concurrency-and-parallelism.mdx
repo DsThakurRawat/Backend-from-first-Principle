@@ -2,7 +2,7 @@
 order: 20
 title: "Concurrency & Parallelism"
 navTitle: "Concurrency & Parallelism"
-summary: "Chapter 20 of Backend from First Principles: Concurrency & Parallelism."
+summary: "Why a backend spends most of its life waiting, and the four models built to stop wasting that time: OS threads, the event loop, goroutines and virtual threads. Then the bugs concurrency creates, race conditions across a yield point, and the locks and channels that fix them. Compared across Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "concurrency"
@@ -188,7 +188,7 @@ def handle_request(conn):
 while True:
     conn = server_socket.accept()
     t = threading.Thread(target=handle_request, args=(conn,))
-    t.start()Python
+    t.start()
 ```
 
 Notice there's no `async` or `await` anywhere. The blocking happens transparently, at the OS level, when `db.execute()` makes a network call. The thread is marked as "blocked," the OS switches to another thread, and later wakes this thread up when the database response arrives on the socket.
@@ -275,7 +275,7 @@ If you run a CPU-intensive operation, say, a 100 ms image processing task, direc
 
 The event loop works on callbacks, but raw callbacks lead to deeply nested code (the infamous "callback hell"). The evolution in JavaScript went:
 
-```text
+```js title="stage 1 / callback hell"
 // Stage 1: Raw callbacks (pre-ES6)
 db.query("SELECT * FROM users WHERE id = ?", [userId],
   function(err, result) {
@@ -289,16 +289,16 @@ db.query("SELECT * FROM users WHERE id = ?", [userId],
       }
     );
   }
-);JavaScript / callback hell
+);
 ```
 
-```text
+```js title="stage 2 / async-await"
 // Stage 2: async/await (modern, syntactic sugar over callbacks)
 async function handleRequest(req, res) {
   const user  = await db.query("SELECT * FROM users WHERE id = ?", [req.userId]);
   const orders = await db.query("SELECT * FROM orders WHERE user_id = ?", [req.userId]);
   sendResponse(res, { user, orders });
-}JavaScript / async/await
+}
 ```
 
 The `await` keyword is syntactic sugar. When the runtime encounters `await`, it says: "I'm giving up control of the CPU to the event loop. Everything after this line is effectively a callback that will run when this IO operation completes."
@@ -320,7 +320,7 @@ async def handle_request(user_id: int) -> dict:
     return {"user": user, "orders": orders}
 
 # Run with an event loop (uvloop for performance)
-asyncio.run(handle_request(123))Python
+asyncio.run(handle_request(123))
 ```
 
 <Callout type="info" title="Reference">
@@ -341,12 +341,12 @@ To truly understand `async/await`, it helps to see what the compiler or runtime 
 async def fetch_user_data(user_id):
     user   = await db.get_user(user_id)      # State 0 -> 1
     orders = await db.get_orders(user_id)    # State 1 -> 2
-    return {"user": user, "orders": orders}  # State 2 -> donePython
+    return {"user": user, "orders": orders}  # State 2 -> done
 ```
 
 ### What the runtime sees (conceptual)
 
-```go
+```python title="the same function, as an explicit state machine"
 # Conceptual state machine representation
 def fetch_user_data_machine(user_id):
     state = 0
@@ -372,7 +372,7 @@ def fetch_user_data_machine(user_id):
         elif state == 2:
             return {"user": user, "orders": orders}
 
-    return stepPython / conceptual
+    return step
 ```
 
 <Diagram caption="Fig 6, Each await is a state transition; the event loop runs other work in between">
@@ -418,7 +418,7 @@ func (srv *Server) Serve(l net.Listener) error {
         // Create a NEW goroutine for each connection
         go srv.handleConn(conn)
     }
-}Go
+}
 ```
 
 The `go` keyword spawns a new goroutine. This is the equivalent of creating a thread, but at a fraction of the cost (nanoseconds vs. microseconds, kilobytes vs. megabytes).
@@ -442,7 +442,7 @@ func handleGetUser(w http.ResponseWriter, r *http.Request) {
 
     // Goroutine resumes here after DB responds
     json.NewEncoder(w).Encode(user)
-}Go
+}
 ```
 
 Notice: **no `async`, no `await`, no callbacks**. The code reads like synchronous, blocking code, because the goroutine _does_ block. But the Go runtime scheduler transparently parks it and picks up another goroutine. You get the ergonomics of blocking code with the efficiency of non-blocking IO.
@@ -483,7 +483,34 @@ Two threads both try to increment a shared counter from 0 to 1. Incrementing req
 
 ### Race conditions in async/await too
 
-You might think: "I use JavaScript / Python with async/await, there's only one thread, so no race conditions." **Wrong.** Race conditions can still occur between `await` points. Consider this Python example:
+You might think: "I use JavaScript / Python with async/await, there's only one thread, so no race conditions." **Wrong.** Race conditions can still occur between `await` points. The same bug, in all five languages:
+
+Go Python JavaScript TypeScript Java
+
+check, yield, act: the gap in the middle is where the second caller gets in
+
+```go
+var balance = 100
+
+// Go has no await, but it has the same gap: every channel receive,
+// mutex acquire and network call is a yield point at which the
+// scheduler can run the other goroutine.
+func withdraw(amount int) {
+    if balance >= amount {            // Check at time T1
+        processWithdrawal(amount)     // <- blocks here, scheduler switches
+        balance -= amount             // Deduct at time T2
+    }
+}
+
+// Both goroutines see balance=100, both pass the check,
+// both deduct 100 -> balance = -100 (invalid!)
+go withdraw(100)
+go withdraw(100)
+
+// Go will actually TELL you about this one, which none of the others
+// will:  go run -race .  reports the conflicting access and the two
+// stacks that caused it. Run your tests with -race in CI.
+```
 
 ```python
 balance = 100
@@ -499,7 +526,87 @@ async def withdraw(amount: int):
 await asyncio.gather(
     withdraw(100),
     withdraw(100),
-)Python
+)
+```
+
+```js
+let balance = 100
+
+async function withdraw(amount) {
+  if (balance >= amount) {              // Check at time T1
+    await processWithdrawal(amount)     // <- yields control here!
+    balance -= amount                   // Deduct at time T2
+  }
+}
+
+// Both promises see balance=100, both pass the check,
+// both deduct 100 -> balance = -100 (invalid!)
+await Promise.all([withdraw(100), withdraw(100)])
+
+// This is the one that surprises people most, because "JavaScript is
+// single-threaded" is usually taught as if it meant "safe". It means
+// only that no two lines run AT THE SAME INSTANT. Everything between
+// one await and the next is still interleaved with other work.
+```
+
+```ts
+let balance = 100
+
+async function withdraw(amount: number): Promise<void> {
+  if (balance >= amount) {          // Check at time T1
+    await processWithdrawal(amount) // <- yields control here!
+    balance -= amount               // Deduct at time T2
+  }
+}
+
+await Promise.all([withdraw(100), withdraw(100)]) // balance = -100
+
+// Types cannot catch this, and it is worth being honest about why: the
+// bug is not in any single line, it is in the ORDER two correct lines
+// run in. No type system in production use models that.
+//
+// What you can do is make the dangerous shape rarer. Keep the mutable
+// state out of module scope and behind an object that owns its own
+// lock, so "read it, await, write it" is not something a caller can
+// spell by accident:
+class Account {
+  #balance = 100
+  #lock = new Mutex()
+
+  async withdraw(amount: number): Promise<void> {
+    await this.#lock.runExclusive(async () => {
+      if (this.#balance < amount) throw new Error('insufficient funds')
+      await processWithdrawal(amount)
+      this.#balance -= amount
+    })
+  }
+}
+```
+
+```java
+// Java 21 virtual threads make this bug easy to hit for the same reason
+// goroutines do: blocking calls are cheap, so people write many more of
+// them, and every blocking call is a scheduling point.
+static int balance = 100;
+
+static void withdraw(int amount) {
+    if (balance >= amount) {        // Check at time T1
+        processWithdrawal(amount);  // <- blocks; the carrier thread is reused
+        balance -= amount;          // Deduct at time T2
+    }
+}
+
+try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    executor.submit(() -> withdraw(100));
+    executor.submit(() -> withdraw(100));
+}
+// balance = -100 (invalid!)
+
+// On the JVM there is a second, nastier layer: without synchronization
+// there is no guarantee thread B ever SEES thread A's write at all. The
+// value can sit in a core's cache or be reordered by the compiler. A
+// race here is not just interleaving, it is a visibility problem, which
+// is why `volatile` and the Java Memory Model exist.
 ```
 
 The issue: the `if` check and the deduction are separated by an `await`. Between those two points, the event loop runs the second `withdraw` call, which also sees `balance == 100` and passes the check. Both deduct, and the balance goes to **-100**.
@@ -520,28 +627,9 @@ The solutions to race conditions have been studied for decades. Here are the maj
 
 A mutex ensures that only **one thread/goroutine** can execute a critical section at a time. All others must wait until the lock is released. This is the most common synchronization primitive across all languages.
 
-#### Python: threading.Lock
+Go Python JavaScript TypeScript Java
 
-```python
-import threading
-
-counter = 0
-lock = threading.Lock()
-
-def increment():
-    global counter
-    with lock:          # Acquire lock, blocks other threads
-        counter += 1   # Only one thread executes this at a time
-                        # Lock is released automatically at end of `with`
-
-# Create 1000 threads all incrementing the same counter
-threads = [threading.Thread(target=increment) for _ in range(1000)]
-for t in threads: t.start()
-for t in threads: t.join()
-print(counter)  # Always 1000, no lost updatesPython
-```
-
-#### Go: sync.Mutex
+one holder at a time, and the release must be guaranteed
 
 ```go
 package main
@@ -568,7 +656,114 @@ func main() {
 
     wg.Wait()
     fmt.Println(counter) // Always 1000
-}Go
+}
+```
+
+```python
+import threading
+
+counter = 0
+lock = threading.Lock()
+
+def increment():
+    global counter
+    with lock:          # Acquire lock, blocks other threads
+        counter += 1   # Only one thread executes this at a time
+                        # Lock is released automatically at end of `with`
+
+# Create 1000 threads all incrementing the same counter
+threads = [threading.Thread(target=increment) for _ in range(1000)]
+for t in threads: t.start()
+for t in threads: t.join()
+print(counter)  # Always 1000, no lost updates
+```
+
+```js
+import { Mutex } from 'async-mutex'
+
+let counter = 0
+const mutex = new Mutex()
+
+async function increment() {
+  // runExclusive acquires, runs, and releases even if the body throws,
+  // which is the JavaScript equivalent of Go's `defer mu.Unlock()`.
+  await mutex.runExclusive(async () => {
+    counter += 1 // only one task is inside this at a time
+  })
+}
+
+await Promise.all(Array.from({ length: 1000 }, increment))
+console.log(counter) // Always 1000
+
+// Note what this is NOT protecting against: Node has no shared memory
+// between processes, so this lock is per-process. Two instances behind
+// a load balancer need a DISTRIBUTED lock in Redis, or better, an
+// atomic operation in the database. See chapters 08 and 09.
+```
+
+```ts
+import { Mutex } from 'async-mutex'
+
+// Wrapping the state and its lock in one object is the point: a bare
+// `counter` plus a bare `mutex` is two things a caller has to remember
+// to use together, and the whole class of bug here is somebody
+// forgetting one of them.
+class Counter {
+  #value = 0
+  readonly #mutex = new Mutex()
+
+  async increment(): Promise<void> {
+    await this.#mutex.runExclusive(() => {
+      this.#value += 1
+    })
+  }
+
+  // No lock needed to read a single number, but it would be for any
+  // multi-field invariant: reading two fields that must agree is itself
+  // a critical section.
+  get value(): number {
+    return this.#value
+  }
+}
+
+const counter = new Counter()
+await Promise.all(Array.from({ length: 1000 }, () => counter.increment()))
+console.log(counter.value) // Always 1000
+```
+
+```java
+// Three ways, in increasing order of how much you should reach for them.
+
+// 1. An atomic. For a single variable this is the right answer: it is
+//    lock-free, so there is no contention and nothing to forget.
+AtomicInteger counter = new AtomicInteger();
+
+try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    for (int i = 0; i < 1000; i++) {
+        executor.submit(counter::incrementAndGet);
+    }
+}
+System.out.println(counter.get()); // Always 1000
+
+// 2. An explicit lock, for a critical section spanning several lines.
+//    The unlock MUST be in a finally block: an exception between lock
+//    and unlock otherwise deadlocks every other thread forever.
+private final ReentrantLock lock = new ReentrantLock();
+
+void increment() {
+    lock.lock();
+    try {
+        counter++;
+    } finally {
+        lock.unlock(); // this is Java's `defer mu.Unlock()`
+    }
+}
+
+// 3. `synchronized`, the oldest form. Avoid it with VIRTUAL threads on
+//    Java 21: a synchronized block PINS the virtual thread to its
+//    carrier, so a blocking call inside one blocks a real OS thread and
+//    quietly undoes the reason you used virtual threads at all.
+//    (Fixed in Java 24; on 21 through 23, prefer ReentrantLock.)
 ```
 
 ### Channels: Go's preferred approach
@@ -605,10 +800,12 @@ func main() {
 
     result := <-done
     fmt.Println(result) // 1000, no race condition, no mutex needed
-}Go
+}
 ```
 
-### Python asyncio.Lock for async code
+### The async lock: a different lock for a different yield point
+
+A threading lock BLOCKS the thread that waits on it, which in async code means blocking the whole event loop and everything else it was running. Async runtimes therefore ship a second lock that suspends only the waiting task. Using the wrong one is a classic deadlock: `threading.Lock` inside a coroutine will stop the loop that was supposed to release it.
 
 ```python
 import asyncio
@@ -628,7 +825,7 @@ await asyncio.gather(
     withdraw(100),
     withdraw(100),
 )
-print(balance)  # 0, not -100Python
+print(balance)  # 0, not -100
 ```
 
 <Callout type="info" title="Reference">
@@ -699,4 +896,4 @@ Most backend applications are **overwhelmingly IO-bound**: the bottleneck is alm
 
 ---
 
-Backend from First Principles / Chapter 20 / Concurrency. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 20 / Concurrency. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 21+.

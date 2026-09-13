@@ -2,7 +2,7 @@
 order: 13
 title: "gRPC & Inter-Service Communication"
 navTitle: "gRPC & Inter-Service Communication"
-summary: "A first-principles walkthrough of the RPC framework that powers the internals of Google, Netflix, Uber and most modern microservice fleets, from the contract (Protocol Buffers) and the binary wire format , through the HTTP/2 transport and the four streaming shapes, to deadlines, interceptors, mTLS and production resilience. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in both Go and Python."
+summary: "A first-principles walkthrough of the RPC framework that powers the internals of Google, Netflix, Uber and most modern microservice fleets, from the contract (Protocol Buffers) and the binary wire format , through the HTTP/2 transport and the four streaming shapes, to deadlines, interceptors, mTLS and production resilience. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "3-4 hours"
 keywords:
   - "grpc"
@@ -85,6 +85,8 @@ syntax = "proto3";              // always declare the syntax; proto3 is current
 package user.v1;                // namespace + a versioning convention (v1, v2...)
 
 option go_package = "example.com/gen/userv1;userv1";  // where generated Go lands
+option java_package = "com.example.gen.userv1";      // and where generated Java lands
+option java_multiple_files = true;                   // one class per message, not one giant outer class
 
 // A message is a typed record. Each FIELD has a type, a name, and a NUMBER.
 message User {
@@ -188,7 +190,7 @@ Part III / The Four Call Types
 
 ## Unary RPC
 
-The simplest and most common shape: **one request, one response**: exactly like a normal function call. The client sends a single message, the server does its work and returns a single message. \~90% of real-world RPCs are unary. We'll build the `GetUser` method from the `user.proto` in sec 04, in full, both languages.
+The simplest and most common shape: **one request, one response**: exactly like a normal function call. The client sends a single message, the server does its work and returns a single message. \~90% of real-world RPCs are unary. We'll build the `GetUser` method from the `user.proto` in sec 04, in full, in all five languages.
 
 <Diagram caption="Unary">
 <svg viewBox="0 0 720 130" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Client sends one request, server returns one response"><rect x="40" y="20" width="150" height="40" rx="8" fill="var(--dg-accent)"></rect><text x="115" y="45" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Client</text><rect x="530" y="20" width="150" height="40" rx="8" fill="var(--dg-ok)"></rect><text x="605" y="45" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">Server</text><defs><marker id="u1" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker><marker id="u2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker></defs><path d="M195 40 H525" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#u1)"></path><text x="360" y="32" class="mono" font-size="11" fill="var(--dg-accent-2)" text-anchor="middle">1 request</text><path d="M525 75 H195" stroke="var(--dg-ok)" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#u2)"></path><text x="360" y="98" class="mono" font-size="11" fill="var(--dg-ok)" text-anchor="middle">1 response</text></svg>
@@ -196,7 +198,7 @@ The simplest and most common shape: **one request, one response**: exactly like 
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // ===== SERVER =====
@@ -294,6 +296,174 @@ if __name__ == "__main__":
     serve()
 ```
 
+```js
+// ===== SERVER =====
+const grpc = require('@grpc/grpc-js')
+const protoLoader = require('@grpc/proto-loader')
+
+// Node is the odd one out: it loads the .proto at RUNTIME instead of
+// generating source ahead of time. Same contract, later moment, nothing
+// about the shape is checked until the process starts.
+const def = protoLoader.loadSync('user.proto', { longs: String, enums: String })
+const { user } = grpc.loadPackageDefinition(def)
+
+// The method name and its (call, callback) shape come FROM the proto.
+function getUser(call, callback) {
+  if (!call.request.id) {
+    // typed error, sec 14
+    return callback({ code: grpc.status.INVALID_ARGUMENT, message: 'id is required' })
+  }
+  // ...real work: query the DB by call.request.id...
+  callback(null, {
+    user: {
+      id: call.request.id,
+      email: 'ada@example.com',
+      fullName: 'Ada',      // proto's full_name arrives camelCased
+      role: 'ROLE_ADMIN',
+    },
+  })
+}
+
+const server = new grpc.Server()
+server.addService(user.v1.UserService.service, { getUser }) // wire impl to service
+server.bindAsync('0.0.0.0:50051', grpc.ServerCredentials.createInsecure(), () => {
+  console.log('gRPC on :50051') // insecure creds for local dev only
+})
+
+// ===== CLIENT =====
+function callGetUser() {
+  const client = new user.v1.UserService(
+    'localhost:50051',
+    grpc.credentials.createInsecure(),
+  )
+
+  const deadline = new Date(Date.now() + 1000) // always a deadline, sec 13
+  client.getUser({ id: 'u42' }, { deadline }, (err, resp) => {
+    if (err) {
+      // err.code carries the gRPC status code
+      return console.error('GetUser failed:', err.code, err.details)
+    }
+    console.log('got user:', resp.user.fullName)
+  })
+}
+```
+
+```ts
+// ===== SERVER =====
+import * as grpc from '@grpc/grpc-js'
+// ts-proto turns user.proto into real TypeScript at BUILD time, and that
+// is the whole reason to prefer it to runtime loading: the compiler now
+// knows GetUserRequest has an `id` and nothing else, so a typo in a field
+// name fails the build instead of silently sending undefined.
+import {
+  UserServiceService,
+  UserServiceClient,
+  Role,
+  type UserServiceServer,
+  type GetUserResponse,
+} from './gen/user'
+
+const userService: UserServiceServer = {
+  // The signature is generated FROM the proto: (call, callback)
+  getUser(call, callback): void {
+    if (!call.request.id) {
+      callback({ code: grpc.status.INVALID_ARGUMENT, message: 'id is required' })
+      return // typed error, sec 14
+    }
+    // ...real work: query the DB by call.request.id...
+    const response: GetUserResponse = {
+      user: {
+        id: call.request.id,
+        email: 'ada@example.com',
+        fullName: 'Ada',
+        role: Role.ROLE_ADMIN, // a real enum member, not the string
+        tags: [],
+        createdAt: 0,
+      },
+    }
+    callback(null, response)
+  },
+}
+
+const server = new grpc.Server()
+server.addService(UserServiceService, userService) // wire impl to service
+server.bindAsync('0.0.0.0:50051', grpc.ServerCredentials.createInsecure(), () => {
+  console.log('gRPC on :50051')
+})
+
+// ===== CLIENT =====
+// grpc-js is callback-based. Promisify it once, here, so that every call
+// site downstream can just await the RPC like any other async function.
+const client = new UserServiceClient('localhost:50051', grpc.credentials.createInsecure())
+
+export function getUser(id: string): Promise<GetUserResponse> {
+  return new Promise((resolve, reject) => {
+    const deadline = new Date(Date.now() + 1000) // always a deadline, sec 13
+    client.getUser({ id }, { deadline }, (err, resp) => {
+      if (err) reject(err) // err carries the gRPC status code
+      else resolve(resp)
+    })
+  })
+}
+```
+
+```java
+// ===== SERVER =====
+// protoc-gen-grpc-java emits UserServiceGrpc with a base class to extend.
+// Note the shape: the response goes to a StreamObserver instead of being
+// returned, which is why unary and streaming look nearly identical here.
+public class UserServiceImpl extends UserServiceGrpc.UserServiceImplBase {
+
+    @Override
+    public void getUser(GetUserRequest req,
+                        StreamObserver<GetUserResponse> responseObserver) {
+        if (req.getId().isEmpty()) {
+            responseObserver.onError(Status.INVALID_ARGUMENT
+                .withDescription("id is required")
+                .asRuntimeException()); // typed error, sec 14
+            return;
+        }
+
+        // ...real work: query the DB by req.getId()...
+        User u = User.newBuilder()
+            .setId(req.getId())
+            .setEmail("ada@example.com")
+            .setFullName("Ada")
+            .setRole(Role.ROLE_ADMIN)
+            .build();
+
+        responseObserver.onNext(GetUserResponse.newBuilder().setUser(u).build());
+        // onCompleted() IS the OK trailer. Forget it and the client hangs
+        // until its deadline, with no error to explain why.
+        responseObserver.onCompleted();
+    }
+}
+
+Server server = ServerBuilder.forPort(50051)
+    .addService(new UserServiceImpl()) // wire the impl to the service
+    .build()
+    .start();
+System.out.println("gRPC on :50051");
+
+// ===== CLIENT =====
+// usePlaintext() is the insecure-credentials equivalent: local dev only.
+ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50051)
+    .usePlaintext()
+    .build();
+
+// The BLOCKING stub is the generated one that reads like a local call.
+UserServiceGrpc.UserServiceBlockingStub client = UserServiceGrpc.newBlockingStub(channel)
+    .withDeadlineAfter(1, TimeUnit.SECONDS); // always a deadline, sec 13
+
+try {
+    GetUserResponse resp = client.getUser(
+        GetUserRequest.newBuilder().setId("u42").build()); // looks local, runs remote
+    System.out.println("got user: " + resp.getUser().getFullName());
+} catch (StatusRuntimeException e) {
+    System.err.println("GetUser failed: " + e.getStatus().getCode());
+}
+```
+
 Notice the symmetry across languages: a generated _stub_ on the client, a generated _servicer/server_ base class on the server, and a method whose exact signature came from the proto.
 
 ## Server Streaming
@@ -306,7 +476,7 @@ Notice the symmetry across languages: a generated _stub_ on the client, a genera
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // proto:  rpc ListUsers(ListUsersRequest) returns (stream User);
@@ -352,7 +522,81 @@ def list_users(stub):
         print("user:", u.full_name)
 ```
 
-Go uses an explicit `stream.Send`/`stream.Recv` pair; Python expresses the server side as a _generator_ (`yield`) and the client side as a plain _iterable_, idiomatic to each language, same wire behavior.
+```js
+// proto:  rpc ListUsers(ListUsersRequest) returns (stream User);
+
+// ===== SERVER: `call` IS a writable stream; write() per message =====
+function listUsers(call) {
+  for (const u of queryUsers(call.request.filter)) { // imagine a big result set
+    call.write(u) // push one message down the stream
+  }
+  call.end() // ending the stream closes it cleanly (sends the OK trailer)
+}
+
+// ===== CLIENT: the call is a readable stream; listen for 'data' =====
+function listUsersClient(client) {
+  const deadline = new Date(Date.now() + 10_000)
+  const call = client.listUsers({ filter: 'active' }, { deadline })
+
+  call.on('data', (u) => console.log('user:', u.fullName))
+  call.on('end', () => console.log('done')) // server closed the stream
+  call.on('error', (err) => console.error(err))
+}
+```
+
+```ts
+// proto:  rpc ListUsers(ListUsersRequest) returns (stream User);
+
+// ===== SERVER: the call object is a typed writable stream =====
+const userService: UserServiceServer = {
+  listUsers(call: ServerWritableStream<ListUsersRequest, User>): void {
+    for (const u of queryUsers(call.request.filter)) {
+      call.write(u) // push one message down the stream
+    }
+    call.end() // closes the stream cleanly
+  },
+}
+
+// ===== CLIENT: `for await` instead of an 'data' handler =====
+// A grpc-js call is an async iterable, and that is worth using rather
+// than .on('data'): an event handler fires whether or not you are ready
+// for the next message, while `for await` only pulls the next one when
+// the loop body has finished, which is real back-pressure.
+async function listUsers(client: UserServiceClient): Promise<void> {
+  const deadline = new Date(Date.now() + 10_000)
+  const call = client.listUsers({ filter: 'active' }, { deadline })
+
+  for await (const u of call as AsyncIterable<User>) {
+    console.log('user:', u.fullName)
+  }
+}
+```
+
+```java
+// proto:  rpc ListUsers(ListUsersRequest) returns (stream User);
+
+// ===== SERVER: onNext() repeatedly, then onCompleted() once =====
+@Override
+public void listUsers(ListUsersRequest req, StreamObserver<User> responseObserver) {
+    for (User u : queryUsers(req.getFilter())) { // imagine a big result set
+        responseObserver.onNext(u); // push one message down the stream
+    }
+    responseObserver.onCompleted(); // closes the stream cleanly (OK trailer)
+}
+
+// ===== CLIENT: the blocking stub hands back an ITERATOR =====
+UserServiceBlockingStub client = UserServiceGrpc.newBlockingStub(channel)
+    .withDeadlineAfter(10, TimeUnit.SECONDS);
+
+Iterator<User> users = client.listUsers(
+    ListUsersRequest.newBuilder().setFilter("active").build());
+
+while (users.hasNext()) { // iterate until the server closes the stream
+    System.out.println("user: " + users.next().getFullName());
+}
+```
+
+Each language reaches for the streaming idiom it already has: Go an explicit `stream.Send`/`stream.Recv` pair, Python a _generator_ (`yield`) on the server and an _iterable_ on the client, Node a readable stream (or an async iterable), Java a `StreamObserver` whose `onNext` is called once per message. Five spellings, identical bytes on the wire.
 
 ## Client Streaming
 
@@ -364,7 +608,7 @@ Go uses an explicit `stream.Send`/`stream.Recv` pair; Python expresses the serve
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // proto:  rpc UploadEvents(stream Event) returns (UploadSummary);
@@ -418,6 +662,121 @@ def upload_events(stub, events):
     print("server received", summary.received, "events")
 ```
 
+```js
+// proto:  rpc UploadEvents(stream Event) returns (UploadSummary);
+
+// ===== SERVER: `call` is readable; reply once via the callback =====
+function uploadEvents(call, callback) {
+  let count = 0
+  call.on('data', (ev) => {
+    store(ev)
+    count++
+  })
+  call.on('end', () => callback(null, { received: count })) // client done, reply once
+  call.on('error', (err) => callback(err))
+}
+
+// ===== CLIENT: write() many, then end(); the callback gets the reply =====
+function uploadEventsClient(client, events) {
+  const deadline = new Date(Date.now() + 30_000)
+  const call = client.uploadEvents({ deadline }, (err, summary) => {
+    if (err) return console.error(err)
+    console.log('server received', summary.received, 'events')
+  })
+
+  for (const ev of events) {
+    call.write(ev) // push each one up
+  }
+  call.end() // close our side; the callback above fires with the summary
+}
+```
+
+```ts
+// proto:  rpc UploadEvents(stream Event) returns (UploadSummary);
+
+// ===== SERVER: a typed readable stream + a single callback =====
+const userService: UserServiceServer = {
+  uploadEvents(
+    call: ServerReadableStream<Event, UploadSummary>,
+    callback: sendUnaryData<UploadSummary>,
+  ): void {
+    let count = 0
+    call.on('data', (ev: Event) => {
+      store(ev)
+      count++
+    })
+    call.on('end', () => callback(null, { received: count }))
+  },
+}
+
+// ===== CLIENT: promisified, because the reply arrives in a callback =====
+// Worth noticing what the Promise buys beyond ergonomics: it forces the
+// two failure paths, a stream error and a call error, into one rejection,
+// so a caller cannot await the upload and miss a mid-stream failure.
+function uploadEvents(client: UserServiceClient, events: Event[]): Promise<UploadSummary> {
+  return new Promise((resolve, reject) => {
+    const deadline = new Date(Date.now() + 30_000)
+    const call = client.uploadEvents({ deadline }, (err, summary) => {
+      if (err) reject(err)
+      else resolve(summary)
+    })
+    call.on('error', reject)
+
+    for (const ev of events) call.write(ev)
+    call.end() // close our side, await the summary
+  })
+}
+```
+
+```java
+// proto:  rpc UploadEvents(stream Event) returns (UploadSummary);
+
+// ===== SERVER: RETURN an observer; the client's messages arrive on it =====
+@Override
+public StreamObserver<Event> uploadEvents(StreamObserver<UploadSummary> responseObserver) {
+    // The inversion here is the one thing to get used to in Java: the
+    // parameter is where you WRITE, and the return value is where the
+    // client's messages are READ.
+    return new StreamObserver<Event>() {
+        private int count = 0;
+
+        @Override public void onNext(Event ev) {
+            store(ev);
+            count++;
+        }
+
+        @Override public void onError(Throwable t) {
+            // client vanished mid-upload; nothing to reply to
+        }
+
+        @Override public void onCompleted() { // client finished sending
+            responseObserver.onNext(
+                UploadSummary.newBuilder().setReceived(count).build());
+            responseObserver.onCompleted(); // single reply, then close
+        }
+    };
+}
+
+// ===== CLIENT: the ASYNC stub; a blocking stub cannot send a stream =====
+UserServiceStub client = UserServiceGrpc.newStub(channel);
+CountDownLatch done = new CountDownLatch(1);
+
+StreamObserver<Event> requests = client.uploadEvents(new StreamObserver<UploadSummary>() {
+    @Override public void onNext(UploadSummary s) {
+        System.out.println("server received " + s.getReceived() + " events");
+    }
+    @Override public void onError(Throwable t) { done.countDown(); }
+    @Override public void onCompleted() { done.countDown(); }
+});
+
+for (Event ev : events) {
+    requests.onNext(ev); // push each one up
+}
+requests.onCompleted(); // close our side, await the summary
+
+done.await(30, TimeUnit.SECONDS);
+```
+
 The asymmetry is the point: `SendAndClose`/`CloseAndRecv` in Go, a `request_iterator` plus a normal `return` in Python, the server consumes the whole request stream _before_ producing its one answer.
 
 ## Bidirectional Streaming
@@ -430,7 +789,7 @@ The asymmetry is the point: `SendAndClose`/`CloseAndRecv` in Go, a `request_iter
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // proto:  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
@@ -485,6 +844,103 @@ def chat(stub):
 # (for true concurrency under load, prefer the async API: grpc.aio)
 ```
 
+```js
+// proto:  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+
+// ===== SERVER: `call` is duplex, read and write on the same object =====
+function chat(call) {
+  call.on('data', (msg) => {
+    // echo back (or broadcast to a room, etc.), can write anytime, any number
+    call.write({ user: 'server', text: 'ack: ' + msg.text })
+  })
+  call.on('end', () => call.end()) // client closed its send side
+}
+
+// ===== CLIENT: one duplex stream; write and listen independently =====
+function chatClient(client) {
+  const call = client.chat()
+
+  call.on('data', (msg) => console.log('<<', msg.text)) // concurrent receiver
+
+  for (const text of ['hi', 'how are you', 'bye']) {
+    call.write({ user: 'ada', text })
+  }
+  call.end() // signal we're done sending; 'data' keeps firing for the rest
+}
+```
+
+```ts
+// proto:  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+
+// ===== SERVER: a typed duplex stream =====
+const userService: UserServiceServer = {
+  chat(call: ServerDuplexStream<ChatMessage, ChatMessage>): void {
+    call.on('data', (msg: ChatMessage) => {
+      call.write({ user: 'server', text: 'ack: ' + msg.text })
+    })
+    call.on('end', () => call.end())
+  },
+}
+
+// ===== CLIENT: no second thread needed =====
+// Compare this with the Go tab, which spawns a goroutine to receive while
+// the main function sends. Node needs no such thing: writes go out
+// immediately and 'data' fires on the event loop, so one thread is
+// already doing both directions. The trade is that nothing ever blocks,
+// so there is no natural place where back-pressure makes itself felt,
+// you have to watch `call.write()`'s return value for that.
+function chat(client: UserServiceClient): void {
+  const call = client.chat()
+
+  call.on('data', (msg: ChatMessage) => console.log('<<', msg.text))
+
+  for (const text of ['hi', 'how are you', 'bye']) {
+    call.write({ user: 'ada', text })
+  }
+  call.end() // signal we're done sending; the receiver drains the rest
+}
+```
+
+```java
+// proto:  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+
+// ===== SERVER: read from the returned observer, write to the parameter =====
+@Override
+public StreamObserver<ChatMessage> chat(StreamObserver<ChatMessage> responseObserver) {
+    return new StreamObserver<ChatMessage>() {
+        @Override public void onNext(ChatMessage msg) {
+            // interleaved: reply as each message arrives, any number of times
+            responseObserver.onNext(ChatMessage.newBuilder()
+                .setUser("server")
+                .setText("ack: " + msg.getText())
+                .build());
+        }
+
+        @Override public void onError(Throwable t) { }
+
+        @Override public void onCompleted() {
+            responseObserver.onCompleted(); // client closed its send side
+        }
+    };
+}
+
+// ===== CLIENT: the async stub; both directions live at once =====
+UserServiceStub client = UserServiceGrpc.newStub(channel);
+
+StreamObserver<ChatMessage> outgoing = client.chat(new StreamObserver<ChatMessage>() {
+    @Override public void onNext(ChatMessage in) {
+        System.out.println("<< " + in.getText()); // concurrent receiver
+    }
+    @Override public void onError(Throwable t) { }
+    @Override public void onCompleted() { }
+});
+
+for (String t : List.of("hi", "how are you", "bye")) {
+    outgoing.onNext(ChatMessage.newBuilder().setUser("ada").setText(t).build());
+}
+outgoing.onCompleted(); // signal we're done sending; the receiver drains the rest
+```
+
 Streaming gotchas to respect
 
 Streams are long-lived, so they consume a connection/goroutine for their lifetime, always set deadlines or idle limits, and handle the client vanishing mid-stream. There's no automatic back-pressure knob beyond HTTP/2 flow control, so a fast producer can overwhelm a slow consumer if you don't pace it. And a single stream is ordered but _not_ a transaction, if it breaks halfway, you've delivered a prefix, so design messages to be resumable or idempotent.
@@ -500,14 +956,14 @@ Part IV / The Machinery
 You never write the stubs and skeletons by hand, a compiler, `protoc` (or the buf toolchain), reads your `.proto` and emits idiomatic source for each target language via a language-specific **plugin**. This is the step that turns the contract into callable code, and it's the reason a Go client and a Python server can interoperate flawlessly: both were generated from the same file.
 
 <Diagram caption="Code generation">
-<svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A proto file fed into protoc with language plugins, producing Go and Python generated code that both client and server import"><rect x="40" y="95" width="150" height="56" rx="10" fill="var(--dg-accent)"></rect><text x="115" y="120" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">user.proto</text><text x="115" y="138" class="mono" font-size="9.5" fill="var(--dg-on-accent)" text-anchor="middle">the contract</text><defs><marker id="ga" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ink-2)"></path></marker></defs><path d="M192 123 H262" stroke="var(--dg-ink-2)" stroke-width="1.8" marker-end="url(#ga)"></path><rect x="264" y="92" width="150" height="62" rx="10" fill="var(--dg-inverse)"></rect><text x="339" y="116" font-size="12.5" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">protoc</text><text x="339" y="133" class="mono" font-size="9" fill="var(--dg-on-inverse)" text-anchor="middle">+ lang plugins</text><text x="339" y="146" class="mono" font-size="9" fill="var(--dg-on-inverse)" text-anchor="middle">(protoc-gen-go, grpc&#95;tools)</text><path d="M416 110 C460 90 480 70 520 64" stroke="var(--dg-ok)" stroke-width="1.8" fill="none" marker-end="url(#ga)"></path><path d="M416 138 C460 158 480 178 520 184" stroke="var(--dg-ok)" stroke-width="1.8" fill="none" marker-end="url(#ga)"></path><rect x="522" y="36" width="178" height="56" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="611" y="58" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Go: &#42;.pb.go</text><text x="611" y="76" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">messages + stub + server base</text><rect x="522" y="156" width="178" height="56" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="611" y="178" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Py: &#42;&#95;pb2&#42;.py</text><text x="611" y="196" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">messages + stub + servicer</text><text x="360" y="228" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Regenerate after every proto change, the generated files are build artifacts, committed or generated in CI.</text></svg>
+<svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A proto file fed into protoc with language plugins, producing generated code per target language that both client and server import"><rect x="40" y="95" width="150" height="56" rx="10" fill="var(--dg-accent)"></rect><text x="115" y="120" font-size="13" font-weight="700" fill="var(--dg-on-accent)" text-anchor="middle">user.proto</text><text x="115" y="138" class="mono" font-size="9.5" fill="var(--dg-on-accent)" text-anchor="middle">the contract</text><defs><marker id="ga" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ink-2)"></path></marker></defs><path d="M192 123 H262" stroke="var(--dg-ink-2)" stroke-width="1.8" marker-end="url(#ga)"></path><rect x="264" y="92" width="150" height="62" rx="10" fill="var(--dg-inverse)"></rect><text x="339" y="116" font-size="12.5" font-weight="700" fill="var(--dg-on-inverse)" text-anchor="middle">protoc</text><text x="339" y="133" class="mono" font-size="9" fill="var(--dg-on-inverse)" text-anchor="middle">+ lang plugins</text><text x="339" y="146" class="mono" font-size="9" fill="var(--dg-on-inverse)" text-anchor="middle">(one per target language)</text><path d="M416 110 C460 90 480 70 520 64" stroke="var(--dg-ok)" stroke-width="1.8" fill="none" marker-end="url(#ga)"></path><path d="M416 138 C460 158 480 178 520 184" stroke="var(--dg-ok)" stroke-width="1.8" fill="none" marker-end="url(#ga)"></path><rect x="522" y="36" width="178" height="56" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="611" y="58" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Go: &#42;.pb.go</text><text x="611" y="76" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">messages + stub + server base</text><rect x="522" y="156" width="178" height="56" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="611" y="178" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Py: &#42;&#95;pb2&#42;.py</text><text x="611" y="196" class="mono" font-size="9" fill="var(--dg-ink-2)" text-anchor="middle">messages + stub + servicer</text><text x="360" y="228" class="serif" font-size="12.5" font-style="italic" fill="var(--dg-ink-2)" text-anchor="middle">Regenerate after every proto change, the generated files are build artifacts, committed or generated in CI.</text></svg>
 </Diagram>
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
-```text
+```go
 // Install the two plugins once (they sit on your PATH):
 //   go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 //   go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
@@ -526,7 +982,7 @@ ______
 //   import userv1 "example.com/gen/userv1"
 ```
 
-```text
+```python
 # Install the tooling once:
 #   pip install grpcio grpcio-tools
 
@@ -544,6 +1000,70 @@ ______
 # Then import both in your code:
 #   import user_pb2 as pb
 #   import user_pb2_grpc as pb_grpc
+```
+
+```js
+// Node does NOT generate source by default. Install the runtime pair:
+//   npm install @grpc/grpc-js @grpc/proto-loader
+
+// There is no build step: proto-loader reads user.proto at STARTUP and
+// builds the client and server constructors in memory.
+//   const def = protoLoader.loadSync('user.proto')
+//   const { user } = grpc.loadPackageDefinition(def)
+
+// Produces: nothing on disk. The service is discovered at runtime as
+//   user.v1.UserService  (client constructor)
+//   user.v1.UserService.service  (the descriptor you addService() with)
+
+// The trade is real and worth stating: no generated files to review, and
+// no check at all that your handler object matches the contract. A typo
+// in a method name is simply an unimplemented RPC at runtime.
+```
+
+```ts
+// For TypeScript you DO want generated source, so that the contract is a
+// compile-time thing again. Install protoc plus a TS plugin:
+//   npm install -D ts-proto
+//   npm install @grpc/grpc-js
+
+// Generate typed messages AND grpc-js service definitions:
+//   protoc \
+//     --plugin=./node_modules/.bin/protoc-gen-ts_proto \
+//     --ts_proto_out=./src/gen \
+//     --ts_proto_opt=outputServices=grpc-js,esModuleInterop=true \
+//     user.proto
+
+// Produces:
+//   src/gen/user.ts, interfaces for each message, a real TS enum for Role,
+//                    UserServiceClient (stub) + UserServiceServer (to implement)
+
+// Then import it like any other module:
+//   import { UserServiceClient, type UserServiceServer } from './gen/user'
+```
+
+```java
+// Java generates at BUILD time, wired into the build tool rather than run
+// by hand. With Gradle and the protobuf plugin:
+//
+//   plugins { id 'com.google.protobuf' version '0.9.4' }
+//
+//   protobuf {
+//     protoc { artifact = 'com.google.protobuf:protoc:3.25.3' }
+//     plugins {
+//       grpc { artifact = 'io.grpc:protoc-gen-grpc-java:1.62.2' }
+//     }
+//     generateProtoTasks { all()*.plugins { grpc {} } }
+//   }
+//
+// Drop user.proto in src/main/proto/ and `./gradlew build` regenerates it.
+
+// Produces (in build/generated/source/proto/main):
+//   User.java, GetUserRequest.java, ... immutable classes + Builders
+//   UserServiceGrpc.java, UserServiceImplBase (to extend)
+//                       + newBlockingStub / newStub / newFutureStub
+
+// Then import the generated package:
+//   import com.example.gen.userv1.UserServiceGrpc;
 ```
 
 <Callout type="info" title="Use buf in real projects">
@@ -572,7 +1092,7 @@ A gRPC deadline is an _absolute_ point in time, not a per-hop duration. When ser
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // ===== CLIENT: attach a deadline + metadata =====
@@ -625,6 +1145,124 @@ class UserService(pb_grpc.UserServiceServicer):
         return self.lookup(request.id)
 ```
 
+```js
+// ===== CLIENT: attach a deadline + metadata =====
+const metadata = new grpc.Metadata()
+metadata.set('authorization', `Bearer ${token}`) // auth as metadata, sec 16
+metadata.set('x-request-id', reqId)              // trace id for correlation
+
+// A deadline in grpc-js is an ABSOLUTE Date, not a duration. That is the
+// right shape: as the call is retried or forwarded, everyone downstream
+// inherits the same wall-clock instant rather than a fresh N seconds.
+const deadline = new Date(Date.now() + 1000)
+
+client.getUser({ id: 'u42' }, metadata, { deadline }, (err, resp) => {
+  if (err?.code === grpc.status.DEADLINE_EXCEEDED) {
+    console.log('call timed out') // a network-shaped failure a local call never had
+  }
+})
+
+// ===== SERVER: read metadata, notice cancellation =====
+function getUser(call, callback) {
+  const auth = call.metadata.get('authorization')[0] // verify here or in an interceptor, sec 15
+
+  if (call.cancelled) {
+    return // client gone / deadline passed; abandon the work
+  }
+  call.on('cancelled', () => abortWork()) // fires if they hang up mid-call
+  lookup(call.request.id).then((u) => callback(null, u))
+}
+```
+
+```ts
+// ===== CLIENT: a wrapper, so no call site can forget the deadline =====
+// This is the point worth making in TypeScript: a deadline you must
+// remember to pass is a deadline somebody will eventually omit. Make the
+// parameter required and the omission stops compiling.
+function callWithDeadline<Req, Res>(
+  method: (req: Req, md: grpc.Metadata, opts: grpc.CallOptions,
+           cb: (e: grpc.ServiceError | null, r: Res) => void) => void,
+  req: Req,
+  timeoutMs: number, // required, not optional
+): Promise<Res> {
+  const md = new grpc.Metadata()
+  md.set('authorization', `Bearer ${token}`) // auth as metadata, sec 16
+  md.set('x-request-id', reqId)              // trace id for correlation
+
+  return new Promise((resolve, reject) => {
+    const deadline = new Date(Date.now() + timeoutMs) // absolute deadline
+    method(req, md, { deadline }, (err, res) => {
+      if (err?.code === grpc.status.DEADLINE_EXCEEDED) {
+        reject(new Error('call timed out'))
+      } else if (err) {
+        reject(err)
+      } else {
+        resolve(res)
+      }
+    })
+  })
+}
+
+// ===== SERVER: read metadata, respect cancellation =====
+const userService: UserServiceServer = {
+  getUser(call, callback): void {
+    const auth = call.metadata.get('authorization')[0]
+
+    // An AbortSignal is how the cancellation is threaded onward, the
+    // Node equivalent of passing Go's ctx down to the DB driver.
+    const ac = new AbortController()
+    call.on('cancelled', () => ac.abort())
+
+    lookup(call.request.id, ac.signal).then(
+      (user) => callback(null, { user }),
+      (err) => callback(err),
+    )
+  },
+}
+```
+
+```java
+// ===== CLIENT: attach a deadline + metadata =====
+Metadata headers = new Metadata();
+Metadata.Key<String> AUTH =
+    Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
+Metadata.Key<String> REQ_ID =
+    Metadata.Key.of("x-request-id", Metadata.ASCII_STRING_MARSHALLER);
+headers.put(AUTH, "Bearer " + token);  // auth travels as metadata, sec 16
+headers.put(REQ_ID, reqId);            // trace id for correlation
+
+UserServiceBlockingStub stub = UserServiceGrpc.newBlockingStub(channel)
+    .withDeadlineAfter(1, TimeUnit.SECONDS) // absolute deadline for the call
+    .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
+
+try {
+    GetUserResponse resp = stub.getUser(GetUserRequest.newBuilder().setId("u42").build());
+} catch (StatusRuntimeException e) {
+    if (e.getStatus().getCode() == Status.Code.DEADLINE_EXCEEDED) {
+        System.out.println("call timed out"); // a network-shaped failure
+    }
+}
+
+// ===== SERVER: read metadata, respect the inherited deadline =====
+// Headers are read in an interceptor (sec 15) and handed to the method
+// through a Context key, which is Java's context: a per-call, immutable
+// key-value scope that also carries the deadline and cancellation.
+@Override
+public void getUser(GetUserRequest req, StreamObserver<GetUserResponse> responseObserver) {
+    String auth = AUTH_CONTEXT_KEY.get(); // put there by the auth interceptor
+
+    Context ctx = Context.current();
+    if (ctx.isCancelled()) { // client gone / deadline passed?
+        responseObserver.onError(Status.CANCELLED.asRuntimeException());
+        return; // abandon the work
+    }
+    // Pass ctx down so slow work is abandoned automatically:
+    //   ctx.call(() -> db.lookup(req.getId()));
+    responseObserver.onNext(lookup(req.getId()));
+    responseObserver.onCompleted();
+}
+```
+
 Pass the context down, always
 
 In Go, thread the incoming `ctx` into _every_ downstream call (DB queries, outbound RPCs). That's what makes deadlines and cancellation actually work, if the client hangs up, the cancellation ripples all the way down and frees everything. A handler that ignores `ctx` keeps grinding on abandoned work.
@@ -650,7 +1288,7 @@ gRPC does not use HTTP status codes. It has its own fixed set of **status codes*
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 import (
@@ -707,6 +1345,120 @@ except grpc.RpcError as e:
         print("unexpected:", e.code(), e.details())
 ```
 
+```js
+const grpc = require('@grpc/grpc-js')
+
+// SERVER: pass a status object to the callback, not a bare Error.
+function getUser(call, callback) {
+  if (!call.request.id) {
+    return callback({ code: grpc.status.INVALID_ARGUMENT, message: 'id is required' })
+  }
+  const user = db.find(call.request.id)
+  if (!user) {
+    return callback({
+      code: grpc.status.NOT_FOUND,
+      message: `no user with id "${call.request.id}"`,
+    })
+  }
+  callback(null, { user })
+}
+
+// Throwing a plain Error instead reaches the client as UNKNOWN with the
+// message swallowed, which is the single most common grpc-js mistake.
+
+// CLIENT: inspect err.code to decide what to do.
+client.getUser(req, (err, resp) => {
+  if (err) {
+    switch (err.code) {
+      case grpc.status.NOT_FOUND:    break // expected, show "not found" in UI
+      case grpc.status.UNAVAILABLE:  break // transient, retry with backoff, sec 17
+      default: console.error('unexpected:', err.code, err.details)
+    }
+  }
+})
+```
+
+```ts
+import * as grpc from '@grpc/grpc-js'
+
+// A narrow, named union of the codes this service actually returns is
+// worth the four lines: `switch` then gets exhaustiveness checking, so
+// adding a code to the server without handling it on the client fails
+// the build instead of falling through to the default branch in prod.
+type UserServiceCode =
+  | grpc.status.NOT_FOUND
+  | grpc.status.INVALID_ARGUMENT
+  | grpc.status.UNAVAILABLE
+
+// SERVER: a helper, so every error in the service has the same shape.
+function fail(code: grpc.status, message: string): grpc.ServiceError {
+  return Object.assign(new Error(message), { code, details: message }) as grpc.ServiceError
+}
+
+const userService: UserServiceServer = {
+  getUser(call, callback): void {
+    if (!call.request.id) {
+      callback(fail(grpc.status.INVALID_ARGUMENT, 'id is required'))
+      return
+    }
+    const user = db.find(call.request.id)
+    if (!user) {
+      callback(fail(grpc.status.NOT_FOUND, `no user with id "${call.request.id}"`))
+      return
+    }
+    callback(null, { user })
+  },
+}
+
+// CLIENT: switch on the typed code.
+function handle(err: grpc.ServiceError): void {
+  switch (err.code as UserServiceCode) {
+    case grpc.status.NOT_FOUND:       break // expected, show "not found"
+    case grpc.status.UNAVAILABLE:     break // transient, retry with backoff, sec 17
+    case grpc.status.INVALID_ARGUMENT: break // our bug, fix the call site
+  }
+}
+```
+
+```java
+// SERVER: fail the observer with a typed Status, never a bare exception.
+@Override
+public void getUser(GetUserRequest req, StreamObserver<GetUserResponse> responseObserver) {
+    if (req.getId().isEmpty()) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("id is required")
+            .asRuntimeException());
+        return;
+    }
+
+    Optional<User> user = db.find(req.getId());
+    if (user.isEmpty()) {
+        responseObserver.onError(Status.NOT_FOUND
+            .withDescription("no user with id \"" + req.getId() + "\"")
+            .asRuntimeException());
+        return;
+    }
+
+    responseObserver.onNext(GetUserResponse.newBuilder().setUser(user.get()).build());
+    responseObserver.onCompleted();
+}
+
+// Any OTHER exception escaping the method becomes UNKNOWN with no
+// description at all, which tells the client nothing. Catch and map.
+
+// CLIENT: catch StatusRuntimeException and switch on the code.
+try {
+    GetUserResponse resp = client.getUser(req);
+} catch (StatusRuntimeException e) {
+    switch (e.getStatus().getCode()) {
+        case NOT_FOUND   -> { }  // expected, show "not found" in UI
+        case UNAVAILABLE -> { }  // transient, retry with backoff, sec 17
+        default -> System.err.printf("unexpected: %s: %s%n",
+            e.getStatus().getCode(), e.getStatus().getDescription());
+    }
+}
+```
+
 <Callout type="info" title="Rich, structured errors">
 When a code + message isn't enough (e.g. per-field validation details, like the REST error envelope), gRPC supports **error details**: typed protobuf messages attached to the status (the `google.rpc` types: `BadRequest`, `QuotaFailure`, `RetryInfo`...). The client deserializes them as structured data, never by parsing a human string, same principle as the machine-readable `code` field in the REST manual's error envelope.
 </Callout>
@@ -721,7 +1473,7 @@ If you read the handlers/services/middleware chapter, this is the exact same ide
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // A unary server interceptor: signature is fixed by the framework.
@@ -776,6 +1528,133 @@ server = grpc.server(
 #   channel = grpc.intercept_channel(base_channel, MyClientInterceptor())
 ```
 
+```js
+// grpc-js has no first-class server interceptor API, so the usual shape
+// is a wrapper applied to each handler when the service is registered.
+// Same idea as chapter 06's middleware: wrap, don't call from inside.
+function withAuth(handler) {
+  return (call, callback) => {
+    const token = call.metadata.get('authorization')[0]
+    if (!token || !valid(token)) {
+      // short-circuit: the real handler never runs
+      return callback({
+        code: grpc.status.UNAUTHENTICATED,
+        message: 'missing or invalid token',
+      })
+    }
+    call.user = parse(token) // attach the verified identity for the handler
+    return handler(call, callback)
+  }
+}
+
+function withLogging(handler, name) {
+  return (call, callback) => {
+    const start = Date.now()
+    handler(call, (err, resp) => {
+      console.log(`${name} took ${Date.now() - start}ms -> ${err ? err.code : 'OK'}`)
+      callback(err, resp)
+    })
+  }
+}
+
+// Register the chain when building the service (outermost listed first):
+server.addService(user.v1.UserService.service, {
+  getUser: withLogging(withAuth(getUser), 'GetUser'),
+})
+```
+
+```ts
+// Typing the wrapper is what keeps a chain honest: `withAuth` returns the
+// same handler type it took, so wrappers compose in any order and a
+// wrapper that forgets to call the handler fails to type-check.
+type Handler<Req, Res> = (
+  call: grpc.ServerUnaryCall<Req, Res>,
+  callback: grpc.sendUnaryData<Res>,
+) => void
+
+function withAuth<Req, Res>(handler: Handler<Req, Res>): Handler<Req, Res> {
+  return (call, callback) => {
+    const token = call.metadata.get('authorization')[0]
+    if (typeof token !== 'string' || !valid(token)) {
+      callback({
+        code: grpc.status.UNAUTHENTICATED,
+        message: 'missing or invalid token',
+      } as grpc.ServiceError)
+      return // short-circuit before the handler ever runs
+    }
+    return handler(call, callback) // call the next link / the real handler
+  }
+}
+
+function withLogging<Req, Res>(name: string, handler: Handler<Req, Res>): Handler<Req, Res> {
+  return (call, callback) => {
+    const start = Date.now()
+    handler(call, (err, resp) => {
+      console.log(`${name} took ${Date.now() - start}ms -> ${err?.code ?? 'OK'}`)
+      callback(err, resp)
+    })
+  }
+}
+
+// Outermost listed first, exactly as in the Go tab:
+server.addService(UserServiceService, {
+  getUser: withLogging('GetUser', withAuth(getUser)),
+})
+```
+
+```java
+// A ServerInterceptor is the real thing in Java, and its shape is fixed
+// by the framework, like Go's.
+public class AuthInterceptor implements ServerInterceptor {
+    static final Context.Key<User> USER = Context.key("user");
+    static final Metadata.Key<String> AUTH =
+        Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
+
+    @Override
+    public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(
+            ServerCall<ReqT, RespT> call, Metadata headers,
+            ServerCallHandler<ReqT, RespT> next) {
+
+        String token = headers.get(AUTH);
+        if (token == null || !valid(token)) {
+            call.close(Status.UNAUTHENTICATED
+                .withDescription("missing or invalid token"), new Metadata());
+            // short-circuit: a no-op listener, the handler never runs
+            return new ServerCall.Listener<>() { };
+        }
+
+        // Attach the verified identity for the handler to read from Context
+        Context ctx = Context.current().withValue(USER, parse(token));
+        return Contexts.interceptCall(ctx, call, headers, next);
+    }
+}
+
+public class LoggingInterceptor implements ServerInterceptor {
+    @Override
+    public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(
+            ServerCall<ReqT, RespT> call, Metadata headers,
+            ServerCallHandler<ReqT, RespT> next) {
+        long start = System.nanoTime();
+        return next.startCall(new SimpleForwardingServerCall<>(call) {
+            @Override public void close(Status status, Metadata trailers) {
+                System.out.printf("%s took %dms -> %s%n",
+                    call.getMethodDescriptor().getFullMethodName(),
+                    (System.nanoTime() - start) / 1_000_000, status.getCode());
+                super.close(status, trailers);
+            }
+        }, headers);
+    }
+}
+
+// Register the chain when building the server. Note the ordering trap:
+// interceptors run in REVERSE registration order, so the one listed last
+// is the outermost. Spelling the chain out in one call keeps it visible.
+Server server = ServerBuilder.forPort(50051)
+    .addService(ServerInterceptors.intercept(new UserServiceImpl(),
+        new AuthInterceptor(), new LoggingInterceptor())) // logging outermost
+    .build();
+```
+
 This is the gRPC home for everything the layers manual put in middleware: auth, logging, tracing, rate limiting, panic recovery, written once, applied to every method.
 
 Part V / Production & Interop
@@ -792,7 +1671,7 @@ gRPC security splits into two orthogonal questions: **channel security** (is the
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 import "google.golang.org/grpc/credentials"
@@ -838,6 +1717,115 @@ class TokenAuth(grpc.AuthMetadataPlugin):
 call_creds = grpc.metadata_call_credentials(TokenAuth(token))
 composite  = grpc.composite_channel_credentials(channel_creds, call_creds)
 channel    = grpc.secure_channel("api.example.com:443", composite)
+```
+
+```js
+const fs = require('node:fs')
+const grpc = require('@grpc/grpc-js')
+
+// ===== SERVER over TLS =====
+const serverCreds = grpc.ServerCredentials.createSsl(
+  null, // no client CA -> TLS, not mTLS
+  [{
+    private_key: fs.readFileSync('server.key'),
+    cert_chain: fs.readFileSync('server.crt'),
+  }],
+)
+server.bindAsync('0.0.0.0:443', serverCreds, () => {}) // every connection encrypted
+
+// ===== CLIENT over TLS =====
+const channelCreds = grpc.credentials.createSsl(fs.readFileSync('ca.crt')) // trust this CA
+
+// ===== Per-call token, composed with the channel credentials =====
+const callCreds = grpc.credentials.createFromMetadataGenerator((_params, cb) => {
+  const md = new grpc.Metadata()
+  md.set('authorization', `Bearer ${token}`) // a fresh token on every call
+  cb(null, md)
+})
+
+const combined = grpc.credentials.combineChannelCredentials(channelCreds, callCreds)
+const client = new user.v1.UserService('api.example.com:443', combined)
+
+// grpc-js refuses to attach call credentials to an insecure channel, the
+// same guard as Go's RequireTransportSecurity() returning true.
+```
+
+```ts
+import * as fs from 'node:fs'
+import * as grpc from '@grpc/grpc-js'
+
+// ===== SERVER over TLS =====
+const serverCreds = grpc.ServerCredentials.createSsl(
+  null,
+  [{
+    private_key: fs.readFileSync('server.key'),
+    cert_chain: fs.readFileSync('server.crt'),
+  }],
+  false, // checkClientCertificate: flip to true (with a CA above) for mTLS
+)
+
+// ===== CLIENT over TLS + a per-call token =====
+// The generator runs per call rather than once, and that is the point:
+// a token read once at startup is a token that expires in production at
+// 3am. Fetch it here, from a cache that refreshes it.
+function tokenCredentials(getToken: () => Promise<string>): grpc.CallCredentials {
+  return grpc.credentials.createFromMetadataGenerator((_params, cb) => {
+    getToken().then(
+      (token) => {
+        const md = new grpc.Metadata()
+        md.set('authorization', `Bearer ${token}`)
+        cb(null, md)
+      },
+      (err) => cb(err),
+    )
+  })
+}
+
+const channelCreds = grpc.credentials.createSsl(fs.readFileSync('ca.crt'))
+const client = new UserServiceClient(
+  'api.example.com:443',
+  grpc.credentials.combineChannelCredentials(channelCreds, tokenCredentials(getToken)),
+)
+```
+
+```java
+// ===== SERVER over TLS =====
+Server server = NettyServerBuilder.forPort(443)
+    .useTransportSecurity(new File("server.crt"), new File("server.key"))
+    .addService(new UserServiceImpl())
+    .build();  // every connection is now encrypted
+
+// For mTLS, demand a client cert signed by a CA you trust:
+//   .sslContext(GrpcSslContexts.forServer(crt, key)
+//       .trustManager(new File("ca.crt"))
+//       .clientAuth(ClientAuth.REQUIRE)
+//       .build())
+
+// ===== CLIENT over TLS =====
+ManagedChannel channel = NettyChannelBuilder.forAddress("api.example.com", 443)
+    .sslContext(GrpcSslContexts.forClient()
+        .trustManager(new File("ca.crt")) // trust this CA
+        .build())
+    .build();
+
+// ===== Per-call token (combine with TLS) =====
+// CallCredentials is applied per call, so a refreshed token is picked up
+// without rebuilding the channel.
+CallCredentials bearer = new CallCredentials() {
+    @Override
+    public void applyRequestMetadata(RequestInfo info, Executor exec, MetadataApplier applier) {
+        exec.execute(() -> {
+            Metadata md = new Metadata();
+            md.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
+                   "Bearer " + tokenSupplier.get());
+            applier.apply(md);
+        });
+    }
+    @Override public void thisUsesUnstableApi() { }
+};
+
+UserServiceBlockingStub stub = UserServiceGrpc.newBlockingStub(channel)
+    .withCallCredentials(bearer); // refuses to travel over a plaintext channel
 ```
 
 Never send tokens over plaintext
@@ -976,6 +1964,6 @@ The whole manual compressed to what you reach for under pressure.
 
 **The whole topic in one breath:** gRPC lets a client call a server's method as if it were local. You define the API once in a `.proto` (sec 04), `protoc` generates a typed stub and server skeleton (sec 11), arguments are serialized as compact protobuf (sec 05) and carried over multiplexed HTTP/2 streams (sec 06) in one of four shapes, unary, server-, client-, or bidirectional-streaming (sec 07-10). A long-lived channel hosts cheap per-call stubs (sec 12); metadata carries auth and trace context, deadlines bound and propagate the call, cancellation reclaims work (sec 13); every call ends with a gRPC status code (sec 14); interceptors centralize cross-cutting logic (sec 15); TLS/mTLS plus per-call tokens secure it (sec 16); declarative retries and L7/client-side balancing make it resilient (sec 17). Reach for gRPC inside your system and REST at the public edge (sec 18-19), and lean on grpcurl, reflection and interceptors to see inside (sec 20).
 
-Grounded in grpc.io & protobuf.dev docs / MDN for HTTP/2 background / Go 1.22+ (google.golang.org/grpc) / Python 3.11+ (grpcio) examples.
+Grounded in grpc.io & protobuf.dev docs / MDN for HTTP/2 background / Go 1.22+ (google.golang.org/grpc), Python 3.11+ (grpcio), Node.js 20+ (@grpc/grpc-js), TypeScript 5+ (ts-proto) and Java 17+ (io.grpc) examples.
 
-Backend from First Principles / Chapter 13 / gRPC. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 13 / gRPC. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+.
