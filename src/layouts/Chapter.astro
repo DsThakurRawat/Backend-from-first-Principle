@@ -76,6 +76,29 @@ const num = String(order).padStart(2, '0');
     </main>
   </div>
 
+  <div
+    class="resume-prompt"
+    data-resume-prompt
+    data-chapter-id={chapter.id}
+    data-chapter-title={chapter.data.navTitle ?? title}
+    data-chapter-num={num}
+    hidden
+    role="dialog"
+    aria-labelledby="resume-prompt-title"
+    aria-describedby="resume-prompt-desc"
+  >
+    <div class="resume-prompt__copy">
+      <p id="resume-prompt-title" class="resume-prompt__title">Continue reading</p>
+      <p id="resume-prompt-desc" class="resume-prompt__desc" data-resume-desc>
+        Pick up where you left off in this chapter.
+      </p>
+    </div>
+    <div class="resume-prompt__actions">
+      <button type="button" class="resume-prompt__dismiss" data-resume-dismiss>Start over</button>
+      <button type="button" class="resume-prompt__go" data-resume-go>Continue</button>
+    </div>
+  </div>
+
   <noscript>
     <style>
       /* Switching needs JS, so show every language stacked rather than
@@ -321,6 +344,70 @@ const num = String(order).padStart(2, '0');
     .chapter-nav { grid-template-columns: 1fr; }
     .is-next { text-align: left; }
   }
+
+  /* --- resume prompt ---------------------------------------------------- */
+  .resume-prompt {
+    position: fixed;
+    z-index: 85;
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: var(--space-4);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-4);
+    max-width: 28rem;
+    margin-inline: auto;
+    padding: var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--bg);
+    color: var(--ink);
+    box-shadow: var(--shadow-lg);
+    font-family: var(--font-ui);
+  }
+  .resume-prompt[hidden] { display: none; }
+  .resume-prompt__title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+  .resume-prompt__desc {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-xs);
+    line-height: 1.45;
+    color: var(--ink-2);
+  }
+  .resume-prompt__actions {
+    display: flex;
+    gap: var(--space-2);
+    margin-left: auto;
+  }
+  .resume-prompt__dismiss,
+  .resume-prompt__go {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    border-radius: var(--radius);
+    padding: var(--space-2) var(--space-3);
+    line-height: 1.2;
+  }
+  .resume-prompt__dismiss { color: var(--ink-2); }
+  .resume-prompt__dismiss:hover { color: var(--ink); }
+  .resume-prompt__go {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  @media (min-width: 480px) {
+    .resume-prompt {
+      left: auto;
+      right: var(--space-5);
+      bottom: var(--space-5);
+      margin-inline: 0;
+    }
+  }
 </style>
 
 <script>
@@ -339,6 +426,154 @@ const num = String(order).padStart(2, '0');
     addEventListener('scroll', update, { passive: true });
     addEventListener('resize', update, { passive: true });
   }
+
+  // --- exact reading position (issue #60) --------------------------------
+  // Kept on a separate key from bfp-progress so chapter completion stays a
+  // plain string[] of ids and never has to understand section payloads.
+  const POSITION_KEY = 'bfp-reading-position';
+  type PositionEntry = {
+    sectionId: string;
+    sectionTitle: string;
+    chapterTitle: string;
+    chapterNum: string;
+    scrollY: number;
+    updatedAt: number;
+  };
+  type PositionStore = {
+    lastId?: string;
+    positions: Record<string, PositionEntry>;
+  };
+
+  const resumeEl = document.querySelector<HTMLElement>('[data-resume-prompt]');
+  const chapterId = resumeEl?.dataset.chapterId ?? '';
+  const chapterTitle = resumeEl?.dataset.chapterTitle ?? '';
+  const chapterNum = resumeEl?.dataset.chapterNum ?? '';
+
+  const readPositions = (): PositionStore => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(POSITION_KEY) ?? '{}');
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { positions: {} };
+      }
+      const positions =
+        raw.positions && typeof raw.positions === 'object' && !Array.isArray(raw.positions)
+          ? raw.positions
+          : {};
+      return {
+        lastId: typeof raw.lastId === 'string' ? raw.lastId : undefined,
+        positions,
+      };
+    } catch {
+      return { positions: {} };
+    }
+  };
+
+  const writePositions = (store: PositionStore) => {
+    try {
+      localStorage.setItem(POSITION_KEY, JSON.stringify(store));
+    } catch {
+      /* storage blocked */
+    }
+  };
+
+  let restoring = false;
+  let activeSectionId = '';
+  let activeSectionTitle = '';
+  let saveTimer: number | null = null;
+
+  const headingTitle = (id: string): string => {
+    const el = document.getElementById(id);
+    if (!el) return id;
+    // Strip the "#" gutter anchor text Astro injects beside the heading.
+    return (el.textContent ?? id).replace(/^\s*#\s*/, '').trim() || id;
+  };
+
+  const savePosition = (sectionId: string, sectionTitle: string) => {
+    if (!chapterId || restoring) return;
+    // Ignore the very top of the chapter so merely opening it does not
+    // create a Continue target the reader never scrolled into.
+    if (window.scrollY < 180) return;
+
+    const store = readPositions();
+    store.lastId = chapterId;
+    store.positions[chapterId] = {
+      sectionId,
+      sectionTitle,
+      chapterTitle,
+      chapterNum,
+      scrollY: Math.max(0, Math.round(window.scrollY)),
+      updatedAt: Date.now(),
+    };
+    writePositions(store);
+  };
+
+  const scheduleSave = () => {
+    if (saveTimer != null) window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      saveTimer = null;
+      savePosition(activeSectionId, activeSectionTitle);
+    }, 400);
+  };
+
+  const restoreTo = (entry: PositionEntry) => {
+    restoring = true;
+    const target = entry.sectionId ? document.getElementById(entry.sectionId) : null;
+    if (target) {
+      target.scrollIntoView({ behavior: 'auto', block: 'start' });
+    } else if (entry.scrollY > 0) {
+      window.scrollTo(0, entry.scrollY);
+    }
+    // Allow a frame for scroll + IntersectionObserver to settle before we
+    // resume writing positions again.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        restoring = false;
+      });
+    });
+  };
+
+  const hideResume = () => {
+    if (resumeEl) resumeEl.hidden = true;
+  };
+
+  const showResume = (entry: PositionEntry) => {
+    if (!resumeEl) return;
+    const desc = resumeEl.querySelector<HTMLElement>('[data-resume-desc]');
+    if (desc) {
+      desc.textContent = entry.sectionTitle
+        ? `Chapter ${entry.chapterNum}: ${entry.chapterTitle} → ${entry.sectionTitle}`
+        : `Chapter ${entry.chapterNum}: ${entry.chapterTitle}`;
+    }
+    resumeEl.hidden = false;
+  };
+
+  // Offer restore when returning mid-chapter without an explicit hash jump.
+  if (chapterId && !location.hash) {
+    const saved = readPositions().positions[chapterId];
+    if (saved && (saved.scrollY > 180 || saved.sectionId)) {
+      showResume(saved);
+      resumeEl?.querySelector<HTMLButtonElement>('[data-resume-go]')?.addEventListener('click', () => {
+        restoreTo(saved);
+        hideResume();
+      });
+      resumeEl?.querySelector<HTMLButtonElement>('[data-resume-dismiss]')?.addEventListener('click', () => {
+        // Start over: clear this chapter's bookmark so the prompt stays gone.
+        const store = readPositions();
+        delete store.positions[chapterId];
+        if (store.lastId === chapterId) store.lastId = undefined;
+        writePositions(store);
+        hideResume();
+        window.scrollTo(0, 0);
+      });
+    }
+  }
+
+  // Persist on leave so a fast navigation still keeps the last spot.
+  const flushSave = () => savePosition(activeSectionId, activeSectionTitle);
+  addEventListener('pagehide', flushSave);
+  addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSave();
+  });
 
   // --- table-of-contents scroll spy ------------------------------------
   // IntersectionObserver rather than a scroll handler: no work on frames
@@ -382,6 +617,9 @@ const num = String(order).padStart(2, '0');
       const active = order.find((id) => visible.has(id));
       if (!active || active === currentActive) return;
       currentActive = active;
+      activeSectionId = active;
+      activeSectionTitle = headingTitle(active);
+      scheduleSave();
 
       links.forEach((a, id) => {
         if (id === active) a.setAttribute('aria-current', 'true');
@@ -411,6 +649,9 @@ const num = String(order).padStart(2, '0');
       if (el) io.observe(el);
     });
   }
+
+  // Also refresh scrollY while the reader sits inside a long section.
+  addEventListener('scroll', scheduleSave, { passive: true });
 
   // --- mark chapter complete --------------------------------------------
   const PROGRESS_KEY = 'bfp-progress';

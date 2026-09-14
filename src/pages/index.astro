@@ -39,12 +39,26 @@ const grouped = PARTS.map((p) => ({
         with diagrams and runnable Go and Python.
       </p>
       <div class="hero-actions">
-        <a class="btn-primary" href={chapters.length ? `/${chapters[0].id}/` : '#chapters'}>
+        <a
+          class="btn-continue"
+          data-continue-reading
+          hidden
+          href="#"
+        >
+          <span data-continue-label>Continue reading</span>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2.5" y1="8" x2="12.5" y2="8" /><polyline points="8.5,4 12.5,8 8.5,12" /></svg>
+        </a>
+        <a
+          class="btn-primary"
+          data-start-reading
+          href={chapters.length ? `/${chapters[0].id}/` : '#chapters'}
+        >
           Start with Chapter 01
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2.5" y1="8" x2="12.5" y2="8" /><polyline points="8.5,4 12.5,8 8.5,12" /></svg>
         </a>
         <button class="btn-ghost" type="button" data-search-open>Search the series</button>
       </div>
+      <p class="continue-meta" data-continue-meta hidden></p>
 
       <dl class="facts">
         <div class="fact"><dt>Chapters</dt><dd>{chapters.length}</dd></div>
@@ -156,11 +170,18 @@ const grouped = PARTS.map((p) => ({
     text-wrap: pretty;
   }
 
-  .hero-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-6); }
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-top: var(--space-6);
+    align-items: center;
+  }
 
-  .btn-primary, .btn-ghost {
+  .btn-primary, .btn-ghost, .btn-continue {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: var(--space-2);
     height: 42px;
     padding-inline: var(--space-5);
@@ -168,13 +189,58 @@ const grouped = PARTS.map((p) => ({
     font-size: var(--text-sm);
     font-weight: 600;
     text-decoration: none;
-    transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+    white-space: nowrap;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
   }
   .btn-primary { background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); }
   .btn-primary:hover { transform: translateY(-1px); }
-  .btn-primary svg { width: 15px; height: 15px; }
+  .btn-primary svg,
+  .btn-continue svg { width: 15px; height: 15px; flex: none; }
+  .btn-primary[hidden], .btn-ghost[hidden], .btn-continue[hidden] { display: none; }
+  /* When Continue leads, Start steps down to an accent outline — still
+     distinct from Search (ghost). */
+  .btn-primary.is-secondary {
+    background: transparent;
+    color: var(--accent);
+    border-color: color-mix(in oklab, var(--accent) 35%, var(--line));
+  }
+  .btn-primary.is-secondary:hover {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    transform: none;
+  }
   .btn-ghost { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
   .btn-ghost:hover { border-color: var(--line-2); }
+
+  .btn-continue {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: 1px solid var(--accent);
+  }
+  .btn-continue:hover { transform: translateY(-1px); }
+
+  .continue-meta {
+    margin: var(--space-2) 0 0;
+    max-width: 40rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .continue-meta[hidden] { display: none; }
+
+  @media (max-width: 560px) {
+    .hero-actions { flex-direction: column; align-items: stretch; }
+    .btn-continue,
+    .btn-primary[data-start-reading],
+    .btn-ghost[data-search-open] {
+      width: 100%;
+    }
+    .continue-meta { white-space: normal; }
+  }
 
   .facts {
     display: flex;
@@ -353,11 +419,95 @@ const grouped = PARTS.map((p) => ({
 
 <script>
   const PROGRESS_KEY = 'bfp-progress';
+  const POSITION_KEY = 'bfp-reading-position';
+
   const readProgress = (): Set<string> => {
     try {
       const raw = JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? '[]');
       return new Set<string>(Array.isArray(raw) ? raw : []);
     } catch { return new Set(); }
+  };
+
+  type PositionEntry = {
+    sectionId?: string;
+    sectionTitle?: string;
+    chapterTitle?: string;
+    chapterNum?: string;
+    scrollY?: number;
+    updatedAt?: number;
+  };
+
+  const readPositions = (): { lastId?: string; positions: Record<string, PositionEntry> } => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(POSITION_KEY) ?? '{}');
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { positions: {} };
+      }
+      const positions =
+        raw.positions && typeof raw.positions === 'object' && !Array.isArray(raw.positions)
+          ? (raw.positions as Record<string, PositionEntry>)
+          : {};
+      return {
+        lastId: typeof raw.lastId === 'string' ? raw.lastId : undefined,
+        positions,
+      };
+    } catch {
+      return { positions: {} };
+    }
+  };
+
+  const continueLink = document.querySelector<HTMLAnchorElement>('[data-continue-reading]');
+  const continueLabel = document.querySelector<HTMLElement>('[data-continue-label]');
+  const continueMeta = document.querySelector<HTMLElement>('[data-continue-meta]');
+  const startLink = document.querySelector<HTMLAnchorElement>('[data-start-reading]');
+
+  const renderContinue = () => {
+    if (!continueLink || !continueLabel || !startLink) return;
+
+    const store = readPositions();
+    const id = store.lastId;
+    const entry = id ? store.positions[id] : undefined;
+    const known = id
+      ? Boolean(document.querySelector(`[data-chapter-id="${CSS.escape(id)}"]`))
+      : false;
+
+    if (!id || !entry || !known || (!(entry.scrollY && entry.scrollY > 180) && !entry.sectionId)) {
+      continueLink.hidden = true;
+      continueLink.removeAttribute('href');
+      continueLink.removeAttribute('aria-label');
+      continueLink.removeAttribute('title');
+      continueLabel.textContent = 'Continue reading';
+      if (continueMeta) {
+        continueMeta.hidden = true;
+        continueMeta.textContent = '';
+      }
+      startLink.classList.remove('is-secondary');
+      return;
+    }
+
+    const hash = entry.sectionId ? `#${entry.sectionId}` : '';
+    continueLink.href = `/${id}/${hash}`;
+
+    const num = entry.chapterNum ? `Ch. ${entry.chapterNum}` : '';
+    const section = entry.sectionTitle || entry.chapterTitle || '';
+    const meta = [num, section].filter(Boolean).join(' → ');
+    const fullParts = [
+      entry.chapterNum && entry.chapterTitle
+        ? `Chapter ${entry.chapterNum}: ${entry.chapterTitle}`
+        : (entry.chapterTitle || num || 'your chapter'),
+      entry.sectionTitle,
+    ].filter(Boolean);
+    const full = `Continue reading → ${fullParts.join(' → ')}`;
+
+    continueLabel.textContent = 'Continue reading';
+    continueLink.title = full;
+    continueLink.setAttribute('aria-label', full);
+    if (continueMeta) {
+      continueMeta.textContent = meta || 'Pick up where you left off';
+      continueMeta.hidden = false;
+    }
+    continueLink.hidden = false;
+    startLink.classList.add('is-secondary');
   };
 
   // Re-run on pageshow (bfcache restores the DOM without re-executing this
@@ -392,12 +542,14 @@ const grouped = PARTS.map((p) => ({
 
     const progressFact = document.querySelector<HTMLElement>('[data-progress-fact]');
     if (progressFact) progressFact.textContent = `${doneCount} / ${cardCount}`;
+
+    renderContinue();
   };
 
   render();
   addEventListener('pageshow', render);
   addEventListener('storage', (e) => {
     // e.key is null when another tab calls localStorage.clear().
-    if (e.key === PROGRESS_KEY || e.key === null) render();
+    if (e.key === PROGRESS_KEY || e.key === POSITION_KEY || e.key === null) render();
   });
 </script>
