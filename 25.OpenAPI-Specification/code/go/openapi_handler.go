@@ -1,115 +1,62 @@
 // Package main implements a minimal HTTP server that serves a static
 // OpenAPI specification and demonstrates the design-first approach.
 //
-// The spec is written first (openapi.yaml), and the server simply serves it.
+// The spec is written first (openapi.json), and the server simply serves it.
 // Run:
 //     go run openapi_handler.go
 // Then visit:
 //     http://localhost:4000/openapi.json  → The raw OpenAPI spec
-//     http://localhost:4000/docs          → Swagger UI (serve your own HTML)
+//     http://localhost:4000/docs          → Swagger UI
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 )
 
-// openapiSpec holds the parsed OpenAPI specification.
-type openapiSpec struct {
-	OpenAPI  string                 `json:"openapi"`
-	Info     specInfo               `json:"info"`
-	Servers  []specServer           `json:"servers"`
-	Paths    map[string]specPath    `json:"paths"`
-	Components specComponents       `json:"components"`
-	Security []map[string][]string `json:"security"`
-}
-
-type specInfo struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Version     string `json:"version"`
-}
-
-type specServer struct {
-	URL         string `json:"url"`
-	Description string `json:"description"`
-}
-
-type specPath struct {
-	Get *specOperation `json:"get,omitempty"`
-	Post *specOperation `json:"post,omitempty"`
-}
-
-type specOperation struct {
-	OperationID string `json:"operationId"`
-	Summary     string `json:"summary"`
-	Tags        []string `json:"tags"`
-	Parameters  []specParameter `json:"parameters,omitempty"`
-	Responses   map[string]specResponse `json:"responses"`
-}
-
-type specParameter struct {
-	Name     string `json:"name"`
-	In       string `json:"in"`
-	Required bool   `json:"required"`
-	Schema   specSchema `json:"schema"`
-}
-
-type specSchema struct {
-	Type     string `json:"type"`
-	Minimum  *int   `json:"minimum,omitempty"`
-	Default  any    `json:"default,omitempty"`
-	Enum     []any  `json:"enum,omitempty"`
-	Example  any    `json:"example,omitempty"`
-}
-
-type specResponse struct {
-	Description string `json:"description"`
-}
-
-type specComponents struct {
-	Schemas map[string]specSchema `json:"schemas"`
-	SecuritySchemes map[string]specSecurityScheme `json:"securitySchemes"`
-}
-
-type specSecurityScheme struct {
-	Type     string          `json:"type"`
-	In       string          `json:"in,omitempty"`
-	Name     string          `json:"name,omitempty"`
-	Scheme   string          `json:"scheme,omitempty"`
-	BearerFormat string       `json:"bearerFormat,omitempty"`
-}
-
-// loadSpec reads the OpenAPI YAML/JSON file from disk.
-func loadSpec(path string) (openapiSpec, error) {
-	var spec openapiSpec
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return spec, fmt.Errorf("failed to read spec file: %w", err)
-	}
-	if err := json.Unmarshal(data, &spec); err != nil {
-		return spec, fmt.Errorf("failed to parse spec: %w", err)
-	}
-	return spec, nil
-}
+const swaggerUI = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Docs</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>
+	SwaggerUIBundle({
+		url: "/openapi.json",
+		dom_id: "#swagger-ui",
+		deepLinking: true,
+		layout: "StandaloneLayout",
+	});
+</script>
+</body>
+</html>`
 
 func main() {
-	spec, err := loadSpec("openapi.json")
-	if err != nil {
-		log.Fatalf("openapi_handler: %v", err)
-	}
-
 	http.HandleFunc("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		data, err := os.ReadFile("openapi.json")
+		if err != nil {
+			http.Error(w, "Specification not found", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(spec)
+		w.Write(data)
 	})
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	http.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(swaggerUI))
 	})
 
 	port := os.Getenv("PORT")
@@ -119,5 +66,6 @@ func main() {
 
 	fmt.Printf("OpenAPI server serving spec on :%s\n", port)
 	fmt.Printf("  Spec:  http://localhost:%s/openapi.json\n", port)
+	fmt.Printf("  Docs:  http://localhost:%s/docs\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

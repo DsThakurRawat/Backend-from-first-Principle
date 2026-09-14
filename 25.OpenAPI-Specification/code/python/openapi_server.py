@@ -14,8 +14,10 @@ Then visit:
 """
 
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException, Query, Path, Header
+from fastapi import FastAPI, Query, Path, Header, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+import threading
 
 app = FastAPI(
     title="Bookstore API",
@@ -32,7 +34,7 @@ and rendered at `/docs`.\
 )
 
 
-# ── Schemas (Pydantic models define the OpenAPI schemas) ──────────────
+# ── Schemas (Pydantic models define the OpenAPI schemas) ──────
 
 class Book(BaseModel):
     """A book in the collection."""
@@ -75,19 +77,27 @@ class Error(BaseModel):
         json_schema_extra = {"example": {"code": 404, "message": "Book not found"}}
 
 
-# ── In-memory store ──────────────────────────────────────────────────
+class Pagination(BaseModel):
+    """A paginated response wrapping a list of books."""
+
+    data: List[Book]
+    total: int
+
+
+# ── In-memory store ──────────────────────────────────────────
 
 _books: List[Book] = [
     Book(id=1, title="Clean Code", author="Robert C. Martin", isbn="978-0132350884"),
     Book(id=2, title="Designing Data-Intensive Applications", author="Martin Kleppmann"),
 ]
 _next_id = 3
+_lock = threading.Lock()
 
 
-# ── Endpoints ────────────────────────────────────────────────────────
+# ── Endpoints ────────────────────────────────────────────────
 # FastAPI automatically generates the OpenAPI spec from these definitions.
 
-@app.get("/books", response_model=dict, tags=["Books"])
+@app.get("/books", response_model=Pagination, tags=["Books"])
 def list_books(
     page: int = Query(1, ge=1, description="Page number", example=1),
     limit: int = Query(10, ge=1, le=100, description="Items per page", example=10),
@@ -95,7 +105,7 @@ def list_books(
     """List all books with pagination."""
     start = (page - 1) * limit
     end = start + limit
-    return {"data": _books[start:end], "total": len(_books)}
+    return Pagination(data=_books[start:end], total=len(_books))
 
 
 @app.get("/books/{book_id}", response_model=Book, tags=["Books"])
@@ -104,16 +114,17 @@ def get_book(book_id: int = Path(..., ge=1, description="The unique ID of the bo
     for book in _books:
         if book.id == book_id:
             return book
-    raise HTTPException(status_code=404, detail="Book not found")
+    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=Error(code=404, message="Book not found").model_dump())
 
 
 @app.post("/books", response_model=Book, status_code=201, tags=["Books"])
 def create_book(payload: CreateBook):
     """Create a new book."""
     global _next_id
-    new_book = Book(id=_next_id, **payload.model_dump())
-    _next_id += 1
-    _books.append(new_book)
+    with _lock:
+        new_book = Book(id=_next_id, **payload.model_dump())
+        _next_id += 1
+        _books.append(new_book)
     return new_book
 
 

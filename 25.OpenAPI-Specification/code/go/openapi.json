@@ -1,0 +1,255 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bookstore API",
+    "description": "A demonstration API showing how OpenAPI specs are generated from code.\n\nVersion 1.0 provides endpoints for listing, creating, and retrieving books.\n\nThe full OpenAPI specification is available at `/openapi.json`\nand rendered at `/docs`.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "API Support",
+      "email": "support@bookstore.example.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4000",
+      "description": "Local development server"
+    }
+  ],
+  "paths": {
+    "/books": {
+      "get": {
+        "operationId": "listBooks",
+        "summary": "List all books",
+        "tags": ["Books"],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Page number",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "example": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Items per page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 10,
+              "example": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of books",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pagination"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createBook",
+        "summary": "Create a new book",
+        "tags": ["Books"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBook"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created book",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Book"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/books/{book_id}": {
+      "get": {
+        "operationId": "getBook",
+        "summary": "Retrieve a single book by ID",
+        "tags": ["Books"],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "description": "The unique ID of the book",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A single book",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Book"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Book not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "healthCheck",
+        "summary": "Health check",
+        "tags": ["System"],
+        "responses": {
+          "200": {
+            "description": "Service is healthy"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Book": {
+        "type": "object",
+        "required": ["id", "title", "author"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The unique ID of the book"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The title of the book",
+            "example": "Designing Data-Intensive Applications"
+          },
+          "author": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The author of the book",
+            "example": "Martin Kleppmann"
+          },
+          "isbn": {
+            "type": "string",
+            "format": "isbn",
+            "description": "The ISBN of the book",
+            "example": "978-1449373320"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the book was published",
+            "example": "2017-08-04T00:00:00Z"
+          }
+        }
+      },
+      "CreateBook": {
+        "type": "object",
+        "required": ["title", "author"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The title of the book",
+            "example": "New Book"
+          },
+          "author": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The author of the book",
+            "example": "Author Name"
+          },
+          "isbn": {
+            "type": "string",
+            "format": "isbn",
+            "description": "The ISBN of the book"
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "required": ["data", "total"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Book"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "description": "Total number of books"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "description": "Error code",
+            "example": 404
+          },
+          "message": {
+            "type": "string",
+            "description": "Error message",
+            "example": "Book not found"
+          },
+          "details": {
+            "type": "object",
+            "description": "Additional error details"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Books",
+      "description": "Book management endpoints"
+    },
+    {
+      "name": "System",
+      "description": "System health and status"
+    }
+  ]
+}

@@ -46,7 +46,7 @@ OpenAPI Specification (OAS) is a **standard, language-agnostic interface descrip
 - **How to authenticate** (API keys, OAuth2, Bearer tokens)
 - **What the data shapes look like** (schemas for requests, responses, and shared types)
 
-The spec was originally created by **Tony Tam** at **Wordnik** around 2010 as the **Swagger** specification, driven by the practical need to auto-generate API documentation from code. In 2015, the **OpenAPI Initiative** (under the Linux Foundation) took ownership, renamed it, and standardized it. Today, OAS 3.1 is the current version and is supported by virtually every API tooling ecosystem — from Swagger UI to Postman to code generators in every major language.
+The spec was originally created by **Tony Tam** at **Wordnik** around 2010 as the **Swagger** specification, driven by the practical need to auto-generate API documentation from code. In 2015, the **OpenAPI Initiative** (under the Linux Foundation) took ownership, renamed it, and standardized it. OpenAPI 3.2.0 is the latest published version; the main YAML example in this chapter uses OAS 3.1.0, which remains widely used across the API tooling ecosystem — from Swagger UI to Postman to code generators in every major language.
 
 <Callout type="info" title="Swagger vs OpenAPI">
 "Swagger" was the original name. The OpenAPI Initiative took it over in 2015. "Swagger" tools still work — Swagger UI, the swagger-codegen toolchain — but the formal specification is now called OpenAPI. When someone says "Swagger spec," they usually mean an OpenAPI spec. Don't get confused; they're the same thing.
@@ -260,9 +260,8 @@ components:
           type: string
           minLength: 1
         isbn:
-          type: string
+          type: [string, "null"]
           format: isbn
-          nullable: true
         publishedAt:
           type: string
           format: date-time
@@ -356,12 +355,12 @@ paths:
   /books/{id}:
     get:
       security:
-        - BearerAuth: [read]  # Requires the "read" scope
+        - OAuth2: [read]      # Requires the "read" scope
       ...
   /books:
     post:
       security:
-        - BearerAuth: [write] # Requires the "write" scope
+        - OAuth2: [write]     # Requires the "write" scope
 ```
 
 The empty array `[]` as the security value means "this endpoint requires no authentication" — a deliberate override of the global default. The array of scopes on a security scheme restricts which permissions the caller must hold.
@@ -507,7 +506,7 @@ An OpenAPI spec is not just documentation — it's a **source of truth that mach
 With **orval**, generating a type-safe TypeScript client from a spec is a single command:
 
 ```bash
-npx orval --openapi ./openapi.yaml --output ./src/api/client
+npx orval --input ./openapi.yaml --output ./src/api/client
 ```
 
 This produces:
@@ -566,13 +565,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npm install
-      - run: npm run build        # Starts the server
-      - run: npx openapi-match \
-            spec: openapi.yaml \
-            base-url: http://localhost:4000
+      - run: npm run build
+      - run: npm run start &      # Start the upstream application
+      - run: npx prism proxy openapi.yaml http://localhost:4000 --port 4010 &
+      - run: curl --fail http://localhost:4010/books # Send requests through Prism
 ```
 
-Tools like **`openapi-match`**, **`dredd`**, or **`prism`** spin up your server, send requests defined in the spec, and verify that the responses match the documented schemas. If a field is missing or a status code differs, the CI fails.
+    Prism's validation-proxy mode requires the application to be running first. It validates requests and responses routed through the proxy; it does not start the upstream application or generate a request for every operation. Start the application separately, start Prism against it, and send your tests through the Prism proxy. For spec-driven request generation and response validation, use **`dredd`** instead.
 
 ### Linting the spec
 
@@ -612,6 +611,62 @@ Treat the OpenAPI spec like any other source artifact:
 <Diagram caption="The spec maintenance loop">
 <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A continuous loop showing how the OpenAPI spec stays in sync with implementation"><circle cx="360" cy="125" r="110" fill="none" stroke="var(--dg-line)" stroke-width="1.5" stroke-dasharray="4 3"></circle><rect x="20" y="60" width="180" height="130" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="110" y="90" font-size="11" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">Write / Update Spec</text><text x="110" y="120" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">YAML, machine-readable</text><text x="110" y="150" class="mono" font-size="8.5" fill="var(--dg-ink-3)">Validate with CI</text><path d="M200 125 A140 140 0 0 1 360 15" fill="none" stroke="var(--dg-ok)" stroke-width="2" marker-end="url(#br)"></path><rect x="310" y="30" width="190" height="130" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="405" y="60" font-size="11" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Generate Client SDKs</text><text x="405" y="90" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">TypeScript, Go, Python</text><text x="405" y="120" class="mono" font-size="8.5" fill="var(--dg-ink-3)">Type-safe, always current</text><path d="M455 85 A140 140 0 0 1 600 125" fill="none" stroke="var(--dg-info)" stroke-width="2" marker-end="url(#bg)"></path><rect x="530" y="70" width="170" height="110" rx="10" fill="var(--dg-info-surface)" stroke="var(--dg-info)"></rect><text x="615" y="95" font-size="11" font-weight="700" fill="var(--dg-info)" text-anchor="middle">Serve Docs</text><text x="615" y="120" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">Swagger UI / Scalar</text><text x="615" y="145" class="mono" font-size="8.5" fill="var(--dg-ink-3)">Interactive, live</text><path d="M570 125 A140 140 0 0 1 450 170" fill="none" stroke="var(--dg-warn)" stroke-width="2" marker-end="url(#bw)"></path><rect x="260" y="170" width="200" height="70" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="360" y="198" font-size="11" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">CI Validation</text><text x="360" y="218" class="mono" font-size="8.5" fill="var(--dg-ink-2)" text-anchor="middle">Spec matches server</text><defs><marker id="br" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="var(--dg-ok)"></path></marker><marker id="bg" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="var(--dg-info)"></path></marker><marker id="bw" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="var(--dg-warn)"></path></marker></defs></svg>
 </Diagram>
+
+## OpenAPI for AI Agents
+
+An AI agent is another kind of API client: it chooses an operation, supplies arguments, and interprets the response. OpenAPI gives the agent runtime a machine-readable description of those operations, but it does not turn an API into an autonomous system by itself. An adapter converts selected OpenAPI operations into the tool format understood by the model, while the application remains responsible for authorization, execution, and side effects.
+
+For example, an adapter can turn this operation:
+
+```yaml
+paths:
+  /books/{bookId}:
+    get:
+      operationId: getBook
+      summary: Get a book by ID
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: integer
+```
+
+into a tool with a stable name, a useful description, and a validated argument schema:
+
+```json
+{
+  "name": "getBook",
+  "description": "Get a book by its numeric ID.",
+  "parameters": {
+    "type": "object",
+    "required": ["bookId"],
+    "properties": {
+      "bookId": { "type": "integer" }
+    },
+    "additionalProperties": false
+  }
+}
+```
+
+The model may propose a tool call, but the agent runtime should validate it against the OpenAPI-derived schema before making an HTTP request. It should also resolve the path and method from a trusted operation registry rather than allowing the model to construct arbitrary URLs. `operationId`, summaries, descriptions, enums, formats, and examples therefore matter twice: they improve human documentation and give the model clearer boundaries for choosing and calling a tool.
+
+### Production boundaries for agentic API calls
+
+Treat an agent tool call like an untrusted request crossing a public API boundary:
+
+- **Expose an allowlist.** Publish only the operations the agent needs. Do not expose administrative or destructive endpoints merely because they appear in the full OpenAPI document.
+- **Authorize the caller.** Enforce the end user's identity, tenant, permissions, and scopes on the server for every call. A model's decision is never proof of authorization.
+- **Separate reads from writes.** Read operations can often run automatically; create, update, delete, payment, and permission-changing operations should require explicit confirmation or a policy decision.
+- **Validate twice.** Validate arguments before dispatch, then validate the upstream response before returning it to the model. Reject unexpected fields, status codes, and content types rather than silently guessing.
+- **Control execution.** Apply timeouts, rate limits, retry budgets, idempotency keys, and maximum response sizes. Tool loops need a step limit and a cancellation path.
+- **Trace the decision.** Log the user, model request, selected `operationId`, sanitized arguments, authorization result, latency, status code, and request ID. Keep secrets and sensitive response data out of ordinary logs.
+
+Keep the OpenAPI document versioned and pin the agent adapter to a known version. A renamed operation, broadened schema, or newly exposed write endpoint can change agent behavior even when no prompt changes. Validate generated tool definitions in CI, exercise representative tool calls against a mock or staging service, and review permission changes like any other API contract change.
+
+<Callout type="warn" title="OpenAPI is the capability contract, not the policy engine">
+Use OpenAPI to describe what an operation accepts and returns. Use the application, gateway, and agent runtime to decide who may call it, whether approval is required, and how much work an agent may perform. Keeping those responsibilities separate makes agent integrations auditable and revocable.
+</Callout>
 
 ## The chapter in one breath
 
