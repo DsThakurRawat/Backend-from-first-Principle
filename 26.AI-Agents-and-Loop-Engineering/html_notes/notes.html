@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
+<title>AI Agents &amp; Loop Engineering / Chapter 26 / Backend from First Principles</title>
+<meta name="description" content="Chapter 26 study notes: LangGraph agent architecture, loop engineering, tool use, workflows, and backend integration.">
+<style>
+:root {
+  --paper: #f3ede2;
+  --paper-2: #e9dfd0;
+  --ink: #211e1a;
+  --muted: #655c50;
+  --accent: #b8402e;
+  --accent-soft: #f4ded6;
+  --blue: #37607f;
+  --blue-soft: #dee5ee;
+  --green: #3f6f4e;
+  --green-soft: #e0e9dd;
+  --gold: #b07d2b;
+  --gold-soft: #f0e5c9;
+  --border: #d8cfbe;
+  --code: #232019;
+  --code-text: #e9e2d3;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.7 Georgia, serif; }
+main { max-width: 820px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+h1 { margin: 0 0 .5rem; font: 700 2.2rem/1.15 Georgia, serif; }
+h2 { margin: 2.5rem 0 .75rem; color: var(--accent); border-bottom: 2px solid var(--border); padding-bottom: .3rem; }
+h3 { margin-top: 1.5rem; }
+p { max-width: 70ch; }
+.eyebrow { color: var(--accent); font: 700 .8rem/1.2 monospace; letter-spacing: .08em; text-transform: uppercase; }
+.meta { color: var(--muted); font-size: .92rem; }
+.callout { margin: 1.25rem 0; padding: 1rem 1.25rem; border-left: 4px solid var(--green); background: var(--green-soft); }
+.callout.warn { border-left-color: var(--gold); background: var(--gold-soft); }
+.callout.info { border-left-color: var(--blue); background: var(--blue-soft); }
+.callout strong { display: block; margin-bottom: .25rem; color: var(--green); }
+.callout.warn strong { color: var(--gold); }
+.callout.info strong { color: var(--blue); }
+pre { overflow-x: auto; padding: 1rem; border-radius: 7px; background: var(--code); color: var(--code-text); font: .86rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.diagram { overflow-x: auto; margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--border); background: var(--paper-2); text-align: center; }
+.diagram svg { min-width: 680px; max-width: 100%; height: auto; }
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+th, td { padding: .55rem .7rem; border: 1px solid var(--border); text-align: left; }
+th { background: var(--paper-2); }
+li { margin: .3rem 0; }
+footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+<p class="eyebrow">Chapter 26</p>
+<h1>AI Agents &amp; Loop Engineering</h1>
+<p class="meta">Part IV / OpenAPI &amp; AI Agents &middot; Companion notes for <code>src/content/chapters/26-ai-agents-and-loop-engineering.mdx</code></p>
+
+<h2>The core idea</h2>
+<p>An LLM call returns text. An AI agent is a bounded backend workflow that observes state, chooses an action, calls an allowlisted tool, observes the result, and either continues or stops. The model proposes a transition; the backend owns authorization, state, limits, and side effects.</p>
+
+<div class="callout warn"><strong>Do not give the model a database connection.</strong>Expose narrow tools such as <code>get_order(order_id)</code>. Validate arguments and tenant scope in backend code, and require approval before irreversible actions.</div>
+
+<div class="diagram">
+<svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Client to backend agent service to model and tools architecture">
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f2f20"/></marker></defs>
+<rect x="20" y="100" width="120" height="60" rx="9" fill="#f4ded6" stroke="#b8402e"/><text x="80" y="126" text-anchor="middle" font-weight="700" fill="#8f2f20">Client</text><text x="80" y="145" text-anchor="middle" font-size="10">POST /agent-runs</text>
+<rect x="190" y="45" width="330" height="170" rx="12" fill="#dee5ee" stroke="#37607f"/><text x="355" y="72" text-anchor="middle" font-weight="700" fill="#37607f">Backend agent service</text><rect x="220" y="90" width="270" height="42" rx="7" fill="#f3ede2" stroke="#d8cfbe"/><text x="355" y="116" text-anchor="middle" font-size="10">identity + policy + run state</text><rect x="220" y="147" width="270" height="42" rx="7" fill="#f4ded6" stroke="#b8402e"/><text x="355" y="173" text-anchor="middle" font-size="10">LangGraph state machine</text>
+<rect x="580" y="45" width="115" height="52" rx="8" fill="#f0e5c9" stroke="#b07d2b"/><text x="637" y="76" text-anchor="middle" font-weight="700" fill="#7f5a13">LLM</text><rect x="580" y="110" width="115" height="52" rx="8" fill="#e0e9dd" stroke="#3f6f4e"/><text x="637" y="141" text-anchor="middle" font-weight="700" fill="#3f6f4e">Tools</text><rect x="580" y="175" width="115" height="52" rx="8" fill="#f4ded6" stroke="#b8402e"/><text x="637" y="206" text-anchor="middle" font-weight="700" fill="#8f2f20">Trace/store</text>
+<path d="M140 130 H188 M520 70 H578 M520 165 H578 M520 190 C548 190 550 201 578 201" fill="none" stroke="#8f2f20" stroke-width="1.6" marker-end="url(#arrow)"/>
+</svg>
+</div>
+
+<h2>Loop Engineering</h2>
+<p>Engineer the loop as a state machine:</p>
+<ol>
+<li><strong>Inspect:</strong> load identity, request state, tools, budget, and deadline.</li>
+<li><strong>Plan:</strong> let the model propose a tool call or final response.</li>
+<li><strong>Act:</strong> validate and execute one allowlisted capability.</li>
+<li><strong>Observe:</strong> append a bounded, structured result.</li>
+<li><strong>Evaluate:</strong> check evidence, completion, policy, and remaining budget.</li>
+<li><strong>Stop:</strong> return success, typed failure, or an approval request.</li>
+</ol>
+
+<div class="diagram">
+<svg viewBox="0 0 720 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Inspect plan act observe evaluate loop">
+<defs><marker id="loop" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#8f2f20"/></marker></defs>
+<g font-size="13" font-weight="700" text-anchor="middle"><rect x="20" y="45" width="110" height="48" rx="8" fill="#dee5ee" stroke="#37607f"/><text x="75" y="74" fill="#37607f">Inspect</text><rect x="155" y="45" width="110" height="48" rx="8" fill="#f0e5c9" stroke="#b07d2b"/><text x="210" y="74" fill="#7f5a13">Plan</text><rect x="290" y="45" width="110" height="48" rx="8" fill="#f4ded6" stroke="#b8402e"/><text x="345" y="74" fill="#8f2f20">Act</text><rect x="425" y="45" width="110" height="48" rx="8" fill="#e0e9dd" stroke="#3f6f4e"/><text x="480" y="74" fill="#3f6f4e">Observe</text><rect x="560" y="45" width="140" height="48" rx="8" fill="#f4ded6" stroke="#b8402e"/><text x="630" y="74" fill="#8f2f20">Evaluate / stop</text></g><path d="M130 69 H153 M265 69 H288 M400 69 H423 M535 69 H558 M630 95 V125 H75 V95" fill="none" stroke="#8f2f20" stroke-width="1.5" marker-end="url(#loop)"/><text x="360" y="148" text-anchor="middle" font-size="10" fill="#655c50">continue only while policy, goal, budget, and deadline allow</text>
+</svg>
+</div>
+
+<h2>LangGraph skeleton</h2>
+<pre><code>from typing import Annotated, Literal
+from typing_extensions import TypedDict
+from langchain_core.messages import AnyMessage, HumanMessage, ToolMessage
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+
+class AgentState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+    steps: int
+
+@tool
+def get_order(order_id: str) -&gt; dict:
+    """Read an order visible to the authenticated tenant."""
+    return {"order_id": order_id, "status": "shipped"}
+
+model = ChatOpenAI(model="gpt-4.1-mini", temperature=0).bind_tools([get_order])
+
+def call_model(state):
+    response = model.invoke(state["messages"])
+    return {"messages": [response], "steps": state["steps"] + 1}
+
+def route(state) -&gt; Literal["tools", "done"]:
+    last = state["messages"][-1]
+    return "tools" if getattr(last, "tool_calls", None) and state["steps"] &lt; 4 else "done"
+
+graph = StateGraph(AgentState)
+graph.add_node("model", call_model)
+graph.add_node("tools", run_tools)
+graph.add_edge(START, "model")
+graph.add_conditional_edges("model", route, {"tools": "tools", "done": END})
+graph.add_edge("tools", "model")
+agent = graph.compile()</code></pre>
+
+<h2>Sequential and branching workflows</h2>
+<table>
+<tr><th>Workflow</th><th>Shape</th><th>Use it when</th></tr>
+<tr><td>Sequential</td><td><code>retrieve -&gt; draft -&gt; verify</code></td><td>Every stage is required and order is known.</td></tr>
+<tr><td>Branching</td><td><code>classify -&gt; billing | technical -&gt; verify</code></td><td>State determines which authorized path is useful.</td></tr>
+<tr><td>Agent loop</td><td><code>inspect -&gt; act -&gt; observe -&gt; evaluate</code></td><td>The next action depends on evidence discovered during execution.</td></tr>
+</table>
+
+<h2>Go and OpenAPI compatibility</h2>
+<p>The companion Go server in <code>code/go/agent_server.go</code> calls the OpenAI-compatible <code>/chat/completions</code> endpoint directly with a <code>messages</code> array and JSON-Schema tools. Set <code>OPENAI_BASE_URL</code> to point at another compatible gateway. The public backend endpoint is documented in <code>code/openapi.yaml</code>.</p>
+<pre><code>type CompletionRequest struct {
+    Model    string        `json:"model"`
+    Messages []ChatMessage `json:"messages"`
+    Tools    []Tool        `json:"tools,omitempty"`
+}
+
+// The backend validates this model-provided call before execution.
+func executeAllowlistedTool(call ToolCall) (map[string]any, error) {
+    if call.Function.Name != "get_order" {
+        return nil, fmt.Errorf("unsupported tool %q", call.Function.Name)
+    }
+    // Parse arguments, check tenant scope, then call the repository.
+    return map[string]any{"status": "shipped"}, nil
+}</code></pre>
+
+<h2>Backend integration</h2>
+<p>Keep the HTTP handler ordinary: authenticate the user, create an idempotent run, enqueue work, and return <code>202 Accepted</code>. A worker executes the graph with a deadline and checkpoint. Store the run status, step count, tool calls, usage, errors, and timestamps. Never let the model decide tenant scope or authorization.</p>
+<pre><code>@router.post("/agent-runs", status_code=202)
+async def create_agent_run(request, user=Depends(current_user)):
+    run = await runs.create_if_absent(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        idempotency_key=request.idempotency_key,
+        prompt=request.prompt,
+    )
+    await queue.publish("agent.run.requested", {"run_id": run.id})
+    return {"run_id": run.id, "status": run.status}</code></pre>
+
+<div class="callout info"><strong>Replacement rule</strong><p>Use a fixed workflow when the sequence is known. Use an agent when the next step genuinely depends on evidence. Use a hybrid when only one decision point needs dynamic routing.</p></div>
+
+<h2>Production checklist</h2>
+<ul>
+<li>Bound model calls, tool calls, tokens, and wall-clock time.</li>
+<li>Validate tool inputs and outputs with typed schemas.</li>
+<li>Use idempotency keys for mutations and approvals for irreversible actions.</li>
+<li>Treat retrieved content as untrusted data to reduce prompt-injection risk.</li>
+<li>Trace latency, cost, tool failures, retries, and final outcomes.</li>
+<li>Test wrong arguments, missing data, timeouts, adversarial content, and resume-after-crash behavior.</li>
+</ul>
+
+<footer>Companion notes for Chapter 26. The complete explanation and code are in <code>src/content/chapters/26-ai-agents-and-loop-engineering.mdx</code>.</footer>
+</main>
+</body>
+</html>

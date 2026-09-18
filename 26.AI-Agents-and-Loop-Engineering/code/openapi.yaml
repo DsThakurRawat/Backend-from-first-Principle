@@ -1,0 +1,111 @@
+openapi: 3.1.0
+info:
+  title: Backend AI Agent API
+  version: 1.0.0
+  description: >-
+    A bounded AI agent API. The backend owns authentication, authorization,
+    tool execution, budgets, and run state; the model only proposes the next
+    action.
+servers:
+  - url: http://localhost:8080
+    description: Local Go example
+paths:
+  /agent-runs:
+    post:
+      operationId: createAgentRun
+      summary: Run the support agent
+      description: >-
+        Executes a bounded agent loop using the OpenAI-compatible tool-calling
+        API. Production deployments can enqueue this request and return 202.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Prevents accidental duplicate runs or side effects.
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRunRequest'
+            examples:
+              trackingQuestion:
+                value:
+                  prompt: Where is order A-42?
+                  idempotency_key: run-20260919-a42
+      responses:
+        '200':
+          description: Agent completed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRunResponse'
+        '400':
+          description: Invalid request or missing idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid authentication.
+        '502':
+          description: Model or agent execution failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AgentRunRequest:
+      type: object
+      required:
+        - prompt
+        - idempotency_key
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: User request for the bounded agent.
+        idempotency_key:
+          type: string
+          minLength: 8
+          maxLength: 100
+          description: Client-generated key for safe retries.
+    AgentRunResponse:
+      type: object
+      required:
+        - run_id
+        - status
+      properties:
+        run_id:
+          type: string
+        status:
+          type: string
+          enum: [succeeded, failed]
+        answer:
+          type: string
+        message:
+          type: string
+    Error:
+      type: object
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+          example: failed
+        message:
+          type: string
