@@ -113,16 +113,29 @@ def call_model(state):
     response = model.invoke(state["messages"])
     return {"messages": [response], "steps": state["steps"] + 1}
 
-def route(state) -&gt; Literal["tools", "done"]:
+def run_tools(state):
     last = state["messages"][-1]
-    return "tools" if getattr(last, "tool_calls", None) and state["steps"] &lt; 4 else "done"
+    return {"messages": [ToolMessage(content=str(get_order.invoke(call["args"])), tool_call_id=call["id"])
+                          for call in last.tool_calls]}
+
+def route(state) -&gt; Literal["tools", "done", "failed", "limit_reached"]:
+    last = state["messages"][-1]
+    if getattr(last, "tool_calls", None) and state["steps"] &lt; 4:
+        return "tools"
+    if getattr(last, "tool_calls", None):
+        return "limit_reached"
+    return "done" if str(getattr(last, "content", "")).strip() else "failed"
 
 graph = StateGraph(AgentState)
 graph.add_node("model", call_model)
 graph.add_node("tools", run_tools)
+graph.add_node("failed", lambda state: {"status": "failed", "error": "empty model response"})
+graph.add_node("limit_reached", lambda state: {"status": "limit_reached", "error": "agent step limit exceeded"})
 graph.add_edge(START, "model")
-graph.add_conditional_edges("model", route, {"tools": "tools", "done": END})
+graph.add_conditional_edges("model", route, {"tools": "tools", "done": END, "failed": "failed", "limit_reached": "limit_reached"})
 graph.add_edge("tools", "model")
+graph.add_edge("failed", END)
+graph.add_edge("limit_reached", END)
 agent = graph.compile()</code></pre>
 
 <h2>Sequential and branching workflows</h2>

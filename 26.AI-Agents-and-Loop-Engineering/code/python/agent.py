@@ -30,6 +30,8 @@ class AgentState(TypedDict):
     user_id: str
     tenant_id: str
     steps: int
+    status: str
+    error: str
 
 
 @tool
@@ -70,24 +72,45 @@ def run_tools(state: AgentState) -> dict:
     return {"messages": tool_messages}
 
 
-def route_after_model(state: AgentState) -> Literal["tools", "done"]:
+def route_after_model(state: AgentState) -> Literal["tools", "done", "failed", "limit_reached"]:
     last = state["messages"][-1]
     if getattr(last, "tool_calls", None) and state["steps"] < 4:
         return "tools"
+    if getattr(last, "tool_calls", None):
+        return "limit_reached"
+    if not str(getattr(last, "content", "")).strip():
+        return "failed"
     return "done"
+
+
+def mark_failed(state: AgentState) -> dict:
+    return {"status": "failed", "error": "model returned no final content"}
+
+
+def mark_limit_reached(state: AgentState) -> dict:
+    return {"status": "limit_reached", "error": "agent step limit exceeded"}
 
 
 def build_agent():
     graph = StateGraph(AgentState)
     graph.add_node("model", call_model)
     graph.add_node("tools", run_tools)
+    graph.add_node("failed", mark_failed)
+    graph.add_node("limit_reached", mark_limit_reached)
     graph.add_edge(START, "model")
     graph.add_conditional_edges(
         "model",
         route_after_model,
-        {"tools": "tools", "done": END},
+        {
+            "tools": "tools",
+            "done": END,
+            "failed": "failed",
+            "limit_reached": "limit_reached",
+        },
     )
     graph.add_edge("tools", "model")
+    graph.add_edge("failed", END)
+    graph.add_edge("limit_reached", END)
     return graph.compile()
 
 
@@ -98,5 +121,9 @@ if __name__ == "__main__":
         "user_id": "user-7",
         "tenant_id": "tenant-3",
         "steps": 0,
+        "status": "running",
+        "error": "",
     })
+    if result.get("status") in {"failed", "limit_reached"}:
+        raise RuntimeError(result["error"])
     print(result["messages"][-1].content)

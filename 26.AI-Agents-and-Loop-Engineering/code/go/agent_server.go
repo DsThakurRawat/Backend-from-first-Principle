@@ -11,6 +11,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +23,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -89,7 +93,7 @@ type Agent struct {
 	HTTPClient *http.Client
 }
 
-func (a *Agent) Run(ctx context.Context, prompt string) (string, error) {
+func (a *Agent) Run(ctx context.Context, prompt, userID, tenantID string) (string, error) {
 	messages := []ChatMessage{
 		{
 			Role: "system",
@@ -114,7 +118,7 @@ func (a *Agent) Run(ctx context.Context, prompt string) (string, error) {
 		}
 
 		for _, call := range assistant.ToolCalls {
-			result, err := a.executeTool(call)
+			result, err := a.executeTool(call, userID, tenantID)
 			if err != nil {
 				result = map[string]any{"error": err.Error()}
 			}
@@ -184,7 +188,10 @@ func (a *Agent) complete(ctx context.Context, messages []ChatMessage) (ChatCompl
 	return completion, nil
 }
 
-func (a *Agent) executeTool(call ToolCall) (map[string]any, error) {
+func (a *Agent) executeTool(call ToolCall, userID, tenantID string) (map[string]any, error) {
+	if userID == "" || tenantID == "" {
+		return nil, errors.New("authenticated identity is required")
+	}
 	if call.Function.Name != "get_order" {
 		return nil, fmt.Errorf("unsupported tool %q", call.Function.Name)
 	}
@@ -212,6 +219,10 @@ func main() {
 	if apiKey == "" {
 		log.Fatal("OPENAI_API_KEY is required")
 	}
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET is required")
+	}
 
 	agent := &Agent{
 		APIKey:     apiKey,
@@ -222,22 +233,26 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /agent-runs", func(response http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Authorization") == "" {
-			writeJSON(response, http.StatusUnauthorized, AgentResponse{Status: "failed", Message: "authorization is required"})
+		claims, err := verifyBearerJWT(request.Header.Get("Authorization"), jwtSecret)
+		if err != nil {
+			writeJSON(response, http.StatusUnauthorized, AgentResponse{Status: "failed", Message: "invalid authorization"})
 			return
 		}
 
 		var input AgentRequest
-		if err := json.NewDecoder(io.LimitReader(request.Body, 1<<20)).Decode(&input); err != nil || strings.TrimSpace(input.Prompt) == "" {
+		if err := json.NewDecoder(io.LimitReader(request.Body, 1<<20)).Decode(&input); err != nil ||
+			strings.TrimSpace(input.Prompt) == "" || !validLength(input.Prompt, 1, 4000) {
 			writeJSON(response, http.StatusBadRequest, AgentResponse{Status: "failed", Message: "prompt is required"})
 			return
 		}
-		if input.IdempotencyKey == "" {
+		if !validLength(input.IdempotencyKey, 8, 100) {
 			writeJSON(response, http.StatusBadRequest, AgentResponse{Status: "failed", Message: "idempotency_key is required"})
 			return
 		}
 
-		answer, err := agent.Run(request.Context(), input.Prompt)
+		ctx, cancel := context.WithTimeout(request.Context(), 60*time.Second)
+		defer cancel()
+		answer, err := agent.Run(ctx, input.Prompt, claims.Subject, claims.TenantID)
 		if err != nil {
 			log.Printf("agent run failed: %v", err)
 			writeJSON(response, http.StatusBadGateway, AgentResponse{Status: "failed", Message: "agent execution failed"})
@@ -253,6 +268,58 @@ func main() {
 	server := &http.Server{Addr: ":8080", Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	log.Println("agent API listening on http://localhost:8080")
 	log.Fatal(server.ListenAndServe())
+}
+
+type jwtClaims struct {
+	Subject  string `json:"sub"`
+	TenantID string `json:"tenant_id"`
+	Expires  int64  `json:"exp"`
+}
+
+func verifyBearerJWT(header, secret string) (jwtClaims, error) {
+	parts := strings.Fields(header)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return jwtClaims{}, errors.New("bearer token required")
+	}
+	segments := strings.Split(parts[1], ".")
+	if len(segments) != 3 {
+		return jwtClaims{}, errors.New("invalid JWT format")
+	}
+	encodedHeader, encodedPayload, encodedSignature := segments[0], segments[1], segments[2]
+	headerBytes, err := base64.RawURLEncoding.DecodeString(encodedHeader)
+	if err != nil {
+		return jwtClaims{}, errors.New("invalid JWT header")
+	}
+	var tokenHeader struct{ Algorithm string `json:"alg"` }
+	if err := json.Unmarshal(headerBytes, &tokenHeader); err != nil || tokenHeader.Algorithm != "HS256" {
+		return jwtClaims{}, errors.New("unsupported JWT algorithm")
+	}
+	providedSignature, err := base64.RawURLEncoding.DecodeString(encodedSignature)
+	if err != nil {
+		return jwtClaims{}, errors.New("invalid JWT signature")
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(encodedHeader + "." + encodedPayload))
+	if !hmac.Equal(providedSignature, mac.Sum(nil)) {
+		return jwtClaims{}, errors.New("JWT signature verification failed")
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(encodedPayload)
+	if err != nil {
+		return jwtClaims{}, errors.New("invalid JWT payload")
+	}
+	var claims jwtClaims
+	if err := json.Unmarshal(payloadBytes, &claims); err != nil || claims.Subject == "" || claims.TenantID == "" {
+		return jwtClaims{}, errors.New("JWT identity claims are required")
+	}
+	if claims.Expires <= time.Now().Unix() {
+		return jwtClaims{}, errors.New("JWT is expired")
+	}
+	return claims, nil
+}
+
+func validLength(value string, min, max int) bool {
+	length := utf8.RuneCountInString(value)
+	return length >= min && length <= max
 }
 
 func envOr(name, fallback string) string {
