@@ -38,6 +38,8 @@ The documentation is organized into the following topics:
 22. **Automated Testing** - Writing effective Unit, Integration, and End-to-End (E2E) tests.
 23. **Message Brokers and Event Streaming** - Using tools like Kafka for event-driven architectures.
 24. **WebSockets and Real-Time Communication** - Building real-time features using WebSockets.
+25. **OpenAPI Specification** - Defining machine-readable API contracts and generating documentation, tests, and clients.
+26. **AI Agents and Loop Engineering** - Building bounded LangGraph agents with tools, workflows, and backend integration.
 
 ## Getting Started
 

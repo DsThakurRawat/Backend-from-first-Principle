@@ -1,0 +1,517 @@
+---
+order: 26
+title: "AI Agents & Loop Engineering"
+navTitle: "AI Agents & Loop Engineering"
+summary: "An AI agent is not a prompt with a loop around it. It is a bounded backend workflow that observes state, chooses an action, uses tools, evaluates the result, and either continues or finishes. This chapter builds that architecture with LangGraph, OpenAI tool calling, sequential and conditional workflows, and the production controls that make agents dependable."
+readingTime: "2-3 hours"
+keywords:
+  - "AI agents"
+  - "OpenAI"
+  - "OpenAI specification"
+  - "LangGraph"
+  - "loop engineering"
+  - "tool calling"
+  - "agentic backend"
+  - "workflow orchestration"
+  - "ReAct"
+  - "human in the loop"
+  - "agent architecture"
+  - "sequential agents"
+  - "non-sequential agents"
+---
+Part IV / OpenAPI & AI Agents
+
+## Why an AI Agent Belongs in a Backend Chapter
+
+An LLM call is a function that turns text into text. An **AI agent** is a backend workflow that gives the model a controlled way to inspect state, select an action, call a tool, observe the result, and decide what to do next.
+
+That distinction matters. A prompt can answer a question. An agent can complete a bounded task such as: inspect an order, check inventory, ask for approval, reserve stock, and return a result. The model supplies probabilistic decisions; the backend supplies identity, permissions, durable state, tools, limits, and auditability.
+
+The useful mental model is not "the model runs the business." It is:
+
+> **The backend owns the state machine. The model proposes the next transition.**
+
+<Diagram caption="A backend-owned agent boundary">
+<svg viewBox="0 0 720 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A client calls a backend agent endpoint. The backend loads state and policy, invokes an agent loop, which can call allowlisted tools before returning a result and trace.">
+<defs><marker id="agent-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs>
+<rect x="24" y="120" width="120" height="60" rx="10" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="84" y="146" text-anchor="middle" font-weight="700" fill="var(--dg-accent)">Client</text><text x="84" y="164" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-ink-2)">POST /agent-runs</text>
+<rect x="190" y="62" width="340" height="220" rx="14" fill="var(--dg-info-surface)" stroke="var(--dg-info)"></rect><text x="360" y="88" text-anchor="middle" font-weight="700" fill="var(--dg-info)">Backend agent service</text>
+<rect x="220" y="105" width="280" height="44" rx="8" fill="var(--dg-paper)" stroke="var(--dg-line)"></rect><text x="360" y="124" text-anchor="middle" font-size="10" fill="var(--dg-ink)">identity + policy + run state</text><text x="360" y="139" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-3)">tenant, user, budget, deadline, trace id</text>
+<rect x="220" y="166" width="280" height="44" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="360" y="185" text-anchor="middle" font-size="10" fill="var(--dg-accent)">LangGraph state machine</text><text x="360" y="200" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">model proposes; graph controls transitions</text>
+<rect x="220" y="227" width="280" height="32" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="360" y="247" text-anchor="middle" font-size="10" fill="var(--dg-ok)">allowlisted tools + audit events</text>
+<rect x="576" y="62" width="120" height="58" rx="10" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="636" y="87" text-anchor="middle" font-weight="700" fill="var(--dg-warn)">LLM</text><text x="636" y="105" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">decision only</text>
+<rect x="576" y="145" width="120" height="58" rx="10" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="636" y="170" text-anchor="middle" font-weight="700" fill="var(--dg-ok)">Tools</text><text x="636" y="188" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">real side effects</text>
+<rect x="576" y="228" width="120" height="58" rx="10" fill="var(--dg-plum-surface)" stroke="var(--dg-plum)"></rect><text x="636" y="253" text-anchor="middle" font-weight="700" fill="var(--dg-plum)">Store</text><text x="636" y="271" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">checkpoint + trace</text>
+<path d="M144 150 H188" stroke="var(--dg-accent-2)" stroke-width="1.8" marker-end="url(#agent-arrow)"></path><path d="M532 91 H574" stroke="var(--dg-accent-2)" stroke-width="1.5" marker-end="url(#agent-arrow)"></path><path d="M532 184 H574" stroke="var(--dg-accent-2)" stroke-width="1.5" marker-end="url(#agent-arrow)"></path><path d="M532 242 H574" stroke="var(--dg-accent-2)" stroke-width="1.5" marker-end="url(#agent-arrow)"></path>
+</svg>
+</Diagram>
+
+A production agent therefore has two contracts:
+
+1. **The OpenAI model contract:** messages, tool schemas, structured output, model limits, and refusal behavior.
+2. **The backend contract:** authenticated input, authorized tools, idempotency, timeouts, retries, persistence, and a stable API response.
+
+The OpenAI specification describes how the model receives messages and tools. It does not grant the model access to your database or authorize a payment. Your backend remains the policy enforcement point.
+
+<Callout type="warn" title="Do not give the model a database connection">
+Expose narrow tools such as `get_order(order_id)` or `create_refund(request_id)`. Validate arguments in the tool implementation, derive the user and tenant from trusted request context, and require explicit approval before irreversible side effects.
+</Callout>
+
+## The Smallest Useful Agent
+
+We will build a support agent that can look up an order and return a grounded answer. The model may choose the `get_order` tool; Python and LangGraph execute the tool and feed its result back to the model.
+
+Install the dependencies in a service virtual environment:
+
+```bash
+pip install langgraph langchain-openai pydantic
+export OPENAI_API_KEY="..."
+```
+
+The tool is a typed backend function, not an arbitrary Python function exposed to the model. Its description and schema are sent to the model, while the implementation keeps the real authorization and data access rules.
+
+```python title="agent.py / Python 3.11+"
+from typing import Annotated, Literal
+from typing_extensions import TypedDict
+
+from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+
+
+class AgentState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+    user_id: str
+    tenant_id: str
+    steps: int
+
+
+@tool
+def get_order(order_id: str) -> dict:
+    """Read an order visible to the authenticated tenant."""
+    # Production code must query through a repository that applies tenant scope.
+    return {"order_id": order_id, "status": "shipped", "eta": "2026-09-21"}
+
+
+model = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+model_with_tools = model.bind_tools([get_order])
+
+
+def call_model(state: AgentState) -> dict:
+    response = model_with_tools.invoke([
+        SystemMessage(content=(
+            "You are a support agent. Use tools for facts. "
+            "Never invent order status. Keep the answer concise."
+        )),
+        *state["messages"],
+    ])
+    return {"messages": [response], "steps": state["steps"] + 1}
+
+
+def run_tools(state: AgentState) -> dict:
+    last = state["messages"][-1]
+    tool_messages = []
+    for call in last.tool_calls:
+        if call["name"] == "get_order":
+            result = get_order.invoke(call["args"])
+            tool_messages.append(ToolMessage(
+                content=str(result),
+                tool_call_id=call["id"],
+            ))
+    return {"messages": tool_messages}
+
+
+def route_after_model(state: AgentState) -> Literal["tools", "done"]:
+    last = state["messages"][-1]
+    if getattr(last, "tool_calls", None) and state["steps"] < 4:
+        return "tools"
+    return "done"
+
+
+graph = StateGraph(AgentState)
+graph.add_node("model", call_model)
+graph.add_node("tools", run_tools)
+graph.add_edge(START, "model")
+graph.add_conditional_edges(
+    "model",
+    route_after_model,
+    {"tools": "tools", "done": END},
+)
+graph.add_edge("tools", "model")
+agent = graph.compile()
+
+
+result = agent.invoke({
+    "messages": [HumanMessage(content="Where is order A-42?")],
+    "user_id": "user-7",
+    "tenant_id": "tenant-3",
+    "steps": 0,
+})
+print(result["messages"][-1].content)
+```
+
+### The same loop in Go with an OpenAI-compatible API
+
+The Go version uses the wire contract directly: `POST /chat/completions`, a `messages` array, and a `tools` array containing JSON Schema. That makes the example portable across OpenAI-compatible gateways and providers. The complete HTTP server, including `POST /agent-runs`, is in `26.AI-Agents-and-Loop-Engineering/code/go/agent_server.go`; its API contract is in `code/openapi.yaml`.
+
+```go title="agent.go / Go 1.22+"
+type ChatMessage struct {
+    Role       string     `json:"role"`
+    Content    string     `json:"content,omitempty"`
+    ToolCallID string     `json:"tool_call_id,omitempty"`
+    ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+}
+
+type ToolCall struct {
+    ID       string       `json:"id"`
+    Type     string       `json:"type"`
+    Function ToolFunction `json:"function"`
+}
+
+type ToolFunction struct {
+    Name      string `json:"name"`
+    Arguments string `json:"arguments"`
+}
+
+type CompletionRequest struct {
+    Model    string        `json:"model"`
+    Messages []ChatMessage `json:"messages"`
+    Tools    []Tool        `json:"tools,omitempty"`
+}
+
+func (a *Agent) Run(ctx context.Context, prompt string) (string, error) {
+    messages := []ChatMessage{
+        {Role: "system", Content: "Use tools for facts; never invent order status."},
+        {Role: "user", Content: prompt},
+    }
+
+    for step := 0; step < 4; step++ {
+        response, err := a.complete(ctx, messages)
+        if err != nil {
+            return "", err
+        }
+        assistant := response.Choices[0].Message
+        messages = append(messages, assistant)
+        if len(assistant.ToolCalls) == 0 {
+            return assistant.Content, nil
+        }
+
+        for _, call := range assistant.ToolCalls {
+            result, err := a.executeAllowlistedTool(call)
+            if err != nil {
+                result = map[string]any{"error": err.Error()}
+            }
+            encoded, _ := json.Marshal(result)
+            messages = append(messages, ChatMessage{
+                Role: "tool", ToolCallID: call.ID, Content: string(encoded),
+            })
+        }
+    }
+    return "", errors.New("agent step limit exceeded")
+}
+```
+
+The important detail is that `executeAllowlistedTool` is ordinary Go code. It parses the model's JSON arguments, checks identity and tenant scope, performs the repository operation, and returns a bounded result. The model never gets a database handle or a generic function runner.
+
+The graph is explicit. `model` proposes either a final response or a tool call. `tools` executes only the calls that the backend recognizes. `route_after_model` decides whether to continue or finish, and the step limit prevents an accidental infinite loop.
+
+<Callout type="ok" title="The important boundary">
+The model selects a tool name and arguments. The backend decides whether that tool exists, whether the arguments are valid, whether the caller is authorized, whether the operation is idempotent, and whether this run still has budget.
+</Callout>
+
+## Loop Engineering: Inspect, Plan, Act, Observe, Evaluate
+
+A useful agent loop is an engineered control loop:
+
+1. **Inspect:** load the request, trusted identity, prior state, available tools, and remaining budget.
+2. **Plan:** ask the model for the next action or a final answer. Keep the plan bounded; do not require hidden chain-of-thought.
+3. **Act:** validate and execute one allowlisted tool call.
+4. **Observe:** append a structured tool result, not an unbounded log dump.
+5. **Evaluate:** check whether the goal is complete, whether the result is valid, and whether another step is allowed.
+6. **Stop:** return a result, request human approval, or return a typed failure.
+
+This is **loop engineering**: the quality of an agent comes less from adding more autonomy and more from designing the loop's state, transitions, stop conditions, and failure behavior.
+
+<Diagram caption="One bounded agent iteration">
+<svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A loop from inspect to plan to act to observe to evaluate, with evaluate either stopping or returning to inspect">
+<defs><marker id="loop-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs>
+<rect x="25" y="70" width="110" height="55" rx="9" fill="var(--dg-info-surface)" stroke="var(--dg-info)"></rect><text x="80" y="94" text-anchor="middle" font-weight="700" fill="var(--dg-info)">Inspect</text><text x="80" y="110" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">state + policy</text>
+<rect x="165" y="70" width="110" height="55" rx="9" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="220" y="94" text-anchor="middle" font-weight="700" fill="var(--dg-warn)">Plan</text><text x="220" y="110" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">model proposes</text>
+<rect x="305" y="70" width="110" height="55" rx="9" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="360" y="94" text-anchor="middle" font-weight="700" fill="var(--dg-accent)">Act</text><text x="360" y="110" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">tool executes</text>
+<rect x="445" y="70" width="110" height="55" rx="9" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="500" y="94" text-anchor="middle" font-weight="700" fill="var(--dg-ok)">Observe</text><text x="500" y="110" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">result appended</text>
+<rect x="585" y="70" width="110" height="55" rx="9" fill="var(--dg-plum-surface)" stroke="var(--dg-plum)"></rect><text x="640" y="94" text-anchor="middle" font-weight="700" fill="var(--dg-plum)">Evaluate</text><text x="640" y="110" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">done or continue</text>
+<path d="M136 97 H163 M276 97 H303 M416 97 H443 M556 97 H583" stroke="var(--dg-accent-2)" stroke-width="1.6" marker-end="url(#loop-arrow)"></path>
+<path d="M640 130 V170 H80 V128" fill="none" stroke="var(--dg-accent-2)" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#loop-arrow)"></path><text x="360" y="190" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-accent-2)">continue only while goal, budget, deadline and policy allow</text>
+</svg>
+</Diagram>
+
+### What can go wrong in the loop?
+
+- The model calls a tool repeatedly because the result is ambiguous.
+- A tool returns a huge payload and consumes the context window.
+- A retry repeats a payment, email, or mutation.
+- A prompt injection inside retrieved content tries to change the agent's instructions.
+- The model declares success without evidence.
+- A timeout leaves the run halfway through a multi-step task.
+
+Design for each failure explicitly. Use a maximum step count and wall-clock deadline, summarize large observations, attach idempotency keys to mutations, treat retrieved text as untrusted data, and require a validator or evidence field before declaring success.
+
+## Tool Use: Turning Backend Capabilities into Safe Actions
+
+A tool should have a narrow name, a typed input, a typed output, and a clear side-effect policy. Separate read tools from write tools. Reads can often run automatically; writes should be authorized by the backend and may require human approval.
+
+```python title="tools.py / typed read and write boundaries"
+from pydantic import BaseModel, Field
+
+
+class RefundRequest(BaseModel):
+    order_id: str = Field(pattern=r"^[A-Z]-[0-9]+$")
+    reason: str = Field(min_length=5, max_length=300)
+    idempotency_key: str
+
+
+@tool
+def request_refund(request: RefundRequest) -> dict:
+    """Create a refund request; never directly issue money."""
+    # The real service re-checks auth, tenant, order ownership and state here.
+    # The idempotency key makes a retry safe.
+    return {
+        "status": "pending_approval",
+        "order_id": request.order_id,
+        "approval_required": True,
+    }
+```
+
+The model can propose a refund, but it cannot bypass the approval state. This is a general pattern:
+
+| Tool class | Example | Default policy |
+|---|---|---|
+| Read | `get_order`, `search_docs` | Automatic after authorization |
+| Deterministic computation | `calculate_tax`, `estimate_cost` | Automatic with validated input |
+| Reversible write | `create_draft`, `add_label` | Automatic within tenant scope |
+| Irreversible write | `charge_card`, `delete_user` | Approval, idempotency, audit event |
+| External communication | `send_email`, `post_message` | Policy check and content review |
+
+Do not let tool descriptions become your authorization system. Descriptions guide the model; backend code enforces the rules.
+
+## Sequential and Non-Sequential Agent Workflows
+
+A **sequential** agent follows a predictable pipeline. It is easier to test and is preferable when every stage must happen in order.
+
+```python title="sequential_workflow.py"
+from langgraph.graph import END, START, StateGraph
+from typing_extensions import TypedDict
+
+
+class ReportState(TypedDict):
+    request: str
+    facts: str
+    draft: str
+    answer: str
+
+
+def retrieve(state: ReportState):
+    return {"facts": "facts retrieved from the authorized knowledge service"}
+
+
+def draft(state: ReportState):
+    return {"draft": f"Draft based on {state['facts']} for {state['request']}"}
+
+
+def verify(state: ReportState):
+    return {"answer": state["draft"] + " [verified against retrieved facts]"}
+
+
+workflow = StateGraph(ReportState)
+workflow.add_node("retrieve", retrieve)
+workflow.add_node("draft", draft)
+workflow.add_node("verify", verify)
+workflow.add_edge(START, "retrieve")
+workflow.add_edge("retrieve", "draft")
+workflow.add_edge("draft", "verify")
+workflow.add_edge("verify", END)
+sequential_agent = workflow.compile()
+```
+
+A **non-sequential** workflow branches when the state makes different paths useful. The model may classify the request, but the graph owns the routing. For example, a billing question can go to billing retrieval while a technical question goes to documentation retrieval; both paths can converge on a verifier.
+
+```python title="conditional_workflow.py"
+from typing import Literal
+from typing_extensions import TypedDict
+from langgraph.graph import END, START, StateGraph
+
+
+class RequestState(TypedDict):
+    request: str
+    category: str
+    context: str
+    answer: str
+
+
+def classify(state: RequestState):
+    category = "billing" if "invoice" in state["request"].lower() else "technical"
+    return {"category": category}
+
+
+def route(state: RequestState) -> Literal["billing", "technical"]:
+    return state["category"] if state["category"] in {"billing", "technical"} else "technical"
+
+
+def billing(state: RequestState):
+    return {"context": "billing records retrieved through the billing service"}
+
+
+def technical(state: RequestState):
+    return {"context": "versioned technical documentation retrieved"}
+
+
+def answer(state: RequestState):
+    return {"answer": f"Answer using: {state['context']}"}
+
+
+workflow = StateGraph(RequestState)
+for name, fn in [("classify", classify), ("billing", billing),
+                 ("technical", technical), ("answer", answer)]:
+    workflow.add_node(name, fn)
+workflow.add_edge(START, "classify")
+workflow.add_conditional_edges(
+    "classify", route, {"billing": "billing", "technical": "technical"}
+)
+workflow.add_edge("billing", "answer")
+workflow.add_edge("technical", "answer")
+workflow.add_edge("answer", END)
+non_sequential_agent = workflow.compile()
+```
+
+Non-sequential does not mean uncontrolled. Every branch should have a known destination, a fallback, and a test. If the decision is deterministic, use ordinary code instead of paying for an LLM call.
+
+<Diagram caption="End-to-end sequential and branching workflows">
+<svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An API request enters a backend, passes through policy and state loading, then branches into a sequential path or billing and technical paths before verification and response">
+<defs><marker id="flow-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent-2)"></path></marker></defs>
+<rect x="20" y="116" width="100" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="70" y="137" text-anchor="middle" font-weight="700" fill="var(--dg-accent)">API</text><text x="70" y="153" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">request + auth</text>
+<rect x="150" y="116" width="125" height="50" rx="8" fill="var(--dg-info-surface)" stroke="var(--dg-info)"></rect><text x="212" y="137" text-anchor="middle" font-weight="700" fill="var(--dg-info)">Policy</text><text x="212" y="153" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">budget + state</text>
+<rect x="305" y="116" width="125" height="50" rx="8" fill="var(--dg-warn-surface)" stroke="var(--dg-warn)"></rect><text x="367" y="137" text-anchor="middle" font-weight="700" fill="var(--dg-warn)">Route</text><text x="367" y="153" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">graph decision</text>
+<rect x="462" y="42" width="110" height="48" rx="8" fill="var(--dg-ok-surface)" stroke="var(--dg-ok)"></rect><text x="517" y="62" text-anchor="middle" font-weight="700" fill="var(--dg-ok)">Billing</text><text x="517" y="77" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">authorized data</text>
+<rect x="462" y="116" width="110" height="48" rx="8" fill="var(--dg-info-surface)" stroke="var(--dg-info)"></rect><text x="517" y="136" text-anchor="middle" font-weight="700" fill="var(--dg-info)">Technical</text><text x="517" y="151" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">docs + code</text>
+<rect x="462" y="190" width="110" height="48" rx="8" fill="var(--dg-plum-surface)" stroke="var(--dg-plum)"></rect><text x="517" y="210" text-anchor="middle" font-weight="700" fill="var(--dg-plum)">Sequential</text><text x="517" y="225" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">retrieve -> draft</text>
+<rect x="610" y="116" width="90" height="50" rx="8" fill="var(--dg-accent-surface)" stroke="var(--dg-accent)"></rect><text x="655" y="137" text-anchor="middle" font-weight="700" fill="var(--dg-accent)">Verify</text><text x="655" y="153" text-anchor="middle" class="mono" font-size="8" fill="var(--dg-ink-2)">respond</text>
+<path d="M120 141 H148 M275 141 H303 M430 141 H460" stroke="var(--dg-accent-2)" stroke-width="1.5" marker-end="url(#flow-arrow)"></path><path d="M430 136 C445 112 450 68 460 68 M430 146 C445 146 450 141 460 141 M430 153 C445 182 450 214 460 214" fill="none" stroke="var(--dg-accent-2)" stroke-width="1.5" marker-end="url(#flow-arrow)"></path><path d="M572 68 C595 68 595 124 608 132 M572 140 H608 M572 214 C595 214 595 158 608 150" fill="none" stroke="var(--dg-accent-2)" stroke-width="1.5" marker-end="url(#flow-arrow)"></path>
+<text x="360" y="276" text-anchor="middle" class="mono" font-size="9" fill="var(--dg-ink-3)">every path ends in evidence, a typed failure, or an approval state</text>
+</svg>
+</Diagram>
+
+## Replacing a Series of LLM Calls with One Agent
+
+A common first implementation is a fixed chain:
+
+```text
+classify -> retrieve -> summarize -> write -> review
+```
+
+That chain is appropriate when every task needs every stage. It becomes wasteful when simple requests still pay for all five calls, or when one failed stage forces the entire chain to restart.
+
+An agent can replace the chain when the next action depends on the current state:
+
+```text
+inspect -> choose the smallest useful action -> observe -> evaluate -> repeat
+```
+
+For example, a support agent may:
+
+- answer a general question with zero tools;
+- call one order lookup for a tracking question;
+- call an order lookup and then a policy lookup for a refund question;
+- stop and request approval before creating a refund.
+
+This reduces unnecessary calls, but it introduces model variability. The trade-off is not "agents are always better." Use a fixed workflow when the sequence is known, an agent loop when the next step genuinely depends on evidence, and a hybrid when predictable stages contain an agentic subtask.
+
+<Callout type="info" title="A practical replacement rule">
+Start with the fixed workflow. Measure which stages are skipped or repeated in real traffic. Replace only the decision point that benefits from dynamic routing, and keep policy, validation, and irreversible writes deterministic.
+</Callout>
+
+## Using an Agent from a Backend API
+
+An HTTP handler should not contain the whole loop. It should authenticate the caller, create a run, enqueue or invoke the agent service, and return a stable response. For work that can exceed the request timeout, return `202 Accepted` and let the client poll or subscribe to run events.
+
+```python title="routes.py / FastAPI boundary"
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+router = APIRouter()
+
+
+class AgentRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=4000)
+    idempotency_key: str = Field(min_length=8, max_length=100)
+
+
+@router.post("/agent-runs", status_code=202)
+async def create_agent_run(request: AgentRequest, user=Depends(current_user)):
+    if not user.can_use_agent:
+        raise HTTPException(status_code=403, detail="agent access is disabled")
+
+    run = await run_repository.create_if_absent(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        idempotency_key=request.idempotency_key,
+        prompt=request.prompt,
+    )
+    await queue.publish("agent.run.requested", {"run_id": run.id})
+    return {"run_id": run.id, "status": run.status, "poll_url": f"/agent-runs/{run.id}"}
+```
+
+A worker can resume the graph from a checkpoint. Persist at least the run id, user and tenant ids, current state, status, step count, model usage, tool calls, errors, and timestamps. Do not persist secrets or raw sensitive prompts without a retention policy.
+
+```python title="worker.py / bounded execution"
+async def handle_agent_run(run_id: str) -> None:
+    run = await run_repository.get(run_id)
+    if run.status in {"succeeded", "failed", "cancelled"}:
+        return
+
+    await run_repository.mark_running(run_id)
+    try:
+        result = await asyncio.wait_for(
+            agent.ainvoke({
+                "messages": [HumanMessage(content=run.prompt)],
+                "user_id": run.user_id,
+                "tenant_id": run.tenant_id,
+                "steps": run.steps,
+            }, config={"configurable": {"thread_id": run.id}}),
+            timeout=45,
+        )
+        await run_repository.mark_succeeded(run_id, result=result)
+    except TimeoutError:
+        await run_repository.mark_failed(run_id, code="agent_deadline_exceeded")
+    except Exception:
+        await run_repository.mark_failed(run_id, code="agent_execution_failed")
+        raise
+```
+
+The queue gives the backend normal operational properties: retries, visibility timeouts, dead-letter handling, concurrency limits, and a place to cancel work. The agent is a worker workload, not a privileged replacement for the backend.
+
+## Production Checklist
+
+Before shipping an agent, answer these questions with code and tests:
+
+- **Identity:** Which authenticated user, tenant, and permissions are attached to every tool call?
+- **Scope:** What is the maximum number of model calls, tool calls, tokens, and wall-clock time per run?
+- **State:** Can a run resume after a worker crash without repeating a side effect?
+- **Idempotency:** Does every mutation have a key and a deduplication record?
+- **Validation:** Are model outputs parsed into typed schemas before use?
+- **Prompt injection:** Is retrieved or user-provided text treated as data rather than instructions?
+- **Approval:** Which actions require a human or a second service to approve them?
+- **Observability:** Can you see latency, cost, tool errors, retries, refusal rate, and final outcome per run?
+- **Evaluation:** Do fixtures test correct tool choice, wrong tool arguments, missing data, timeouts, and adversarial content?
+- **Fallback:** What does the API return when the model, tool, queue, or checkpoint store is unavailable?
+
+A good first release has fewer tools, smaller context, stricter budgets, and stronger traces than its demo. Add autonomy only when measurements show that the extra branch improves the task without increasing unacceptable risk.
+
+## The Chapter in One Breath
+
+An AI agent is a controlled state machine around an LLM, not an LLM with unrestricted access to your system. LangGraph makes the state and transitions explicit: model nodes propose actions, tool nodes execute validated capabilities, and conditional edges decide whether the run continues or stops. Loop engineering makes the process dependable by bounding steps, deadlines, retries, side effects, approvals, and evidence. In a backend, expose agents behind ordinary authenticated APIs and queues, persist their runs, observe them like any other production workload, and keep authorization in deterministic code.
+
+<Callout type="ok" title="The design rule">
+Let the model decide **what might help next**. Let the backend decide **what is allowed to happen**.
+</Callout>
