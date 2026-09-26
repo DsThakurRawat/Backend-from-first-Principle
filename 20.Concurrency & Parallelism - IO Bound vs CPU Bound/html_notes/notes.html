@@ -1431,7 +1431,12 @@ asyncio.run(handle_request(<span class="num">123</span>))</code><span class="cod
       You might think: "I use JavaScript / Python with async/await, there's only one thread, so no race conditions." <strong>Wrong.</strong> Race conditions can still occur between <code>await</code> points. Consider this Python example:
     </p>
 
-    <pre><code>balance = <span class="num">100</span>
+    <pre><code><span class="kw">import</span> asyncio
+
+balance = <span class="num">100</span>
+
+<span class="kw">async def</span> <span class="fn">process_withdrawal</span>(amount: <span class="type">int</span>):
+    <span class="kw">await</span> asyncio.sleep(<span class="num">0.01</span>)           <span class="cm"># Simulate I/O yielding control to event loop</span>
 
 <span class="kw">async def</span> <span class="fn">withdraw</span>(amount: <span class="type">int</span>):
     <span class="kw">global</span> balance
@@ -1439,12 +1444,16 @@ asyncio.run(handle_request(<span class="num">123</span>))</code><span class="cod
         <span class="kw">await</span> process_withdrawal(amount)  <span class="cm"># &lt;- yields control here!</span>
         balance -= amount                 <span class="cm"># Deduct at time T2</span>
 
-<span class="cm"># Both coroutines see balance=100, both pass the check,</span>
-<span class="cm"># both deduct 100 -&gt; balance = -100 (invalid!)</span>
-<span class="kw">await</span> asyncio.gather(
-    withdraw(<span class="num">100</span>),
-    withdraw(<span class="num">100</span>),
-)</code><span class="code-label">Python</span></pre>
+<span class="kw">async def</span> <span class="fn">main</span>():
+    <span class="cm"># Both coroutines see balance=100, both pass the check,</span>
+    <span class="cm"># both deduct 100 -&gt; balance = -100 (invalid!)</span>
+    <span class="kw">await</span> asyncio.gather(
+        withdraw(<span class="num">100</span>),
+        withdraw(<span class="num">100</span>),
+    )
+    <span class="kw">print</span>(balance)                      <span class="cm"># -100</span>
+
+asyncio.run(main())</code><span class="code-label">Python</span></pre>
 
     <p>
       The issue: the <code>if</code> check and the deduction are separated by an <code>await</code>. Between those two points, the event loop runs the second <code>withdraw</code> call, which also sees <code>balance == 100</code> and passes the check. Both deduct, and the balance goes to <strong>-100</strong>.
@@ -1566,19 +1575,25 @@ threads = [threading.Thread(target=increment) <span class="kw">for</span> _ <spa
 balance = <span class="num">100</span>
 lock = asyncio.Lock()
 
+<span class="kw">async def</span> <span class="fn">process_withdrawal</span>(amount: <span class="type">int</span>):
+    <span class="kw">await</span> asyncio.sleep(<span class="num">0.01</span>)           <span class="cm"># Simulate I/O yielding control to event loop</span>
+
 <span class="kw">async def</span> <span class="fn">withdraw</span>(amount: <span class="type">int</span>):
     <span class="kw">global</span> balance
-    <span class="kw">async with</span> lock:                     <span class="cm"># Only one coroutine at a time</span>
-        <span class="kw">if</span> balance >= amount:
+    <span class="kw">async with</span> lock:                    <span class="cm"># Only one coroutine at a time</span>
+        if balance >= amount:
             <span class="kw">await</span> process_withdrawal(amount)
             balance -= amount
 
-<span class="cm"># Now safe, second withdraw waits for the lock</span>
-<span class="kw">await</span> asyncio.gather(
-    withdraw(<span class="num">100</span>),
-    withdraw(<span class="num">100</span>),
-)
-<span class="kw">print</span>(balance)  <span class="cm"># 0, not -100</span></code><span class="code-label">Python</span></pre>
+<span class="kw">async def</span> <span class="fn">main</span>():
+    <span class="cm"># Now safe, second withdraw waits for the lock</span>
+    <span class="kw">await</span> asyncio.gather(
+        withdraw(<span class="num">100</span>),
+        withdraw(<span class="num">100</span>),
+    )
+    <span class="kw">print</span>(balance)                      <span class="cm"># 0, not -100</span>
+
+asyncio.run(main())</code><span class="code-label">Python</span></pre>
 
     <div class="ref-box">
       <div class="ref-box-title">Reference</div>
