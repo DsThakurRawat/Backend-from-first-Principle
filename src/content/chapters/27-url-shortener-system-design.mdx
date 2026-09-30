@@ -1,0 +1,1365 @@
+---
+order: 27
+title: "URL Shortener System Design: HLD & LLD"
+navTitle: "URL Shortener System Design"
+summary: "Building a scalable URL shortener from first principles. Master distributed ID generation, hot key caching, and handling millions of redirects per second."
+readingTime: "4-5 hours"
+keywords:
+  - "system design"
+  - "url shortener"
+  - "distributed systems"
+  - "id generation"
+  - "caching"
+  - "scalability"
+  - "redis"
+  - "database design"
+  - "load balancing"
+  - "analytics"
+  - "high availability"
+---
+
+## What is a URL Shortener?
+
+A URL shortener is a classic backend engineering problem that looks deceptively simple on the surface but requires deep understanding of distributed systems, databases, caching, and scalability when building for production.
+
+Think of services like **TinyURL**, **Bitly**, or **bit.ly**. At its core:
+- Users submit a long URL (e.g., `https://www.example.com/path?param=value&other=data`)
+- The system returns a short code (e.g., `https://tiny.url/abc123`)
+- When users visit the short URL, they're redirected to the original long URL
+
+### The Engineering Challenge
+
+What makes this interesting isn't the happy path—it's the scale and the tradeoffs:
+
+- **Read-Heavy Workload**: A URL might be shortened once, but redirected millions of times. We're talking 100K+ reads per second at scale (like Bitly).
+- **Collision Avoidance**: We need a way to generate billions of unique short codes without centralized bottlenecks.
+- **Hot Keys**: Some links go viral. A single short code might receive 10K requests/second. How do we handle that without melting our database?
+- **Expiration & TTL**: Links need to expire. Do we clean them up lazily or proactively?
+- **Analytics**: Track click counts, referrers, geolocation, user-agent—without blocking the high-performance redirect path.
+- **High Availability**: A URL shortener outage is unacceptable. We need geo-replication and graceful degradation.
+
+---
+
+## Part 1: High-Level Design (HLD)
+
+### 1.1 Requirements Gathering & Estimation
+
+#### Functional Requirements
+
+1. **Shortening**: Accept a long URL and return a short code.
+2. **Custom Aliases**: Allow users to specify custom short codes (e.g., `/myevent` instead of `/abc123`).
+3. **Redirection**: HTTP 301 or 302 redirect to the original URL.
+4. **Expiration**: Links can have a TTL; after expiration, they return 404.
+5. **Analytics**: Track metadata like click count, referrer, geolocation, user-agent.
+6. **Deletion**: Users can delete their links.
+
+#### Non-Functional Requirements
+
+1. **Latency**: Redirect must complete in < 10ms (p99).
+2. **Availability**: 99.99% uptime (4 nines).
+3. **Durability**: Once shortened, a link should never be lost.
+4. **Scalability**: Handle millions of redirects per second.
+5. **Consistency**: A shortened link must be immediately available after creation.
+
+#### Back-of-the-Envelope Estimation
+
+Assume a moderate Bitly-scale system:
+
+```
+Assumptions:
+- 500M new URLs shortened per month
+- 50B redirects per month (100x read amplification)
+- Peak QPS: 200K reads/sec, 5K writes/sec
+- Retention: 5 years of data
+- Average URL length: 2KB
+- Average code length: 7 characters
+
+Calculations:
+- Daily writes: 500M / 30 = ~16.7M/day
+- Daily reads: 50B / 30 = ~1.67B/day
+- Peak read QPS: 200K/sec
+- Peak write QPS: 5K/sec
+
+Storage per URL:
+- Code: 7 bytes
+- Long URL: 2000 bytes
+- Metadata (created_at, expires_at, user_id, etc.): 100 bytes
+- Total: ~2.1 KB per URL
+
+5-year storage:
+- Write volume: 500M URLs/month × 60 months = 30B URLs
+- Storage needed: 30B × 2.1 KB = ~63 TB
+- With replication (3x): ~189 TB
+```
+
+This is large but manageable with distributed databases like Cassandra or DynamoDB.
+
+### 1.2 API Design & Core Endpoints
+
+#### Endpoint 1: Shorten a URL
+
+```
+POST /api/v1/shorten
+Content-Type: application/json
+
+{
+  "long_url": "https://www.example.com/very/long/path?param=value",
+  "custom_code": "my-event",        // optional
+  "expires_at": "2025-12-31T23:59:59Z",  // optional, ISO 8601
+  "user_id": "user_123"             // optional, for analytics
+}
+
+Response (201 Created):
+{
+  "short_url": "https://tiny.url/my-event",
+  "short_code": "my-event",
+  "long_url": "https://www.example.com/very/long/path?param=value",
+  "created_at": "2025-01-01T12:00:00Z",
+  "expires_at": "2025-12-31T23:59:59Z",
+  "expires_in_seconds": 31536000
+}
+```
+
+#### Endpoint 2: Redirect to Long URL
+
+```
+GET /{short_code}
+
+Response (301 Moved Permanently or 302 Found):
+HTTP/1.1 301 Moved Permanently
+Location: https://www.example.com/very/long/path?param=value
+Cache-Control: public, max-age=86400
+
+# or 302 for temporary redirects (analytics still tracked)
+HTTP/1.1 302 Found
+Location: ...
+```
+
+**HTTP 301 vs 302 Trade-offs**:
+- **301 (Permanent)**: Browsers cache the redirect. Future requests go directly to the long URL. **Better for performance but loses analytics tracking.**
+- **302 (Temporary)**: Browsers never cache. Every request hits our server. **Better for analytics but expensive at scale.**
+
+**Recommendation**: Use **302 during initial rollout** to track analytics, then switch to **301 with client-side analytics tracking** (JavaScript beacon or SDK) for known URLs.
+
+#### Endpoint 3: Get Link Details (Analytics)
+
+```
+GET /api/v1/links/{short_code}
+
+Response:
+{
+  "short_code": "my-event",
+  "short_url": "https://tiny.url/my-event",
+  "long_url": "...",
+  "created_at": "2025-01-01T12:00:00Z",
+  "expires_at": "2025-12-31T23:59:59Z",
+  "clicks": 1523,
+  "user_id": "user_123"
+}
+```
+
+#### Endpoint 4: Delete a Link
+
+```
+DELETE /api/v1/links/{short_code}
+
+Response (204 No Content):
+HTTP/1.1 204 No Content
+```
+
+### 1.3 Data Storage Selection
+
+For a URL shortener at scale, we face a fundamental choice:
+
+#### Option A: Single-Node Relational Database (❌ Doesn't Scale)
+
+```sql
+CREATE TABLE urls (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  short_code VARCHAR(20) UNIQUE,
+  long_url TEXT NOT NULL,
+  user_id VARCHAR(255),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP NULL,
+  click_count BIGINT DEFAULT 0
+);
+
+CREATE INDEX idx_short_code ON urls(short_code);
+```
+
+**Problems**:
+- Single node is a SPOF (single point of failure).
+- Auto-increment bottleneck: all 5K writes/sec must go through one node.
+- Replication lag causes inconsistency.
+- Disk I/O limits throughput.
+
+#### Option B: Distributed SQL (PostgreSQL with Sharding) (✅ Scalable but Complex)
+
+Shard by `short_code` hash:
+
+```
+Node 1 (Shard A): short_codes hash(code) % 3 == 0
+Node 2 (Shard B): short_codes hash(code) % 3 == 1
+Node 3 (Shard C): short_codes hash(code) % 3 == 2
+```
+
+**Pros**:
+- ACID guarantees for custom alias collision detection.
+- Familiar SQL interface.
+
+**Cons**:
+- Operational complexity (sharding, rebalancing, repartitioning).
+- Hot shard problem (one shard gets 10x traffic, becomes bottleneck).
+
+#### Option C: NoSQL (DynamoDB, Cassandra) (✅ Best for Reads)
+
+```json
+{
+  "PK": "code#abc123",
+  "SK": "metadata",
+  "long_url": "...",
+  "user_id": "user_123",
+  "created_at": 1704110400000,
+  "expires_at": 1735689600000,
+  "click_count": 1523,
+  "ttl": 1735689600  // DynamoDB TTL attribute
+}
+```
+
+**Pros**:
+- Horizontal scaling: add nodes, no reshuffling.
+- Sub-10ms latency for reads/writes.
+- Automatic TTL-based expiration.
+- Hot key replication (Cassandra local quorum reads).
+
+**Cons**:
+- Eventual consistency (Cassandra) requires careful design.
+- No transactions (harder to handle custom alias collisions).
+
+**Recommendation**: **NoSQL (Cassandra or DynamoDB)** for the redirect path, with a distributed lock (Redis) for custom alias collision detection.
+
+### 1.4 Distributed ID Generation: The Core Challenge
+
+This is where most URL shorteners separate from the pack. We need to generate billions of unique, compact short codes without:
+- A centralized bottleneck
+- Collisions
+- Predictability (security)
+
+#### Approach 1: Random Strings (❌ Collision Risk)
+
+```python
+import random
+import string
+
+def generate_short_code(length=6):
+    chars = string.ascii_letters + string.digits  # 62 chars
+    return ''.join(random.choice(chars) for _ in range(length))
+
+# Problem: Birthday paradox
+# 62^6 = 56 billion combinations
+# With 500M URLs, probability of collision: ~0.3%
+# That's millions of collisions!
+```
+
+#### Approach 2: Hash-Based (❌ Too Long)
+
+```python
+import hashlib
+import base64
+
+def generate_short_code(long_url, length=6):
+    hash_obj = hashlib.md5(long_url.encode())
+    b64 = base64.b64encode(hash_obj.digest()).decode()
+    return b64[:length]
+
+# Problem: MD5 collision risk + truncation makes it worse
+# 2^48 possible codes (6 chars × 8 bits), but 2^128 possible MD5s
+# Truncation = collision risk
+```
+
+#### Approach 3: UUID (❌ Too Long)
+
+```python
+import uuid
+
+def generate_short_code():
+    return str(uuid.uuid4())[:6]  # 36 chars → 6 chars = terrible compression
+```
+
+#### Approach 4: Base62 Encoding of Atomic Counter (✅ Best)
+
+Use a **distributed counter** (e.g., Redis or Zookeeper) and encode it in base62:
+
+```
+Counter: 1
+Base62: "1"
+
+Counter: 62
+Base62: "10"
+
+Counter: 3843
+Base62: "zz"
+
+Counter: 3844
+Base62: "100"
+
+With 6 characters: 62^6 = 56.8 billion unique codes
+With 7 characters: 62^7 = 3.5 trillion unique codes
+```
+
+**Why this works**:
+- Monotonically increasing counter avoids collisions.
+- Compact encoding using base62 [0-9, a-z, A-Z].
+- Easy to distribute across multiple nodes (ticket servers).
+- No hash collisions.
+
+**Trade-off**: Codes are sequential (predictable), which some consider a privacy concern. Solution: pre-shuffle the mapping or use salting.
+
+#### Approach 5: Snowflake-Style IDs (✅ Industry Standard)
+
+Generate 64-bit IDs from:
+
+```
+[timestamp (41 bits)] [datacenter (5 bits)] [machine (5 bits)] [sequence (12 bits)]
+= 64 bits = 2^64 = 18 quintillion unique IDs
+
+Encode in base62 → ~11 character code
+```
+
+This is what Twitter uses (Snowflake), and it's adopted by many systems. The trade-off is slightly longer codes but no external counter dependency.
+
+**Recommendation**: **Base62 counter** for maximum compactness, with Redis providing the distributed counter. Fallback to Snowflake-style IDs if Redis latency becomes an issue.
+
+### 1.5 Multi-Layer Caching Strategy
+
+Caching is critical because reads are 100x more frequent than writes.
+
+#### Layer 1: Client-Side Caching
+
+The browser naturally caches 301 redirects, so subsequent visits go directly to the long URL. **No traffic hits your server.**
+
+**Trade-off**: You lose analytics tracking for cached requests.
+
+#### Layer 2: CDN Caching
+
+Place a global CDN (CloudFlare, AWS CloudFront) in front of your redirect service.
+
+```
+Request flow:
+1. User visits short URL
+2. CDN checks cache (edge location)
+3. If miss, queries origin (your server)
+4. Origin queries database
+5. Response cached at CDN edge for subsequent requests
+```
+
+**Cache key**: `GET /{short_code}`
+
+**TTL strategy**:
+- If link expires in 10 days: cache for min(3600s, 10 days)
+- If link has no expiration: cache for 24 hours
+- On delete: purge CDN cache via API
+
+#### Layer 3: Application-Level Cache (Redis/Memcached)
+
+Cache hot URLs in Redis to avoid database queries.
+
+```
+Architecture:
+┌─────────────┐
+│  Redirect   │
+│   Request   │
+└────────┬────┘
+         │
+         ▼
+    ┌────────────┐
+    │   Redis    │ (Memcached alternative)
+    │  (L2 Hot)  │
+    └────────┬───┘
+             │ miss
+             ▼
+    ┌────────────────┐
+    │  Cassandra     │
+    │  (L1 Source)   │
+    └────────────────┘
+```
+
+**Hot Key Problem**: A viral link might get 10K req/sec. Even Redis can become a bottleneck (single-node, single-core performance limit).
+
+**Solution**: **Local in-process cache (LRU)** on each app server + replication.
+
+```
+┌──────────────────────────────────────┐
+│ Application Server 1                  │
+│  ┌────────────────┐                  │
+│  │ Local LRU      │ Redirects to long │
+│  │ Cache (fast)   │ URL in microsecs  │
+│  │ 1000 items     │                  │
+│  └────────────────┘                  │
+└──────────────────────────────────────┘
+
+Load balancer sends same code to same server (sticky session)
+when possible, so local cache is warm.
+```
+
+#### Cache Invalidation Strategy
+
+**TTL-based**: Entries expire after configurable duration.
+**Event-based**: On deletion, push to all app servers via message queue.
+**LRU**: When memory limit reached, evict least-recently-used entry.
+
+---
+
+## Part 2: Low-Level Design (LLD) & Implementation
+
+### 2.1 Base62 Encoding Implementation
+
+Base62 uses characters: `[0-9, a-z, A-Z]` (62 total).
+
+#### Go Implementation
+
+```go
+package shortener
+
+import (
+	"math"
+)
+
+const base62Chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const base = 62
+
+// Encode converts a decimal ID to base62 string
+func Encode(num int64) string {
+	if num == 0 {
+		return "0"
+	}
+
+	var result []byte
+	for num > 0 {
+		result = append(result, base62Chars[num%base])
+		num /= base
+	}
+
+	// Reverse the result (we built it backwards)
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+
+	return string(result)
+}
+
+// Decode converts a base62 string back to decimal ID
+func Decode(code string) int64 {
+	var result int64 = 0
+
+	for _, char := range code {
+		idx := -1
+		for i, c := range base62Chars {
+			if c == rune(char) {
+				idx = i
+				break
+			}
+		}
+
+		if idx == -1 {
+			return 0 // invalid character
+		}
+
+		result = result*base + int64(idx)
+	}
+
+	return result
+}
+
+// Example usage
+func main() {
+	code := Encode(123456789)        // "8m0kx"
+	id := Decode(code)               // 123456789
+}
+```
+
+#### Python Implementation
+
+```python
+BASE62_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+BASE = 62
+
+def encode(num: int) -> str:
+    """Convert decimal to base62 string."""
+    if num == 0:
+        return "0"
+    
+    digits = []
+    while num > 0:
+        digits.append(BASE62_CHARS[num % BASE])
+        num //= BASE
+    
+    return "".join(reversed(digits))
+
+def decode(code: str) -> int:
+    """Convert base62 string back to decimal."""
+    result = 0
+    for char in code:
+        try:
+            idx = BASE62_CHARS.index(char)
+        except ValueError:
+            return 0  # invalid character
+        
+        result = result * BASE + idx
+    
+    return result
+
+# Example usage
+if __name__ == "__main__":
+    code = encode(123456789)  # "8m0kx"
+    num = decode(code)         # 123456789
+    print(f"Encoded: {code}, Decoded: {num}")
+```
+
+### 2.2 Distributed Counter (ID Generation)
+
+We use Redis to maintain a distributed atomic counter:
+
+#### Go Implementation
+
+```go
+package idgen
+
+import (
+	"context"
+	"fmt"
+	"sync/atomic"
+	"github.com/redis/go-redis/v9"
+)
+
+type IDGenerator struct {
+	redis    *redis.Client
+	localSeq int64  // fallback if Redis unavailable
+}
+
+func NewIDGenerator(redisAddr string) *IDGenerator {
+	return &IDGenerator{
+		redis: redis.NewClient(&redis.Options{
+			Addr: redisAddr,
+		}),
+	}
+}
+
+// NextID generates the next unique ID
+func (g *IDGenerator) NextID(ctx context.Context) (int64, error) {
+	const counterKey = "url_shortener:next_id"
+	
+	// Try Redis first
+	val, err := g.redis.Incr(ctx, counterKey).Result()
+	if err != nil {
+		// Fallback to local counter if Redis unavailable
+		// In production, log and alert on Redis failure
+		return atomic.AddInt64(&g.localSeq, 1), fmt.Errorf("redis incr failed: %w (using local counter)", err)
+	}
+	
+	return val, nil
+}
+
+// Usage in shortener
+func (s *Shortener) ShortenURL(ctx context.Context, longURL string) (string, error) {
+	id, err := s.idGen.NextID(ctx)
+	if err != nil {
+		return "", err
+	}
+	
+	shortCode := Encode(id)
+	
+	// Store in database
+	err = s.db.Store(ctx, shortCode, longURL)
+	if err != nil {
+		return "", err
+	}
+	
+	return shortCode, nil
+}
+```
+
+#### Python Implementation
+
+```python
+import redis
+from typing import Optional
+
+class IDGenerator:
+    def __init__(self, redis_addr: str = "localhost:6379"):
+        self.redis = redis.Redis.from_url(f"redis://{redis_addr}")
+        self.local_seq = 0
+    
+    def next_id(self) -> int:
+        """Generate next unique ID using Redis atomic counter."""
+        counter_key = "url_shortener:next_id"
+        
+        try:
+            return self.redis.incr(counter_key)
+        except redis.ConnectionError:
+            # Fallback to local counter if Redis unavailable
+            self.local_seq += 1
+            return self.local_seq
+
+class URLShortener:
+    def __init__(self, redis_addr: str, db):
+        self.id_gen = IDGenerator(redis_addr)
+        self.db = db
+    
+    def shorten_url(self, long_url: str) -> str:
+        """Generate short code and store mapping."""
+        next_id = self.id_gen.next_id()
+        short_code = encode(next_id)
+        
+        # Store in database
+        self.db.insert(short_code, long_url)
+        
+        return short_code
+```
+
+### 2.3 Collision Handling for Custom Aliases
+
+When users request a custom code (e.g., `/myevent`), we must ensure no collision.
+
+#### Go Implementation (Pessimistic Locking)
+
+```go
+// Try to reserve custom code
+func (s *Shortener) ReserveCustomCode(ctx context.Context, code, longURL string) error {
+	const lockKey = "custom_code_lock:" + code
+	const lockValue = "reserved"
+	const lockExpiry = 5 * time.Second  // quick lock, shouldn't be held long
+	
+	// Acquire distributed lock
+	ok, err := s.redis.SetNX(ctx, lockKey, lockValue, lockExpiry).Result()
+	if err != nil {
+		return fmt.Errorf("lock acquisition failed: %w", err)
+	}
+	
+	if !ok {
+		// Lock held by another goroutine/process
+		return fmt.Errorf("custom code already reserved or in use")
+	}
+	
+	// Check database (double-check pattern)
+	exists, err := s.db.CodeExists(ctx, code)
+	if err != nil {
+		s.redis.Del(ctx, lockKey)  // release lock on error
+		return err
+	}
+	
+	if exists {
+		s.redis.Del(ctx, lockKey)  // release lock
+		return fmt.Errorf("custom code already in use")
+	}
+	
+	// Store in database within lock
+	err = s.db.Store(ctx, code, longURL)
+	
+	// Release lock
+	s.redis.Del(ctx, lockKey)
+	
+	return err
+}
+```
+
+#### Python Implementation (Optimistic Locking with Retry)
+
+```python
+from datetime import datetime, timedelta
+import time
+
+class URLShortener:
+    MAX_RETRIES = 3
+    
+    def reserve_custom_code(self, code: str, long_url: str) -> bool:
+        """Reserve custom code with optimistic lock + retry."""
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                # Fetch current state
+                existing = self.db.get_by_code(code)
+                if existing:
+                    return False  # code already taken
+                
+                # Attempt to insert (unique constraint enforced by DB)
+                self.db.insert(code, long_url, created_at=datetime.now())
+                return True
+                
+            except IntegrityError:  # Unique constraint violation (race condition)
+                if attempt < self.MAX_RETRIES - 1:
+                    time.sleep(0.1 * (2 ** attempt))  # exponential backoff
+                    continue
+                else:
+                    return False  # gave up after retries
+            
+        return False
+```
+
+### 2.4 Expiration & TTL Management
+
+#### Lazy Deletion (Recommended for most cases)
+
+When a link is requested, check if expired. If so, return 404 and delete.
+
+```go
+// LookupCode returns the long URL or error if expired/not found
+func (s *Shortener) LookupCode(ctx context.Context, code string) (string, error) {
+	// Try cache first
+	if longURL, found := s.localCache.Get(code); found {
+		return longURL, nil
+	}
+	
+	// Query database
+	url, expiresAt, err := s.db.GetByCode(ctx, code)
+	if err == sql.ErrNoRows {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	
+	// Check if expired
+	if expiresAt != nil && expiresAt.Before(time.Now()) {
+		// Delete expired link
+		go s.db.Delete(ctx, code)  // async deletion
+		return "", ErrLinkExpired
+	}
+	
+	// Cache for future requests
+	s.localCache.Set(code, url)
+	
+	return url, nil
+}
+```
+
+#### Active Cleanup (Background Job)
+
+For compliance or quota reasons, run a background worker to delete expired links:
+
+```python
+import asyncio
+from datetime import datetime, timedelta
+
+class ExpirationCleaner:
+    def __init__(self, db, batch_size=10000, interval_seconds=3600):
+        self.db = db
+        self.batch_size = batch_size
+        self.interval = interval_seconds
+    
+    async def run(self):
+        """Periodically delete expired links."""
+        while True:
+            await self.cleanup_batch()
+            await asyncio.sleep(self.interval)
+    
+    async def cleanup_batch(self):
+        """Delete up to batch_size expired links."""
+        expired_codes = self.db.query_expired(
+            limit=self.batch_size,
+            expired_before=datetime.now()
+        )
+        
+        for code in expired_codes:
+            try:
+                self.db.delete(code)
+            except Exception as e:
+                # Log error, continue with next
+                print(f"Failed to delete {code}: {e}")
+        
+        print(f"Cleaned up {len(expired_codes)} expired links")
+```
+
+### 2.5 Analytics & Click Tracking
+
+Tracking every click synchronously would block the redirect. Solution: **async event publishing**.
+
+#### Go Implementation (Using Kafka)
+
+```go
+type ClickEvent struct {
+	Code       string    `json:"code"`
+	UserIP     string    `json:"user_ip"`
+	UserAgent  string    `json:"user_agent"`
+	Referrer   string    `json:"referrer"`
+	Timestamp  time.Time `json:"timestamp"`
+	Geolocation string   `json:"geolocation"`  // resolved separately
+}
+
+// Fast redirect path (synchronous)
+func (s *Shortener) HandleRedirect(w http.ResponseWriter, r *http.Request) {
+	code := extractCodeFromPath(r.URL.Path)
+	
+	longURL, err := s.LookupCode(r.Context(), code)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	
+	// Redirect immediately
+	http.Redirect(w, r, longURL, http.StatusMovedPermanently)
+	
+	// Track click asynchronously (non-blocking)
+	go func() {
+		event := ClickEvent{
+			Code:      code,
+			UserIP:    r.RemoteAddr,
+			UserAgent: r.Header.Get("User-Agent"),
+			Referrer:  r.Header.Get("Referer"),
+			Timestamp: time.Now(),
+		}
+		
+		// Publish to Kafka (fire-and-forget)
+		err := s.eventBus.Publish("click_events", event)
+		if err != nil {
+			s.logger.WithError(err).Error("failed to publish click event")
+		}
+	}()
+}
+
+// Async consumer (separate service)
+func (s *ClickConsumer) ProcessEvents(ctx context.Context) {
+	for msg := range s.kafkaReader.Messages(ctx) {
+		var event ClickEvent
+		json.Unmarshal(msg.Value, &event)
+		
+		// Batch updates to database (reduce writes)
+		s.clickBuffer.Add(event)
+		
+		if s.clickBuffer.Size() >= 1000 {
+			s.FlushClickBuffer()
+		}
+	}
+}
+
+func (s *ClickConsumer) FlushClickBuffer() {
+	events := s.clickBuffer.Drain()
+	
+	// Single database write for 1000 events
+	err := s.db.BulkIncrementClicks(context.Background(), events)
+	if err != nil {
+		s.logger.WithError(err).Error("failed to update clicks")
+	}
+}
+```
+
+#### Python Implementation (Using Redis Streams)
+
+```python
+import json
+from datetime import datetime
+from redis import Redis
+
+class ClickTracker:
+    def __init__(self, redis: Redis):
+        self.redis = redis
+        self.stream_key = "click_events"
+    
+    def track_click(self, code: str, request) -> None:
+        """Track click asynchronously via Redis stream."""
+        event = {
+            "code": code,
+            "user_ip": request.remote_addr,
+            "user_agent": request.headers.get("User-Agent", ""),
+            "referrer": request.headers.get("Referer", ""),
+            "timestamp": datetime.now().isoformat(),
+        }
+        
+        # Non-blocking: write to Redis stream (< 1ms)
+        try:
+            self.redis.xadd(self.stream_key, event)
+        except Exception as e:
+            # If Redis fails, skip tracking (don't block redirect)
+            print(f"Failed to track click: {e}")
+
+class ClickConsumer:
+    def __init__(self, redis: Redis, db):
+        self.redis = redis
+        self.db = db
+        self.consumer_group = "click_processors"
+        self.consumer_name = "processor_1"
+    
+    def process_events(self):
+        """Consume and batch-process click events."""
+        # Create consumer group if not exists
+        try:
+            self.redis.xgroup_create(self.stream_key, self.consumer_group, id="0", mkstream=True)
+        except:
+            pass  # group already exists
+        
+        click_buffer = {}  # code -> count
+        
+        while True:
+            # Read pending messages
+            messages = self.redis.xreadgroup(
+                groupname=self.consumer_group,
+                consumername=self.consumer_name,
+                streams={self.stream_key: ">"},
+                count=100,
+                block=1000  # block 1s if no new messages
+            )
+            
+            for stream_name, message_list in messages:
+                for msg_id, msg_data in message_list:
+                    event = {k.decode(): v.decode() for k, v in msg_data.items()}
+                    code = event["code"]
+                    
+                    # Buffer clicks
+                    click_buffer[code] = click_buffer.get(code, 0) + 1
+                    
+                    # Acknowledge message
+                    self.redis.xack(self.stream_key, self.consumer_group, msg_id)
+            
+            # Flush buffer every 1000 events or timeout
+            if sum(click_buffer.values()) >= 1000:
+                self.flush_clicks(click_buffer)
+                click_buffer.clear()
+    
+    def flush_clicks(self, buffer: dict) -> None:
+        """Batch update click counts in database."""
+        try:
+            self.db.increment_clicks_batch(buffer)
+        except Exception as e:
+            print(f"Failed to flush clicks: {e}")
+```
+
+---
+
+## Part 3: Complete Production Implementation
+
+### 3.1 Go: Complete URL Shortener Service
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
+)
+
+// Shortener service
+type Shortener struct {
+	redis *redis.Client
+	db    *Database  // abstracted DB interface
+	cache *LRUCache
+	idGen *IDGenerator
+}
+
+// ShortenRequest from client
+type ShortenRequest struct {
+	LongURL   string `json:"long_url" binding:"required"`
+	CustomCode string `json:"custom_code"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	UserID    string `json:"user_id"`
+}
+
+// ShortenResponse to client
+type ShortenResponse struct {
+	ShortCode string `json:"short_code"`
+	ShortURL  string `json:"short_url"`
+	LongURL   string `json:"long_url"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+func (s *Shortener) HandleShorten(w http.ResponseWriter, r *http.Request) {
+	var req ShortenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	var shortCode string
+	var err error
+
+	if req.CustomCode != "" {
+		// Try to reserve custom code
+		err = s.ReserveCustomCode(ctx, req.CustomCode, req.LongURL, req.ExpiresAt)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("custom code unavailable: %v", err), http.StatusConflict)
+			return
+		}
+		shortCode = req.CustomCode
+	} else {
+		// Generate random code
+		shortCode, err = s.ShortenURL(ctx, req.LongURL, req.ExpiresAt)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to shorten: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Build response
+	resp := ShortenResponse{
+		ShortCode: shortCode,
+		ShortURL:  fmt.Sprintf("https://tiny.url/%s", shortCode),
+		LongURL:   req.LongURL,
+		CreatedAt: time.Now(),
+		ExpiresAt: req.ExpiresAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Shortener) HandleRedirect(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	longURL, err := s.LookupCode(ctx, code)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// 301 permanent or 302 temporary
+	http.Redirect(w, r, longURL, http.StatusMovedPermanently)
+
+	// Track click asynchronously
+	go s.TrackClick(code, r)
+}
+
+func (s *Shortener) TrackClick(code string, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	event := map[string]string{
+		"code":       code,
+		"user_ip":    r.RemoteAddr,
+		"user_agent": r.Header.Get("User-Agent"),
+		"referrer":   r.Header.Get("Referer"),
+		"timestamp":  time.Now().Format(time.RFC3339),
+	}
+
+	data, _ := json.Marshal(event)
+	s.redis.XAdd(ctx, &redis.XAddArgs{
+		Stream: "click_events",
+		Values: map[string]interface{}{"data": string(data)},
+	})
+}
+
+// Router setup
+func NewRouter(shortener *Shortener) *chi.Mux {
+	r := chi.NewRouter()
+
+	r.Post("/api/v1/shorten", shortener.HandleShorten)
+	r.Get("/{code}", shortener.HandleRedirect)
+
+	return r
+}
+
+func main() {
+	// Initialize services
+	redisClient := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+	db := NewPostgresDB("postgres://...")
+	cache := NewLRUCache(1000)
+	idGen := NewIDGenerator(redisClient)
+
+	shortener := &Shortener{
+		redis: redisClient,
+		db:    db,
+		cache: cache,
+		idGen: idGen,
+	}
+
+	router := NewRouter(shortener)
+
+	log.Println("Starting URL shortener on :8080")
+	log.Fatal(http.ListenAndServe(":8080", router))
+}
+```
+
+### 3.2 Python: Complete URL Shortener Service
+
+```python
+from flask import Flask, request, redirect, jsonify
+from datetime import datetime, timedelta
+from typing import Optional, Tuple
+import redis
+import json
+import time
+
+app = Flask(__name__)
+
+class URLShortenerService:
+    def __init__(self, redis_addr: str = "localhost:6379"):
+        self.redis = redis.Redis.from_url(f"redis://{redis_addr}", decode_responses=True)
+        self.db = PostgresDB("postgresql://...")
+        self.id_gen = IDGenerator(self.redis)
+        self.cache = LRUCache(max_size=10000)
+    
+    def shorten_url(
+        self,
+        long_url: str,
+        custom_code: Optional[str] = None,
+        expires_at: Optional[datetime] = None,
+        user_id: Optional[str] = None
+    ) -> Tuple[str, int]:
+        """
+        Shorten a URL. Returns (short_code, status_code)
+        """
+        if custom_code:
+            # Reserve custom code
+            if not self._reserve_custom_code(custom_code, long_url, expires_at):
+                return None, 409  # Conflict
+            short_code = custom_code
+        else:
+            # Generate new code
+            next_id = self.id_gen.next_id()
+            short_code = encode(next_id)
+            
+            # Store in DB
+            self.db.insert(
+                short_code=short_code,
+                long_url=long_url,
+                expires_at=expires_at,
+                user_id=user_id,
+                created_at=datetime.now()
+            )
+        
+        return short_code, 201
+    
+    def lookup_code(self, code: str) -> Optional[str]:
+        """
+        Lookup short code and return long URL, or None if expired/not found.
+        """
+        # Check cache first
+        if code in self.cache:
+            return self.cache[code]
+        
+        # Query database
+        row = self.db.query_one(
+            "SELECT long_url, expires_at FROM urls WHERE short_code = %s",
+            (code,)
+        )
+        
+        if not row:
+            return None
+        
+        long_url, expires_at = row
+        
+        # Check expiration
+        if expires_at and expires_at < datetime.now():
+            # Delete and return None
+            self.db.delete(code)
+            return None
+        
+        # Cache for future requests
+        self.cache[code] = long_url
+        
+        return long_url
+    
+    def track_click(self, code: str, request_obj) -> None:
+        """Track click event asynchronously."""
+        event = {
+            "code": code,
+            "user_ip": request_obj.remote_addr,
+            "user_agent": request_obj.headers.get("User-Agent", ""),
+            "referrer": request_obj.headers.get("Referer", ""),
+            "timestamp": datetime.now().isoformat(),
+        }
+        
+        try:
+            self.redis.xadd(
+                "click_events",
+                {"data": json.dumps(event)}
+            )
+        except Exception as e:
+            app.logger.error(f"Failed to track click: {e}")
+    
+    def _reserve_custom_code(
+        self,
+        code: str,
+        long_url: str,
+        expires_at: Optional[datetime]
+    ) -> bool:
+        """Attempt to reserve custom code."""
+        try:
+            self.db.insert(
+                short_code=code,
+                long_url=long_url,
+                expires_at=expires_at,
+                created_at=datetime.now()
+            )
+            return True
+        except Exception:  # Unique constraint violation
+            return False
+
+# Initialize service
+service = URLShortenerService()
+
+@app.route("/api/v1/shorten", methods=["POST"])
+def shorten():
+    data = request.get_json()
+    
+    short_code, status = service.shorten_url(
+        long_url=data["long_url"],
+        custom_code=data.get("custom_code"),
+        expires_at=data.get("expires_at"),
+        user_id=data.get("user_id")
+    )
+    
+    if status != 201:
+        return jsonify({"error": "custom code unavailable"}), status
+    
+    return jsonify({
+        "short_code": short_code,
+        "short_url": f"https://tiny.url/{short_code}",
+        "long_url": data["long_url"],
+        "created_at": datetime.now().isoformat(),
+    }), status
+
+@app.route("/<code>", methods=["GET"])
+def redirect_url(code: str):
+    long_url = service.lookup_code(code)
+    
+    if not long_url:
+        return "Not found", 404
+    
+    # Track click asynchronously
+    service.track_click(code, request)
+    
+    return redirect(long_url, code=301)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080, debug=False)
+```
+
+---
+
+## Part 4: Scaling & Reliability Considerations
+
+### 4.1 Handling Hot Keys
+
+When a single short code gets viral traffic:
+
+```
+Without mitigation:
+┌─────────────────────────────────────────┐
+│ 10K req/sec for one short code          │
+│ All hit Redis → Redis becomes bottleneck │
+│ Latency spikes, timeouts, cascading fail │
+└─────────────────────────────────────────┘
+
+With local LRU cache:
+┌──────────────────────┐
+│ Load Balancer        │
+└──────────┬───────────┘
+           │
+     ┌─────┴──────┐
+     │            │
+  ┌──▼──┐   ┌───▼─┐
+  │ App1 │   │ App2 │  Each app has its own
+  │ LRU: │   │ LRU: │  in-memory cache
+  │code1 │   │code1 │  (warm for viral links)
+  └──────┘   └──────┘
+  
+Sticky session ensures same code goes to same app,
+local cache is warm, no database queries needed.
+```
+
+### 4.2 High Availability Architecture
+
+```
+┌──────────────────────────────────────────────────────┐
+│                   CDN Edge (Global)                  │
+│            (Caches 301 redirects for 24h)             │
+└────────────────────────┬─────────────────────────────┘
+                         │
+        ┌────────────────┼────────────────┐
+        │                │                │
+┌───────▼────────┐ ┌────▼──────────┐ ┌──▼───────────┐
+│ Region: US     │ │ Region: EU    │ │ Region: APAC │
+│ (Availability  │ │ (Availability │ │ (Availability│
+│  Zone spread)  │ │  Zone spread) │ │  Zone spread)│
+└────┬─────┬────┘ └────┬──────┬───┘ └──┬────────┬──┘
+     │     │           │      │        │        │
+  ┌──▼───┐ ┌──▼──┐  ┌─▼──┐ ┌─▼──┐  ┌─▼──┐  ┌─▼──┐
+  │ App  │ │ App │  │App │ │App │  │App │  │App │
+  │ Pod1 │ │ Pod2│  │ P3 │ │ P4 │  │ P5 │  │ P6 │
+  └──┬───┘ └──┬──┘  └─┬──┘ └─┬──┘  └─┬──┘  └─┬──┘
+     │        │       │       │        │       │
+     └────────┬───────┴───────┴────────┴───────┘
+              │
+          ┌───▼─────┐
+          │  Redis  │
+          │ Cluster │
+          │ (3-node)│
+          └───┬─────┘
+              │
+        ┌─────▼──────┐
+        │ Cassandra  │
+        │ (9 nodes)  │
+        │ 3 replicas │
+        └────────────┘
+```
+
+**Key Design Principles**:
+- **CDN caching**: 301 redirects cached at edge, 80% traffic never reaches origin.
+- **Multi-region**: Each region has independent app + Redis + database replicas.
+- **Read replicas**: Cassandra handles high read volume with local quorum reads.
+- **Write quorum**: Use QUORUM consistency for write path (consistency vs availability).
+
+### 4.3 Graceful Degradation
+
+If Redis fails, redirect still works (slower):
+
+```python
+def lookup_code(code: str) -> str:
+    # Try cache (in-process)
+    if code in local_cache:
+        return local_cache[code]
+    
+    # Try Redis
+    try:
+        cached = redis.get(f"url:{code}")
+        if cached:
+            local_cache[code] = cached
+            return cached
+    except RedisError:
+        app.logger.warning("Redis unavailable, falling back to DB")
+    
+    # Query database directly (slower but still works)
+    return db.query_by_code(code)
+```
+
+---
+
+## Further Reading & Documentation
+
+### Distributed ID Generation
+- [Twitter Snowflake](https://github.com/twitter-archive/snowflake/tree/snowflake-2010)
+- [UUID vs Snowflake: Trade-offs](https://en.wikipedia.org/wiki/Universally_unique_identifier)
+- [Base62 Encoding](https://en.wikipedia.org/wiki/Radix)
+
+### Caching Strategies
+- [Cache-Aside Pattern](https://docs.microsoft.com/en-us/azure/architecture/patterns/cache-aside)
+- [Redis Data Types](https://redis.io/docs/data-types/)
+- [Memcached vs Redis](https://en.wikipedia.org/wiki/Memcached)
+
+### Database Design
+- [Cassandra Partitioning](https://cassandra.apache.org/doc/latest/cassandra/architecture/dynamo.html)
+- [DynamoDB TTL](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TTL.html)
+- [PostgreSQL Sharding Strategies](https://wiki.postgresql.org/wiki/Partitioning,_Clustering,_and_Load_Balancing)
+
+### System Design
+- [System Design Interview (Alex Xu)](https://www.amazon.com/System-Design-Interview-insiders-Effective/dp/1736049115)
+- [Designing Data-Intensive Applications (Martin Kleppmann)](https://www.oreilly.com/library/view/designing-data-intensive-applications/9781491903063/)
+- [The Art of Scalability](https://www.oreilly.com/library/view/the-art-of/9780134031408/)
+
+### Real-World Implementations
+- [TinyURL Architecture](https://www.1point3acres.com/bbs/thread-699450-1-1.html)
+- [Bitly Scale Numbers](https://en.wikipedia.org/wiki/Bitly)
+- [Google Firebase Dynamic Links](https://firebase.google.com/docs/dynamic-links)
