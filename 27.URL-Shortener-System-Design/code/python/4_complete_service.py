@@ -1,15 +1,33 @@
 """Complete URL Shortener service implementation"""
 
 from flask import Flask, request, redirect, jsonify
-from datetime import datetime, timedelta
+from datetime import datetime
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from typing import Optional, Tuple
 import redis
 import json
 import logging
 
-from base62_encoding import encode, decode
-from distributed_id_generator import IDGenerator
-from lru_caching import LRUCache
+
+def _load_module(module_name: str, filename: str):
+    module_path = Path(__file__).resolve().parent / filename
+    spec = spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load {filename}")
+
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_base62 = _load_module("url_shortener_base62", "1_base62_encoding.py")
+_id_generator = _load_module("url_shortener_id_generator", "2_distributed_id_generator.py")
+_lru_caching = _load_module("url_shortener_lru_caching", "3_lru_caching.py")
+
+encode = _base62.encode
+IDGenerator = _id_generator.IDGenerator
+LRUCache = _lru_caching.LRUCache
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -97,9 +115,16 @@ class URLShortenerService:
         Returns:
             Long URL, or None if expired/not found
         """
-        # Check cache first (< 1 microsecond)
-        if code in self.cache.get.__self__.cache:
-            return self.cache.get(code)
+        # Check cache first (< 1 microsecond), then enforce expiration.
+        cached_url = self.cache.get(code)
+        if cached_url is not None:
+            meta = self.metadata.get(code, {})
+            if meta.get("expires_at"):
+                expires_at = datetime.fromisoformat(meta["expires_at"])
+                if expires_at <= datetime.now():
+                    self._delete_code(code)
+                    return None
+            return cached_url
         
         # Query database
         if code not in self.db:

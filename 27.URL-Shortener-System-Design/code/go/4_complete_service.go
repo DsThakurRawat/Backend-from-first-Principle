@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -17,7 +20,13 @@ type URLShortener struct {
 	cache    *LRUCache
 	idGen    *IDGenerator
 	baseURL  string
-	mockDB   map[string]string // Mock database for example
+	mockDB   map[string]linkRecord // Mock database for example
+	mockDBMu sync.RWMutex
+}
+
+type linkRecord struct {
+	longURL  string
+	expiresAt time.Time
 }
 
 // ShortenRequest from client
@@ -44,7 +53,7 @@ func NewURLShortener(redisAddr, baseURL string) *URLShortener {
 		cache:   NewLRUCache(10000),
 		idGen:   NewIDGenerator(redisAddr),
 		baseURL: baseURL,
-		mockDB:  make(map[string]string),
+		mockDB:  make(map[string]linkRecord),
 	}
 }
 
@@ -56,9 +65,15 @@ func (s *URLShortener) ShortenURL(ctx context.Context, longURL string, expiresAt
 	}
 
 	shortCode := Encode(id)
+	expiresAtValue := time.Time{}
+	if expiresAt != nil {
+		expiresAtValue = *expiresAt
+	}
 
 	// Store in database (mock)
-	s.mockDB[shortCode] = longURL
+	s.mockDBMu.Lock()
+	s.mockDB[shortCode] = linkRecord{longURL: longURL, expiresAt: expiresAtValue}
+	s.mockDBMu.Unlock()
 
 	// Cache it
 	s.cache.Set(shortCode, longURL)
@@ -67,7 +82,7 @@ func (s *URLShortener) ShortenURL(ctx context.Context, longURL string, expiresAt
 }
 
 // ReserveCustomCode attempts to reserve a custom code
-func (s *URLShortener) ReserveCustomCode(ctx context.Context, code, longURL string) error {
+func (s *URLShortener) ReserveCustomCode(ctx context.Context, code, longURL string, expiresAt *time.Time) error {
 	const lockKey = "custom_code_lock:"
 	const lockExpiry = 5 * time.Second
 
@@ -82,13 +97,21 @@ func (s *URLShortener) ReserveCustomCode(ctx context.Context, code, longURL stri
 	}
 
 	// Double-check: ensure code isn't already in use
-	if _, exists := s.mockDB[code]; exists {
+	s.mockDBMu.Lock()
+	_, exists := s.mockDB[code]
+	if exists {
+		s.mockDBMu.Unlock()
 		s.redis.Del(ctx, lockKey+code)
 		return fmt.Errorf("custom code already in use")
 	}
 
 	// Store in database
-	s.mockDB[code] = longURL
+	expiresAtValue := time.Time{}
+	if expiresAt != nil {
+		expiresAtValue = *expiresAt
+	}
+	s.mockDB[code] = linkRecord{longURL: longURL, expiresAt: expiresAtValue}
+	s.mockDBMu.Unlock()
 
 	// Cache it
 	s.cache.Set(code, longURL)
@@ -101,21 +124,31 @@ func (s *URLShortener) ReserveCustomCode(ctx context.Context, code, longURL stri
 
 // LookupCode returns the long URL for a short code
 func (s *URLShortener) LookupCode(ctx context.Context, code string) (string, error) {
-	// Try cache first
-	if longURL, found := s.cache.Get(code); found {
-		return longURL, nil
-	}
-
 	// Query database (mock)
-	longURL, exists := s.mockDB[code]
+	s.mockDBMu.RLock()
+	record, exists := s.mockDB[code]
+	s.mockDBMu.RUnlock()
 	if !exists {
 		return "", fmt.Errorf("not found")
 	}
 
-	// Cache for future requests
-	s.cache.Set(code, longURL)
+	if !record.expiresAt.IsZero() && !time.Now().Before(record.expiresAt) {
+		s.mockDBMu.Lock()
+		delete(s.mockDB, code)
+		s.mockDBMu.Unlock()
+		s.cache.Delete(code)
+		return "", fmt.Errorf("expired")
+	}
 
-	return longURL, nil
+	// Try cache after checking expiration so stale cached links cannot redirect.
+	if longURL, found := s.cache.Get(code); found {
+		return longURL, nil
+	}
+
+	// Cache for future requests
+	s.cache.Set(code, record.longURL)
+
+	return record.longURL, nil
 }
 
 // HTTP Handlers
@@ -128,14 +161,20 @@ func (s *URLShortener) HandleShorten(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	parsedURL, err := url.ParseRequestURI(req.LongURL)
+	if err != nil || parsedURL.Host == "" ||
+		(!strings.EqualFold(parsedURL.Scheme, "http") && !strings.EqualFold(parsedURL.Scheme, "https")) {
+		http.Error(w, "long_url must be a valid http or https URL", http.StatusBadRequest)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	var shortCode string
-	var err error
 
 	if req.CustomCode != "" {
-		err = s.ReserveCustomCode(ctx, req.CustomCode, req.LongURL)
+		err = s.ReserveCustomCode(ctx, req.CustomCode, req.LongURL, req.ExpiresAt)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed: %v", err), http.StatusConflict)
 			return
@@ -175,23 +214,27 @@ func (s *URLShortener) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Redirect (301 Permanent)
-	http.Redirect(w, r, longURL, http.StatusMovedPermanently)
+	userIP := r.RemoteAddr
+	userAgent := r.Header.Get("User-Agent")
+	referrer := r.Header.Get("Referer")
 
-	// Track click asynchronously
-	go s.TrackClick(code, r)
+	// Redirect (302 Found) so repeat clicks remain observable.
+	http.Redirect(w, r, longURL, http.StatusFound)
+
+	// Track click asynchronously using request data captured before return.
+	go s.TrackClick(code, userIP, userAgent, referrer)
 }
 
 // TrackClick publishes a click event to Redis stream
-func (s *URLShortener) TrackClick(code string, r *http.Request) {
+func (s *URLShortener) TrackClick(code, userIP, userAgent, referrer string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
 	event := map[string]string{
 		"code":       code,
-		"user_ip":    r.RemoteAddr,
-		"user_agent": r.Header.Get("User-Agent"),
-		"referrer":   r.Header.Get("Referer"),
+		"user_ip":    userIP,
+		"user_agent": userAgent,
+		"referrer":   referrer,
 		"timestamp":  time.Now().Format(time.RFC3339),
 	}
 

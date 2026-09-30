@@ -1,22 +1,20 @@
 """Distributed ID generation using Redis atomic counter"""
 
 import redis
-from typing import List, Optional
-from contextlib import contextmanager
+from typing import List
 
 
 class IDGenerator:
     """
     Generates globally unique IDs using Redis atomic counter.
     
-    Primary: Redis INCR command for distributed atomicity
-    Fallback: Local counter if Redis unavailable
+    Primary: Redis INCR command for distributed atomicity.
+    Redis failures are surfaced so callers never issue duplicate IDs.
     """
     
     def __init__(self, redis_url: str = "redis://localhost:6379"):
         """Initialize ID generator with Redis connection."""
         self.redis = redis.from_url(redis_url, decode_responses=True)
-        self.local_seq = 0
         self.counter_key = "url_shortener:next_id"
     
     def next_id(self) -> int:
@@ -24,14 +22,12 @@ class IDGenerator:
         Generate next unique ID.
         
         Returns: Next ID in sequence
-        Raises: RedisError on connection failure (uses local counter as fallback)
+        Raises: redis.RedisError when the counter cannot be reached.
         """
         try:
             return int(self.redis.incr(self.counter_key))
-        except redis.ConnectionError:
-            # Fallback to local counter (not distributed, but keeps service running)
-            self.local_seq += 1
-            return self.local_seq
+        except redis.RedisError:
+            raise
     
     def next_id_batch(self, count: int) -> List[int]:
         """
@@ -45,13 +41,8 @@ class IDGenerator:
             end_id = int(self.redis.incrby(self.counter_key, count))
             # Generate sequence [end_id - count + 1, ..., end_id]
             return list(range(end_id - count + 1, end_id + 1))
-        except redis.ConnectionError:
-            # Fallback to local batching
-            result = []
-            for _ in range(count):
-                self.local_seq += 1
-                result.append(self.local_seq)
-            return result
+        except redis.RedisError:
+            raise
     
     def reset(self, value: int = 0) -> None:
         """
@@ -131,8 +122,5 @@ if __name__ == "__main__":
         print(f"  Generated {len(ids)} IDs in {elapsed:.4f}s")
         print(f"  Rate: {len(ids)/elapsed:.0f} IDs/sec")
         
-    except redis.ConnectionError:
-        print("Redis connection failed. Running with local counter fallback.")
-        gen = IDGenerator()
-        for i in range(5):
-            print(f"  ID {i+1}: {gen.next_id()}")
+    except redis.RedisError as error:
+        print(f"Redis connection failed: {error}")

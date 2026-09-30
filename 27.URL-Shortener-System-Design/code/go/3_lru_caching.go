@@ -1,31 +1,30 @@
 package shortener
 
 import (
-	"context"
+	"container/list"
 	"fmt"
 	"sync"
-	"time"
 )
 
 // LRUCache is an in-memory LRU cache for hot URLs
 // Used to cache frequently accessed short code -> long URL mappings
 type LRUCache struct {
-	mu    sync.RWMutex
-	items map[string]*cacheItem
-	order []string // LRU order (oldest first)
+	mu    sync.Mutex
+	items map[string]*list.Element
+	order *list.List // Most recently used at the front, least recently used at the back.
 	max   int
 }
 
 type cacheItem struct {
-	value      string
-	lastAccess time.Time
+	key   string
+	value string
 }
 
 // NewLRUCache creates a new LRU cache with specified max size
 func NewLRUCache(maxSize int) *LRUCache {
 	return &LRUCache{
-		items: make(map[string]*cacheItem),
-		order: make([]string, 0, maxSize),
+		items: make(map[string]*list.Element),
+		order: list.New(),
 		max:   maxSize,
 	}
 }
@@ -35,15 +34,14 @@ func (c *LRUCache) Get(key string) (string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	item, found := c.items[key]
+	element, found := c.items[key]
 	if !found {
 		return "", false
 	}
 
-	// Update access time
-	item.lastAccess = time.Now()
+	c.order.MoveToFront(element)
 
-	return item.value, true
+	return element.Value.(*cacheItem).value, true
 }
 
 // Set stores a value in cache
@@ -53,20 +51,20 @@ func (c *LRUCache) Set(key, value string) {
 	defer c.mu.Unlock()
 
 	// If key already exists, just update
-	if item, found := c.items[key]; found {
-		item.value = value
-		item.lastAccess = time.Now()
+	if element, found := c.items[key]; found {
+		element.Value.(*cacheItem).value = value
+		c.order.MoveToFront(element)
 		return
 	}
 
-	// Add new item
-	c.items[key] = &cacheItem{
-		value:      value,
-		lastAccess: time.Now(),
-	}
-	c.order = append(c.order, key)
+	// Add the new item as most recently used.
+	element := c.order.PushFront(&cacheItem{
+		key:   key,
+		value: value,
+	})
+	c.items[key] = element
 
-	// Evict if over capacity
+	// Evict the least recently used item if over capacity.
 	if len(c.items) > c.max {
 		c.evictLRU()
 	}
@@ -74,27 +72,14 @@ func (c *LRUCache) Set(key, value string) {
 
 // evictLRU removes the least-recently-used item
 func (c *LRUCache) evictLRU() {
-	// Find the item with oldest lastAccess time
-	var lruKey string
-	var lruTime time.Time
-
-	for key, item := range c.items {
-		if lruTime.IsZero() || item.lastAccess.Before(lruTime) {
-			lruKey = key
-			lruTime = item.lastAccess
-		}
+	element := c.order.Back()
+	if element == nil {
+		return
 	}
 
-	// Remove from cache
-	delete(c.items, lruKey)
-
-	// Remove from order
-	for i, k := range c.order {
-		if k == lruKey {
-			c.order = append(c.order[:i], c.order[i+1:]...)
-			break
-		}
-	}
+	item := element.Value.(*cacheItem)
+	delete(c.items, item.key)
+	c.order.Remove(element)
 }
 
 // Delete removes a key from cache
@@ -102,13 +87,9 @@ func (c *LRUCache) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	delete(c.items, key)
-
-	for i, k := range c.order {
-		if k == key {
-			c.order = append(c.order[:i], c.order[i+1:]...)
-			break
-		}
+	if element, found := c.items[key]; found {
+		delete(c.items, key)
+		c.order.Remove(element)
 	}
 }
 
@@ -117,14 +98,14 @@ func (c *LRUCache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.items = make(map[string]*cacheItem)
-	c.order = make([]string, 0, c.max)
+	c.items = make(map[string]*list.Element)
+	c.order.Init()
 }
 
 // Size returns current number of items in cache
 func (c *LRUCache) Size() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	return len(c.items)
 }

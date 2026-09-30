@@ -121,6 +121,13 @@ Result: Microsecond latency, no DB queries
 
 ## 🚀 Quick Start (Running the Code)
 
+Both examples use Redis for distributed ID generation, custom-code locking, and click-event tracking.
+Start Redis locally before running either service:
+
+```bash
+docker run --name url-shortener-redis -p 6379:6379 -d redis:7-alpine
+```
+
 ### Python Service
 ```bash
 cd 27.URL-Shortener-System-Design/code/python
@@ -131,6 +138,7 @@ pip install flask redis
 # Run the service
 python 4_complete_service.py
 # Server runs on http://localhost:8080
+# Links are stored in memory for this example; PostgreSQL is not required.
 
 # Test endpoints
 curl -X POST http://localhost:8080/api/v1/shorten \
@@ -145,8 +153,9 @@ curl -L http://localhost:8080/abc123
 ```bash
 cd 27.URL-Shortener-System-Design/code/go
 
-# Run the service
-go run *.go
+# Download Go dependencies and run the HTTP entry point
+go mod download
+go run ./cmd/shortener
 # Server runs on http://localhost:8080
 
 # Same API as Python version

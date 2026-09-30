@@ -3,8 +3,6 @@ package shortener
 import (
 	"context"
 	"fmt"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -12,9 +10,7 @@ import (
 
 // IDGenerator generates globally unique IDs using Redis atomic counter
 type IDGenerator struct {
-	redis    *redis.Client
-	localSeq int64  // Fallback counter if Redis unavailable
-	mu       sync.Mutex
+	redis *redis.Client
 }
 
 // NewIDGenerator creates a new ID generator
@@ -27,8 +23,8 @@ func NewIDGenerator(redisAddr string) *IDGenerator {
 }
 
 // NextID generates the next unique ID
-// Primary: uses Redis INCR for distributed atomicity
-// Fallback: uses local atomic counter if Redis unavailable
+// Primary: uses Redis INCR for distributed atomicity.
+// If Redis is unavailable, ID generation fails closed to avoid collisions.
 func (g *IDGenerator) NextID(ctx context.Context) (int64, error) {
 	const counterKey = "url_shortener:next_id"
 
@@ -38,11 +34,7 @@ func (g *IDGenerator) NextID(ctx context.Context) (int64, error) {
 		return val, nil
 	}
 
-	// Fallback to local counter if Redis unavailable
-	// In production, this should trigger alerts
-	localID := atomic.AddInt64(&g.localSeq, 1)
-
-	return localID, fmt.Errorf("redis incr failed, using local counter: %w", err)
+	return 0, fmt.Errorf("redis incr failed: %w", err)
 }
 
 // NextIDBatch generates a batch of unique IDs
