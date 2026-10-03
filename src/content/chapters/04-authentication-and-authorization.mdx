@@ -2,7 +2,7 @@
 order: 4
 title: "Authentication, the question of who you are."
 navTitle: "Authentication & Authorization"
-summary: "A first-principles walkthrough of the two ideas every backend touches every single day, who are you (authentication) and what can you do (authorization). From wax seals and shared secrets to sessions, JWTs, cookies, OAuth 2.0, OpenID Connect, and RBAC. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in both Go and Python."
+summary: "A first-principles walkthrough of the two ideas every backend touches every single day, who are you (authentication) and what can you do (authorization). From wax seals and shared secrets to sessions, JWTs, cookies, OAuth 2.0, OpenID Connect, and RBAC. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in Go, Python and JavaScript."
 readingTime: "3-4 hours"
 keywords:
   - "authentication"
@@ -227,6 +227,56 @@ def login():
     return resp
 ```
 
+JavaScript
+
+```js
+import express from "express";
+import cookieParser from "cookie-parser";
+import bcrypt from "bcrypt";
+import { createClient } from "redis";
+import { randomBytes } from "node:crypto";
+
+const app = express();
+app.use(express.json());
+app.use(cookieParser());
+
+const rdb = createClient({ url: "redis://localhost:6379" });
+await rdb.connect();
+const TTL = 15 * 60; // 15 minutes
+
+// hash once at signup; store the hash, never the password
+async function hashPassword(pw) {
+  return bcrypt.hash(pw, 12); // 12 = cost factor
+}
+
+// bcrypt.compare is constant-time internally
+async function checkPassword(hash, pw) {
+  return bcrypt.compare(pw, hash);
+}
+
+function newSessionId() {
+  return randomBytes(32).toString("hex"); // cryptographically random
+}
+
+app.post("/login", async (req, res) => {
+  // ... look up the user, then await checkPassword(storedHash, req.body.password) ...
+  const user = { id: "u_42", role: "admin" };
+
+  const sid = newSessionId();
+  // store {sessionID -> userData} with a 15-minute TTL
+  await rdb.setEx(`sess:${sid}`, TTL, JSON.stringify(user));
+
+  res.cookie("sid", sid, {
+    httpOnly: true,     // JS cannot read it
+    secure: true,       // HTTPS only
+    sameSite: "lax",
+    maxAge: TTL * 1000, // Express takes milliseconds
+    path: "/",
+  });
+  res.json({ ok: true });
+});
+```
+
 ### Deep dive: how to actually store a password
 
 "Store the hash, not the password" is only half the rule. _Which_ hash, and what you mix into it, decides whether a leaked database is a minor incident or a catastrophe.
@@ -347,6 +397,45 @@ def verify_argon(encoded: str, pw: str) -> bool:
     if ph.check_needs_rehash(encoded):
         rehash_and_store(hash_argon(pw))
     return True
+```
+
+JavaScript
+
+```js
+import { createHmac } from "node:crypto";
+import argon2 from "argon2";
+
+const PEPPER = Buffer.from(process.env.PASSWORD_PEPPER); // secret, NOT in the DB
+
+// cost parameters, tune so one hash takes ~250ms
+const OPTS = {
+  type: argon2.argon2id,
+  timeCost: 3,           // iterations
+  memoryCost: 64 * 1024, // 64 MB, memory-hard
+  parallelism: 4,
+  hashLength: 32,
+  saltLength: 16,        // unique random salt, baked into the output
+};
+
+function peppered(pw) {
+  return createHmac("sha256", PEPPER).update(pw).digest();
+}
+
+// node-argon2 embeds the salt + params inside the returned string
+async function hashArgon(pw) {
+  return argon2.hash(peppered(pw), OPTS);
+}
+
+async function verifyArgon(encoded, pw) {
+  // verify re-derives with the SAME salt+params and compares in constant time
+  if (!(await argon2.verify(encoded, peppered(pw)))) return false;
+
+  // transparently upgrade old hashes when the cost is raised
+  if (argon2.needsRehash(encoded, OPTS)) {
+    await rehashAndStore(await hashArgon(pw));
+  }
+  return true;
+}
 ```
 
 ## 05 JSON Web Tokens (JWT)
@@ -470,6 +559,34 @@ def is_revoked(rdb, jti_or_token: str) -> bool:
     return rdb.sismember("jwt:blacklist", jti_or_token)
 ```
 
+JavaScript
+
+```js
+import jwt from "jsonwebtoken";
+
+const SECRET = "keep-this-very-secret";
+
+// mint a self-contained token carrying the claims
+function sign(userId, role) {
+  return jwt.sign(
+    { sub: userId, role },                    // sub = user id, role for authorization
+    SECRET,
+    { algorithm: "HS256", expiresIn: "1h" },  // iat + exp are filled in for you
+  );
+}
+
+// verify signature + expiry; returns the claims, throws if invalid
+function verify(token) {
+  // `algorithms` is a whitelist -> stops "alg: none" and algorithm-confusion attacks
+  return jwt.verify(token, SECRET, { algorithms: ["HS256"] });
+}
+
+// hybrid: after verify(), also check a revocation blacklist
+async function isRevoked(rdb, jtiOrToken) {
+  return (await rdb.sIsMember("jwt:blacklist", jtiOrToken)) === 1;
+}
+```
+
 ### Deep dive: signing, attacks, and refresh tokens
 
 #### HS256 vs RS256: symmetric vs asymmetric signing
@@ -560,6 +677,36 @@ def refresh(rdb, presented: str) -> str:
     new_refresh = secrets.token_hex(32)
     rdb.setex(f"rt:{new_refresh}", 14 * 24 * 3600, family)
     return new_refresh
+```
+
+JavaScript
+
+```js
+// Verify with a PUBLIC key, pinning RS256 (blocks alg:none & key confusion)
+function verifyRS256(token, publicKey) {
+  return jwt.verify(token, publicKey, { algorithms: ["RS256"] }); // whitelist
+}
+
+// Rotate a refresh token; detect reuse of an already-spent one.
+async function refresh(rdb, presented) {
+  const family = await rdb.get(`rt:${presented}`);
+  if (family === null) {
+    // not a live token, was it previously spent? -> theft
+    const fam = await rdb.get(`spent:${presented}`);
+    if (fam !== null) {
+      await rdb.del(`family:${fam}`);          // revoke the whole family
+      throw new Error("refresh reuse detected");
+    }
+    throw new Error("invalid refresh token");
+  }
+
+  const TTL = 14 * 24 * 3600;
+  await rdb.del(`rt:${presented}`);                     // consume the live token
+  await rdb.setEx(`spent:${presented}`, TTL, family);   // remember it
+  const newRefresh = randomBytes(32).toString("hex");
+  await rdb.setEx(`rt:${newRefresh}`, TTL, family);
+  return newRefresh;
+}
 ```
 
 ## 06 Cookies
@@ -656,6 +803,38 @@ def regenerate_session(old_sid: str) -> str:
     return new_sid
 ```
 
+JavaScript
+
+```js
+import { timingSafeEqual } from "node:crypto";
+
+// Double-submit: compare the CSRF cookie against the header.
+function checkCSRF(req, res, next) {
+  if (req.method === "GET" || req.method === "HEAD") return next();
+
+  const cookie = req.cookies.csrf ?? "";
+  const header = req.get("X-CSRF-Token") ?? "";
+
+  // timingSafeEqual throws on a length mismatch, so check that first
+  const ok =
+    cookie.length > 0 &&
+    cookie.length === header.length &&
+    timingSafeEqual(Buffer.from(cookie), Buffer.from(header));
+
+  if (!ok) return res.status(403).json({ error: "forbidden" });
+  next();
+}
+
+// Regenerate the session ID right after a successful login.
+async function regenerateSession(oldSid) {
+  const raw = await rdb.get(`sess:${oldSid}`);
+  await rdb.del(`sess:${oldSid}`);                  // kill the pre-login ID
+  const newSid = randomBytes(32).toString("hex");   // brand-new value
+  await rdb.setEx(`sess:${newSid}`, 15 * 60, raw);
+  return newSid;
+}
+```
+
 Part III / Types of Authentication
 
 ## 07 Stateful Authentication
@@ -720,6 +899,31 @@ def notes():
     return jsonify(owner=g.user["id"])
 ```
 
+JavaScript
+
+```js
+// requireSession reads the sid cookie and looks it up in Redis.
+async function requireSession(req, res, next) {
+  const sid = req.cookies.sid;
+  if (!sid) {
+    return res.status(401).json({ error: "authentication failed" });
+  }
+
+  const raw = await rdb.get(`sess:${sid}`); // null if missing or expired
+  if (raw === null) {
+    return res.status(401).json({ error: "authentication failed" });
+  }
+
+  // attach the user to the request for later handlers
+  req.user = JSON.parse(raw);
+  next();
+}
+
+app.get("/notes", requireSession, (req, res) => {
+  res.json({ owner: req.user.id });
+});
+```
+
 ## 08 Stateless Authentication
 
 The client sends email/username and password on the login request. The server checks authenticity; if correct, it generates a **signed JWT** using its own **secret key** (stored securely so it can both sign and verify). The token embeds the user's info, user ID, role, etc., and is returned to the client. On all later requests, the client identifies itself by sending the JWT, by convention in the `Authorization` header. The server extracts the token, verifies it with the secret, recovers the user ID, and on success completes the request; otherwise it returns **401 Unauthorized** or **403 Forbidden**.
@@ -775,6 +979,26 @@ def require_jwt(view):
         g.user = {"id": claims["sub"], "role": claims["role"]}
         return view(*args, **kwargs)
     return wrapper
+```
+
+JavaScript
+
+```js
+function requireJWT(req, res, next) {
+  const h = req.get("Authorization") ?? "";
+  if (!h.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "authentication failed" });
+  }
+
+  try {
+    const claims = verify(h.slice("Bearer ".length));
+    // no store lookup, identity comes from the verified token
+    req.user = { id: claims.sub, role: claims.role };
+    next();
+  } catch {
+    res.status(401).json({ error: "authentication failed" });
+  }
+}
 ```
 
 ## 09 Stateful vs Stateless: Choosing
@@ -873,6 +1097,40 @@ def require_api_key(view):
         g.client = client
         return view(*args, **kwargs)
     return wrapper
+```
+
+JavaScript
+
+```js
+import { createHash, timingSafeEqual } from "node:crypto";
+
+// Store only the HASH of issued keys (like passwords).
+// On each call, hash the presented key and constant-time compare.
+function hashKey(k) {
+  return createHash("sha256").update(k).digest();
+}
+
+function requireAPIKey(lookup) {
+  return async (req, res, next) => {
+    const key = req.get("X-API-Key") ?? "";
+    const presented = hashKey(key);
+
+    const client = await lookup(presented.toString("hex")); // your DB lookup
+    if (!client) {
+      return res.status(401).json({ error: "authentication failed" });
+    }
+
+    // timingSafeEqual avoids leaking the answer through response time.
+    // Both sides are SHA-256 digests, so the lengths always match.
+    const stored = Buffer.from(client.keyHash, "hex");
+    if (!timingSafeEqual(presented, stored)) {
+      return res.status(401).json({ error: "authentication failed" });
+    }
+
+    req.client = client; // check scopes, quota, expiry here
+    next();
+  };
+}
 ```
 
 Part IV / OAuth & OpenID Connect
@@ -1049,6 +1307,36 @@ def exchange(code: str, verifier: str) -> dict:
     return resp.json()   # access_token, refresh_token, id_token, ...
 ```
 
+JavaScript
+
+```js
+import { createHash, randomBytes } from "node:crypto";
+
+// Build the PKCE pair before redirecting the user.
+function newPKCE() {
+  const verifier = randomBytes(32).toString("base64url");
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  return { verifier, challenge };
+}
+
+// Leg 2: exchange the code (send code_verifier, not the secret).
+async function exchange(code, verifier) {
+  const resp = await fetch("https://auth.example/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: "https://notes.app/callback",
+      client_id: "note_app",
+      code_verifier: verifier,
+    }),
+  });
+  if (!resp.ok) throw new Error(`token exchange failed: ${resp.status}`);
+  return resp.json(); // access_token, refresh_token, id_token, ...
+}
+```
+
 <Callout type="info" title="The gap OAuth left open">
 OAuth is excellent for **authorization** (delegating _what_ a client may do) but it did **not** solve **authentication** (proving _who_ the user is). Recall: authentication = identity (who are you, your name, your ID); authorization = permissions (what can you do). OAuth solved the latter via delegation, but not the former. That gap is what OpenID Connect fills.
 </Callout>
@@ -1165,6 +1453,25 @@ def dead_zone():
     return jsonify(notes=[...])
 ```
 
+JavaScript
+
+```js
+// requireRole runs AFTER an auth middleware that set req.user.
+function requireRole(...roles) {
+  const allowed = new Set(roles);
+  return (req, res, next) => {
+    if (!allowed.has(req.user.role)) {
+      return res.status(403).json({ error: "forbidden" }); // 403
+    }
+    next();
+  };
+}
+
+// usage: only admins reach the dead-zone handler. Express composes middleware
+// left to right, so this reads in the order it runs.
+app.get("/admin/deadzone", requireJWT, requireRole("admin"), deadZoneHandler);
+```
+
 ### Deep dive: role hierarchy, ABAC, and beyond
 
 #### Where plain RBAC strains: role explosion
@@ -1237,6 +1544,27 @@ def can_edit(s: Subject, r: Resource, hour: int) -> bool:
 # usage inside a view, after auth populated the subject:
 # if not can_edit(subj, doc, datetime.now().hour):
 #     return jsonify(error="forbidden"), 403
+```
+
+JavaScript
+
+```js
+// Policy: can `subject` edit `resource`, given the environment?
+function canEdit(subject, resource, hour) {
+  if (resource.archived) return false;
+
+  const owns = subject.id === resource.ownerId;
+  const sameDept = subject.dept === resource.dept;
+  const businessHours = hour >= 9 && hour < 18;
+
+  // owner OR same-department editor, only in business hours
+  return (owns || (sameDept && subject.role === "editor")) && businessHours;
+}
+
+// usage inside a handler, after auth has populated the subject:
+// if (!canEdit(subject, doc, new Date().getHours())) {
+//   return res.status(403).json({ error: "forbidden" });
+// }
 ```
 
 ## 17 Error Messages & Timing Attacks
@@ -1325,6 +1653,40 @@ def authenticate(email: str, pw: str):
             time.sleep(FLOOR - elapsed)
 ```
 
+JavaScript
+
+```js
+import { setTimeout as sleep } from "node:timers/promises";
+import bcrypt from "bcrypt";
+
+// A real precomputed bcrypt hash at the same cost factor as the stored ones.
+// It must be well formed: bcrypt.compare against a malformed string returns
+// immediately, which would reintroduce the very timing signal we are closing.
+const DUMMY_HASH = "$2b$12$MlPFjO2W9IgbuPV6b6OB.uUYKEo50.mnic586PzoswScTfAqE6jRK";
+const FLOOR_MS = 250; // equalize every path
+
+async function authenticate(email, pw) {
+  const start = performance.now();
+  try {
+    const user = await lookupByEmail(email);
+    if (!user) {
+      // still run a dummy hash so the expensive step is paid either way
+      await bcrypt.compare(pw, DUMMY_HASH);
+      return { user: null, error: "authentication failed" };
+    }
+    // bcrypt.compare is constant-time internally
+    if (!(await bcrypt.compare(pw, user.hash))) {
+      return { user: null, error: "authentication failed" };
+    }
+    return { user, error: null }; // success: issue session / JWT
+  } finally {
+    // pad so all outcomes take ~the same wall-clock time
+    const elapsed = performance.now() - start;
+    if (elapsed < FLOOR_MS) await sleep(FLOOR_MS - elapsed);
+  }
+}
+```
+
 ## 18 Debug Cheat-Sheet
 
 The whole manual, compressed to what you reach for under pressure.
@@ -1348,4 +1710,4 @@ The whole manual, compressed to what you reach for under pressure.
 | Timing         | Constant-time compare + equalize response time.                                      |
 | Production tip | Roll your own to learn; use an auth provider to ship.                                |
 
-Backend from First Principles / Chapter 04 / Auth. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 04 / Auth. Code targets Go 1.22+, Python 3.11+ and Node.js 20+.
