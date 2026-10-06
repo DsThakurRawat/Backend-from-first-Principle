@@ -40,6 +40,7 @@ The documentation is organized into the following topics:
 24. **WebSockets and Real-Time Communication** - Building real-time features using WebSockets.
 25. **OpenAPI Specification** - Defining machine-readable API contracts and generating documentation, tests, and clients.
 26. **AI Agents and Loop Engineering** - Building bounded LangGraph agents with tools, workflows, and backend integration.
+27. **URL Shortener System Design (HLD & LLD)** - Building a scalable URL shortener from first principles. Master distributed ID generation, hot key caching, and handling millions of redirects per second.
 
 ## Getting Started
 
