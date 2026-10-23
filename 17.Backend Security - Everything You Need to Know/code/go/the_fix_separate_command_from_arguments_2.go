@@ -1,8 +1,5 @@
 import "os/exec"
 
-// X VULNERABLE ,  passes through shell interpreter
-cmd := exec.Command("sh", "-c", "ffmpeg -i input.jpg -o "+userFilename)
-
 // OK SAFE ,  command and each argument are separate params
 // Shell never sees userFilename ,  it goes straight to the process
 cmd := exec.Command(
