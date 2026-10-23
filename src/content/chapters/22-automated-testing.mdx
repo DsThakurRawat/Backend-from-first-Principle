@@ -2,7 +2,7 @@
 order: 22
 title: "Automated Testing"
 navTitle: "Automated Testing"
-summary: "A first-principles walkthrough of how backend engineers verify their systems, from a single unit test and the test-double vocabulary, through integration tests against real databases and HTTP handlers, contract tests between services, end-to-end checks, coverage and flakiness, and into TDD, load testing, and tests in the deployment pipeline. Written to explain not just what each kind of test does but why it exists and how to write it well. Examples in both Go ( testing ) and Python ( pytest )."
+summary: "A first-principles walkthrough of how backend engineers verify their systems, from a single unit test and the test-double vocabulary, through integration tests against real databases and HTTP handlers, contract tests between services, end-to-end checks, coverage and flakiness, and into TDD, load testing, and tests in the deployment pipeline. Written to explain not just what each kind of test does but why it exists and how to write it well. Examples in Go (testing), Python (pytest), JavaScript (node:test), TypeScript (Vitest) and Java (JUnit 5)."
 readingTime: "2-3 hours"
 keywords:
   - "testing"
@@ -60,7 +60,7 @@ Every good test, at every layer, has the same three-beat structure, **Arrange, A
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // File naming convention: foo.go is tested by foo_test.go in the same package.
@@ -95,6 +95,66 @@ def test_discount_applies_percentage():
     assert total == 180
 ```
 
+```js
+// Node ships a test runner: `node --test` finds *.test.js files.
+// No framework to install, like Go, the platform is the framework.
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+
+test('applyDiscount applies the percentage', () => {
+  // Arrange, set up inputs (and any doubles)
+  const cart = { subtotal: 200 }
+  const coupon = { percent: 10 }
+
+  // Act, the ONE operation under test
+  const total = applyDiscount(cart, coupon)
+
+  // Assert, a strict-equal failure prints actual vs expected
+  assert.equal(total, 180)
+})
+```
+
+```ts
+// Vitest: Jest-compatible API, runs TypeScript directly, no build step.
+import { describe, expect, it } from 'vitest'
+import { applyDiscount } from './discount'
+
+describe('applyDiscount', () => {
+  it('applies the percentage', () => {
+    // Arrange, set up inputs (and any doubles)
+    const cart = { subtotal: 200 }
+    const coupon = { percent: 10 }
+
+    // Act, the ONE operation under test
+    const total = applyDiscount(cart, coupon)
+
+    // Assert, expect() prints a diff of actual vs expected on failure
+    expect(total).toBe(180)
+  })
+})
+```
+
+```java
+// JUnit 5: src/test/java mirrors src/main/java; methods marked @Test.
+import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+
+class DiscountTest {
+    @Test
+    void appliesPercentage() {
+        // Arrange, set up inputs (and any doubles)
+        Cart cart = new Cart(200);
+        Coupon coupon = new Coupon(10);
+
+        // Act, the ONE operation under test
+        int total = Discount.apply(cart, coupon);
+
+        // Assert, AssertJ reads as a sentence and explains the failure
+        assertThat(total).as("200 with 10%% off").isEqualTo(180);
+    }
+}
+```
+
 #### What makes an assertion good
 
 - **Test behavior, not implementation.** Assert the observable result (_the discount is applied_), not internal mechanics (_this private helper was called_). Implementation-coupled tests break on every refactor and defeat the whole purpose (sec 1, sec 20).
@@ -102,7 +162,7 @@ def test_discount_applies_percentage():
 - **Deterministic.** Same inputs, same result, every run, in any order, the property sec 14 is all about protecting.
 
 <Callout type="info" title="The standard tools">
-This manual uses each language's mainstream stack: Go's built-in `testing` package with `go test` (no framework needed; the standard library is the framework), and Python's **pytest**, the de-facto standard with fixtures, parametrization, and plain-`assert` rewriting. Both are what you'll find in real backend repos.
+This manual uses each language's mainstream stack: Go's built-in `testing` package with `go test` (no framework needed; the standard library is the framework), Python's **pytest**, the de-facto standard with fixtures, parametrization, and plain-`assert` rewriting; Node's built-in **`node:test`** runner for JavaScript (no dependency, like Go's); **Vitest** for TypeScript, which runs `.ts` files directly with a Jest-compatible API; and **JUnit 5** with AssertJ and Mockito for Java. These are what you'll find in real backend repos.
 </Callout>
 
 Part II / Unit Tests
@@ -119,7 +179,7 @@ The natural target for unit tests is your **domain/business logic**: the pure ca
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // The unit: pure logic, no I/O, trivially testable.
@@ -161,6 +221,73 @@ def test_accepts_valid_password():
 # Run:  pytest            (-v verbose, -k strong to filter by name)
 ```
 
+```js
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+
+// The unit: pure logic, no I/O, trivially testable.
+export function isStrongPassword(p) {
+  if (p.length < 8) return false
+  return /[0-9]/.test(p) && /[A-Z]/.test(p)
+}
+
+test('rejects a short password', () => {
+  assert.equal(isStrongPassword('short1A'), false) // 7 chars -> too short
+})
+
+test('accepts a valid password', () => {
+  assert.equal(isStrongPassword('longEnough9'), true) // meets all rules
+})
+
+// Run:  node --test        (--test-name-pattern=short to filter)
+```
+
+```ts
+import { expect, it } from 'vitest'
+
+// The unit: pure logic, no I/O, trivially testable.
+export function isStrongPassword(p: string): boolean {
+  if (p.length < 8) return false
+  return /[0-9]/.test(p) && /[A-Z]/.test(p)
+}
+
+it('rejects a short password', () => {
+  expect(isStrongPassword('short1A')).toBe(false) // 7 chars -> too short
+})
+
+it('accepts a valid password', () => {
+  expect(isStrongPassword('longEnough9')).toBe(true) // meets all rules
+})
+
+// Run:  npx vitest         (-t short to filter by name; watch mode by default)
+```
+
+```java
+import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+
+class PasswordsTest {
+    // The unit: pure logic, no I/O, trivially testable.
+    static boolean isStrongPassword(String p) {
+        if (p.length() < 8) return false;
+        return p.chars().anyMatch(Character::isDigit)
+            && p.chars().anyMatch(Character::isUpperCase);
+    }
+
+    @Test
+    void rejectsShortPassword() {
+        assertThat(isStrongPassword("short1A")).isFalse();     // 7 chars -> too short
+    }
+
+    @Test
+    void acceptsValidPassword() {
+        assertThat(isStrongPassword("longEnough9")).isTrue();  // meets all rules
+    }
+}
+
+// Run:  ./mvnw test        (-Dtest=PasswordsTest to filter)
+```
+
 If a unit is hard to test, the design is the smell
 
 When a function is painful to unit-test, it reaches into a global, opens a connection, reads the clock, or does ten things, the test is telling you the _code_ is poorly factored, not that testing is hard. The fix is almost always to separate pure logic from I/O and inject dependencies (sec 6). Testability and good design are the same property viewed from two angles.
@@ -183,7 +310,7 @@ The deepest distinction: **stubs/fakes** support _state_ verification (you asser
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // The unit depends on an interface, the seam that lets us substitute a double (sec 6).
@@ -236,7 +363,89 @@ def test_greet_sends_email():
     notifier.send.assert_called_once_with("a@x.com", "Hi Ada")
 ```
 
-Go tends to hand-write small doubles against an interface (explicit, no magic); Python's `unittest.mock` generates flexible doubles that both stub returns and record calls. Same concept, different ergonomics.
+```js
+import { test, mock } from 'node:test'
+import assert from 'node:assert/strict'
+
+// The unit depends on injected collaborators (sec 6).
+async function greet(repo, notifier, userId) {
+  const user = await repo.findById(userId) // collaborator 1
+  await notifier.send(user.email, `Hi ${user.name}`) // collaborator 2 (the interaction)
+}
+
+test('greet sends an email', async () => {
+  // STUB: a plain object with a canned answer, no library needed
+  const repo = { findById: async () => ({ email: 'a@x.com', name: 'Ada' }) }
+  // SPY: mock.fn() records every call it receives
+  const notifier = { send: mock.fn(async () => {}) }
+
+  await greet(repo, notifier, 'u1') // act
+
+  // assert the INTERACTION happened exactly as expected
+  assert.equal(notifier.send.mock.callCount(), 1)
+  assert.deepEqual(notifier.send.mock.calls[0].arguments, ['a@x.com', 'Hi Ada'])
+})
+```
+
+```ts
+import { expect, it, vi } from 'vitest'
+
+interface User { email: string; name: string }
+interface UserRepo { findById(id: string): Promise<User> }
+interface Notifier { send(to: string, msg: string): Promise<void> }
+
+// The unit depends on interfaces, the seam that lets us substitute a double (sec 6).
+async function greet(repo: UserRepo, notifier: Notifier, userId: string): Promise<void> {
+  const user = await repo.findById(userId) // collaborator 1
+  await notifier.send(user.email, `Hi ${user.name}`) // collaborator 2 (the interaction)
+}
+
+it('greet sends an email', async () => {
+  // STUB: typed against the interface, so a wrong shape is a compile error
+  const repo: UserRepo = { findById: async () => ({ email: 'a@x.com', name: 'Ada' }) }
+  // SPY/MOCK: vi.fn() records calls
+  const notifier: Notifier = { send: vi.fn().mockResolvedValue(undefined) }
+
+  await greet(repo, notifier, 'u1') // act
+
+  // assert the INTERACTION happened exactly as expected
+  expect(notifier.send).toHaveBeenCalledOnce()
+  expect(notifier.send).toHaveBeenCalledWith('a@x.com', 'Hi Ada')
+})
+```
+
+```java
+import static org.mockito.Mockito.*;
+import org.junit.jupiter.api.Test;
+
+// The unit depends on interfaces, the seam that lets us substitute a double (sec 6).
+interface UserRepo { User findById(String id); }
+interface Notifier { void send(String to, String msg); }
+
+record Greeter(UserRepo repo, Notifier notifier) {
+    void greet(String id) {
+        User u = repo.findById(id);                  // collaborator 1
+        notifier.send(u.email(), "Hi " + u.name());  // collaborator 2 (the interaction)
+    }
+}
+
+class GreeterTest {
+    @Test
+    void sendsEmail() {
+        // STUB: Mockito mock configured to return a canned user
+        UserRepo repo = mock(UserRepo.class);
+        when(repo.findById("u1")).thenReturn(new User("a@x.com", "Ada"));
+        Notifier notifier = mock(Notifier.class);    // records calls (spy/mock)
+
+        new Greeter(repo, notifier).greet("u1");     // act
+
+        // assert the INTERACTION happened exactly as expected
+        verify(notifier, times(1)).send("a@x.com", "Hi Ada");
+    }
+}
+```
+
+Go tends to hand-write small doubles against an interface (explicit, no magic); Python's `unittest.mock` generates flexible doubles that both stub returns and record calls. JavaScript sits in between: a plain object is already a stub, and `mock.fn()` / `vi.fn()` add call recording; TypeScript types those objects against the same interface the real code uses. Java's Mockito generates doubles from an interface or class, much like Python's `Mock`, with `when(...)` for stubbing and `verify(...)` for interactions. Same concept, different ergonomics.
 
 Don't mock what you don't own
 
@@ -252,7 +461,7 @@ The single technique that makes unit testing possible is **dependency injection 
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // Depend on an INTERFACE, not a concrete type, that interface is the seam.
@@ -304,17 +513,116 @@ def test_place_rejects_invalid_total():
 # In production:  OrderService(postgres_repo), same code, real dependency.
 ```
 
+```js
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+
+// Accept the collaborator as a constructor argument, that parameter is the seam.
+class OrderService {
+  constructor(repo) {
+    this.repo = repo // injected, not created inside
+  }
+
+  async place(order) {
+    if (order.total <= 0) throw new Error('invalid total') // pure logic, easily tested
+    await this.repo.save(order)
+  }
+}
+
+// In tests: a FAKE in-memory repo (no real DB needed)
+class FakeRepo {
+  saved = []
+  async save(order) { this.saved.push(order) }
+}
+
+test('place rejects an invalid total', async () => {
+  const svc = new OrderService(new FakeRepo())
+  await assert.rejects(svc.place({ total: 0 }), /invalid total/)
+})
+
+// In production:  new OrderService(postgresRepo), same code, real dependency.
+```
+
+```ts
+import { expect, it } from 'vitest'
+
+interface Order { total: number }
+
+// Depend on an INTERFACE, not a concrete class, that interface is the seam.
+interface OrderRepo { save(o: Order): Promise<void> }
+
+class OrderService {
+  constructor(private readonly repo: OrderRepo) {} // injected, not constructed inside
+
+  async place(o: Order): Promise<void> {
+    if (o.total <= 0) throw new Error('invalid total') // pure logic, easily tested
+    await this.repo.save(o)
+  }
+}
+
+// In tests: a FAKE in-memory repo (no real DB needed)
+class FakeRepo implements OrderRepo {
+  saved: Order[] = []
+  async save(o: Order) { this.saved.push(o) }
+}
+
+it('place rejects an invalid total', async () => {
+  const svc = new OrderService(new FakeRepo())
+  await expect(svc.place({ total: 0 })).rejects.toThrow('invalid total')
+})
+
+// In production:  new OrderService(new PostgresOrderRepo(pool)), same code.
+```
+
+```java
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+// Depend on an INTERFACE, not a concrete type, that interface is the seam.
+interface OrderRepo { void save(Order o); }
+
+// Constructor injection: Spring passes the real repo in production,
+// a test passes whatever it likes. No framework needed in the test.
+class OrderService {
+    private final OrderRepo repo;                  // injected, not constructed inside
+    OrderService(OrderRepo repo) { this.repo = repo; }
+
+    void place(Order o) {
+        if (o.total() <= 0) throw new IllegalArgumentException("invalid total"); // pure logic
+        repo.save(o);
+    }
+}
+
+// In tests: a FAKE in-memory repo (no real DB needed)
+class FakeRepo implements OrderRepo {
+    final List<Order> saved = new ArrayList<>();
+    public void save(Order o) { saved.add(o); }
+}
+
+class OrderServiceTest {
+    @Test
+    void rejectsInvalidTotal() {
+        OrderService svc = new OrderService(new FakeRepo());
+        assertThatThrownBy(() -> svc.place(new Order(0)))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+}
+// In production:  Spring injects the JPA/JDBC OrderRepo, same code.
+```
+
 Design for testability = good design
 
 DI, small interfaces, and separating pure logic from I/O aren't "test tricks", they're the same principles that make code modular and maintainable. A codebase that's easy to test is, almost by definition, well-structured. The test suite is a continuous design-quality signal.
 
 ## Table-Driven & Parametrized Tests
 
-Most logic needs checking against _many_ input/output pairs, happy path, edge cases, boundaries, error cases. Copy-pasting a test per case is noise. Both languages have an idiom for "same test body, many cases": Go's **table-driven tests** and pytest's **parametrize**. This is where you get cheap, dense coverage of branches and edges, the real workhorse of the unit layer.
+Most logic needs checking against _many_ input/output pairs, happy path, edge cases, boundaries, error cases. Copy-pasting a test per case is noise. Every language has an idiom for "same test body, many cases": Go's **table-driven tests**, pytest's **parametrize**, a loop of `test()` calls in `node:test`, Vitest's **`it.each`**, and JUnit's **`@ParameterizedTest`**. This is where you get cheap, dense coverage of branches and edges, the real workhorse of the unit layer.
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 func TestApplyDiscount(t *testing.T) {
@@ -364,6 +672,69 @@ def test_apply_discount(subtotal, percent, expected):
 # `pytest -k rounds-down` runs just one case; each shows up as its own test.
 ```
 
+```js
+import { describe, test } from 'node:test'
+import assert from 'node:assert/strict'
+
+// The TABLE: each row is one case with a name.
+const cases = [
+  { name: 'ten percent off 200', subtotal: 200, percent: 10, want: 180 },
+  { name: 'zero discount', subtotal: 100, percent: 0, want: 100 },
+  { name: 'full discount', subtotal: 100, percent: 100, want: 0 },
+  { name: 'rounds down', subtotal: 99, percent: 10, want: 90 }, // boundary/edge case
+]
+
+describe('applyDiscount', () => {
+  // One test() per row: failures report the case name.
+  for (const c of cases) {
+    test(c.name, () => {
+      const got = applyDiscount({ subtotal: c.subtotal }, { percent: c.percent })
+      assert.equal(got, c.want)
+    })
+  }
+})
+
+// `node --test --test-name-pattern="rounds down"` runs just one case.
+```
+
+```ts
+import { expect, it } from 'vitest'
+
+// it.each: one named test per row; $name interpolates into the title.
+it.each([
+  { name: 'ten percent off 200', subtotal: 200, percent: 10, want: 180 },
+  { name: 'zero discount', subtotal: 100, percent: 0, want: 100 },
+  { name: 'full discount', subtotal: 100, percent: 100, want: 0 },
+  { name: 'rounds down', subtotal: 99, percent: 10, want: 90 }, // boundary/edge case
+])('applyDiscount: $name', ({ subtotal, percent, want }) => {
+  expect(applyDiscount({ subtotal }, { percent })).toBe(want)
+})
+
+// `npx vitest -t "rounds down"` runs just one case.
+```
+
+```java
+import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+
+class DiscountTableTest {
+    // Each CSV row is one case; the name template labels it in the report.
+    @ParameterizedTest(name = "{0}")
+    @CsvSource({
+        "ten percent off 200, 200, 10,  180",
+        "zero discount,       100, 0,   100",
+        "full discount,       100, 100, 0",
+        "rounds down,         99,  10,  90",   // boundary/edge case
+    })
+    void applyDiscount(String name, int subtotal, int percent, int want) {
+        assertThat(Discount.apply(new Cart(subtotal), new Coupon(percent))).isEqualTo(want);
+    }
+}
+
+// Each row shows up as its own test in the IDE and the build report.
+```
+
 <Callout type="info" title="Name every case">
 The payoff of these idioms isn't just less code, it's that each case becomes an _independently named, independently runnable_ test. When one breaks, the report names the exact case ("rounds-down failed"), and you can re-run only it. Always give cases descriptive names; an anonymous row that fails just says "case 3," which helps no one.
 </Callout>
@@ -392,7 +763,7 @@ The recurring question: how do you get a "real" database in a test without depen
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // Build tag keeps slow integration tests out of the fast unit run:
@@ -450,7 +821,112 @@ def test_save_and_find(repo):
     assert got.email == "a@x.com"                   # round-trips correctly
 ```
 
-Both isolate slow tests behind a flag/marker (Go build tags, pytest markers) so the millisecond unit suite stays fast and the heavier DB tests run on demand or in CI (sec 19).
+```js
+// user-repo.integration.test.js, kept out of the unit run by its name:
+//   node --test "**/*.integration.test.js"
+import { after, before, beforeEach, test } from 'node:test'
+import assert from 'node:assert/strict'
+import { PostgreSqlContainer } from '@testcontainers/postgresql'
+import pg from 'pg'
+
+let container, pool, repo
+
+before(async () => {
+  // Arrange: start a REAL Postgres in a throwaway container, once per file
+  container = await new PostgreSqlContainer('postgres:16').start()
+  pool = new pg.Pool({ connectionString: container.getConnectionUri() })
+  await runMigrations(pool) // apply the same schema as production
+  repo = new UserRepo(pool)
+})
+
+after(async () => {
+  await pool.end()
+  await container.stop() // torn down after the file's tests
+})
+
+beforeEach(() => pool.query('TRUNCATE users')) // clean state per test
+
+test('save and find round-trip through real SQL', async () => {
+  await repo.save({ id: 'u1', email: 'a@x.com' }) // act through REAL SQL
+  const got = await repo.findById('u1')
+  assert.equal(got.email, 'a@x.com') // round-trips correctly
+})
+```
+
+```ts
+// user-repo.integration.test.ts, run with its own config:
+//   npx vitest --config vitest.integration.config.ts
+import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest'
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { Pool } from 'pg'
+
+let container: StartedPostgreSqlContainer
+let pool: Pool
+let repo: UserRepo
+
+beforeAll(async () => {
+  // Arrange: start a REAL Postgres in a throwaway container
+  container = await new PostgreSqlContainer('postgres:16').start()
+  pool = new Pool({ connectionString: container.getConnectionUri() })
+  await runMigrations(pool) // same schema as production
+  repo = new UserRepo(pool)
+}, 60_000) // pulling the image on a cold machine takes a while
+
+afterAll(async () => {
+  await pool.end()
+  await container.stop()
+})
+
+beforeEach(async () => {
+  await pool.query('TRUNCATE users') // keep tests independent (sec 8)
+})
+
+it('round-trips a user through real SQL', async () => {
+  await repo.save({ id: 'u1', email: 'a@x.com' })
+  await expect(repo.findById('u1')).resolves.toMatchObject({ email: 'a@x.com' })
+})
+```
+
+```java
+import static org.assertj.core.api.Assertions.assertThat;
+
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.jdbc.JdbcTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+@Tag("integration")                // run with:  ./mvnw verify -Dgroups=integration
+@JdbcTest                          // just the JDBC slice: DataSource + schema migrations
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE) // no H2 swap
+@Testcontainers
+@Import(UserRepo.class)
+class UserRepoIT {
+    // A REAL Postgres in a throwaway container, shared by the class's tests.
+    // @ServiceConnection points Spring's DataSource at it automatically.
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16");
+
+    @Autowired UserRepo repo;
+
+    @Test
+    void saveAndFind() {
+        repo.save(new User("u1", "a@x.com"));            // act through REAL SQL
+        assertThat(repo.findById("u1"))
+            .hasValueSatisfying(u -> assertThat(u.email()).isEqualTo("a@x.com"));
+    }
+    // @JdbcTest wraps each test in a transaction and rolls it back at the
+    // end, so every test starts from the same clean state.
+}
+```
+
+Each isolates slow tests behind a flag or naming rule (Go build tags, pytest markers, a separate file glob or Vitest config, JUnit `@Tag`) so the millisecond unit suite stays fast and the heavier DB tests run on demand or in CI (sec 19).
 
 Test against the real engine, not a substitute
 
@@ -458,11 +934,11 @@ Swapping in SQLite "because it's fast" when production runs Postgres is a classi
 
 ## Testing HTTP Handlers & APIs
 
-Your handlers (the HTTP and REST chapters) are a prime integration target: you want to fire a real request at your routing + handler + serialization stack and assert on the real response, status code, headers, body, _without_ binding a socket or running a server over the network. Both ecosystems provide an in-process test client that drives the handler directly: Go's `net/http/httptest` and the `TestClient` shipped with FastAPI/Starlette (and Flask's equivalent).
+Your handlers (the HTTP and REST chapters) are a prime integration target: you want to fire a real request at your routing + handler + serialization stack and assert on the real response, status code, headers, body, _without_ binding a socket or running a server over the network. Every ecosystem provides an in-process test client that drives the handler directly: Go's `net/http/httptest`, the `TestClient` shipped with FastAPI/Starlette (and Flask's equivalent), `supertest` for Express, and Spring's `MockMvc`.
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 import (
@@ -513,6 +989,84 @@ def test_create_user_returns_201():
 # so the handler runs but the repo is in-memory, an integration test of the web layer.
 ```
 
+```js
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import request from 'supertest'
+import { createApp } from '../src/app.js' // the REAL Express app (deps may be fakes sec 6)
+
+// Export the app WITHOUT calling listen(): supertest binds an ephemeral
+// port itself, fires the request, and closes it again.
+const app = createApp({ userRepo: new FakeUserRepo() })
+
+test('POST /api/v1/users returns 201', async () => {
+  // Act: fire a real request through routing + handler + serialization
+  const res = await request(app)
+    .post('/api/v1/users')
+    .send({ email: 'a@x.com', name: 'Ada' }) // sets Content-Type: application/json
+
+  // Assert: on the real response, status, headers, body
+  assert.equal(res.status, 201)
+  assert.match(res.headers['content-type'], /application\/json/)
+  assert.equal(res.body.email, 'a@x.com')
+})
+```
+
+```ts
+import { expect, it } from 'vitest'
+import request from 'supertest'
+import { createApp } from '../src/app' // the REAL Express app
+
+const app = createApp({ userRepo: new FakeUserRepo() }) // fake repo: web layer only
+
+it('POST /api/v1/users returns 201', async () => {
+  // supertest's own expect() asserts status and headers inline
+  const res = await request(app)
+    .post('/api/v1/users')
+    .send({ email: 'a@x.com', name: 'Ada' })
+    .expect(201)
+    .expect('Content-Type', /application\/json/)
+
+  expect(res.body).toMatchObject({ email: 'a@x.com', name: 'Ada' })
+})
+```
+
+```java
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+// @WebMvcTest boots ONLY the web layer: routing, the real controller,
+// JSON (de)serialization, validation and error handlers. No server, no socket.
+@WebMvcTest(UserController.class)
+class UserControllerTest {
+    @Autowired MockMvc mvc;
+    @MockitoBean UserService users;   // the layer below is a double (sec 6)
+
+    @Test
+    void createUserReturns201() throws Exception {
+        when(users.create(any())).thenReturn(new User("u1", "a@x.com", "Ada"));
+
+        mvc.perform(post("/api/v1/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"email":"a@x.com","name":"Ada"}"""))
+            .andExpect(status().isCreated())
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.email").value("a@x.com"));
+    }
+}
+// For the whole request path with a real DB, use @SpringBootTest instead.
+```
+
 <Callout type="info" title="Choose your blast radius">
 These tests are flexible: wire in a _fake_ repository and you're integration-testing just the web layer (routing, decoding, status codes, error envelopes) fast and deterministically; wire in a _real_ DB via testcontainers (sec 9) and you've got a broader integration test of the whole request path. Pick the scope deliberately per test, narrower is faster and more precise; wider is more realistic.
 </Callout>
@@ -555,9 +1109,9 @@ A close cousin is the **smoke test**: a tiny set of E2E checks run right after a
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
-```bash
+```bash tab="Go"
 # Built into the toolchain, no extra dependency.
 go test -cover ./...                       # prints % per package
 
@@ -566,7 +1120,7 @@ go tool cover -func=cover.out              # per-function breakdown
 go tool cover -html=cover.out              # open an annotated, line-by-line HTML view
 ```
 
-```text
+```bash tab="Python"
 # Via the coverage.py / pytest-cov plugin.
 pip install pytest-cov
 
@@ -574,6 +1128,33 @@ pytest --cov=app                           # coverage for the `app` package
 pytest --cov=app --cov-report=term-missing # show exactly which lines are UNcovered
 pytest --cov=app --cov-report=html         # browsable htmlcov/ report
 pytest --cov=app --cov-branch              # branch coverage, not just line
+```
+
+```bash tab="JavaScript"
+# Built into Node's test runner (V8 coverage), no extra dependency.
+node --test --experimental-test-coverage   # line, branch & function % per file
+
+# Or c8, which turns the same V8 data into standard reports:
+npx c8 --reporter=text --reporter=html node --test   # html lands in coverage/
+npx c8 --check-coverage --branches 80 node --test    # fail below a floor
+```
+
+```bash tab="TypeScript"
+# Vitest's v8 provider maps coverage back to the .ts source lines.
+npm i -D @vitest/coverage-v8
+
+npx vitest run --coverage                  # text summary + coverage/ html
+npx vitest run --coverage --coverage.reporter=text --coverage.reporter=html
+# floors live in vitest.config.ts: coverage: { thresholds: { branches: 80 } }
+```
+
+```bash tab="Java"
+# JaCoCo: a Maven/Gradle plugin that instruments bytecode during tests.
+./mvnw test jacoco:report                  # html in target/site/jacoco/
+./gradlew test jacocoTestReport            # html in build/reports/jacoco/
+
+# The report shows line AND branch coverage (the yellow/red diamonds).
+# A floor that fails the build: jacoco:check with a BRANCH COVEREDRATIO rule.
 ```
 
 #### Line vs branch coverage
@@ -607,7 +1188,7 @@ Tests need data and a known starting state, and how you build them decides wheth
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // Go favors explicit helpers over magic. t.Helper() keeps failure line numbers useful.
@@ -659,6 +1240,107 @@ def test_signup(temp_store):
 # Libraries like factory_boy / model_bakery scale this up for complex object graphs.
 ```
 
+```js
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { test } from 'node:test'
+
+// A FACTORY: defaults + overrides, so tests state only what they care about.
+const makeUser = (overrides = {}) => ({
+  id: 'u1',
+  email: 'default@x.com',
+  active: true, // sensible defaults
+  ...overrides,
+})
+
+// A "fixture" via the test context: setup returns the thing, t.after()
+// registers the teardown, which runs even if the test fails.
+async function tempStore(t) {
+  const dir = await mkdtemp(path.join(tmpdir(), 'store-'))
+  const store = await openStore(dir)
+  t.after(async () => {
+    await store.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+  return store
+}
+
+test('signup', async (t) => {
+  const store = await tempStore(t)
+  const user = makeUser({ email: 'ada@x.com' }) // only the relevant field is stated
+  await store.save(user)
+  // ...assert...
+})
+```
+
+```ts
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { test as base } from 'vitest'
+
+// A FACTORY: Partial<User> means overrides are type-checked field by field.
+const makeUser = (overrides: Partial<User> = {}): User => ({
+  id: 'u1',
+  email: 'default@x.com',
+  active: true, // sensible defaults
+  ...overrides,
+})
+
+// Vitest FIXTURES via test.extend: setup before use(), teardown after.
+// Injected by name, like pytest, and only built if a test asks for it.
+const test = base.extend<{ store: Store }>({
+  store: async ({}, use) => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'store-'))
+    const store = await openStore(dir)
+    await use(store) // the test runs here
+    await store.close() // teardown
+    await rm(dir, { recursive: true, force: true })
+  },
+})
+
+test('signup', async ({ store }) => {
+  const user = makeUser({ email: 'ada@x.com' }) // only the relevant field is stated
+  await store.save(user)
+  // ...assert...
+})
+```
+
+```java
+import java.nio.file.Path;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class SignupTest {
+    // A FACTORY: a builder-style helper with defaults; tests override
+    // only the fields they care about.
+    static User.Builder aUser() {
+        return User.builder().id("u1").email("default@x.com").active(true);
+    }
+
+    // FIXTURES: @TempDir is injected and deleted automatically;
+    // @BeforeEach / @AfterEach run around every test, even a failing one.
+    @TempDir Path dir;
+    Store store;
+
+    @BeforeEach
+    void openStore() { store = Store.open(dir); }
+
+    @AfterEach
+    void closeStore() { store.close(); }
+
+    @Test
+    void signup() {
+        User user = aUser().email("ada@x.com").build(); // only the relevant field
+        store.save(user);
+        // ...assert...
+    }
+}
+```
+
 Keep the relevant data visible
 
 The point of factories is to hide _irrelevant_ setup, not to hide the data a test depends on. If a test asserts something about a premium user, the word "premium" should appear _in that test_ (`make_user(tier="premium")`), not be buried in a shared fixture three files away. A reader should understand a test's premise without spelunking. Over-shared, opaque fixtures (the "mystery guest") make failures hard to diagnose and tests hard to trust.
@@ -689,11 +1371,11 @@ Code that calls `time.Now()` or `random()` directly is untestable and flaky, its
 
 #### External HTTP: stub the boundary
 
-Never hit a real third-party API in a unit/integration test, it's slow, flaky, rate-limited, and may have side effects. Both ecosystems let you intercept HTTP locally: Go's `httptest.Server` stands up a fake server you point your client at; Python's `responses`/`respx` patch the HTTP layer to return canned responses. (And recall sec 5: prefer wrapping the API behind your own interface so most tests mock _that_, reserving HTTP-level stubs for testing the client adapter itself.)
+Never hit a real third-party API in a unit/integration test, it's slow, flaky, rate-limited, and may have side effects. Every ecosystem lets you intercept HTTP locally: Go's `httptest.Server` and Java's WireMock stand up a fake server you point your client at; Python's `responses`/`respx`, undici's `MockAgent` and MSW in Node patch the HTTP layer to return canned responses. (And recall sec 5: prefer wrapping the API behind your own interface so most tests mock _that_, reserving HTTP-level stubs for testing the client adapter itself.)
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // 1) Injected clock, deterministic time.
@@ -743,6 +1425,93 @@ def test_fetch_rate():
     assert client.usd_inr() == 83.2
 ```
 
+```js
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { MockAgent, setGlobalDispatcher } from 'undici'
+
+// 1) Injected clock, deterministic time (node:test's mock.timers is an alternative).
+test('token expiry', () => {
+  const frozen = new Date('2026-01-01T12:00:00Z')
+  const tok = makeToken({ now: () => frozen, ttlMs: 3_600_000 }) // clock injected
+  assert.equal(tok.expiresAt.getTime(), frozen.getTime() + 3_600_000)
+})
+
+// 2) Stub external HTTP with undici's MockAgent, which intercepts Node's
+//    built-in fetch at the dispatcher level, no real network.
+test('fetch rate', async () => {
+  const agent = new MockAgent()
+  agent.disableNetConnect() // any un-mocked request fails loudly
+  setGlobalDispatcher(agent)
+  agent
+    .get('https://api.rates.com')
+    .intercept({ path: '/usd-inr', method: 'GET' })
+    .reply(200, { usd_inr: 83.2 }) // canned response
+
+  const client = new RatesClient('https://api.rates.com')
+  assert.equal(await client.usdInr(), 83.2)
+})
+```
+
+```ts
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { setupServer } from 'msw/node'
+
+// 1) Fake timers freeze Date.now()/new Date() for code you can't inject into.
+it('token expiry', () => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-01-01T12:00:00Z')) // frozen
+  const tok = makeToken({ ttlMs: 3_600_000 })
+  expect(tok.expiresAt).toEqual(new Date('2026-01-01T13:00:00Z'))
+  vi.useRealTimers()
+})
+
+// 2) Stub external HTTP with MSW: request handlers intercept fetch, no real network.
+const server = setupServer(
+  http.get('https://api.rates.com/usd-inr', () => HttpResponse.json({ usd_inr: 83.2 })),
+)
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+afterEach(() => server.resetHandlers())
+afterAll(() => server.close())
+
+it('fetches the rate', async () => {
+  const client = new RatesClient('https://api.rates.com')
+  await expect(client.usdInr()).resolves.toBe(83.2)
+})
+```
+
+```java
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.*;
+import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import org.junit.jupiter.api.Test;
+
+@WireMockTest   // starts a local fake HTTP server per test class
+class RatesTest {
+    // 1) Injected clock, deterministic time. java.time.Clock is the
+    //    standard seam: production passes Clock.systemUTC().
+    @Test
+    void tokenExpiry() {
+        Clock frozen = Clock.fixed(Instant.parse("2026-01-01T12:00:00Z"), ZoneOffset.UTC);
+        Token tok = Token.issue(frozen, Duration.ofHours(1));
+        assertThat(tok.expiresAt()).isEqualTo(Instant.parse("2026-01-01T13:00:00Z"));
+    }
+
+    // 2) Stub an external HTTP API with WireMock, no real network.
+    @Test
+    void fetchRate(WireMockRuntimeInfo wm) {
+        stubFor(get("/usd-inr").willReturn(okJson("{\"usd_inr\": 83.2}"))); // canned
+
+        RatesClient client = new RatesClient(wm.getHttpBaseUrl()); // point at the fake
+        assertThat(client.usdInr()).isEqualTo(83.2);
+    }
+}
+```
+
 Determinism is non-negotiable
 
 A test must produce the same result on every run, on every machine, in any order. The instant real time, real randomness, or a real network sneaks in, you've planted a future flaky failure. Inject and control all three, it's the same DI seam from sec 6 applied to the three things that change on their own.
@@ -753,14 +1522,14 @@ Functional tests prove the code is _correct_; performance tests prove it's _fast
 
 | Kind            | Question                                                 | Tool                                      |
 | --------------- | -------------------------------------------------------- | ----------------------------------------- |
-| **Benchmark**   | How fast / how many allocations for this code path?      | Go `testing.B`; Python `pytest-benchmark` |
+| **Benchmark**   | How fast / how many allocations for this code path?      | Go `testing.B`; Python `pytest-benchmark`; JS/TS tinybench, `vitest bench`; Java JMH |
 | **Load test**   | Throughput & latency under sustained concurrent traffic? | k6, Locust, Gatling, vegeta               |
 | **Stress test** | Where does it break, and how does it fail?               | same tools, ramped past capacity          |
 | **Soak test**   | Does it degrade over hours (leaks, fragmentation)?       | same tools, long duration                 |
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // Benchmarks live beside tests; the tool tunes b.N until timing is stable.
@@ -787,7 +1556,67 @@ def test_parse_event_perf(benchmark):
 # Output reports min/mean/median/stddev; --benchmark-compare flags regressions.
 ```
 
-```python title="load_test.js / a k6 load test (language-agnostic, hits the running service)"
+```js
+// bench.js, using tinybench: warms up, then runs the task for a fixed time.
+import { Bench } from 'tinybench'
+
+const payload = '{"type":"click","ts":1717000000}'
+const bench = new Bench({ time: 1000 }) // ~1s of samples per task
+
+bench.add('parseEvent', () => {
+  parseEvent(payload)
+})
+
+await bench.run()
+console.table(bench.table()) // ops/sec, average latency, margin of error
+
+// Run:  node bench.js, compare against a saved baseline to catch REGRESSIONS.
+```
+
+```ts
+// parse-event.bench.ts, Vitest's built-in benchmark mode (tinybench underneath).
+import { bench, describe } from 'vitest'
+import { parseEvent } from './parse-event'
+
+const payload = '{"type":"click","ts":1717000000}'
+
+describe('parseEvent', () => {
+  bench('parse a click event', () => {
+    parseEvent(payload)
+  })
+})
+
+// Run:  npx vitest bench
+// `--outputJson base.json` then `--compare base.json` flags regressions.
+```
+
+```java
+// JMH, the JVM's benchmark harness. A naive timing loop lies on the JVM:
+// the JIT warms up mid-loop and can delete code whose result is unused.
+// JMH handles warmup, forking and dead-code elimination for you.
+import java.util.concurrent.TimeUnit;
+import org.openjdk.jmh.annotations.*;
+
+@BenchmarkMode(Mode.AverageTime)
+@OutputTimeUnit(TimeUnit.NANOSECONDS)
+@Warmup(iterations = 3)
+@Measurement(iterations = 5)
+@Fork(1)
+@State(Scope.Benchmark)
+public class ParseEventBench {
+    byte[] payload = "{\"type\":\"click\",\"ts\":1717000000}".getBytes();
+
+    @Benchmark
+    public Event parseEvent() {
+        return EventParser.parse(payload); // returning it keeps the JIT honest
+    }
+}
+
+// Run:  java -jar target/benchmarks.jar -prof gc   (adds allocations/op)
+//   ParseEventBench.parseEvent  avgt  5  391.2 ± 4.1  ns/op
+```
+
+```js title="load_test.js / a k6 load test (language-agnostic, hits the running service)"
 import http from 'k6/http';
 import { check } from 'k6';
 
@@ -806,7 +1635,7 @@ export default function () {
   const res = http.get('https://staging.example.com/api/v1/health');
   check(res, { 'status 200': (r) => r.status === 200 });
 }
-# Run:  k6 run load_test.js, fails the build if a threshold is breached.
+// Run:  k6 run load_test.js, fails the build if a threshold is breached.
 ```
 
 Measure percentiles, against a target, not your laptop
@@ -847,7 +1676,7 @@ jobs:
 ```
 
 <Callout type="info" title="Make the suite fast &amp; parallel">
-If tests are slow, people skip them, so speed is a feature. Run tests in parallel (Go does so across packages by default and within a test via `t.Parallel()`; pytest via `pytest-xdist`), split the fast unit gate from slow integration/E2E stages, and cache dependencies. A suite that returns in under a few minutes gets run; one that takes thirty gets bypassed, and an un-run test protects nothing.
+If tests are slow, people skip them, so speed is a feature. Run tests in parallel (Go does so across packages by default and within a test via `t.Parallel()`; pytest via `pytest-xdist`; `node --test` and Vitest run files in parallel workers by default; JUnit 5 via `junit.jupiter.execution.parallel.enabled`), split the fast unit gate from slow integration/E2E stages, and cache dependencies. A suite that returns in under a few minutes gets run; one that takes thirty gets bypassed, and an un-run test protects nothing.
 </Callout>
 
 ## A Testing Strategy
@@ -902,6 +1731,6 @@ The whole manual compressed to what you reach for under pressure.
 
 **The whole topic in one breath:** automated tests exist to give you confidence to change code (sec 1), and the strategic shape is a pyramid, many fast unit tests, fewer integration, a thin E2E layer (sec 2). Every test is Arrange-Act-Assert on one behavior (sec 3). Unit tests isolate a unit (sec 4) using test doubles (sec 5) made possible by dependency injection (sec 6), with table-driven and parametrized cases for dense coverage (sec 7). Integration tests wire real dependencies together (sec 8), a real database via testcontainers (sec 9), handlers via in-process clients (sec 10), and cross-service agreement via contract tests (sec 11). E2E covers critical journeys only (sec 12); coverage is a flashlight not a goal (sec 13); flakiness is non-determinism to be eliminated (sec 14); and fixtures and factories keep setup clean (sec 15). TDD drives design in red/green/refactor loops (sec 16), determinism comes from injecting time, randomness, and the network (sec 17), performance is its own axis of benchmarks and load tests against an SLO (sec 18), and the suite earns its keep only by running as a fast gate in CI/CD (sec 19). Above all: test behavior, not implementation (sec 20).
 
-Grounded in the Go `testing` docs & pytest docs / Testcontainers / the testing- pyramid literature (Cohn, Fowler) / Go 1.22+ / Python 3.11+ examples.
+Grounded in the Go `testing` docs, pytest docs, Node test runner docs, Vitest docs & JUnit 5 user guide / Testcontainers / the testing- pyramid literature (Cohn, Fowler) / Go 1.22+ / Python 3.11+ / Node.js 20+ / TypeScript 5+ / Java 17+ examples.
 
-Backend from First Principles / Chapter 22 / Testing. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 22 / Testing. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).
