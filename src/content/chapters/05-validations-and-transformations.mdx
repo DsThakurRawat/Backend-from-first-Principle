@@ -2,7 +2,7 @@
 order: 5
 title: "Validations & Transformations."
 navTitle: "Validations & Transformations"
-summary: "A first-principles walkthrough of the rules and guidelines you keep in mind while designing APIs, the gate every piece of client data passes through before any business logic runs. Why it exists, where it lives, how it works underneath, with complete implementations in Go and Python shown side by side."
+summary: "A first-principles walkthrough of the rules and guidelines you keep in mind while designing APIs, the gate every piece of client data passes through before any business logic runs. Why it exists, where it lives, how it works underneath, with complete implementations in Go, Python and JavaScript."
 readingTime: "2-3 hours"
 keywords:
   - "validation"
@@ -155,7 +155,7 @@ Each gate only opens if the previous one passed, failure **short-circuits** to a
 In code, libraries express this as a declarative schema. Go commonly uses struct tags with `go-playground/validator`; Python uses Pydantic, where the same model both validates _and_ transforms. Here is a **complete, runnable** version of the pipeline in each:
 
 <Callout type="info">
-v Go (left) / Python (right), both shown in full, no toggle
+Go, Python and JavaScript, each shown in full
 </Callout>
 
 pipeline.goGo
@@ -254,6 +254,43 @@ def run_pipeline(raw: dict) -> CreateBook:
 #                                      have at least 5 chars"]
 # run_pipeline({"name": "Dune"}) ... still <5 -> 400
 # run_pipeline({"name": "The Hobbit"}) -> OK
+```
+
+pipeline.js JavaScript
+
+```js
+import { z } from "zod";
+
+// CreateBook is the SCHEMA. Each link in the chain is one rule:
+//   z.string()      -> type check
+//   .min(5)/.max()  -> constraint check
+//   not .optional() -> existence check
+const CreateBook = z.object({
+  name: z.string().min(5).max(100),
+});
+
+// runPipeline decodes + validates in one call.
+// Throws a 400-ready error on failure.
+export function runPipeline(raw) {
+  // safeParse runs all three layers, in order:
+  // existence -> type -> constraint
+  const result = CreateBook.safeParse(raw);
+  if (!result.success) {
+    // reshape Zod's issues into clean strings
+    const messages = result.error.issues.map(
+      (i) => `${i.path.join(".")}: ${i.message}`,
+    );
+    throw new HttpError(400, messages);
+  }
+  return result.data;
+}
+
+// runPipeline({})                     -> 400 ["name: Required"]
+// runPipeline({ name: 0 })            -> 400 ["name: Expected string,
+//                                              received number"]
+// runPipeline({ name: "ab" })         -> 400 ["name: String must contain
+//                                              at least 5 character(s)"]
+// runPipeline({ name: "The Hobbit" }) -> OK
 ```
 
 Part II / The Four Types of Validation
@@ -361,6 +398,36 @@ class TypePayload(BaseModel):
 #             arrayField=["one","two"], boolField=False) -> OK
 ```
 
+type\_validation.js JavaScript
+
+```js
+import { z } from "zod";
+
+const TypePayload = z
+  .object({
+    stringField: z.string(),
+    numberField: z.number(),
+    arrayField: z.array(z.string()), // recursive: EVERY element a string
+    boolField: z.boolean(),
+  })
+  .strict(); // reject stray keys
+
+// Strict, explicit type errors:
+//
+// TypePayload.parse({ stringField: "x", numberField: "x",
+//                     arrayField: "x", boolField: "x" })
+//   -> numberField: Expected number, received string
+//   -> arrayField:  Expected array, received string
+//   -> boolField:   Expected boolean, received string
+//
+// TypePayload.parse({ ..., arrayField: [1, 2] })
+//   -> arrayField.0: Expected string, received number
+//   -> arrayField.1: Expected string, received number
+//
+// TypePayload.parse({ stringField: "something", numberField: 10,
+//                     arrayField: ["one", "two"], boolField: false }) -> OK
+```
+
 ## Syntactic Validation
 
 Here the type is already correct (a string) but the string must follow a **specific structural pattern**. The validation algorithm checks the _shape_ of the value:
@@ -463,6 +530,32 @@ class Contact(BaseModel):
 #         date="2025-11-05")  -> OK
 ```
 
+syntactic.js JavaScript
+
+```js
+import { z } from "zod";
+
+const Contact = z.object({
+  email: z.string().email(), // local @ domain.tld
+  // country code + 7-15 digits
+  phone: z.string().regex(/^\+?[0-9]{7,15}$/, "invalid phone number format"),
+  date: z.string().date(), // only accepts YYYY-MM-DD
+});
+
+// { email: "randomstring", phone: 1234567, date: "2025-11-05" }
+//   -> email: Invalid email
+//   -> phone: Expected string, received number
+//
+// { email: "bad@", ... }
+//   -> email: Invalid email
+//
+// { ..., date: "2025-13-40" }
+//   -> date: Invalid date
+//
+// { email: "test@test.com", phone: "1234567",
+//   date: "2025-11-05" } -> OK
+```
+
 ## Semantic Validation
 
 The type is right and the syntax is right, but does the value **make sense in the real world?** Semantic checks encode domain logic:
@@ -561,6 +654,30 @@ class Profile(BaseModel):
 # Profile(dateOfBirth="1995-06-12", age=43) -> OK
 ```
 
+semantic.js JavaScript
+
+```js
+import { z } from "zod";
+
+const Profile = z.object({
+  // Type & syntax cannot express "not in the future";
+  // semantics need real logic against the real clock.
+  dateOfBirth: z
+    .string()
+    .date()
+    .refine((v) => new Date(v) <= new Date(), {
+      message: "date of birth cannot be in the future",
+    }),
+  age: z.number().int().gte(1).lte(120), // 430 -> must be <= 120
+});
+
+// { dateOfBirth: "2026-06-12", age: 43 }
+//   -> dateOfBirth: date of birth cannot be in the future
+// { dateOfBirth: "1995-06-12", age: 430 }
+//   -> age: Number must be less than or equal to 120
+// { dateOfBirth: "1995-06-12", age: 43 } -> OK
+```
+
 ## Complex / Dependent Validation
 
 The most powerful flavor: a field's rules depend on **other fields**. The pipeline can encode arbitrary cross-field logic:
@@ -653,6 +770,45 @@ class Signup(BaseModel):
 #        married=False)
 #   -> password: String should have at least 8 characters
 #   -> Value error, passwords don't match
+```
+
+complex.js JavaScript
+
+```js
+import { z } from "zod";
+
+const Signup = z
+  .object({
+    password: z.string().min(8),
+    passwordConfirmation: z.string(),
+    married: z.boolean(),
+    partner: z.string().optional(),
+  })
+  // .superRefine runs once every field is parsed, so it can compare
+  // them against each other, and report against the right field.
+  .superRefine((v, ctx) => {
+    if (v.password !== v.passwordConfirmation) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["passwordConfirmation"],
+        message: "passwords don't match",
+      });
+    }
+    if (v.married && !v.partner) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["partner"],
+        message: "partner name is required when married is true",
+      });
+    }
+  });
+
+// { password: "random", passwordConfirmation: "another", married: false }
+//   -> password: String must contain at least 8 character(s)
+//   -> passwordConfirmation: passwords don't match
+//
+// { password: "random12", passwordConfirmation: "random12", married: true }
+//   -> partner: partner name is required when married is true
 ```
 
 <Diagram>
@@ -749,6 +905,32 @@ class Pagination(BaseModel):
 #   -> page: Input should be a valid integer
 ```
 
+pagination.js JavaScript
+
+```js
+import { z } from "zod";
+
+// Query params are ALWAYS strings, so we must CAST (transform)
+// before we can VALIDATE the numbers. z.coerce does both in the
+// right order: coerce first, then apply the constraints.
+const Pagination = z.object({
+  page: z.coerce.number().int().gt(0).lt(500),
+  limit: z.coerce.number().int().gt(0).lt(10_000),
+});
+
+// request: /bookmarks?page=2&limit=20
+// (both values arrive as strings)
+//
+// Pagination.parse({ page: "2", limit: "20" })
+//   -> { page: 2, limit: 20 }        // real numbers
+//
+// Pagination.parse({ page: "0", limit: "20" })
+//   -> page: Number must be greater than 0
+//
+// Pagination.parse({ page: "abc", limit: "20" })
+//   -> page: Expected number, received nan
+```
+
 ## Transformation as Normalization
 
 Transformation also _cleans up_ data after it validates, reshaping it into what the service layer prefers. The server quietly normalizes the payload before doing anything with it:
@@ -819,6 +1001,30 @@ class Contact(BaseModel):
 
 # Contact(email="Test@TEST.com", phone="1234567")
 #   -> email="test@test.com", phone="+1234567"
+```
+
+normalize.js JavaScript
+
+```js
+import { z } from "zod";
+
+// .transform() runs AFTER the checks on that field pass, and whatever it
+// returns REPLACES the incoming value, so the service layer only ever sees
+// normalized data.
+const Contact = z.object({
+  email: z
+    .string()
+    .email()
+    .transform((v) => v.trim().toLowerCase()), // normalize case
+
+  phone: z
+    .string()
+    .transform((v) => v.trim())
+    .transform((v) => (v.startsWith("+") ? v : "+" + v)), // inject the leading +
+});
+
+// Contact.parse({ email: "Test@TEST.com", phone: "1234567" })
+//   -> { email: "test@test.com", phone: "+1234567" }
 ```
 
 ## One Combined Pipeline
@@ -979,8 +1185,60 @@ def create_book_endpoint(body: CreateBook) -> Book:
 # run:  uvicorn main:app --reload
 ```
 
+main.js JavaScript
+
+```js
+import express from "express";
+import { z } from "zod";
+
+const app = express();
+app.use(express.json());
+
+// ---- schema (the gate) ----
+const CreateBook = z.object({
+  name: z.string().trim().min(5).max(100), // .trim() transforms, then checks
+});
+
+// ---- service + repository (sketched) ----
+async function createBook(name) {
+  // service logic ... repository INSERT ... then:
+  return { id: 1, name };
+}
+
+// ---- validation middleware: the gate, reusable on any route ----
+function validate(schema) {
+  return (req, res, next) => {
+    const result = schema.safeParse(req.body);
+    if (!result.success) {
+      // 400 Bad Request, not a confusing 500
+      return res.status(400).json({
+        error: result.error.issues.map(
+          (i) => `${i.path.join(".")}: ${i.message}`,
+        ),
+      });
+    }
+    req.body = result.data; // hand the PARSED, normalized data downstream
+    next();                 // only now does the controller run
+  };
+}
+
+// ---- CONTROLLER: owns HTTP, the gate already ran ----
+// A bad payload never reaches this function, so the DB is never touched
+// and no client mistake leaks out as a 500.
+app.post("/api/books", validate(CreateBook), async (req, res) => {
+  try {
+    const book = await createBook(req.body.name); // service -> repo
+    res.status(201).json(book);
+  } catch {
+    res.status(500).json({ error: "could not create book" });
+  }
+});
+
+app.listen(8080);
+```
+
 <Callout type="info">
 The whole topic, in one breath Validations and transformations are a small set of rules you keep in mind while designing APIs. They live at the entry point of the controller, run before any business logic, reject bad data with a clear `400` instead of a confusing `500`, come in four flavors (type, syntactic, semantic, complex), pair with transformations (casting and normalization) into one pipeline, and on the backend are mandatory for security and data integrity, no matter what the client does.
 </Callout>
 
-Backend from First Principles / Chapter 05 / Validation. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 05 / Validation. Code targets Go 1.22+, Python 3.11+ and Node.js 20+.
