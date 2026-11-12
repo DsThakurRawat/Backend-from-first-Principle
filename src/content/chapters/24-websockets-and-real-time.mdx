@@ -2,7 +2,7 @@
 order: 24
 title: "WebSockets & Real-Time"
 navTitle: "WebSockets & Real-Time"
-summary: "A first-principles walkthrough of real-time backend communication, from why HTTP's request-response shape can't push, through the WebSocket upgrade handshake, frames, and connection lifecycle, into building a server, managing thousands of connections, handling backpressure, and the hard part: scaling stateful connections across many instances with a pub/sub backplane. Written to explain not just what each piece does but why it exists and how it works underneath. Server and client code in both Go and Python."
+summary: "A first-principles walkthrough of real-time backend communication, from why HTTP's request-response shape can't push, through the WebSocket upgrade handshake, frames, and connection lifecycle, into building a server, managing thousands of connections, handling backpressure, and the hard part: scaling stateful connections across many instances with a pub/sub backplane. Written to explain not just what each piece does but why it exists and how it works underneath. Server and client code in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "websockets"
@@ -155,11 +155,11 @@ Part III / Building It
 
 ## A WebSocket Server
 
-A server endpoint does three things: accept the upgrade (sec 4), then run a loop reading messages and a way to write them. In Go the standard library doesn't ship a WebSocket implementation, so you use a library, `gorilla/websocket` (the long-time standard) or `coder/websocket` (`nhooyr`). In Python, frameworks like FastAPI/Starlette expose WebSockets directly, and the `websockets` library is the standalone standard. Here is a minimal echo server, the "hello world" of WebSockets.
+A server endpoint does three things: accept the upgrade (sec 4), then run a loop reading messages and a way to write them. In Go the standard library doesn't ship a WebSocket implementation, so you use a library, `gorilla/websocket` (the long-time standard) or `coder/websocket` (`nhooyr`). In Python, frameworks like FastAPI/Starlette expose WebSockets directly, and the `websockets` library is the standalone standard. Node likewise has no built-in WebSocket _server_, so JavaScript and TypeScript use the `ws` package; Java uses Spring's WebSocket support (or the Jakarta WebSocket API underneath it). Here is a minimal echo server, the "hello world" of WebSockets.
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // github.com/gorilla/websocket
@@ -216,7 +216,91 @@ async def ws_handler(ws: WebSocket):
 # uvicorn app:app, uvicorn speaks the WebSocket protocol for you
 ```
 
-Go gives each connection a goroutine running a blocking read loop; Python gives each connection an async coroutine awaiting messages. Same structure, accept, loop reading, write, expressed in each language's concurrency model.
+```js
+// `ws`: the standard Node WebSocket server (Node has a built-in CLIENT, not a server).
+import { WebSocketServer } from 'ws'
+
+const wss = new WebSocketServer({
+  port: 8080,
+  path: '/ws',
+  // verifyClient guards against cross-site hijacking, DO NOT leave it open (sec 14).
+  verifyClient: ({ origin }) => origin === 'https://app.example.com',
+})
+
+// 'connection' fires after the 101 handshake (sec 4) has completed.
+wss.on('connection', (ws) => {
+  // No explicit loop: Node's event loop calls this handler per message.
+  ws.on('message', (data, isBinary) => {
+    ws.send(data, { binary: isBinary }) // echo it straight back, same frame type
+  })
+  ws.on('close', () => {
+    // client closed or connection died (sec 6) -> clean up per-connection state
+  })
+  ws.on('error', console.error) // without a listener, an error event crashes the process
+})
+```
+
+```ts
+import { createServer, type IncomingMessage } from 'node:http'
+import { WebSocketServer, type RawData, type WebSocket } from 'ws'
+
+// Attach to a normal HTTP server so /ws shares a port with the REST API.
+const server = createServer()
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  // CheckOrigin equivalent, DO NOT leave it open (sec 14).
+  verifyClient: ({ origin }: { origin: string }) => origin === 'https://app.example.com',
+})
+
+wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+  // each connection gets its own handlers; the event loop is the "read loop"
+  ws.on('message', (data: RawData, isBinary: boolean) => {
+    ws.send(data, { binary: isBinary }) // echo it straight back
+  })
+  ws.on('close', (code: number) => {
+    console.log(`closed ${req.socket.remoteAddress} code=${code}`) // sec 6
+  })
+  ws.on('error', console.error)
+})
+
+server.listen(8080)
+```
+
+```java
+// Spring WebSocket (spring-boot-starter-websocket)
+@Configuration
+@EnableWebSocket
+class WsConfig implements WebSocketConfigurer {
+    @Override
+    public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        registry.addHandler(new EchoHandler(), "/ws")    // a normal route that upgrades
+            // origin check guards against cross-site hijacking, DO NOT use "*" (sec 14)
+            .setAllowedOrigins("https://app.example.com");
+    }
+}
+
+class EchoHandler extends TextWebSocketHandler {
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) {
+        // the 101 handshake (sec 4) is done; the session is live
+    }
+
+    // The container calls this per message: no explicit read loop to write.
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message)
+            throws IOException {
+        session.sendMessage(message); // echo it straight back
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        // client closed or connection died (sec 6) -> clean up per-session state
+    }
+}
+```
+
+Go gives each connection a goroutine running a blocking read loop; Python gives each connection an async coroutine awaiting messages. Node inverts it: there is no loop you write, the event loop calls your `message` handler as each frame arrives. Spring does the same with callbacks on a handler object, dispatched on container threads. Same structure, accept, read, write, expressed in each language's concurrency model.
 
 The read loop and the write must be coordinated
 
@@ -228,7 +312,7 @@ A backend is often a WebSocket _client_ too, consuming a real-time feed from ano
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // github.com/gorilla/websocket
@@ -281,6 +365,80 @@ async def run_client():
 asyncio.run(run_client())
 ```
 
+```js
+// The `ws` package works as a client too. (Node 22+ also has a global
+// WebSocket, but like the browser's it can't set custom headers.)
+import WebSocket from 'ws'
+
+// The constructor performs the upgrade handshake; headers carry auth (sec 13).
+const ws = new WebSocket('wss://api.example.com/ws', {
+  headers: { Authorization: `Bearer ${token}` },
+})
+
+ws.on('open', () => {
+  ws.send(JSON.stringify({ type: 'hello' })) // send a message
+})
+
+ws.on('message', (data) => {
+  console.log('recv:', data.toString())
+})
+
+ws.on('close', (code, reason) => console.log('closed', code, reason.toString()))
+ws.on('error', console.error)
+
+// graceful close: send a close frame, then the socket shuts (sec 6)
+// ws.close(1000, 'bye')
+```
+
+```ts
+import WebSocket from 'ws'
+
+// Wrap the event-based client in a promise-shaped function: resolves once
+// the handshake succeeds, rejects if it fails.
+function connect(url: string, token: string): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${token}` } })
+    ws.once('open', () => resolve(ws))
+    ws.once('error', reject) // handshake refused, DNS failure, 401...
+  })
+}
+
+const ws = await connect('wss://api.example.com/ws', token)
+ws.on('message', (data: WebSocket.RawData) => console.log('recv:', data.toString()))
+ws.send(JSON.stringify({ type: 'hello' }))
+
+// graceful close: send a close frame, then the socket shuts (sec 6)
+ws.close(1000, 'bye')
+```
+
+```java
+// The JDK ships a WebSocket client (java.net.http, Java 11+), no library needed.
+HttpClient http = HttpClient.newHttpClient();
+
+WebSocket ws = http.newWebSocketBuilder()
+    .header("Authorization", "Bearer " + token)       // auth header (sec 13)
+    .buildAsync(URI.create("wss://api.example.com/ws"), new WebSocket.Listener() {
+        @Override
+        public CompletionStage<?> onText(WebSocket ws, CharSequence data, boolean last) {
+            System.out.println("recv: " + data);      // may arrive in parts: check `last`
+            ws.request(1);                            // ask for the NEXT message (backpressure!)
+            return null;
+        }
+
+        @Override
+        public CompletionStage<?> onClose(WebSocket ws, int code, String reason) {
+            System.out.println("closed " + code + " " + reason);
+            return null;
+        }
+    })
+    .join();                                          // wait for the handshake
+
+ws.sendText("{\"type\":\"hello\"}", true).join();     // send a message
+
+// graceful close: send a close frame, then the socket shuts (sec 6)
+ws.sendClose(WebSocket.NORMAL_CLOSURE, "bye").join();
+```
+
 <Callout type="info" title="Backend client = consumer of a stream">
 When your service is the client, treat the feed like any unreliable upstream: the connection _will_ drop (sec 6), so wrap the connect-and-read in a reconnect loop with backoff (sec 17), and make processing idempotent if the feed can re-deliver on reconnect (the same at-least-once discipline as the Kafka chapter). A backend WebSocket client without reconnection logic silently stops receiving the first time the network hiccups.
 </Callout>
@@ -295,7 +453,7 @@ One connection is trivial; the real work is managing _many_. A server holding th
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 type Hub struct {
@@ -359,9 +517,113 @@ hub = Hub()
 #  it while iterating, collect dead ones, remove after.)
 ```
 
+```js
+import WebSocket from 'ws'
+
+const MAX_BUFFERED = 1 << 20 // 1 MiB of unsent data per client (sec 12)
+
+class Hub {
+  clients = new Set() // the active connection set
+
+  register(ws) {
+    this.clients.add(ws)
+    ws.on('close', () => this.unregister(ws)) // always unregister on disconnect
+  }
+
+  unregister(ws) {
+    this.clients.delete(ws) // idempotent removal
+  }
+
+  broadcast(message) {
+    for (const ws of this.clients) {
+      if (ws.readyState !== WebSocket.OPEN) continue
+      // bufferedAmount = bytes queued but not yet on the wire.
+      // Too much -> slow client; drop it rather than buffer forever (sec 12).
+      if (ws.bufferedAmount > MAX_BUFFERED) {
+        ws.terminate()
+        continue
+      }
+      ws.send(message) // fan out to everyone
+    }
+  }
+}
+
+export const hub = new Hub()
+// (Node is single-threaded, so the Set needs no lock; deleting the
+//  current element while iterating a Set is safe in JavaScript.)
+```
+
+```ts
+import WebSocket from 'ws'
+
+const MAX_BUFFERED = 1 << 20 // 1 MiB of unsent data per client (sec 12)
+
+export class Hub {
+  private readonly clients = new Set<WebSocket>() // the active connection set
+
+  register(ws: WebSocket): void {
+    this.clients.add(ws)
+    ws.on('close', () => this.unregister(ws)) // always unregister on disconnect
+  }
+
+  unregister(ws: WebSocket): void {
+    this.clients.delete(ws) // idempotent removal
+  }
+
+  broadcast(message: string | Buffer): void {
+    for (const ws of this.clients) {
+      if (ws.readyState !== WebSocket.OPEN) continue
+      if (ws.bufferedAmount > MAX_BUFFERED) {
+        ws.terminate() // slow client: disconnect, it can reconnect and re-sync (sec 17)
+        continue
+      }
+      ws.send(message)
+    }
+  }
+
+  get size(): number {
+    return this.clients.size // handy for a connections gauge (sec 19)
+  }
+}
+```
+
+```java
+@Component
+class Hub extends TextWebSocketHandler {
+    // Spring calls handlers from many threads at once, so the set must be
+    // thread-safe; a concurrent set gives safe iteration during broadcast.
+    private final Set<WebSocketSession> clients = ConcurrentHashMap.newKeySet();
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) {
+        // The decorator serializes writes (raw sessions are NOT safe for
+        // concurrent sends) and bounds the per-client buffer: past 5s of
+        // blocked sending or 512 KB queued, it closes the slow client (sec 12).
+        clients.add(new ConcurrentWebSocketSessionDecorator(session, 5_000, 512 * 1024));
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        // always unregister on disconnect; match by id, since we stored the decorator
+        clients.removeIf(c -> c.getId().equals(session.getId()));
+    }
+
+    void broadcast(String message) {
+        TextMessage frame = new TextMessage(message);
+        for (WebSocketSession c : clients) {
+            try {
+                c.sendMessage(frame);              // fan out to everyone
+            } catch (IOException | SessionLimitExceededException e) {
+                clients.remove(c);                 // send failed / too slow -> gone
+            }
+        }
+    }
+}
+```
+
 Concurrency & cleanup are the whole game
 
-Two things separate a toy from a real server. **Concurrency safety**: never touch the shared connection set from many goroutines/tasks without coordination (Go: one owner goroutine + per-client send channel; Python asyncio: single-threaded, but don't mutate while iterating). **Cleanup**: every path that ends a connection must remove it from the registry and free its resources, or you leak (sec 19). Register on connect, _always_ unregister on disconnect, including error and panic paths.
+Two things separate a toy from a real server. **Concurrency safety**: never touch the shared connection set from many goroutines/tasks without coordination (Go: one owner goroutine + per-client send channel; Python asyncio and Node: single-threaded, but don't mutate while iterating in Python; Java: a concurrent set plus a write-serializing session decorator). **Cleanup**: every path that ends a connection must remove it from the registry and free its resources, or you leak (sec 19). Register on connect, _always_ unregister on disconnect, including error and panic paths.
 
 ## Broadcasting & Rooms
 
@@ -409,7 +671,7 @@ Authenticating a WebSocket is trickier than a normal request because of a browse
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 func wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -440,6 +702,83 @@ async def ws_handler(ws: WebSocket):
         return
     await ws.accept()                              # only now complete the handshake
     await serve(ws, user)                          # messages are tied to `user`
+```
+
+```js
+import { createServer } from 'node:http'
+import { WebSocketServer } from 'ws'
+
+const server = createServer(app) // the same server as the REST API
+const wss = new WebSocketServer({ noServer: true }) // we handle the upgrade ourselves
+
+// 'upgrade' fires on the handshake request, BEFORE any 101 is sent.
+server.on('upgrade', (req, socket, head) => {
+  // AUTHENTICATE FIRST, before upgrading. Reject with a plain HTTP response.
+  const token = new URL(req.url, 'http://x').searchParams.get('token') // or cookie / subprotocol
+  const user = verifyJwt(token) // your auth logic (auth chapter)
+  if (!user) {
+    socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n') // 401, no upgrade
+    return
+  }
+  // Only now perform the upgrade; attach the identity to the connection.
+  wss.handleUpgrade(req, socket, head, (ws) => serve(ws, user))
+})
+```
+
+```ts
+import { createServer, type IncomingMessage } from 'node:http'
+import type { Duplex } from 'node:stream'
+import { WebSocketServer, type WebSocket } from 'ws'
+
+interface AuthedUser {
+  id: string
+  role: string
+}
+
+const server = createServer(app)
+const wss = new WebSocketServer({ noServer: true })
+
+server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+  // AUTHENTICATE FIRST, before upgrading.
+  const token = new URL(req.url ?? '/', 'http://x').searchParams.get('token')
+  const user: AuthedUser | null = token ? verifyJwt(token) : null
+  if (!user) {
+    socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n') // no upgrade
+    return
+  }
+  wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+    serve(ws, user) // every message from this conn is now tied to `user`
+  })
+})
+```
+
+```java
+// A HandshakeInterceptor runs on the HTTP request, BEFORE the upgrade.
+class JwtHandshakeInterceptor implements HandshakeInterceptor {
+    @Override
+    public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
+                                   WebSocketHandler handler, Map<String, Object> attributes) {
+        // AUTHENTICATE FIRST. Read the token from the query (or a cookie / subprotocol).
+        String token = UriComponentsBuilder.fromUri(request.getURI())
+            .build().getQueryParams().getFirst("token");
+        Optional<User> user = verifyJwt(token);              // your auth logic (auth chapter)
+        if (user.isEmpty()) {
+            response.setStatusCode(HttpStatus.UNAUTHORIZED);  // 401, no upgrade
+            return false;                                     // abort the handshake
+        }
+        attributes.put("user", user.get());  // copied onto session.getAttributes()
+        return true;                         // only now perform the upgrade
+    }
+
+    @Override
+    public void afterHandshake(ServerHttpRequest req, ServerHttpResponse res,
+                               WebSocketHandler h, Exception e) {}
+}
+
+// registry.addHandler(chatHandler, "/ws")
+//     .addInterceptors(new JwtHandshakeInterceptor())
+//     .setAllowedOrigins("https://app.example.com");
+// In the handler: User user = (User) session.getAttributes().get("user");
 ```
 
 Authorize on every message, not just at connect
@@ -601,6 +940,6 @@ The whole manual compressed to what you reach for under pressure.
 
 **The whole topic in one breath:** WebSockets exist because HTTP can't let the server push, and polling is wasteful (sec 1), but they're the heaviest option on a spectrum that includes polling and one-way SSE (sec 2). A WebSocket is a single persistent full-duplex TCP connection (sec 3) that begins as an HTTP `Upgrade` handshake answered with `101` (sec 4), then exchanges message-oriented frames (sec 5) through an open->message->close lifecycle (sec 6), kept honest by ping/pong heartbeats since dead connections look idle (sec 7). You build a server as accept-then-read-loop (sec 8), often act as a client too (sec 9), and manage many connections through a central hub (sec 10) with rooms for grouping (sec 11) and bounded buffers for backpressure so one slow client can't sink the server (sec 12). In production you authenticate at the handshake and authorize every message (sec 13), secure with `wss://` and origin checks (sec 14), and, the hard part, scale stateful connections across instances with a pub/sub backplane (sec 15), behind a WebSocket-aware load balancer that drains on deploy (sec 16), with clients that reconnect with backoff and re-sync (sec 17). Above all: pick the lightest transport that fits (sec 18), avoid the resource-leak pitfalls (sec 19), and treat disconnection as the normal case (sec 20).
 
-Grounded in MDN (developer.mozilla.org/en-US/docs/Web/API/WebSockets\_API) & RFC 6455 / gorilla/websocket & the websockets/FastAPI docs / Go 1.22+ / Python 3.11+ examples.
+Grounded in MDN (developer.mozilla.org/en-US/docs/Web/API/WebSockets\_API) & RFC 6455 / gorilla/websocket, the websockets/FastAPI, ws & Spring WebSocket docs / Go 1.22+ / Python 3.11+ / Node.js 20+ / TypeScript 5+ / Java 17+ examples.
 
-Backend from First Principles / Chapter 24 / WebSockets. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 24 / WebSockets. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).

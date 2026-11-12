@@ -2,7 +2,7 @@
 order: 4
 title: "Authentication, the question of who you are."
 navTitle: "Authentication & Authorization"
-summary: "A first-principles walkthrough of the two ideas every backend touches every single day, who are you (authentication) and what can you do (authorization). From wax seals and shared secrets to sessions, JWTs, cookies, OAuth 2.0, OpenID Connect, and RBAC. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in both Go and Python."
+summary: "A first-principles walkthrough of the two ideas every backend touches every single day, who are you (authentication) and what can you do (authorization). From wax seals and shared secrets to sessions, JWTs, cookies, OAuth 2.0, OpenID Connect, and RBAC. Written to explain not just what each piece does but why it exists and how it works underneath. Implementations in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "3-4 hours"
 keywords:
   - "authentication"
@@ -227,6 +227,160 @@ def login():
     return resp
 ```
 
+JavaScript
+
+```js
+import crypto from 'node:crypto'
+import express from 'express'
+import bcrypt from 'bcrypt'
+import { createClient } from 'redis'
+
+const app = express()
+app.use(express.json())
+const rdb = await createClient({ url: 'redis://localhost:6379' }).connect()
+const TTL = 15 * 60 // 15 minutes, in seconds
+
+// hash once at signup; store hash, never the password
+const hashPassword = (pw) => bcrypt.hash(pw, 12)
+
+// bcrypt.compare is constant-time internally
+const checkPassword = (hash, pw) => bcrypt.compare(pw, hash)
+
+const newSessionId = () => crypto.randomBytes(32).toString('hex') // cryptographically random
+
+app.post('/login', async (req, res) => {
+  // ... look up user, await checkPassword(storedHash, req.body.password) ...
+  const user = { id: 'u_42', role: 'admin' }
+
+  const sid = newSessionId()
+  // store {sessionID -> userData} with a 15-minute TTL
+  await rdb.set(`sess:${sid}`, JSON.stringify(user), { EX: TTL })
+
+  res.cookie('sid', sid, {
+    httpOnly: true, // JS cannot read it
+    secure: true, // HTTPS only
+    sameSite: 'lax',
+    maxAge: TTL * 1000, // Express wants milliseconds here
+    path: '/',
+  })
+  res.json({ ok: true })
+})
+```
+
+TypeScript
+
+```ts
+import crypto from 'node:crypto'
+import express, { type Request, type Response } from 'express'
+import bcrypt from 'bcrypt'
+import { createClient } from 'redis'
+
+interface User {
+  id: string
+  role: string
+}
+
+const app = express()
+app.use(express.json())
+const rdb = await createClient({ url: 'redis://localhost:6379' }).connect()
+const TTL = 15 * 60 // 15 minutes, in seconds
+
+// hash once at signup; store hash, never the password
+export const hashPassword = (pw: string): Promise<string> => bcrypt.hash(pw, 12)
+
+// bcrypt.compare is constant-time internally
+export const checkPassword = (hash: string, pw: string): Promise<boolean> =>
+  bcrypt.compare(pw, hash)
+
+const newSessionId = (): string => crypto.randomBytes(32).toString('hex')
+
+app.post('/login', async (req: Request<{}, {}, { email: string; password: string }>, res: Response) => {
+  // ... look up user, await checkPassword(storedHash, req.body.password) ...
+  const user: User = { id: 'u_42', role: 'admin' }
+
+  const sid = newSessionId()
+  // store {sessionID -> userData} with a 15-minute TTL
+  await rdb.set(`sess:${sid}`, JSON.stringify(user), { EX: TTL })
+
+  res.cookie('sid', sid, {
+    httpOnly: true, // JS cannot read it
+    secure: true, // HTTPS only
+    sameSite: 'lax',
+    maxAge: TTL * 1000,
+    path: '/',
+  })
+  res.json({ ok: true })
+})
+```
+
+Java
+
+```java
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.util.HexFormat;
+
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.web.bind.annotation.*;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+@RestController
+public class LoginController {
+    private static final Duration TTL = Duration.ofMinutes(15);
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(12);
+    private final StringRedisTemplate redis;
+    private final ObjectMapper json;
+
+    public LoginController(StringRedisTemplate redis, ObjectMapper json) {
+        this.redis = redis;
+        this.json = json;
+    }
+
+    record User(String id, String role) {}
+    record LoginRequest(String email, String password) {}
+
+    // hash once at signup; store hash, never the password
+    String hashPassword(String pw) { return encoder.encode(pw); }
+
+    // matches() re-hashes with the stored salt and compares
+    boolean checkPassword(String hash, String pw) { return encoder.matches(pw, hash); }
+
+    static String newSessionId() {
+        byte[] b = new byte[32];
+        RANDOM.nextBytes(b); // cryptographically random
+        return HexFormat.of().formatHex(b);
+    }
+
+    @PostMapping("/login")
+    ResponseEntity<?> login(@RequestBody LoginRequest body) throws Exception {
+        // ... look up user, checkPassword(storedHash, body.password()) ...
+        User user = new User("u_42", "admin");
+
+        String sid = newSessionId();
+        // store {sessionID -> userData} with a 15-minute TTL
+        redis.opsForValue().set("sess:" + sid, json.writeValueAsString(user), TTL);
+
+        ResponseCookie cookie = ResponseCookie.from("sid", sid)
+            .httpOnly(true) // JS cannot read it
+            .secure(true)   // HTTPS only
+            .sameSite("Lax")
+            .maxAge(TTL)
+            .path("/")
+            .build();
+        return ResponseEntity.ok()
+            .header(HttpHeaders.SET_COOKIE, cookie.toString())
+            .body(java.util.Map.of("ok", true));
+    }
+}
+```
+
 ### Deep dive: how to actually store a password
 
 "Store the hash, not the password" is only half the rule. _Which_ hash, and what you mix into it, decides whether a leaked database is a minor incident or a catastrophe.
@@ -347,6 +501,119 @@ def verify_argon(encoded: str, pw: str) -> bool:
     if ph.check_needs_rehash(encoded):
         rehash_and_store(hash_argon(pw))
     return True
+```
+
+JavaScript
+
+```js
+import crypto from 'node:crypto'
+import argon2 from 'argon2'
+
+const PEPPER = process.env.PASSWORD_PEPPER // secret, NOT in DB
+
+// cost parameters, tune so one hash ~250ms
+const OPTIONS = {
+  type: argon2.argon2id,
+  timeCost: 3, // iterations
+  memoryCost: 64 * 1024, // 64 MB (in KiB), memory-hard
+  parallelism: 4,
+  hashLength: 32,
+}
+
+const peppered = (pw) => crypto.createHmac('sha256', PEPPER).update(pw).digest()
+
+// the argon2 package generates a random salt and embeds salt + params
+// inside the returned "$argon2id$v=19$m=...,t=...,p=...$salt$hash" string
+export const hashArgon = (pw) => argon2.hash(peppered(pw), OPTIONS)
+
+export async function verifyArgon(encoded, pw) {
+  if (!(await argon2.verify(encoded, peppered(pw)))) return false // constant-time internally
+  // transparently upgrade old hashes when cost is raised
+  if (argon2.needsRehash(encoded, OPTIONS)) {
+    await rehashAndStore(await hashArgon(pw))
+  }
+  return true
+}
+```
+
+TypeScript
+
+```ts
+import crypto from 'node:crypto'
+import argon2, { type Options } from 'argon2'
+
+const PEPPER = process.env.PASSWORD_PEPPER
+if (!PEPPER) throw new Error('PASSWORD_PEPPER is not set') // fail at boot, not at login
+
+// cost parameters, tune so one hash ~250ms
+const OPTIONS: Options & { raw?: false } = {
+  type: argon2.argon2id,
+  timeCost: 3, // iterations
+  memoryCost: 64 * 1024, // 64 MB (in KiB), memory-hard
+  parallelism: 4,
+  hashLength: 32,
+}
+
+const peppered = (pw: string): Buffer =>
+  crypto.createHmac('sha256', PEPPER).update(pw).digest()
+
+// salt + params are embedded in the returned encoded string
+export const hashArgon = (pw: string): Promise<string> => argon2.hash(peppered(pw), OPTIONS)
+
+export async function verifyArgon(encoded: string, pw: string): Promise<boolean> {
+  if (!(await argon2.verify(encoded, peppered(pw)))) return false // constant-time internally
+  // transparently upgrade old hashes when cost is raised
+  if (argon2.needsRehash(encoded, OPTIONS)) {
+    await rehashAndStore(await hashArgon(pw))
+  }
+  return true
+}
+```
+
+Java
+
+```java
+import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
+
+public final class Passwords {
+    private static final byte[] PEPPER =
+        System.getenv("PASSWORD_PEPPER").getBytes(StandardCharsets.UTF_8); // secret, NOT in DB
+
+    // saltLength, hashLength, parallelism, memory (KiB), iterations
+    // tune so one hash ~250ms
+    private static final Argon2PasswordEncoder ARGON =
+        new Argon2PasswordEncoder(16, 32, 4, 64 * 1024, 3);
+
+    private static String peppered(String pw) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(PEPPER, "HmacSHA256"));
+            // hex so the encoder gets a plain CharSequence
+            return HexFormat.of().formatHex(mac.doFinal(pw.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    // random salt generated per call; salt + params embedded in the output
+    public static String hashArgon(String pw) {
+        return ARGON.encode(peppered(pw));
+    }
+
+    public static boolean verifyArgon(String encoded, String pw) {
+        if (!ARGON.matches(peppered(pw), encoded)) return false; // constant-time compare
+        // transparently upgrade old hashes when cost is raised
+        if (ARGON.upgradeEncoding(encoded)) {
+            rehashAndStore(hashArgon(pw));
+        }
+        return true;
+    }
+}
 ```
 
 ## 05 JSON Web Tokens (JWT)
@@ -470,6 +737,117 @@ def is_revoked(rdb, jti_or_token: str) -> bool:
     return rdb.sismember("jwt:blacklist", jti_or_token)
 ```
 
+JavaScript
+
+```js
+import jwt from 'jsonwebtoken'
+
+const SECRET = 'keep-this-very-secret'
+
+// mint a self-contained token carrying the claims
+// (jsonwebtoken adds "iat" itself; expiresIn becomes "exp")
+export function sign(userId, role) {
+  return jwt.sign({ sub: userId, role }, SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h',
+  })
+}
+
+// verify signature + expiry; returns the claims if valid, throws otherwise
+export function verify(token) {
+  // algorithms is a whitelist -> stops "alg: none" attacks
+  return jwt.verify(token, SECRET, { algorithms: ['HS256'] })
+}
+
+// hybrid: after verify(), also check a revocation blacklist
+export async function isRevoked(rdb, jtiOrToken) {
+  return rdb.sIsMember('jwt:blacklist', jtiOrToken)
+}
+```
+
+TypeScript
+
+```ts
+import jwt, { type JwtPayload } from 'jsonwebtoken'
+import type { RedisClientType } from 'redis'
+
+const SECRET = 'keep-this-very-secret'
+
+export interface Claims extends JwtPayload {
+  sub: string
+  role: string
+}
+
+// mint a self-contained token carrying the claims
+export function sign(userId: string, role: string): string {
+  return jwt.sign({ sub: userId, role }, SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h',
+  })
+}
+
+// verify signature + expiry; returns the claims if valid, throws otherwise
+export function verify(token: string): Claims {
+  // algorithms is a whitelist -> stops "alg: none" attacks
+  const decoded = jwt.verify(token, SECRET, { algorithms: ['HS256'] })
+  if (typeof decoded === 'string') throw new Error('unexpected string payload')
+  return decoded as Claims
+}
+
+// hybrid: after verify(), also check a revocation blacklist
+export async function isRevoked(rdb: RedisClientType, jtiOrToken: string): Promise<boolean> {
+  return rdb.sIsMember('jwt:blacklist', jtiOrToken)
+}
+```
+
+Java
+
+```java
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Date;
+import javax.crypto.SecretKey;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+
+public final class Tokens {
+    // HS256 requires a key of at least 256 bits; jjwt refuses shorter ones
+    private static final SecretKey SECRET = Keys.hmacShaKeyFor(
+        "keep-this-very-secret-and-at-least-32-bytes".getBytes(StandardCharsets.UTF_8));
+
+    // mint a self-contained token carrying the claims
+    public static String sign(String userId, String role) {
+        Instant now = Instant.now();
+        return Jwts.builder()
+            .subject(userId)                                       // user id
+            .claim("role", role)                                   // for authorization
+            .issuedAt(Date.from(now))                              // issued at
+            .expiration(Date.from(now.plus(1, ChronoUnit.HOURS)))  // expiry
+            .signWith(SECRET, Jwts.SIG.HS256)
+            .compact();
+    }
+
+    // verify signature + expiry; returns the claims if valid, throws otherwise
+    public static Claims verify(String token) {
+        // verifyWith(SecretKey) only accepts HMAC-signed tokens, and
+        // parseSignedClaims rejects unsigned ("alg": "none") ones outright
+        return Jwts.parser()
+            .verifyWith(SECRET)
+            .build()
+            .parseSignedClaims(token)
+            .getPayload();
+    }
+
+    // hybrid: after verify(), also check a revocation blacklist
+    public static boolean isRevoked(StringRedisTemplate redis, String jtiOrToken) {
+        return Boolean.TRUE.equals(redis.opsForSet().isMember("jwt:blacklist", jtiOrToken));
+    }
+}
+```
+
 ### Deep dive: signing, attacks, and refresh tokens
 
 #### HS256 vs RS256: symmetric vs asymmetric signing
@@ -560,6 +938,111 @@ def refresh(rdb, presented: str) -> str:
     new_refresh = secrets.token_hex(32)
     rdb.setex(f"rt:{new_refresh}", 14 * 24 * 3600, family)
     return new_refresh
+```
+
+JavaScript
+
+```js
+import crypto from 'node:crypto'
+import jwt from 'jsonwebtoken'
+
+const TWO_WEEKS = 14 * 24 * 3600
+
+// Verify with a PUBLIC key, pinning RS256 (blocks alg:none & key confusion)
+export function verifyRS256(token, publicKeyPem) {
+  return jwt.verify(token, publicKeyPem, { algorithms: ['RS256'] }) // whitelist
+}
+
+// Rotate a refresh token; detect reuse of an already-spent one.
+export async function refresh(rdb, presented) {
+  const family = await rdb.get(`rt:${presented}`)
+  if (family === null) {
+    // not a live token, was it previously spent? -> theft
+    const fam = await rdb.get(`spent:${presented}`)
+    if (fam !== null) {
+      await rdb.del(`family:${fam}`) // revoke the whole family
+      throw new Error('refresh reuse detected')
+    }
+    throw new Error('invalid refresh token')
+  }
+  await rdb.del(`rt:${presented}`) // consume the live token
+  await rdb.set(`spent:${presented}`, family, { EX: TWO_WEEKS }) // remember it
+  const newRefresh = crypto.randomBytes(32).toString('hex')
+  await rdb.set(`rt:${newRefresh}`, family, { EX: TWO_WEEKS })
+  return newRefresh
+}
+```
+
+TypeScript
+
+```ts
+import crypto, { type KeyObject } from 'node:crypto'
+import jwt, { type JwtPayload } from 'jsonwebtoken'
+import type { RedisClientType } from 'redis'
+
+const TWO_WEEKS = 14 * 24 * 3600
+
+// Verify with a PUBLIC key, pinning RS256 (blocks alg:none & key confusion)
+export function verifyRS256(token: string, publicKey: KeyObject | string): JwtPayload {
+  const decoded = jwt.verify(token, publicKey, { algorithms: ['RS256'] }) // whitelist
+  if (typeof decoded === 'string') throw new Error('unexpected string payload')
+  return decoded
+}
+
+// Rotate a refresh token; detect reuse of an already-spent one.
+export async function refresh(rdb: RedisClientType, presented: string): Promise<string> {
+  const family = await rdb.get(`rt:${presented}`)
+  if (family === null) {
+    // not a live token, was it previously spent? -> theft
+    const fam = await rdb.get(`spent:${presented}`)
+    if (fam !== null) {
+      await rdb.del(`family:${fam}`) // revoke the whole family
+      throw new Error('refresh reuse detected')
+    }
+    throw new Error('invalid refresh token')
+  }
+  await rdb.del(`rt:${presented}`) // consume the live token
+  await rdb.set(`spent:${presented}`, family, { EX: TWO_WEEKS }) // remember it
+  const newRefresh = crypto.randomBytes(32).toString('hex')
+  await rdb.set(`rt:${newRefresh}`, family, { EX: TWO_WEEKS })
+  return newRefresh
+}
+```
+
+Java
+
+```java
+// Verify with a PUBLIC key, pinning RS256 (blocks alg:none & key confusion).
+// verifyWith(PublicKey) only accepts asymmetric signatures, so a token
+// re-signed as HS256 with the public key as the "secret" is rejected.
+public static Claims verifyRS256(String token, RSAPublicKey pub) {
+    Jws<Claims> jws = Jwts.parser().verifyWith(pub).build().parseSignedClaims(token);
+    if (!"RS256".equals(jws.getHeader().getAlgorithm())) { // pin the exact alg
+        throw new JwtException("unexpected alg");
+    }
+    return jws.getPayload();
+}
+
+private static final Duration TWO_WEEKS = Duration.ofDays(14);
+
+// Rotate a refresh token; detect reuse of an already-spent one.
+public String refresh(StringRedisTemplate redis, String presented) {
+    String family = redis.opsForValue().get("rt:" + presented);
+    if (family == null) {
+        // not a live token, was it previously spent? -> theft
+        String fam = redis.opsForValue().get("spent:" + presented);
+        if (fam != null) {
+            redis.delete("family:" + fam);                     // revoke the whole family
+            throw new AccessDeniedException("refresh reuse detected");
+        }
+        throw new AccessDeniedException("invalid refresh token");
+    }
+    redis.delete("rt:" + presented);                           // consume the live token
+    redis.opsForValue().set("spent:" + presented, family, TWO_WEEKS); // remember it
+    String newRefresh = newSessionId();
+    redis.opsForValue().set("rt:" + newRefresh, family, TWO_WEEKS);
+    return newRefresh;
+}
 ```
 
 ## 06 Cookies
@@ -656,6 +1139,103 @@ def regenerate_session(old_sid: str) -> str:
     return new_sid
 ```
 
+JavaScript
+
+```js
+import crypto from 'node:crypto'
+
+// Double-submit: compare the CSRF cookie against the header.
+// (req.cookies needs the cookie-parser middleware)
+export function checkCsrf(req, res, next) {
+  if (req.method === 'GET' || req.method === 'HEAD') return next()
+  const cookie = Buffer.from(req.cookies?.csrf ?? '')
+  const header = Buffer.from(req.get('X-CSRF-Token') ?? '')
+  // timingSafeEqual throws on unequal lengths, so check that first
+  if (cookie.length === 0 || cookie.length !== header.length || !crypto.timingSafeEqual(cookie, header)) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  next()
+}
+
+// Regenerate the session ID right after a successful login.
+export async function regenerateSession(oldSid) {
+  const raw = await rdb.get(`sess:${oldSid}`)
+  await rdb.del(`sess:${oldSid}`) // kill the pre-login ID
+  const newSid = crypto.randomBytes(32).toString('hex') // brand-new value
+  await rdb.set(`sess:${newSid}`, raw, { EX: 15 * 60 })
+  return newSid
+}
+```
+
+TypeScript
+
+```ts
+import crypto from 'node:crypto'
+import type { NextFunction, Request, Response } from 'express'
+
+// Double-submit: compare the CSRF cookie against the header.
+// (req.cookies needs the cookie-parser middleware)
+export function checkCsrf(req: Request, res: Response, next: NextFunction): void {
+  if (req.method === 'GET' || req.method === 'HEAD') return next()
+  const cookie = Buffer.from((req.cookies?.csrf as string | undefined) ?? '')
+  const header = Buffer.from(req.get('X-CSRF-Token') ?? '')
+  // timingSafeEqual throws on unequal lengths, so check that first
+  if (cookie.length === 0 || cookie.length !== header.length || !crypto.timingSafeEqual(cookie, header)) {
+    res.status(403).json({ error: 'forbidden' })
+    return
+  }
+  next()
+}
+
+// Regenerate the session ID right after a successful login.
+export async function regenerateSession(oldSid: string): Promise<string> {
+  const raw = await rdb.get(`sess:${oldSid}`)
+  if (raw === null) throw new Error('no session to regenerate')
+  await rdb.del(`sess:${oldSid}`) // kill the pre-login ID
+  const newSid = crypto.randomBytes(32).toString('hex') // brand-new value
+  await rdb.set(`sess:${newSid}`, raw, { EX: 15 * 60 })
+  return newSid
+}
+```
+
+Java
+
+```java
+// Double-submit: compare the CSRF cookie against the header.
+// (Spring Security ships this as CookieCsrfTokenRepository; spelled out
+// here so the mechanism is visible.)
+public class CsrfFilter extends OncePerRequestFilter {
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
+            throws ServletException, IOException {
+        String m = req.getMethod();
+        if (m.equals("GET") || m.equals("HEAD")) {
+            chain.doFilter(req, res);
+            return;
+        }
+        Cookie c = WebUtils.getCookie(req, "csrf");
+        String hdr = req.getHeader("X-CSRF-Token");
+        if (c == null || hdr == null || !MessageDigest.isEqual( // constant-time
+                c.getValue().getBytes(UTF_8), hdr.getBytes(UTF_8))) {
+            res.sendError(HttpServletResponse.SC_FORBIDDEN, "forbidden");
+            return;
+        }
+        chain.doFilter(req, res);
+    }
+}
+
+// Regenerate the session ID right after a successful login.
+public String regenerateSession(String oldSid) {
+    String raw = redis.opsForValue().get("sess:" + oldSid);
+    redis.delete("sess:" + oldSid);                   // kill the pre-login ID
+    String newSid = newSessionId();                   // brand-new value
+    redis.opsForValue().set("sess:" + newSid, raw, Duration.ofMinutes(15));
+    return newSid;
+}
+// With HttpSession, the servlet API does the same thing in one call:
+//   request.changeSessionId();
+```
+
 Part III / Types of Authentication
 
 ## 07 Stateful Authentication
@@ -720,6 +1300,97 @@ def notes():
     return jsonify(owner=g.user["id"])
 ```
 
+JavaScript
+
+```js
+// requireSession reads the sid cookie and looks it up in Redis.
+// (req.cookies needs the cookie-parser middleware)
+export async function requireSession(req, res, next) {
+  const sid = req.cookies?.sid
+  if (!sid) return res.status(401).json({ error: 'authentication failed' })
+
+  const raw = await rdb.get(`sess:${sid}`) // null if missing/expired
+  if (raw === null) return res.status(401).json({ error: 'authentication failed' })
+
+  req.user = JSON.parse(raw) // attach for later handlers
+  next()
+}
+
+app.get('/notes', requireSession, (req, res) => {
+  res.json({ owner: req.user.id })
+})
+```
+
+TypeScript
+
+```ts
+import type { NextFunction, Request, Response } from 'express'
+
+// Teach Express's Request about the field the middleware attaches.
+declare global {
+  namespace Express {
+    interface Request {
+      user?: User
+    }
+  }
+}
+
+// requireSession reads the sid cookie and looks it up in Redis.
+export async function requireSession(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const sid: string | undefined = req.cookies?.sid
+  if (!sid) {
+    res.status(401).json({ error: 'authentication failed' })
+    return
+  }
+  const raw = await rdb.get(`sess:${sid}`) // null if missing/expired
+  if (raw === null) {
+    res.status(401).json({ error: 'authentication failed' })
+    return
+  }
+  req.user = JSON.parse(raw) as User // attach for later handlers
+  next()
+}
+
+app.get('/notes', requireSession, (req, res) => {
+  res.json({ owner: req.user!.id }) // safe: requireSession ran first
+})
+```
+
+Java
+
+```java
+// RequireSessionFilter reads the sid cookie and looks it up in Redis.
+@Component
+public class RequireSessionFilter extends OncePerRequestFilter {
+    private final StringRedisTemplate redis;
+    private final ObjectMapper json;
+
+    public RequireSessionFilter(StringRedisTemplate redis, ObjectMapper json) {
+        this.redis = redis;
+        this.json = json;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
+            throws ServletException, IOException {
+        Cookie c = WebUtils.getCookie(req, "sid");
+        String raw = c == null ? null : redis.opsForValue().get("sess:" + c.getValue());
+        if (raw == null) { // no cookie, or missing/expired session
+            res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "authentication failed");
+            return;
+        }
+        // attach the user to the request for later handlers
+        req.setAttribute("user", json.readValue(raw, User.class));
+        chain.doFilter(req, res);
+    }
+}
+
+@GetMapping("/notes")
+Map<String, String> notes(@RequestAttribute("user") User user) {
+    return Map.of("owner", user.id());
+}
+```
+
 ## 08 Stateless Authentication
 
 The client sends email/username and password on the login request. The server checks authenticity; if correct, it generates a **signed JWT** using its own **secret key** (stored securely so it can both sign and verify). The token embeds the user's info, user ID, role, etc., and is returned to the client. On all later requests, the client identifies itself by sending the JWT, by convention in the `Authorization` header. The server extracts the token, verifies it with the secret, recovers the user ID, and on success completes the request; otherwise it returns **401 Unauthorized** or **403 Forbidden**.
@@ -775,6 +1446,79 @@ def require_jwt(view):
         g.user = {"id": claims["sub"], "role": claims["role"]}
         return view(*args, **kwargs)
     return wrapper
+```
+
+JavaScript
+
+```js
+export function requireJwt(req, res, next) {
+  const h = req.get('Authorization') ?? ''
+  if (!h.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'authentication failed' })
+  }
+  let claims
+  try {
+    claims = verify(h.slice('Bearer '.length))
+  } catch {
+    return res.status(401).json({ error: 'authentication failed' })
+  }
+  // no store lookup, identity comes from the verified token
+  req.user = { id: claims.sub, role: claims.role }
+  next()
+}
+```
+
+TypeScript
+
+```ts
+import type { NextFunction, Request, Response } from 'express'
+
+export function requireJwt(req: Request, res: Response, next: NextFunction): void {
+  const h = req.get('Authorization') ?? ''
+  if (!h.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'authentication failed' })
+    return
+  }
+  let claims: Claims
+  try {
+    claims = verify(h.slice('Bearer '.length))
+  } catch {
+    res.status(401).json({ error: 'authentication failed' })
+    return
+  }
+  // no store lookup, identity comes from the verified token
+  req.user = { id: claims.sub, role: claims.role }
+  next()
+}
+```
+
+Java
+
+```java
+@Component
+public class RequireJwtFilter extends OncePerRequestFilter {
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
+            throws ServletException, IOException {
+        String h = req.getHeader(HttpHeaders.AUTHORIZATION);
+        if (h == null || !h.startsWith("Bearer ")) {
+            res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "authentication failed");
+            return;
+        }
+        Claims claims;
+        try {
+            claims = Tokens.verify(h.substring("Bearer ".length()));
+        } catch (JwtException e) { // bad signature, expired, malformed...
+            res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "authentication failed");
+            return;
+        }
+        // no store lookup, identity comes from the verified token
+        req.setAttribute("user", new User(claims.getSubject(), claims.get("role", String.class)));
+        chain.doFilter(req, res);
+    }
+}
+// In a full Spring Security app this whole filter is one line of config:
+//   http.oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()));
 ```
 
 ## 09 Stateful vs Stateless: Choosing
@@ -873,6 +1617,103 @@ def require_api_key(view):
         g.client = client
         return view(*args, **kwargs)
     return wrapper
+```
+
+JavaScript
+
+```js
+import crypto from 'node:crypto'
+
+// Store only the HASH of issued keys (like passwords).
+const hashKey = (k) => crypto.createHash('sha256').update(k).digest('hex')
+
+export async function requireApiKey(req, res, next) {
+  const key = req.get('X-API-Key') ?? ''
+  const presented = hashKey(key)
+  const client = await lookupClient(presented) // your DB lookup
+  if (!client) return res.status(401).json({ error: 'authentication failed' })
+
+  // both are 64-char hex digests, so the lengths always match;
+  // timingSafeEqual is constant-time
+  if (!crypto.timingSafeEqual(Buffer.from(presented), Buffer.from(client.keyHash))) {
+    return res.status(401).json({ error: 'authentication failed' })
+  }
+  // check scopes, quota, expiry on `client` here
+  req.client = client
+  next()
+}
+```
+
+TypeScript
+
+```ts
+import crypto from 'node:crypto'
+import type { NextFunction, Request, Response } from 'express'
+
+interface ApiClient {
+  id: string
+  keyHash: string
+  scopes: string[]
+  expiresAt: Date | null
+}
+
+// Store only the HASH of issued keys (like passwords).
+const hashKey = (k: string): string => crypto.createHash('sha256').update(k).digest('hex')
+
+export async function requireApiKey(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const key = req.get('X-API-Key') ?? ''
+  const presented = hashKey(key)
+  const client: ApiClient | null = await lookupClient(presented) // your DB lookup
+  if (!client || !crypto.timingSafeEqual(Buffer.from(presented), Buffer.from(client.keyHash))) {
+    res.status(401).json({ error: 'authentication failed' })
+    return
+  }
+  if (client.expiresAt && client.expiresAt < new Date()) {
+    res.status(401).json({ error: 'authentication failed' }) // same message, on purpose
+    return
+  }
+  // check scopes and quota on `client` here
+  res.locals.client = client
+  next()
+}
+```
+
+Java
+
+```java
+// Store only the HASH of issued keys (like passwords).
+static String hashKey(String k) {
+    try {
+        byte[] sum = MessageDigest.getInstance("SHA-256").digest(k.getBytes(UTF_8));
+        return HexFormat.of().formatHex(sum);
+    } catch (NoSuchAlgorithmException e) {
+        throw new IllegalStateException(e); // SHA-256 is always present
+    }
+}
+
+@Component
+public class ApiKeyFilter extends OncePerRequestFilter {
+    private final ApiClientRepository clients;
+
+    public ApiKeyFilter(ApiClientRepository clients) { this.clients = clients; }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
+            throws ServletException, IOException {
+        String key = Objects.requireNonNullElse(req.getHeader("X-API-Key"), "");
+        String presented = hashKey(key);
+        Optional<ApiClient> client = clients.findByKeyHash(presented); // your DB lookup
+        // MessageDigest.isEqual is constant-time
+        if (client.isEmpty() || !MessageDigest.isEqual(
+                presented.getBytes(UTF_8), client.get().keyHash().getBytes(UTF_8))) {
+            res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "authentication failed");
+            return;
+        }
+        // check scopes, quota, expiry on the client here
+        req.setAttribute("client", client.get());
+        chain.doFilter(req, res);
+    }
+}
 ```
 
 Part IV / OAuth & OpenID Connect
@@ -1049,6 +1890,111 @@ def exchange(code: str, verifier: str) -> dict:
     return resp.json()   # access_token, refresh_token, id_token, ...
 ```
 
+JavaScript
+
+```js
+import crypto from 'node:crypto'
+
+// Build the PKCE pair before redirecting the user.
+export function newPkce() {
+  const verifier = crypto.randomBytes(32).toString('base64url') // no padding
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url')
+  return { verifier, challenge }
+}
+
+// Leg 2: exchange the code (send code_verifier, not the secret).
+export async function exchange(code, verifier) {
+  const resp = await fetch('https://auth.example/token', {
+    method: 'POST',
+    // URLSearchParams sets Content-Type: application/x-www-form-urlencoded
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: 'https://notes.app/callback',
+      client_id: 'note_app',
+      code_verifier: verifier,
+    }),
+  })
+  if (!resp.ok) throw new Error(`token exchange failed: ${resp.status}`)
+  return resp.json() // access_token, refresh_token, id_token, ...
+}
+```
+
+TypeScript
+
+```ts
+import crypto from 'node:crypto'
+
+interface TokenResp {
+  access_token: string
+  refresh_token?: string
+  id_token?: string
+  token_type: 'Bearer'
+  expires_in: number
+}
+
+// Build the PKCE pair before redirecting the user.
+export function newPkce(): { verifier: string; challenge: string } {
+  const verifier = crypto.randomBytes(32).toString('base64url') // no padding
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url')
+  return { verifier, challenge }
+}
+
+// Leg 2: exchange the code (send code_verifier, not the secret).
+export async function exchange(code: string, verifier: string): Promise<TokenResp> {
+  const resp = await fetch('https://auth.example/token', {
+    method: 'POST',
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: 'https://notes.app/callback',
+      client_id: 'note_app',
+      code_verifier: verifier,
+    }),
+  })
+  if (!resp.ok) throw new Error(`token exchange failed: ${resp.status}`)
+  return (await resp.json()) as TokenResp
+}
+```
+
+Java
+
+```java
+record Pkce(String verifier, String challenge) {}
+record TokenResp(String access_token, String refresh_token, String id_token,
+                 String token_type, int expires_in) {}
+
+private static final Base64.Encoder B64URL = Base64.getUrlEncoder().withoutPadding();
+
+// Build the PKCE pair before redirecting the user.
+static Pkce newPkce() throws NoSuchAlgorithmException {
+    byte[] b = new byte[32];
+    new SecureRandom().nextBytes(b);
+    String verifier = B64URL.encodeToString(b);
+    byte[] sum = MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(US_ASCII));
+    return new Pkce(verifier, B64URL.encodeToString(sum));
+}
+
+// Leg 2: exchange the code (send code_verifier, not the secret).
+TokenResp exchange(String code, String verifier) {
+    MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+    form.add("grant_type", "authorization_code");
+    form.add("code", code);
+    form.add("redirect_uri", "https://notes.app/callback");
+    form.add("client_id", "note_app");
+    form.add("code_verifier", verifier);
+
+    return RestClient.create().post()
+        .uri("https://auth.example/token")
+        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+        .body(form)
+        .retrieve() // throws on 4xx/5xx
+        .body(TokenResp.class);
+}
+// Spring Security's oauth2Login() generates and checks all of this for you;
+// it is spelled out here only to show what travels over the wire.
+```
+
 <Callout type="info" title="The gap OAuth left open">
 OAuth is excellent for **authorization** (delegating _what_ a client may do) but it did **not** solve **authentication** (proving _who_ the user is). Recall: authentication = identity (who are you, your name, your ID); authorization = permissions (what can you do). OAuth solved the latter via delegation, but not the former. That gap is what OpenID Connect fills.
 </Callout>
@@ -1165,6 +2111,75 @@ def dead_zone():
     return jsonify(notes=[...])
 ```
 
+JavaScript
+
+```js
+// requireRole runs AFTER an auth middleware that set req.user.
+export function requireRole(...roles) {
+  const allowed = new Set(roles)
+  return (req, res, next) => {
+    if (!allowed.has(req.user?.role)) {
+      return res.status(403).json({ error: 'forbidden' }) // 403
+    }
+    next()
+  }
+}
+
+// usage: only admins reach the dead-zone handler
+app.get('/admin/deadzone', requireJwt, requireRole('admin'), (req, res) => {
+  res.json({ notes: [] })
+})
+```
+
+TypeScript
+
+```ts
+import type { NextFunction, Request, RequestHandler, Response } from 'express'
+
+type Role = 'user' | 'moderator' | 'admin'
+
+// requireRole runs AFTER an auth middleware that set req.user.
+// Typing roles as a union turns requireRole('admn') into a compile error.
+export function requireRole(...roles: Role[]): RequestHandler {
+  const allowed = new Set<string>(roles)
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user || !allowed.has(req.user.role)) {
+      res.status(403).json({ error: 'forbidden' }) // 403
+      return
+    }
+    next()
+  }
+}
+
+// usage: only admins reach the dead-zone handler
+app.get('/admin/deadzone', requireJwt, requireRole('admin'), (_req, res) => {
+  res.json({ notes: [] })
+})
+```
+
+Java
+
+```java
+// Spring Security does role checks declaratively. The auth filter puts an
+// Authentication with authorities like "ROLE_admin" into the context;
+// these rules run AFTER it and answer 403 when the role is missing.
+@Bean
+SecurityFilterChain api(HttpSecurity http) throws Exception {
+    http.authorizeHttpRequests(auth -> auth
+            .requestMatchers("/admin/**").hasRole("admin") // checks "ROLE_admin"
+            .anyRequest().authenticated());
+    return http.build();
+}
+
+// Or per method, next to the code it protects
+// (needs @EnableMethodSecurity on a configuration class):
+@GetMapping("/admin/deadzone")
+@PreAuthorize("hasRole('admin')")
+public Map<String, List<Note>> deadZone() {
+    return Map.of("notes", List.of());
+}
+```
+
 ### Deep dive: role hierarchy, ABAC, and beyond
 
 #### Where plain RBAC strains: role explosion
@@ -1237,6 +2252,78 @@ def can_edit(s: Subject, r: Resource, hour: int) -> bool:
 # usage inside a view, after auth populated the subject:
 # if not can_edit(subj, doc, datetime.now().hour):
 #     return jsonify(error="forbidden"), 403
+```
+
+JavaScript
+
+```js
+// Policy: can `s` perform the action on `r`, given the environment?
+// s = { id, dept, role }, r = { ownerId, dept, archived }
+export function canEdit(s, r, hour) {
+  if (r.archived) return false
+  const owns = s.id === r.ownerId
+  const sameDept = s.dept === r.dept
+  const businessHours = hour >= 9 && hour < 18
+  // owner OR same-department editor, only in business hours
+  return (owns || (sameDept && s.role === 'editor')) && businessHours
+}
+
+// usage inside a handler, after auth populated the subject:
+// if (!canEdit(subj, doc, new Date().getHours())) {
+//   return res.status(403).json({ error: 'forbidden' })
+// }
+```
+
+TypeScript
+
+```ts
+interface Subject {
+  id: string
+  dept: string
+  role: string
+}
+interface Resource {
+  ownerId: string
+  dept: string
+  archived: boolean
+}
+
+// Policy: can `s` perform the action on `r`, given the environment?
+export function canEdit(s: Subject, r: Resource, hour: number): boolean {
+  if (r.archived) return false
+  const owns = s.id === r.ownerId
+  const sameDept = s.dept === r.dept
+  const businessHours = hour >= 9 && hour < 18
+  // owner OR same-department editor, only in business hours
+  return (owns || (sameDept && s.role === 'editor')) && businessHours
+}
+
+// usage inside a handler, after auth populated the subject:
+// if (!canEdit(subj, doc, new Date().getHours())) {
+//   res.status(403).json({ error: 'forbidden' }); return
+// }
+```
+
+Java
+
+```java
+record Subject(String id, String dept, String role) {}
+record Resource(String ownerId, String dept, boolean archived) {}
+
+// Policy: can `s` perform the action on `r`, given the environment?
+static boolean canEdit(Subject s, Resource r, int hour) {
+    if (r.archived()) return false;
+    boolean owns = s.id().equals(r.ownerId());
+    boolean sameDept = s.dept().equals(r.dept());
+    boolean businessHours = hour >= 9 && hour < 18;
+    // owner OR same-department editor, only in business hours
+    return (owns || (sameDept && s.role().equals("editor"))) && businessHours;
+}
+
+// usage inside a handler, after auth populated the subject:
+// if (!canEdit(subj, doc, LocalTime.now().getHour())) {
+//     throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+// }
 ```
 
 ## 17 Error Messages & Timing Attacks
@@ -1325,6 +2412,101 @@ def authenticate(email: str, pw: str):
             time.sleep(FLOOR - elapsed)
 ```
 
+JavaScript
+
+```js
+import { setTimeout as sleep } from 'node:timers/promises'
+import bcrypt from 'bcrypt'
+
+const DUMMY_HASH = await bcrypt.hash('x', 12) // same cost as real hashes
+const FLOOR_MS = 250 // equalize every path
+
+export async function authenticate(email, pw) {
+  const start = performance.now()
+  try {
+    const user = await lookupByEmail(email)
+    if (!user) {
+      // run a dummy hash so timing matches the valid path
+      await bcrypt.compare(pw, DUMMY_HASH)
+      return { user: null, error: 'authentication failed' }
+    }
+    if (!(await bcrypt.compare(pw, user.hash))) { // constant-time
+      return { user: null, error: 'authentication failed' }
+    }
+    return { user, error: null } // success: issue session / JWT
+  } finally {
+    // pad so all outcomes take ~the same wall-clock time
+    const elapsed = performance.now() - start
+    if (elapsed < FLOOR_MS) await sleep(FLOOR_MS - elapsed)
+  }
+}
+```
+
+TypeScript
+
+```ts
+import { setTimeout as sleep } from 'node:timers/promises'
+import bcrypt from 'bcrypt'
+
+interface StoredUser {
+  id: string
+  hash: string
+}
+type AuthResult = { user: StoredUser; error: null } | { user: null; error: 'authentication failed' }
+
+const DUMMY_HASH = await bcrypt.hash('x', 12) // same cost as real hashes
+const FLOOR_MS = 250 // equalize every path
+
+export async function authenticate(email: string, pw: string): Promise<AuthResult> {
+  const start = performance.now()
+  try {
+    const user: StoredUser | null = await lookupByEmail(email)
+    if (!user) {
+      // run a dummy hash so timing matches the valid path
+      await bcrypt.compare(pw, DUMMY_HASH)
+      return { user: null, error: 'authentication failed' }
+    }
+    if (!(await bcrypt.compare(pw, user.hash))) { // constant-time
+      return { user: null, error: 'authentication failed' }
+    }
+    return { user, error: null } // success: issue session / JWT
+  } finally {
+    // pad so all outcomes take ~the same wall-clock time
+    const elapsed = performance.now() - start
+    if (elapsed < FLOOR_MS) await sleep(FLOOR_MS - elapsed)
+  }
+}
+```
+
+Java
+
+```java
+private static final BCryptPasswordEncoder ENCODER = new BCryptPasswordEncoder(12);
+// same cost as real hashes, so the dummy check takes as long as a real one
+private static final String DUMMY_HASH = ENCODER.encode("x");
+private static final Duration FLOOR = Duration.ofMillis(250); // equalize every path
+
+public Optional<User> authenticate(String email, String pw) throws InterruptedException {
+    long start = System.nanoTime();
+    try {
+        Optional<StoredUser> user = users.findByEmail(email);
+        if (user.isEmpty()) {
+            // run a dummy hash so timing matches the valid path
+            ENCODER.matches(pw, DUMMY_HASH);
+            return Optional.empty(); // caller answers "authentication failed"
+        }
+        if (!ENCODER.matches(pw, user.get().hash())) { // constant-time compare
+            return Optional.empty();
+        }
+        return Optional.of(user.get().toUser()); // success: issue session / JWT
+    } finally {
+        // pad so all outcomes take ~the same wall-clock time
+        long remaining = FLOOR.toNanos() - (System.nanoTime() - start);
+        if (remaining > 0) Thread.sleep(Duration.ofNanos(remaining));
+    }
+}
+```
+
 ## 18 Debug Cheat-Sheet
 
 The whole manual, compressed to what you reach for under pressure.
@@ -1348,4 +2530,4 @@ The whole manual, compressed to what you reach for under pressure.
 | Timing         | Constant-time compare + equalize response time.                                      |
 | Production tip | Roll your own to learn; use an auth provider to ship.                                |
 
-Backend from First Principles / Chapter 04 / Auth. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 04 / Auth. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).

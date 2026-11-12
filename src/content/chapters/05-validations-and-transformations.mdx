@@ -2,7 +2,7 @@
 order: 5
 title: "Validations & Transformations."
 navTitle: "Validations & Transformations"
-summary: "A first-principles walkthrough of the rules and guidelines you keep in mind while designing APIs, the gate every piece of client data passes through before any business logic runs. Why it exists, where it lives, how it works underneath, with complete implementations in Go and Python shown side by side."
+summary: "A first-principles walkthrough of the rules and guidelines you keep in mind while designing APIs, the gate every piece of client data passes through before any business logic runs. Why it exists, where it lives, how it works underneath, with complete implementations in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "validation"
@@ -152,11 +152,7 @@ A robust pipeline processes a field in **layers**, and the order matters: each c
 
 Each gate only opens if the previous one passed, failure **short-circuits** to a 400
 
-In code, libraries express this as a declarative schema. Go commonly uses struct tags with `go-playground/validator`; Python uses Pydantic, where the same model both validates _and_ transforms. Here is a **complete, runnable** version of the pipeline in each:
-
-<Callout type="info">
-v Go (left) / Python (right), both shown in full, no toggle
-</Callout>
+In code, libraries express this as a declarative schema. Go commonly uses struct tags with `go-playground/validator`; Python uses Pydantic, where the same model both validates _and_ transforms. JavaScript and TypeScript reach for Zod, whose schemas double as static types in TypeScript; Java uses Jakarta Bean Validation annotations, which Spring runs automatically on `@Valid` arguments. Here is a **complete, runnable** version of the pipeline in each:
 
 pipeline.goGo
 
@@ -254,6 +250,131 @@ def run_pipeline(raw: dict) -> CreateBook:
 #                                      have at least 5 chars"]
 # run_pipeline({"name": "Dune"}) ... still <5 -> 400
 # run_pipeline({"name": "The Hobbit"}) -> OK
+```
+
+pipeline.jsJavaScript
+
+```js
+import { z } from 'zod'
+
+// CreateBook is the SCHEMA. Each call in the chain = one rule:
+//   not .optional()   -> existence check (required)
+//   z.string()        -> type check
+//   .min() / .max()   -> constraint check
+const CreateBook = z.object({
+  name: z.string().min(5).max(100),
+})
+
+// runPipeline validates the parsed JSON body; returns 400-ready messages.
+export function runPipeline(raw) {
+  // safeParse never throws; it runs existence -> type -> constraint
+  const result = CreateBook.safeParse(raw)
+  if (!result.success) {
+    // reshape zod issues into clean strings
+    const messages = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`)
+    return { data: null, errors: messages }
+  }
+  return { data: result.data, errors: null }
+}
+
+// runPipeline({})                    -> ["name: Required"]
+// runPipeline({ name: 0 })           -> ["name: Expected string, received number"]
+// runPipeline({ name: 'ab' })        -> ["name: String must contain at
+//                                         least 5 character(s)"]
+// runPipeline({ name: 'The Hobbit' }) -> OK
+```
+
+pipeline.tsTypeScript
+
+```ts
+import { z } from 'zod'
+import type { NextFunction, Request, Response } from 'express'
+
+// CreateBook is the SCHEMA. Each call in the chain = one rule:
+//   not .optional()   -> existence check (required)
+//   z.string()        -> type check
+//   .min() / .max()   -> constraint check
+const CreateBook = z.object({
+  name: z.string().min(5).max(100),
+})
+
+// The static type is DERIVED from the runtime schema, so the two can
+// never drift apart: { name: string }
+export type CreateBook = z.infer<typeof CreateBook>
+
+// A reusable middleware: validate req.body against any schema, then
+// replace it with the parsed (and possibly transformed) result.
+export const validateBody =
+  <T extends z.ZodTypeAny>(schema: T) =>
+  (req: Request, res: Response, next: NextFunction): void => {
+    const result = schema.safeParse(req.body)
+    if (!result.success) {
+      res.status(400).json({
+        errors: result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
+      })
+      return
+    }
+    req.body = result.data
+    next()
+  }
+
+// app.post('/books', validateBody(CreateBook), createBookController)
+```
+
+Pipeline.javaJava
+
+```java
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.*;
+
+// CreateBook is the SCHEMA. Each annotation = one rule:
+//   @NotNull        -> existence check
+//   String type     -> type check (Jackson refuses a JSON array/object)
+//   @Size(5, 100)   -> constraint check
+public record CreateBook(
+    @NotNull @Size(min = 5, max = 100) String name
+) {}
+
+@RestController
+class BookController {
+    // @Valid runs Bean Validation BEFORE the method body; a failure
+    // never reaches your code, it becomes MethodArgumentNotValidException.
+    @PostMapping("/books")
+    ResponseEntity<CreateBook> create(@Valid @RequestBody CreateBook body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(body);
+    }
+}
+
+@RestControllerAdvice
+class ValidationErrors {
+    // existence + constraint failures -> 400-ready messages
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    Map<String, List<String>> invalid(MethodArgumentNotValidException e) {
+        List<String> messages = e.getBindingResult().getFieldErrors().stream()
+            .map(f -> f.getField() + ": " + f.getDefaultMessage())
+            .toList();
+        return Map.of("errors", messages);
+    }
+
+    // type failures happen earlier, while Jackson reads the JSON
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    Map<String, List<String>> unreadable(HttpMessageNotReadableException e) {
+        return Map.of("errors", List.of("a field has the wrong data type"));
+    }
+}
+
+// {}                     -> ["name: must not be null"]
+// {"name": "ab"}         -> ["name: size must be between 5 and 100"]
+// {"name": "The Hobbit"} -> 201
 ```
 
 Part II / The Four Types of Validation
@@ -361,6 +482,83 @@ class TypePayload(BaseModel):
 #             arrayField=["one","two"], boolField=False) -> OK
 ```
 
+type\_validation.jsJavaScript
+
+```js
+import { z } from 'zod'
+
+const TypePayload = z
+  .object({
+    stringField: z.string(),
+    numberField: z.number(),
+    arrayField: z.array(z.string()), // recursive: EVERY element a string
+    boolField: z.boolean(), // false is a value; only undefined is "missing"
+  })
+  .strict() // reject stray keys
+
+// TypePayload.safeParse({ stringField: 'x', numberField: 'x',
+//                         arrayField: 'x', boolField: 'x' })
+//   -> numberField: Expected number, received string
+//   -> arrayField:  Expected array, received string
+//   -> boolField:   Expected boolean, received string
+//
+// TypePayload.safeParse({ ..., arrayField: [1, 2], ... })
+//   -> arrayField.0: Expected string, received number
+//   -> arrayField.1: Expected string, received number
+```
+
+type\_validation.tsTypeScript
+
+```ts
+import { z } from 'zod'
+
+const TypePayload = z
+  .object({
+    stringField: z.string(),
+    numberField: z.number(),
+    arrayField: z.array(z.string()), // recursive: EVERY element a string
+    boolField: z.boolean(),
+  })
+  .strict() // reject stray keys
+
+// { stringField: string; numberField: number;
+//   arrayField: string[]; boolField: boolean }
+type TypePayload = z.infer<typeof TypePayload>
+
+// TypeScript's own types vanish at runtime, so annotating the body as
+// TypePayload proves nothing about what the client sent. Only the
+// schema check does; after it succeeds the type is actually true.
+export function parseTypes(raw: unknown): TypePayload {
+  return TypePayload.parse(raw) // throws ZodError -> map to 400
+}
+```
+
+TypeValidation.javaJava
+
+```java
+import java.util.List;
+import jakarta.validation.constraints.NotNull;
+
+// Wrapper types (Double, Boolean) so a MISSING field is null and fails
+// @NotNull; a primitive double would silently default to 0.0.
+public record TypePayload(
+    @NotNull String stringField,
+    @NotNull Double numberField,
+    // recursive: the type-use annotation applies to EVERY element
+    @NotNull List<@NotNull String> arrayField,
+    @NotNull Boolean boolField
+) {}
+
+// Jackson does the BASE type check while reading the JSON. By default it
+// is lenient ("10" coerces to 10.0), so turn that off to get strict
+// errors like the other languages:
+//   spring.jackson.mapper.allow-coercion-of-scalars=false
+//   spring.jackson.deserialization.fail-on-unknown-properties=true
+//
+// {"numberField":"x"}  -> HttpMessageNotReadableException -> 400
+// {"arrayField":[1,2]} -> rejected: 1 is not a String (coercion off)
+```
+
 ## Syntactic Validation
 
 Here the type is already correct (a string) but the string must follow a **specific structural pattern**. The validation algorithm checks the _shape_ of the value:
@@ -463,6 +661,69 @@ class Contact(BaseModel):
 #         date="2025-11-05")  -> OK
 ```
 
+syntactic.jsJavaScript
+
+```js
+import { z } from 'zod'
+
+const Contact = z.object({
+  email: z.string().email(), // local @ domain.tld
+  // country code + 7-15 digits
+  phone: z.string().regex(/^\+?[0-9]{7,15}$/, 'invalid phone number format'),
+  date: z.string().date(), // only accepts YYYY-MM-DD
+})
+
+// Contact.safeParse({ email: 'randomstring', phone: 1234567,
+//                     date: '2025-11-05' })
+//   -> email: Invalid email
+//   -> phone: Expected string, received number
+//
+// Contact.safeParse({ email: 'test@test.com', phone: '1234567',
+//                     date: '2025-11-05' }) -> OK
+```
+
+syntactic.tsTypeScript
+
+```ts
+import { z } from 'zod'
+
+const PHONE_RE = /^\+?[0-9]{7,15}$/
+
+export const Contact = z.object({
+  email: z.string().email(), // local @ domain.tld
+  phone: z.string().regex(PHONE_RE, 'invalid phone number format'),
+  date: z.string().date(), // only accepts YYYY-MM-DD
+})
+
+export type Contact = z.infer<typeof Contact>
+
+// "randomstring"            -> email: Invalid email
+// phone sent as JSON number -> Expected string, received number
+// "2025-13-40"              -> date: Invalid date
+```
+
+Syntactic.javaJava
+
+```java
+import java.time.LocalDate;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+
+public record Contact(
+    @NotBlank @Email String email,                      // local @ domain.tld
+    // country code + 7-15 digits
+    @NotBlank @Pattern(regexp = "^\\+?[0-9]{7,15}$",
+                       message = "invalid phone number format") String phone,
+    @NotNull LocalDate date                             // Jackson parses YYYY-MM-DD
+) {}
+
+// "randomstring"  -> email: must be a well-formed email address
+// "12ab"          -> phone: invalid phone number format
+// "2025-13-40"    -> rejected while parsing LocalDate -> 400
+```
+
 ## Semantic Validation
 
 The type is right and the syntax is right, but does the value **make sense in the real world?** Semantic checks encode domain logic:
@@ -561,6 +822,70 @@ class Profile(BaseModel):
 # Profile(dateOfBirth="1995-06-12", age=43) -> OK
 ```
 
+semantic.jsJavaScript
+
+```js
+import { z } from 'zod'
+
+const Profile = z.object({
+  // type & syntax first, then .refine() adds real-world logic
+  dateOfBirth: z
+    .string()
+    .date()
+    .refine((v) => new Date(v) <= new Date(), 'date of birth cannot be in the future'),
+  age: z.number().int().min(1).max(120), // 430 -> must be <= 120
+})
+
+// Profile.safeParse({ dateOfBirth: '2026-06-12', age: 43 })
+//   -> dateOfBirth: date of birth cannot be in the future
+// Profile.safeParse({ dateOfBirth: '1995-06-12', age: 430 })
+//   -> age: Number must be less than or equal to 120
+// Profile.safeParse({ dateOfBirth: '1995-06-12', age: 43 }) -> OK
+```
+
+semantic.tsTypeScript
+
+```ts
+import { z } from 'zod'
+
+// Semantics need real logic against the real clock, so the check is a
+// plain function the schema calls, easy to unit-test on its own.
+export const notInFuture = (iso: string, now: Date = new Date()): boolean =>
+  new Date(iso) <= now
+
+export const Profile = z.object({
+  dateOfBirth: z.string().date().refine((v) => notInFuture(v), {
+    message: 'date of birth cannot be in the future',
+  }),
+  age: z.number().int().min(1).max(120), // 430 -> must be <= 120
+})
+
+export type Profile = z.infer<typeof Profile>
+```
+
+Semantic.javaJava
+
+```java
+import java.time.LocalDate;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PastOrPresent;
+
+public record Profile(
+    // Bean Validation ships the "not in the future" rule as an annotation;
+    // it checks against the real clock at validation time.
+    @NotNull
+    @PastOrPresent(message = "date of birth cannot be in the future")
+    LocalDate dateOfBirth,
+
+    @NotNull @Min(1) @Max(120) Integer age   // 430 -> must be <= 120
+) {}
+
+// {"dateOfBirth":"2026-06-12"} -> date of birth cannot be in the future
+// {"age":430}                  -> age: must be less than or equal to 120
+```
+
 ## Complex / Dependent Validation
 
 The most powerful flavor: a field's rules depend on **other fields**. The pipeline can encode arbitrary cross-field logic:
@@ -653,6 +978,93 @@ class Signup(BaseModel):
 #        married=False)
 #   -> password: String should have at least 8 characters
 #   -> Value error, passwords don't match
+```
+
+complex.jsJavaScript
+
+```js
+import { z } from 'zod'
+
+const Signup = z
+  .object({
+    password: z.string().min(8),
+    passwordConfirmation: z.string(),
+    married: z.boolean(),
+    partner: z.string().optional(),
+  })
+  // superRefine runs once all fields are parsed, so it can compare
+  // them against each other, and attach each error to the right field.
+  .superRefine((v, ctx) => {
+    if (v.password !== v.passwordConfirmation) {
+      ctx.addIssue({ code: 'custom', path: ['passwordConfirmation'], message: "passwords don't match" })
+    }
+    if (v.married && !v.partner) {
+      ctx.addIssue({ code: 'custom', path: ['partner'], message: 'partner name is required when married is true' })
+    }
+  })
+
+// Signup.safeParse({ password: 'random', passwordConfirmation: 'another',
+//                    married: false })
+//   -> password: String must contain at least 8 character(s)
+//   -> passwordConfirmation: passwords don't match
+```
+
+complex.tsTypeScript
+
+```ts
+import { z } from 'zod'
+
+// A discriminated union states the dependency in the TYPE itself:
+// when married is true, partner is a required string; when false, absent.
+const Base = z.object({
+  password: z.string().min(8),
+  passwordConfirmation: z.string(),
+})
+
+export const Signup = z
+  .discriminatedUnion('married', [
+    Base.extend({ married: z.literal(true), partner: z.string().min(1, 'partner name is required when married is true') }),
+    Base.extend({ married: z.literal(false) }),
+  ])
+  .refine((v) => v.password === v.passwordConfirmation, {
+    path: ['passwordConfirmation'],
+    message: "passwords don't match",
+  })
+
+export type Signup = z.infer<typeof Signup>
+// if (s.married) s.partner  // string: the compiler knows it is there
+```
+
+Complex.javaJava
+
+```java
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+public record Signup(
+    @NotNull @Size(min = 8) String password,
+    @NotNull String passwordConfirmation,
+    @NotNull Boolean married,
+    String partner
+) {
+    // Cross-field rules: Bean Validation treats an isXxx() getter that
+    // returns boolean as a property, so @AssertTrue runs it with the
+    // other constraints. The error is reported on "passwordMatching".
+    @AssertTrue(message = "passwords don't match")
+    public boolean isPasswordMatching() {
+        return password == null || password.equals(passwordConfirmation);
+    }
+
+    @AssertTrue(message = "partner name is required when married is true")
+    public boolean isPartnerPresentWhenMarried() {
+        return !Boolean.TRUE.equals(married) || (partner != null && !partner.isBlank());
+    }
+}
+
+// {password:"random", passwordConfirmation:"another", married:false}
+//   -> password: size must be between 8 and 2147483647
+//   -> passwordMatching: passwords don't match
 ```
 
 <Diagram>
@@ -749,6 +1161,80 @@ class Pagination(BaseModel):
 #   -> page: Input should be a valid integer
 ```
 
+pagination.jsJavaScript
+
+```js
+import { z } from 'zod'
+
+const Pagination = z.object({
+  // z.coerce CASTS the incoming string "2" into the number 2
+  // (transform), THEN enforces the bounds (validate).
+  page: z.coerce.number().int().gt(0).lt(500),
+  limit: z.coerce.number().int().gt(0).lt(10_000),
+})
+
+// request: /bookmarks?page=2&limit=20  -> req.query is all strings
+//
+// Pagination.parse({ page: '2', limit: '20' })
+//   -> { page: 2, limit: 20 }   // real numbers
+// Pagination.parse({ page: '0', limit: '20' })
+//   -> page: Number must be greater than 0
+// Pagination.parse({ page: 'abc', limit: '20' })
+//   -> page: Expected number, received nan
+```
+
+pagination.tsTypeScript
+
+```ts
+import { z } from 'zod'
+import type { Request, Response } from 'express'
+
+const Pagination = z.object({
+  page: z.coerce.number().int().gt(0).lt(500),
+  limit: z.coerce.number().int().gt(0).lt(10_000),
+})
+
+type Pagination = z.infer<typeof Pagination> // { page: number; limit: number }
+
+export function listBookmarks(req: Request, res: Response): void {
+  // req.query is typed as strings (ParsedQs); after the schema runs,
+  // `page` and `limit` are numbers in both the type AND the value.
+  const result = Pagination.safeParse(req.query)
+  if (!result.success) {
+    res.status(400).json({ errors: result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`) })
+    return
+  }
+  const { page, limit }: Pagination = result.data
+  res.json({ page, limit })
+}
+```
+
+Pagination.javaJava
+
+```java
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@Validated // enables constraint checks on plain method parameters
+class BookmarkController {
+    // Spring CASTS the query string "2" into the int 2 (transform)
+    // while binding, THEN the constraints run (validate).
+    @GetMapping("/bookmarks")
+    Map<String, Integer> list(
+            @RequestParam @Min(1) @Max(499) int page,
+            @RequestParam @Min(1) @Max(9999) int limit) {
+        return Map.of("page", page, "limit", limit);
+    }
+}
+
+// ?page=2&limit=20   -> page=2, limit=20 (real ints)
+// ?page=0&limit=20   -> HandlerMethodValidationException -> 400
+// ?page=abc&limit=20 -> MethodArgumentTypeMismatchException -> 400
+```
+
 ## Transformation as Normalization
 
 Transformation also _cleans up_ data after it validates, reshaping it into what the service layer prefers. The server quietly normalizes the payload before doing anything with it:
@@ -821,6 +1307,67 @@ class Contact(BaseModel):
 #   -> email="test@test.com", phone="+1234567"
 ```
 
+normalize.jsJavaScript
+
+```js
+import { z } from 'zod'
+
+const Contact = z.object({
+  // .trim()/.toLowerCase() transform BEFORE .email() validates;
+  // .transform() runs AFTER and its return value REPLACES the input.
+  email: z.string().trim().toLowerCase().email(),
+  phone: z
+    .string()
+    .trim()
+    .transform((v) => (v.startsWith('+') ? v : `+${v}`)),
+})
+
+// Contact.parse({ email: 'Test@TEST.com', phone: '1234567' })
+//   -> { email: 'test@test.com', phone: '+1234567' }
+```
+
+normalize.tsTypeScript
+
+```ts
+import { z } from 'zod'
+
+export const Contact = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  phone: z
+    .string()
+    .trim()
+    .transform((v) => (v.startsWith('+') ? v : `+${v}`)),
+})
+
+// A schema with transforms has two types: what it accepts and what it
+// produces. Use the output type for the service layer.
+export type ContactInput = z.input<typeof Contact>
+export type Contact = z.output<typeof Contact>
+```
+
+Normalize.javaJava
+
+```java
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+
+public record Contact(@NotBlank @Email String email, @NotBlank String phone) {
+    // A record's compact constructor runs on EVERY construction, including
+    // when Jackson builds it from JSON, so the normalized values are the
+    // only ones that can ever exist. Validation then sees the clean data.
+    public Contact {
+        if (email != null) email = email.strip().toLowerCase(Locale.ROOT);
+        if (phone != null) {
+            phone = phone.strip();
+            if (!phone.startsWith("+")) phone = "+" + phone;
+        }
+    }
+}
+
+// new Contact("Test@TEST.com", "1234567")
+//   -> Contact[email=test@test.com, phone=+1234567]
+```
+
 ## One Combined Pipeline
 
 In practice validations and transformations are **paired into a single pipeline**. The reason is locality: the entire "input data layer", every requirement _and_ every operation performed on incoming data before any business logic runs, lives in **one place**. You never have to hunt across files to discover what an endpoint expects or what it quietly does to the data. The pipeline can transform -> validate, or validate -> transform, in either order, as the requirements demand.
@@ -861,7 +1408,7 @@ The rule, stated plainly Design your server-side validation to be as strict and 
 
 ## Full Annotated Controller
 
-Putting the whole picture together: a complete controller that route-matches, runs the combined pipeline (transform -> validate -> normalize) _before_ any business logic, returns a clean `400` on failure, and only then calls the service layer, which calls the repository. Both ends shown in full.
+Putting the whole picture together: a complete controller that route-matches, runs the combined pipeline (transform -> validate -> normalize) _before_ any business logic, returns a clean `400` on failure, and only then calls the service layer, which calls the repository. Every language shown in full.
 
 main.goGo
 
@@ -979,8 +1526,184 @@ def create_book_endpoint(body: CreateBook) -> Book:
 # run:  uvicorn main:app --reload
 ```
 
+main.jsJavaScript
+
+```js
+import express from 'express'
+import { z } from 'zod'
+
+const app = express()
+app.use(express.json())
+
+// ---- schema (the gate) ----
+const CreateBook = z.object({
+  name: z.string().trim().min(5).max(100), // transform, then validate
+})
+
+// ---- service + repository (sketched) ----
+async function createBook(name) {
+  // service logic ... repository INSERT ... then:
+  return { id: 1, name }
+}
+
+// ---- CONTROLLER: owns HTTP + the validation gate ----
+app.post('/api/books', async (req, res) => {
+  // === GATE, runs before ANY business logic ===
+  const parsed = CreateBook.safeParse(req.body)
+  if (!parsed.success) {
+    const errors = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`)
+    return res.status(400).json({ errors }) // 400, the DB is never touched
+  }
+
+  // === only now: business logic (service -> repo) ===
+  try {
+    const book = await createBook(parsed.data.name)
+    res.status(201).json(book)
+  } catch {
+    res.status(500).json({ error: 'could not create book' })
+  }
+})
+
+// express.json() itself answers 400 for a body that isn't valid JSON
+app.listen(8080)
+
+// run:  node main.js
+```
+
+main.tsTypeScript
+
+```ts
+import express, { type NextFunction, type Request, type Response } from 'express'
+import { z } from 'zod'
+
+const app = express()
+app.use(express.json())
+
+// ---- schema (the gate) ----
+const CreateBook = z.object({
+  name: z.string().trim().min(5).max(100), // transform, then validate
+})
+type CreateBook = z.infer<typeof CreateBook>
+
+interface Book {
+  id: number
+  name: string
+}
+
+// ---- reusable gate middleware ----
+const validateBody =
+  <T extends z.ZodTypeAny>(schema: T) =>
+  (req: Request, res: Response, next: NextFunction): void => {
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ errors: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`) })
+      return // 400, the DB is never touched
+    }
+    req.body = parsed.data // the handler sees the transformed values
+    next()
+  }
+
+// ---- service + repository (sketched) ----
+async function createBook(name: string): Promise<Book> {
+  // service logic ... repository INSERT ... then:
+  return { id: 1, name }
+}
+
+// ---- CONTROLLER ----
+// The gate runs BEFORE the handler. A bad payload never enters it, so
+// by the time this body executes, req.body really is a CreateBook.
+app.post(
+  '/api/books',
+  validateBody(CreateBook),
+  async (req: Request<{}, Book, CreateBook>, res: Response<Book | { error: string }>) => {
+    try {
+      res.status(201).json(await createBook(req.body.name)) // service -> repo
+    } catch {
+      res.status(500).json({ error: 'could not create book' })
+    }
+  },
+)
+
+app.listen(8080)
+
+// run:  npx tsx main.ts
+```
+
+Main.javaJava
+
+```java
+package books;
+
+import java.util.List;
+import java.util.Map;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.*;
+
+@SpringBootApplication
+public class Main {
+    public static void main(String[] args) {
+        SpringApplication.run(Main.class, args);
+    }
+}
+
+// ---- schema (the gate) ----
+record CreateBook(@NotNull @Size(min = 5, max = 100) String name) {
+    CreateBook {
+        if (name != null) name = name.strip(); // transform / normalize
+    }
+}
+
+record Book(int id, String name) {}
+
+// ---- service + repository (sketched) ----
+@Service
+class BookService {
+    Book createBook(String name) {
+        // service logic ... repository INSERT ... then:
+        return new Book(1, name);
+    }
+}
+
+// ---- CONTROLLER ----
+// @Valid runs the CreateBook schema (the GATE) BEFORE this method body.
+// A bad payload never enters the method, so the DB is never touched and
+// no client mistake leaks out as a confusing 500.
+@RestController
+class BookController {
+    private final BookService books;
+
+    BookController(BookService books) { this.books = books; }
+
+    @PostMapping("/api/books")
+    @ResponseStatus(HttpStatus.CREATED)
+    Book create(@Valid @RequestBody CreateBook body) {
+        return books.createBook(body.name()); // service -> repo
+    }
+
+    // turn the gate's rejection into a clean 400 with field messages
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    Map<String, List<String>> invalid(MethodArgumentNotValidException e) {
+        return Map.of("errors", e.getBindingResult().getFieldErrors().stream()
+            .map(f -> f.getField() + ": " + f.getDefaultMessage())
+            .toList());
+    }
+}
+
+// run:  ./mvnw spring-boot:run
+```
+
 <Callout type="info">
 The whole topic, in one breath Validations and transformations are a small set of rules you keep in mind while designing APIs. They live at the entry point of the controller, run before any business logic, reject bad data with a clear `400` instead of a confusing `500`, come in four flavors (type, syntactic, semantic, complex), pair with transformations (casting and normalization) into one pipeline, and on the backend are mandatory for security and data integrity, no matter what the client does.
 </Callout>
 
-Backend from First Principles / Chapter 05 / Validation. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 05 / Validation. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+ (Spring Boot).
