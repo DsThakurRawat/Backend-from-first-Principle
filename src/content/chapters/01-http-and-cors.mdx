@@ -462,7 +462,7 @@ Every **safe** method is automatically **idempotent**: if a request changes noth
 
 \*POST and PATCH are cacheable only when the response explicitly includes freshness info and a matching `Content-Location`, rare in practice, so treat them as effectively non-cacheable.
 
-GET**Retrieve a representation of a resource** safeidempotentcacheable
+GET — **Retrieve a representation of a resource** — safe · idempotent · cacheable
 
 "Give me this resource." The workhorse of the read path.
 
@@ -474,13 +474,13 @@ GET should **only retrieve** data and carries no semantic meaning in a body, mos
 - Missing -> 404 Not Found.
 - Client's cached copy is still valid -> 304 Not Modified, empty body (sec 12).
 
-HEAD**Like GET, but headers only, no body** safeidempotentcacheable
+HEAD — **Like GET, but headers only, no body** — safe · idempotent · cacheable
 
 "Give me the metadata you'd send for a GET, but skip the payload."
 
 The server returns the exact same status and headers it would for a GET, including `Content-Length`, `Content-Type`, `ETag`, and `Last-Modified`, but omits the body entirely. This is useful when you want the metadata without paying for the download: **checking whether a resource exists** (200 vs 404), reading a file's size before deciding to fetch it, validating a cached copy's freshness, or running a cheap health check against a URL. Most frameworks implement HEAD automatically by routing it through the GET handler and discarding the generated body, which is why you rarely write a separate HEAD handler.
 
-POST**Submit data; create a resource or trigger processing** not safenot idempotentcond. cacheable
+POST — **Submit data; create a resource or trigger processing** — not safe · not idempotent · cond. cacheable
 
 "Here's some data, do something with it that changes state."
 
@@ -493,7 +493,7 @@ POST is the general-purpose state-changing verb: creating records, submitting fo
 - Validation failed -> 400 (the request was malformed) or 422 (well-formed but semantically invalid).
 - Business-rule clash, e.g. a duplicate username -> 409 Conflict.
 
-PUT**Replace the target resource entirely with the body** not safeidempotentnot cacheable
+PUT — **Replace the target resource entirely with the body** — not safe · idempotent · not cacheable
 
 "Make the resource at this URL look exactly like this body."
 
@@ -503,7 +503,7 @@ PUT vs POST for creation
 
 Use **POST** when the _server_ decides the new resource's identity: `POST /notes` and the server replies `Location: /notes/42`. Use **PUT** when the _client_ already knows the full target URL: `PUT /users/alice/settings`. The practical consequence: PUT-to-create is idempotent (retry-safe), POST-to-create is not (retry may duplicate). Choosing the right one is choosing whether retries are safe.
 
-PATCH**Apply a partial modification to a resource** not safenot idempotent\*cond. cacheable
+PATCH — **Apply a partial modification to a resource** — not safe · not idempotent\* · cond. cacheable
 
 "Change just these fields; leave everything else alone."
 
@@ -513,25 +513,25 @@ Where PUT replaces the whole resource, PATCH sends only a **set of changes**: e.
 **PATCH** for partial updates, **PUT** for full replacement. Many developers reach for PUT when they actually mean PATCH (and then have to send every field to avoid nulling them out). Default to PATCH unless you genuinely intend to overwrite the entire resource.
 </Callout>
 
-DELETE**Remove the target resource** not safeidempotentnot cacheable
+DELETE — **Remove the target resource** — not safe · idempotent · not cacheable
 
 "Delete this resource."
 
 DELETE is idempotent for a subtle but important reason: deleting once removes the resource, and deleting again changes nothing because it's already gone. The _responses_ may differ across attempts (the first returns 200/204, a repeat returns 404), but the _state of the server_, "this resource does not exist", is identical after one call or ten. That state-equivalence is exactly what idempotency means, which is why a client can safely retry a DELETE that timed out. Return 204 No Content when there's nothing to send back, or 200 with a body describing what was removed.
 
-OPTIONS**Describe the communication options for the target** safeidempotentnot cacheable
+OPTIONS — **Describe the communication options for the target** — safe · idempotent · not cacheable
 
 "What can I do with this resource?"
 
 OPTIONS asks the server which methods and headers a resource supports without acting on it; the server answers with an `Allow` header (e.g. `Allow: GET, POST, OPTIONS`). Its starring real-world role is the **CORS preflight** (sec 9): before a browser sends a "non-simple" cross-origin request, it automatically fires an OPTIONS to ask permission, and only proceeds if the server's response approves the method, headers, and origin. You almost never call OPTIONS by hand, but you'll see it constantly in the browser's Network tab paired with your real requests.
 
-CONNECT**Establish a tunnel through a proxy** not safenot idempotentnot cacheable
+CONNECT — **Establish a tunnel through a proxy** — not safe · not idempotent · not cacheable
 
 "Open a raw two-way tunnel to this host through you, proxy."
 
 CONNECT is used almost exclusively by **forward proxies handling HTTPS**. When a browser configured to use a proxy wants to reach an HTTPS site, it sends `CONNECT example.com:443` to the proxy, which opens a TCP tunnel to the destination and then blindly relays the encrypted bytes in both directions. Because the traffic inside is TLS-encrypted end-to-end, the proxy can't read or modify it, it just shovels bytes. You will essentially never implement CONNECT in an application server; it lives in proxy and infrastructure software (sec 18).
 
-TRACE**Loop-back diagnostic along the request path** safeidempotentnot cacheable
+TRACE — **Loop-back diagnostic along the request path** — safe · idempotent · not cacheable
 
 "Echo my request back so I can see what intermediaries changed."
 
