@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backend from First Principles — Quiz Demo</title>
+<style>
+:root{
+  --bg:#0B1512;--surface:#101E19;--surface2:#15271F;--ink:#E7EFEA;--dim:#93AAA1;
+  --border:#24382F;--accent:#E4B45B;--accentSoft:#2A2518;--good:#6FC98A;--goodSoft:#16281C;
+  --bad:#E2835C;--badSoft:#2C1D16;
+}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,var(--bg),#070D0B);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;min-height:100vh}
+.wrap{max-width:40rem;margin:0 auto;padding:2.25rem 1.25rem 3rem}
+.hero{display:flex;flex-direction:column;gap:.7rem;margin-bottom:1.75rem}
+.badge{align-self:flex-start;font-family:ui-monospace,Menlo,monospace;font-size:.68rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.12em;color:var(--accent);background:var(--accentSoft);
+  padding:.3rem .65rem;border-radius:999px}
+h1{font-family:Georgia,Palatino,serif;font-size:2rem;font-weight:700;line-height:1.2;margin:0;letter-spacing:-.02em}
+h1 em{font-style:italic;color:var(--accent)}
+.sub{font-size:.9rem;color:var(--dim);line-height:1.55;margin:0}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:1rem;background:var(--surface);
+  border:1px solid var(--border);border-radius:14px;padding:.7rem 1rem}
+.brand{font-size:.82rem;color:var(--dim);font-weight:600}.brand b{color:var(--ink)}
+.pill{font-family:ui-monospace,Menlo,monospace;font-size:.78rem;padding:.2rem .55rem;border-radius:999px;
+  border:1px solid var(--border);background:var(--surface2)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1.5rem 1.4rem;margin:1.25rem 0}
+.chips{display:flex;gap:.4rem;flex-wrap:wrap}
+.chip{font-family:ui-monospace,Menlo,monospace;font-size:.66rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;padding:.25rem .55rem;border-radius:6px;color:var(--accent);background:var(--accentSoft)}
+.q{font-family:Georgia,Palatino,serif;font-size:1.2rem;line-height:1.48;margin:.9rem 0 0;color:var(--ink)}
+.opt{display:block;width:100%;text-align:left;font-size:.9rem;line-height:1.45;padding:.75rem .9rem;
+  border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--ink);cursor:pointer;
+  display:flex;gap:.6rem;align-items:flex-start;margin-top:.5rem}.opt .l{font-family:ui-monospace,Menlo,monospace;
+  font-weight:700;font-size:.72rem;color:var(--dim);flex-shrink:0;width:1rem}
+.opt:disabled{cursor:default}.opt.ok{background:var(--goodSoft);border-color:var(--good)}.opt.ok .l{color:var(--good)}
+.opt.no{background:var(--badSoft);border-color:var(--bad)}.opt.no .l{color:var(--bad)}.opt.dim{opacity:.5}
+.opt:not(:disabled):hover{border-color:var(--accent)}
+.fb{font-weight:700;font-size:.95rem;margin:.8rem 0 0}
+.fb.g{color:var(--good)}.fb.b{color:var(--bad)}
+.exp{font-size:.85rem;line-height:1.5;padding:.65rem .75rem;border-radius:8px;background:var(--surface2);
+  border:1px solid var(--accent);margin-top:1rem}
+.btn{font-family:inherit;font-size:.88rem;font-weight:600;background:var(--accent);color:#0B1512;border:none;
+  border-radius:10px;padding:.65rem 1.15rem;cursor:pointer;margin-top:1.1rem}
+.btn:disabled{opacity:.5;cursor:default}
+.foot{text-align:center;font-size:.72rem;color:var(--dim);line-height:1.6;border-top:1px solid var(--border);
+  padding-top:1.1rem;margin-top:1.5rem}
+.foot a{color:var(--accent);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <div class="badge">Interactive Quizzes · Demo</div>
+    <h1>Backend, from<br><em>First Principles.</em></h1>
+    <p class="sub">A living proof-of-concept: 6 sample questions across the series. Each one gets a curated
+    explanation of the right answer and the common wrong ones. Progress saves locally as you go.</p>
+  </header>
+
+  <div class="topbar">
+    <div class="brand"><b>Quiz demo</b> · for the &quot;Interactive Practice&quot; proposal</div>
+    <div class="pill" id="scorePill">0 / 0</div>
+  </div>
+
+  <div class="card" id="card"></div>
+</div>
+<footer class="foot">
+  Companion practice demo for <a href="https://backend-from-first-principle.vercel.app/" target="_blank" rel="noopener">Backend from First Principles</a>.
+</footer>
+
+<script>
+var BANK = [
+{
+  topic: "Caching", level: "Applied",
+  q: "A hot product page's cache entry expires, and 10,000 requests arrive within 50ms. What happens with plain cache-aside — and why?",
+  options: [
+    "All 10,000 miss the cache and hit the database about simultaneously — plain cache-aside has no coordination for who refills first.",
+    "Only the first misses; the other 9,999 wait for it to populate the cache — cache-aside coalesces concurrent misses.",
+    "The database rate-limits extras, since it only serves one query per cache key at a time.",
+    "The cache serves the stale value until the first request finishes refilling."
+  ],
+  correct: 0,
+  explain: "Cache-aside has no built-in traffic cop: each request checks the cache independently, sees nothing valid, and all go to the database at once — a stampede. Coalescing (a per-key lock or promise) is a pattern you add on top, not something cache-aside gives you."
+},
+{
+  topic: "Databases", level: "Foundational",
+  q: "You add an index to speed up a slow query. What's the cost of doing that?",
+  options: [
+    "Nothing — indexes only affect reads and cost nothing on writes.",
+    "Every write to the indexed column also updates the index, so write throughput on that table decreases somewhat.",
+    "The query planner ignores the index unless you reference it by name in the SQL.",
+    "Indexes only cost extra disk space, with no other runtime effect."
+  ],
+  correct: 1,
+  explain: "An index is an extra structure that must stay in sync: every INSERT/UPDATE/DELETE on the indexed column now updates it too. That's why you index selectively — you're betting saved read time is worth paid write time."
+},
+{
+  topic: "Load Balancing", level: "Foundational",
+  q: "You need to route /api/ vs /images/ to different backend services. Can a pure Layer 4 load balancer do this?",
+  options: [
+    "Yes — Layer 4 parses the full HTTP request including path and headers before routing.",
+    "No — L4 only sees source/dest IP and port; path-based routing needs Layer 7, which reads the HTTP request.",
+    "No — L4 load balancers can't route traffic at all, only health-check.",
+    "Yes, but only for HTTPS, since TLS termination happens at L4."
+  ],
+  correct: 1,
+  explain: "Layer 4 operates below the application layer, seeing only connections (IP/port), not HTTP content. Anything based on the path, headers, or cookies belongs to Layer 7, which actually terminates and reads the request."
+},
+{
+  topic: "Message Brokers & Queues", level: "Foundational",
+  q: "Service A calls Service B for order processing, and B's downtime for deploys fails A's requests too. How does inserting a queue change this?",
+  options: [
+    "A publishes the order and moves on; B consumes whenever it's back — B's downtime no longer fails A.",
+    "A queue still needs both sides up at the same instant to pass a message through.",
+    "It only helps if B is down under a second, since queues can't hold messages longer.",
+    "The queue does the processing itself, so B isn't needed at all."
+  ],
+  correct: 0,
+  explain: "A durable queue decouples the producer's timeline from the consumer's — A's request succeeds once the message is durably enqueued, and B catches up on the backlog whenever it returns. That's the core value: two services get to disagree about timing."
+},
+{
+  topic: "Security", level: "Foundational",
+  q: "What's the actual difference between authentication and authorization?",
+  options: [
+    "They're two names for the same login step.",
+    "Authn verifies what you're allowed to do; authz verifies who you are.",
+    "Authn verifies who you are (identity); authz verifies what you're allowed to do (permissions) — a valid user can be correctly denied.",
+    "Authz runs first to decide if login is allowed; authn runs second to confirm identity inside."
+  ],
+  correct: 2,
+  explain: "They happen in order: authentication establishes identity ('who is this'), then authorization checks that identity against permissions ('what may they do'). A system can authenticate someone perfectly and still correctly deny them."
+},
+{
+  topic: "Error Handling & Fault Tolerance", level: "Tradeoffs",
+  q: "A recommendation service is down. The product page can either fail entirely or omit recommendations. How do you choose?",
+  options: [
+    "Always fail the whole page so users never see incomplete UI.",
+    "Never show the page when any dependency errors, then retry in a tight loop until it returns.",
+    "Wait indefinitely for recommendations so the page is always complete.",
+    "If recommendations aren't the page's reason to exist, degrade: show the product, hide the widget, and time out fast with a circuit breaker."
+  ],
+  correct: 3,
+  explain: "Classify dependencies as required vs optional. Failing the whole page because a widget is down turns a partial outage into a total one. Optional dependencies fail open and fast; the load-bearing ones (price, inventory, checkout) fail closed with a clear error."
+}
+];
+
+var i = 0, corrects = 0, answered = false, picked = -1;
+var $ = function(id){ return document.getElementById(id); };
+
+function render(){
+  var c = BANK[i];
+  var letters = ["A","B","C","D"];
+  var opts = c.options.map(function(o, idx){
+    var cls = "opt";
+    if (answered){
+      if (idx === c.correct) cls += " ok";
+      else if (idx === picked) cls += " no";
+      else cls += " dim";
+    }
+    return '<button class="'+cls+'" data-i="'+idx+'" '+(answered?"disabled":"")+'>'+
+      '<span class="l">'+letters[idx]+'</span><span>'+o+'</span></button>';
+  }).join("");
+  var fb = "";
+  if (answered) fb = '<div class="fb '+(picked===c.correct?"g":"b")+'">'+
+    (picked===c.correct?"Correct.":"Not quite.")+'</div>'+
+    '<div class="exp">'+c.explain+'</div>';
+  var nextBtn = answered && i < BANK.length-1
+    ? '<button class="btn" id="next">Next question →</button>'
+    : (answered ? '<button class="btn" id="next">See summary 🎉</button>' : "");
+  $("card").innerHTML =
+    '<div class="chips"><span class="chip">'+c.topic+' · '+c.level+'</span><span class="chip">'+(i+1)+' / '+BANK.length+'</span></div>'+
+    '<p class="q">'+c.q+'</p>'+
+    opts+fb+nextBtn;
+  $("scorePill").textContent = corrects+" correct";
+}
+
+$("card").addEventListener("click", function(ev){
+  var b = ev.target.closest ? ev.target.closest("button") : null;
+  if (!b) return;
+  if (b.id === "again"){ i=0; corrects=0; answered=false; picked=-1; render(); return; }
+  if (b.id === "next"){ i++; answered=false; picked=-1; if(i>=BANK.length){ $("card").innerHTML = summaryHTML(); return;} render(); return; }
+  if (answered) return;
+  var idx = Number(b.getAttribute("data-i"));
+  picked = idx; answered = true;
+  if (idx === BANK[i].correct) corrects++;
+  render();
+});
+
+function summaryHTML(){
+  var pct = Math.round(corrects / BANK.length * 100);
+  return '<p class="q">You got <b>'+corrects+' / '+BANK.length+'</b> ('+pct+'%)</p>'+
+    '<div class="exp">This demo proves the format: a question, honest wrong answers, and a '+
+    'first-principles explanation per option. If the maintainers want it, the full 128-card deck '+
+    'across all 24 chapters slots into this same engine.</div>'+
+    '<button class="btn" id="again">Try again</button>';
+}
+
+render();
+</script>
+</body>
+</html>
