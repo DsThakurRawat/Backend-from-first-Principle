@@ -220,7 +220,7 @@ public class DemoApplication {
 
         @GetMapping("/users/{id}")
         public ResponseEntity<Response> getUser(
-                @PathVariable String id) {
+                @PathVariable("id") String id) {
 
             // method = "GET"
             // path = "/api/users/123"
