@@ -2,7 +2,7 @@
 order: 23
 title: "Message Brokers & Kafka"
 navTitle: "Message Brokers & Kafka"
-summary: "A first-principles walkthrough of the distributed event-streaming platform that backs the nervous systems of LinkedIn, Uber, Netflix and most modern fintech, from the one idea everything rests on (an append-only commit log ), through partitions, consumer groups, offsets and delivery semantics, into retention, schemas, event-driven patterns, the outbox/CDC trick, and stream processing. Written to explain not just what each piece does but why it exists and how it works underneath. Producer/consumer code in both Go and Python."
+summary: "A first-principles walkthrough of the distributed event-streaming platform that backs the nervous systems of LinkedIn, Uber, Netflix and most modern fintech, from the one idea everything rests on (an append-only commit log ), through partitions, consumer groups, offsets and delivery semantics, into retention, schemas, event-driven patterns, the outbox/CDC trick, and stream processing. Written to explain not just what each piece does but why it exists and how it works underneath. Producer/consumer code in Go, Python, JavaScript, TypeScript and Java."
 readingTime: "2-3 hours"
 keywords:
   - "kafka"
@@ -121,7 +121,7 @@ A **producer** publishes records to a topic. Three producer concerns shape corre
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 // Using confluent-kafka-go (librdkafka). kafka-go (segmentio) is a pure-Go alternative.
@@ -178,6 +178,84 @@ p.produce(
 p.flush()                          # block until queued messages are delivered
 ```
 
+```js
+// Using KafkaJS (pure JavaScript). @confluentinc/kafka-javascript wraps librdkafka.
+import { Kafka, CompressionTypes } from 'kafkajs'
+
+const kafka = new Kafka({ clientId: 'orders-api', brokers: ['localhost:9092'] })
+const producer = kafka.producer({
+  idempotent: true, // no duplicates on producer retry (sec 9)
+})
+await producer.connect()
+
+// The KEY decides the partition -> all events for one order stay ordered (sec 4, sec 10).
+const [meta] = await producer.send({
+  topic: 'orders',
+  acks: -1, // "all": leader + in-sync replicas (sec 5)
+  compression: CompressionTypes.GZIP,
+  messages: [{ key: 'order-42', value: JSON.stringify({ event: 'placed', amount: 1999 }) }],
+})
+// send() resolves once the broker acknowledged: the delivery report.
+console.log(`delivered to orders[${meta.partition}]@${meta.baseOffset}`)
+
+// KafkaJS batches per send() call rather than on a linger timer; put
+// many records in one send(), or use sendBatch(), for throughput.
+await producer.disconnect()
+```
+
+```ts
+import { CompressionTypes, Kafka, type Producer, type RecordMetadata } from 'kafkajs'
+
+// One shape for the event, shared by producer and consumer code.
+interface OrderPlaced {
+  event: 'placed'
+  orderId: string
+  amount: number
+}
+
+const kafka = new Kafka({ clientId: 'orders-api', brokers: ['localhost:9092'] })
+const producer: Producer = kafka.producer({ idempotent: true }) // no dupes on retry (sec 9)
+await producer.connect()
+
+export async function publishOrderPlaced(e: OrderPlaced): Promise<RecordMetadata> {
+  const [meta] = await producer.send({
+    topic: 'orders',
+    acks: -1, // durability: leader + in-sync replicas (sec 5)
+    compression: CompressionTypes.GZIP,
+    // The KEY decides the partition -> one order's events stay ordered (sec 4, sec 10).
+    messages: [{ key: e.orderId, value: JSON.stringify(e) }],
+  })
+  return meta // partition + baseOffset: the delivery report
+}
+
+await publishOrderPlaced({ event: 'placed', orderId: 'order-42', amount: 1999 })
+```
+
+```java
+// The official Apache client (org.apache.kafka:kafka-clients).
+Properties props = new Properties();
+props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+props.put(ProducerConfig.ACKS_CONFIG, "all");               // leader + in-sync replicas (sec 5)
+props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);  // no duplicates on retry (sec 9)
+props.put(ProducerConfig.LINGER_MS_CONFIG, 5);              // batch window for throughput
+props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "zstd");
+props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+
+try (KafkaProducer<String, String> producer = new KafkaProducer<>(props)) {
+    // The KEY decides the partition -> all events for one order stay ordered (sec 4, sec 10).
+    ProducerRecord<String, String> record = new ProducerRecord<>(
+        "orders", "order-42", "{\"event\":\"placed\",\"amount\":1999}");
+
+    // send() is async + batched; the callback is the delivery report.
+    producer.send(record, (meta, err) -> {
+        if (err != null) System.err.println("delivery failed: " + err);
+        else System.out.printf("delivered to %s[%d]@%d%n", meta.topic(), meta.partition(), meta.offset());
+    });
+    producer.flush(); // block until queued messages are delivered
+} // close() also flushes
+```
+
 No key = round-robin = no ordering
 
 If you don't set a key, records are spread across partitions (round-robin / sticky), maximizing parallelism but giving up any ordering relationship between them. That's fine for independent events; it's a bug if those events needed to stay ordered (all updates to one account, say). **Key by your ordering/entity boundary**: usually the entity ID, whenever order matters (sec 10).
@@ -192,7 +270,7 @@ A **consumer** reads records from partitions. The powerful abstraction is the **
 
 ______
 
-● Go● Python
+● Go● Python● JavaScript● TypeScript● Java
 
 ```go
 c, _ := kafka.NewConsumer(&kafka.ConfigMap{
@@ -238,6 +316,80 @@ finally:
     c.close()                              # leave the group cleanly -> triggers a rebalance
 ```
 
+```js
+import { Kafka } from 'kafkajs'
+
+const kafka = new Kafka({ clientId: 'billing', brokers: ['localhost:9092'] })
+const consumer = kafka.consumer({ groupId: 'billing' }) // the consumer GROUP, scale by adding instances
+await consumer.connect()
+// fromBeginning = auto.offset.reset=earliest when there's no committed offset (sec 8)
+await consumer.subscribe({ topics: ['orders'], fromBeginning: true })
+
+await consumer.run({
+  autoCommit: false, // commit manually for at-least-once (sec 9)
+  eachMessage: async ({ topic, partition, message }) => {
+    await processOrder(message.value) // do the work FIRST...
+    // ...THEN commit. The committed offset is the NEXT one to read, hence +1.
+    await consumer.commitOffsets([
+      { topic, partition, offset: (BigInt(message.offset) + 1n).toString() },
+    ])
+  },
+})
+
+// leave the group cleanly on shutdown -> triggers a rebalance
+process.on('SIGTERM', () => consumer.disconnect())
+```
+
+```ts
+import { Kafka, type EachMessagePayload } from 'kafkajs'
+
+const kafka = new Kafka({ clientId: 'billing', brokers: ['localhost:9092'] })
+const consumer = kafka.consumer({ groupId: 'billing' }) // the consumer GROUP
+await consumer.connect()
+await consumer.subscribe({ topics: ['orders'], fromBeginning: true }) // earliest (sec 8)
+
+async function handle({ topic, partition, message }: EachMessagePayload): Promise<void> {
+  if (!message.value) return // a tombstone (null value) on a compacted topic (sec 11)
+  const order = JSON.parse(message.value.toString()) as OrderPlaced
+  await processOrder(order) // do the work FIRST...
+  await consumer.commitOffsets([
+    // ...THEN commit the NEXT offset to read (at-least-once, sec 9)
+    { topic, partition, offset: (BigInt(message.offset) + 1n).toString() },
+  ])
+}
+
+await consumer.run({ autoCommit: false, eachMessage: handle })
+
+process.on('SIGTERM', async () => {
+  await consumer.disconnect() // leave the group cleanly -> triggers a rebalance
+})
+```
+
+```java
+Properties props = new Properties();
+props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+props.put(ConsumerConfig.GROUP_ID_CONFIG, "billing");          // the consumer GROUP
+props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // no committed offset yet (sec 8)
+props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);     // commit manually (sec 9)
+props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+
+// try-with-resources: close() leaves the group cleanly -> triggers a rebalance
+try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
+    consumer.subscribe(List.of("orders")); // Kafka assigns this instance some partitions
+
+    while (true) {
+        ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
+        for (ConsumerRecord<String, String> record : records) {
+            process(record.value());       // do the work FIRST...
+        }
+        consumer.commitSync();             // ...THEN commit the batch's offsets (at-least-once, sec 9)
+    }
+}
+// To stop the loop from another thread (e.g. a shutdown hook), call
+// consumer.wakeup(): the blocked poll() throws WakeupException.
+```
+
 Partitions cap your parallelism
 
 Because one partition is consumed by at most one consumer _per group_, a group can usefully have at most as many active consumers as the topic has partitions. A topic with 4 partitions and 6 group members leaves 2 consumers idle. So your _maximum consumption parallelism is set by partition count_ (sec 4), another reason to size partitions for your peak throughput up front (sec 20).
@@ -272,7 +424,7 @@ At-least-once + idempotent consumers = the practical answer
 
 True end-to-end exactly-once is narrow: Kafka's `enable.idempotence` stops _producer_ duplicates, and **transactions** give exactly-once for Kafka-_to_-Kafka stream processing (consume, transform, produce, and commit offsets atomically). But the moment your consumer writes to an _external_ system (a database, a payment API), exactly-once across that boundary isn't free. The battle-tested approach: choose **at-least-once** and make your processing **idempotent**: safe to apply the same event twice (dedupe by event ID, upsert instead of insert). This is the same idempotency discipline as the task-queues chapter (sec 14 there) and REST idempotency keys, and it's why duplicates become harmless rather than catastrophic.
 
-```sql title="making at-least-once safe: idempotent processing (pseudocode, both languages)"
+```sql title="making at-least-once safe: idempotent processing (pseudocode, every language)"
 -- The consumer may see the same event twice on retry/rebalance.
 -- Make the write idempotent so a duplicate is a no-op:
 
@@ -520,6 +672,6 @@ The whole manual compressed to what you reach for under pressure.
 
 **The whole topic in one breath:** Kafka is a distributed, durable, append-only commit log (sec 1-3), unlike a queue, events are retained and every consumer group reads all of them and can replay (sec 2). A topic is split into partitions, the unit of parallelism, ordering, and storage (sec 4), spread across brokers and replicated for durability via leaders, followers, and the ISR (sec 5). Producers append keyed records (sec 6); consumer groups divide partitions to scale out, with parallelism capped by partition count (sec 7). Each consumer tracks its offset, and the lag to the tail is the key health signal (sec 8); when you commit decides your delivery semantics, and the pragmatic choice is at-least-once with idempotent consumers (sec 9). Ordering holds only within a partition, so you key by your ordering boundary and watch for skew (sec 10); retention deletes by age while compaction keeps the latest value per key (sec 11). A Schema Registry governs payloads across teams (sec 12); the log underpins event-driven architecture (sec 13), event sourcing and CQRS (sec 14), and the outbox/CDC pattern for atomic DB-and-event writes (sec 15). Stream processing computes continuously over it (sec 16); choose Kafka over a queue for streaming, replay, and throughput (sec 17), guard against rebalance storms, poison pills, lag, and skew (sec 18), monitor lag and ISR (sec 19), and design topics around events keyed sensibly, with idempotent consumers and governed schemas (sec 20).
 
-Grounded in the Apache Kafka & Confluent docs / the log/stream-table literature (Kreps) / Debezium for CDC / Go 1.22+ (confluent-kafka-go) / Python 3.11+ (confluent-kafka) examples.
+Grounded in the Apache Kafka & Confluent docs / the log/stream-table literature (Kreps) / Debezium for CDC / Go 1.22+ (confluent-kafka-go) / Python 3.11+ (confluent-kafka) / Node.js 20+ & TypeScript 5+ (KafkaJS) / Java 17+ (kafka-clients) examples.
 
-Backend from First Principles / Chapter 23 / Kafka. Code targets Go 1.22+ and Python 3.11+.
+Backend from First Principles / Chapter 23 / Kafka. Code targets Go 1.22+, Python 3.11+, Node.js 20+, TypeScript 5+ and Java 17+.
