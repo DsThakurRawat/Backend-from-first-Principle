@@ -46,7 +46,7 @@ It would seem simpler for a server to "remember" you. Statelessness is chosen pr
 </Diagram>
 
 The tradeoff is that **continuity must be rebuilt on every request**. Since the protocol itself forgets, we re-establish identity each time using cookies, server-side sessions, or tokens, re-sending a small credential with every request so the server can re-look-up who you are. Those state-management techniques are detailed in sec 8; the key point here is that they sit _on top of_ a stateless protocol rather than changing its nature.
-
+ 
 ### 2. The Client: Server Model
 
 Communication is **always initiated by the client**: a browser, a mobile app, or another backend service. The client decides what it wants, assembles a complete request (URL, method, headers, body), and sends it. The server is fundamentally passive: it hosts resources, listens, and only ever speaks in _response_ to a request. It cannot, in classic HTTP, spontaneously push data to a client that hasn't asked. This asymmetry is why "the server can't notify the browser of a new message" was historically solved with polling, and why WebSockets and Server-Sent Events (sec 19, sec 17) exist to break out of the strict request/response shape when you genuinely need server push.
@@ -59,7 +59,33 @@ HTTP doesn't move bytes itself; it delegates that to a transport protocol. It ha
 - **UDP** is connectionless and "fire-and-forget", fast but with no delivery guarantees. Raw HTTP can't use it directly, but HTTP/3's QUIC layer rebuilds reliability on top of UDP (sec 2).
 
 <Diagram caption="Before a single byte of HTTP">
-<svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sequence diagram of the TCP three-way handshake: SYN, SYN-ACK, ACK, then the HTTP request flows"><text x="120" y="28" font-size="14" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">Client</text><text x="600" y="28" font-size="14" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Server</text><line x1="120" y1="40" x2="120" y2="262" stroke="var(--dg-line)" stroke-width="2"></line><line x1="600" y1="40" x2="600" y2="262" stroke="var(--dg-line)" stroke-width="2"></line><rect x="138" y="52" width="444" height="118" rx="8" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-dasharray="4 3"></rect><text x="360" y="68" class="mono" font-size="10" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">&#x3C;-- one full round trip of latency, before any data --></text><line x1="120" y1="90" x2="598" y2="108" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#hh)"></line><text x="350" y="84" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">SYN</text><text x="350" y="99" font-size="10.5" fill="var(--dg-ink-2)" text-anchor="middle">"let's talk, here's my sequence number"</text><line x1="600" y1="125" x2="122" y2="143" stroke="var(--dg-ok)" stroke-width="2" marker-end="url(#ht)"></line><text x="362" y="135" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">SYN-ACK</text><text x="362" y="150" font-size="10.5" fill="var(--dg-ink-2)" text-anchor="middle">"got it, and here's mine"</text><line x1="120" y1="160" x2="598" y2="160" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#hh)"></line><text x="350" y="155" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">ACK</text><text x="360" y="190" class="serif" font-size="13" font-style="italic" font-weight="500" fill="var(--dg-ok)" text-anchor="middle">connection established</text><line x1="120" y1="215" x2="598" y2="215" stroke="var(--dg-ink)" stroke-width="2.4" marker-end="url(#hk)"></line><text x="350" y="210" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">GET /index.html &#x3C;- finally, HTTP</text><line x1="600" y1="240" x2="122" y2="240" stroke="var(--dg-ink)" stroke-width="2.4" marker-end="url(#hk2)"></line><text x="350" y="235" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">200 OK</text><defs><marker id="hh" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker><marker id="ht" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker><marker id="hk" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-inverse)"></path></marker><marker id="hk2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-inverse)"></path></marker></defs></svg>
+<svg viewBox="0 0 720 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sequence diagram of the TCP three-way handshake: SYN, SYN-ACK, ACK, then the HTTP request flows">
+  <text x="120" y="28" font-size="14" font-weight="700" fill="var(--dg-accent)" text-anchor="middle">Client</text>
+  <text x="600" y="28" font-size="14" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">Server</text>
+  <line x1="120" y1="40" x2="120" y2="365" stroke="var(--dg-line)" stroke-width="2"></line>
+  <line x1="600" y1="40" x2="600" y2="365" stroke="var(--dg-line)" stroke-width="2"></line>
+  <rect x="138" y="52" width="444" height="202" rx="8" fill="var(--dg-accent-tint)" stroke="var(--dg-accent)" stroke-dasharray="4 3"></rect>
+  <text x="360" y="72" class="mono" font-size="10" font-weight="700" fill="var(--dg-warn)" text-anchor="middle">&#x3C;-- one full round trip of latency, before any data --></text>
+  <text x="360" y="96" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">SYN</text>
+  <text x="360" y="112" font-size="10.5" fill="var(--dg-ink-2)" text-anchor="middle">"let's talk, here's my sequence number"</text>
+  <line x1="120" y1="122" x2="598" y2="142" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#hh)"></line>
+  <text x="360" y="152" class="mono" font-size="12" font-weight="700" fill="var(--dg-ok)" text-anchor="middle">SYN-ACK</text>
+  <text x="360" y="168" font-size="10.5" fill="var(--dg-ink-2)" text-anchor="middle">"got it, and here's mine"</text>
+  <line x1="600" y1="178" x2="122" y2="198" stroke="var(--dg-ok)" stroke-width="2" marker-end="url(#ht)"></line>
+  <text x="360" y="208" class="mono" font-size="12" font-weight="700" fill="var(--dg-accent-2)" text-anchor="middle">ACK</text>
+  <line x1="120" y1="218" x2="598" y2="238" stroke="var(--dg-accent)" stroke-width="2" marker-end="url(#hh)"></line>
+  <text x="360" y="278" class="serif" font-size="13" font-style="italic" font-weight="500" fill="var(--dg-ok)" text-anchor="middle">connection established</text>
+  <text x="360" y="302" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">GET /index.html &#x3C;- finally, HTTP</text>
+  <line x1="120" y1="310" x2="598" y2="310" stroke="var(--dg-ink)" stroke-width="2.4" marker-end="url(#hk)"></line>
+  <text x="360" y="337" class="mono" font-size="12" font-weight="700" fill="var(--dg-ink)" text-anchor="middle">200 OK</text>
+  <line x1="600" y1="345" x2="122" y2="345" stroke="var(--dg-ink)" stroke-width="2.4" marker-end="url(#hk2)"></line>
+  <defs>
+    <marker id="hh" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-accent)"></path></marker>
+    <marker id="ht" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ok)"></path></marker>
+    <marker id="hk" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ink)"></path></marker>
+    <marker id="hk2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="var(--dg-ink)"></path></marker>
+  </defs>
+</svg>
 </Diagram>
 
 The TCP handshake and any TLS negotiation happen below Layer 7, they're transport/network-engineering concerns. We treat them as: "a reliable, possibly encrypted pipe was established, and now request and response messages flow over it." That abstraction is enough to reason about and debug the overwhelming majority of backend behavior.
